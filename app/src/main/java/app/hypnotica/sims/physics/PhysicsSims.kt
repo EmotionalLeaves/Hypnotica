@@ -298,6 +298,9 @@ class PendulumWaveSim : Sim {
     private var omegas = FloatArray(0)
     private var lengths = FloatArray(0)
     private var lastSide = BooleanArray(0)
+
+    /** Which pendulums crossed this step; sounded in order after the slices. */
+    private var crossedThisStep = BooleanArray(0)
     private var cyclePeriod = 30f
     private var elapsed = 0f
     private var payoffFrame = false
@@ -318,6 +321,7 @@ class PendulumWaveSim : Sim {
         omegas = FloatArray(count)
         lengths = FloatArray(count)
         lastSide = BooleanArray(count)
+        crossedThisStep = BooleanArray(count)
 
         // The wave only comes back into line because the lengths are exactly
         // L = g/w^2 for harmonically related w. Clamping them to fit the screen
@@ -374,15 +378,25 @@ class PendulumWaveSim : Sim {
                 if (side != lastSide[i]) {
                     lastSide[i] = side
                     localCrossed++
-                    if (i % voiceEvery == 0) {
-                        val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
-                        env.emit(EventKind.CROSS, t, (t * 2f - 1f) * 0.85f, 0.75f)
-                    }
+                    // Marked here, sounded below: emitting from a worker makes
+                    // the order of the notes depend on which thread got there
+                    // first, and a run has to sound the same every time.
+                    if (i % voiceEvery == 0) crossedThisStep[i] = true
                 }
             }
             crossedPerSlice.addAndGet(localCrossed)
         }
         crossings += crossedPerSlice.get()
+
+        var voice = 0
+        while (voice < count) {
+            if (crossedThisStep[voice]) {
+                crossedThisStep[voice] = false
+                val t = if (count <= 1) 0.5f else voice.toFloat() / (count - 1)
+                env.emit(EventKind.CROSS, t, (t * 2f - 1f) * 0.85f, 0.75f)
+            }
+            voice += voiceEvery
+        }
 
         // Realignment is the payoff, so it is measured rather than timed: a
         // stopwatch fired on a frozen screen under Zero-G, and never at all
