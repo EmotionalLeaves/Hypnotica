@@ -128,7 +128,7 @@ class MazeSim : Sim {
                     )
                 }
                 if (revealed >= pathLength) {
-                    restSeconds = 1.6f
+                    restSeconds = 1.5f
                     break
                 }
             }
@@ -421,7 +421,7 @@ class PathfindingSim : Sim {
                     )
                 }
                 if (revealed >= pathLength) {
-                    restSeconds = 1.6f
+                    restSeconds = 1.5f
                     break
                 }
             }

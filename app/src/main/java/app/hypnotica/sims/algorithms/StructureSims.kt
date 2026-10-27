@@ -108,7 +108,7 @@ class HanoiSim : Sim {
         liftProgress = min(1f, liftProgress + abs(dt) * 6f)
         if (played >= moves.size && restSeconds < 0f) {
             payoffFrame = true
-            restSeconds = 1.8f
+            restSeconds = 1.5f
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
@@ -255,7 +255,7 @@ class NQueensSim : Sim {
             if (row >= n) {
                 solved = true
                 payoffFrame = true
-                restSeconds = 2f
+                restSeconds = 1.5f
                 env.emit(EventKind.DONE, 1f, 0f, 1f)
                 break
             }
@@ -425,7 +425,7 @@ class BinaryTreeSim : Sim {
         }
         if (size >= target && restSeconds < 0f) {
             payoffFrame = true
-            restSeconds = 1.8f
+            restSeconds = 1.5f
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
@@ -792,7 +792,7 @@ class GradientDescentSim : Sim {
      * it was done, so nothing restarted it: a still, silent screen that read
      * as the app having stopped.
      */
-    private val HOLD_SECONDS = 2f
+    private val HOLD_SECONDS = 1.5f
     private val SETTLE_SPEED = 0.02f
     private val SETTLE_SECONDS = 0.4f
     private val MIN_SECONDS = 4f

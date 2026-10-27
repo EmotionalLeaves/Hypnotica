@@ -27,6 +27,11 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **Three to four seconds of a still screen between runs.** Sims held their
+  finished picture for up to two and a half seconds before reporting finished,
+  and every screen then waited its own 1.8 s resolve beat on top. Holds are
+  capped at 1.5 s and the screens wait one second.
+
 - **A dozen sims were cut off on a phone held upright.** The screen there is
   under half a unit wide, and these drew at a fixed size as if it were square.
   Measured, a quarter to three quarters of what they drew was off the sides:

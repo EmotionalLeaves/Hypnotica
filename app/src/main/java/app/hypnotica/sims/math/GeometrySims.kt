@@ -284,7 +284,7 @@ class RiemannSim : Sim {
         if (!converged && bars >= maxBars) {
             converged = true
             payoffFrame = true
-            restSeconds = 2.2f
+            restSeconds = 1.5f
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }

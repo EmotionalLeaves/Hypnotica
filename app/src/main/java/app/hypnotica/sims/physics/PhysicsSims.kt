@@ -168,7 +168,7 @@ class BallEscapeSim : Sim {
                     escaped++
                     env.emit(EventKind.DONE, b.colorT, (b.x).coerceIn(-1f, 1f), 1f)
                     payoffFrame = true
-                    restSeconds = 1.6f
+                    restSeconds = 1.5f
                     break
                 }
             }
@@ -837,7 +837,7 @@ class GaltonBoardSim : Sim {
         if (dropped >= total && active == 0 && !curveDone) {
             curveDone = true
             payoffFrame = true
-            restSeconds = 2f
+            restSeconds = 1.5f
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
     }

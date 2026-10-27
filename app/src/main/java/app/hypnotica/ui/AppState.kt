@@ -47,8 +47,13 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO, RECIPES }
  * design doc's resolve beat — settle, breathe, and the last frame is worth a
  * screenshot. Every screen that hosts a sim waits this long, so a finished sort
  * is something you see rather than something that was already gone.
+ *
+ * Most sims hold their finished picture for up to a second and a half of
+ * their own before they report finished, and this came on top: measured, three
+ * to four seconds of a still screen between runs. A second, with the sims'
+ * holds capped at 1.5 s, keeps the stillness under two and a half.
  */
-internal const val RESOLVE_MS = 1800L
+internal const val RESOLVE_MS = 1000L
 
 /** Under this share of the phone's best frame rate counts as falling behind. */
 private const val SLOW_SHARE = 0.7f
