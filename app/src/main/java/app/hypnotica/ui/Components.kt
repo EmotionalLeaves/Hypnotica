@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -66,7 +69,7 @@ fun Pill(
 ) {
     Box(
         modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = 48.dp)
             .background(
                 if (selected) Tokens.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f),
                 CircleShape
@@ -226,13 +229,19 @@ fun ValueSlider(
             Text(
                 label,
                 color = Tokens.TextPrimary.copy(alpha = dim),
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
+            Spacer(Modifier.width(8.dp))
             Text(
                 valueText ?: formatValue(value),
                 color = Tokens.TextSecondary.copy(alpha = dim),
                 style = MaterialTheme.typography.bodySmall,
-                textAlign = TextAlign.End
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                modifier = Modifier.widthIn(min = 56.dp)
             )
         }
         Slider(

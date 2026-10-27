@@ -173,7 +173,17 @@ class SceneRenderer {
     }
 
     /** Draw one frame of [g] through [camera], then present it to the screen. */
-    fun render(g: G, camera: Camera, flash: Float) {
+    /**
+     * Draw one frame.
+     *
+     * [frameSeconds] is how long this frame represents, and the trail fade is
+     * raised to it. The fade used to be one multiply per rendered frame with no
+     * reference to time at all, so the same slider position gave a trail half
+     * as long on a 120 Hz phone as on a 60 Hz one, and twice as long again in a
+     * 30 fps export — a four-fold spread for one setting, and a picture that
+     * could not be reproduced from its recipe and seed.
+     */
+    fun render(g: G, camera: Camera, flash: Float, frameSeconds: Float = 1f / 60f) {
         if (!ready) return
         if (fboWidth == 0) createTargets(viewportWidth, viewportHeight)
         // Without usable trail buffers there is nothing to ping-pong between,
@@ -192,7 +202,14 @@ class SceneRenderer {
         if (trails > 0.001f) {
             GLES30.glDisable(GLES30.GL_BLEND)
             GLES30.glUseProgram(fadeProgram)
-            GLES30.glUniform1f(uFadeAmount, trails.coerceIn(0f, 0.985f))
+            // Retention per sixtieth of a second, raised to the real frame
+            // time: at 120 Hz each frame keeps the square root of the amount,
+            // so two frames leave exactly what one frame left at 60 Hz.
+            val perFrame = Math.pow(
+                trails.coerceIn(0f, 0.985f).toDouble(),
+                (frameSeconds * 60f).toDouble()
+            ).toFloat()
+            GLES30.glUniform1f(uFadeAmount, perFrame)
             bindTexture(uFadeTex, fboTex[prev])
             drawFullscreen()
             GLES30.glEnable(GLES30.GL_BLEND)

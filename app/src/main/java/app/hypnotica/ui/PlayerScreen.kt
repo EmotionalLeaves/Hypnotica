@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -37,10 +38,10 @@ import app.hypnotica.core.audio.Song
 import app.hypnotica.core.audio.SoundPreset
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Macro
-import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.TouchEvent
 import kotlinx.coroutines.delay
 
@@ -48,10 +49,16 @@ import kotlinx.coroutines.delay
  * The player: the sim fills the screen and the controls float over it, out of the
  * way until asked for.
  */
+/** How long a finished run holds its last frame before going again. */
+private const val RESOLVE_MS = 1800L
+
 @Composable
 fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
     var overlayVisible by remember { mutableStateOf(true) }
     var uiTick by remember { mutableIntStateOf(0) }
+
+    // When the run reported itself finished, or 0.
+    var finishedAt by remember { mutableStateOf(0L) }
 
     // Rule 1: the sim is the interface. Chrome fades out when nobody is touching.
     LaunchedEffect(overlayVisible, state.controlsOpen) {
@@ -59,6 +66,28 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             delay(2600)
             overlayVisible = false
         }
+    }
+
+    // A run that ends should resolve and go again, not stop dead.
+    //
+    // SimCore.advance returns immediately once a sim reports finished, and only
+    // the feed and TickTock ever set onFinished — so in the player the picture
+    // simply froze, indefinitely, until the hero button was pressed. Measured,
+    // n-queens finishes at 4.8 s of its declared 14 and pathfinding at 9.5 of
+    // 24, so this was a still frame for most of the run's own length. The beat
+    // before restarting is the resolve the design asks for: settle, breathe,
+    // and the last frame is worth a screenshot.
+    DisposableEffect(Unit) {
+        state.engine.onFinished = {
+            finishedAt = System.nanoTime()
+        }
+        onDispose { state.engine.onFinished = null }
+    }
+    LaunchedEffect(finishedAt) {
+        if (finishedAt == 0L) return@LaunchedEffect
+        delay(RESOLVE_MS)
+        finishedAt = 0L
+        state.restart(newSeed = true)
     }
 
     // Live counters come from the sim, which runs on the GL thread.

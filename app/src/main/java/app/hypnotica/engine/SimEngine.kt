@@ -95,6 +95,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     var onFinished: (() -> Unit)? = null
 
     private var payoffNotified = false
+
+    /** The engine's own flash for the payoff frame, before the limiter sees it. */
+    private var payoffFlash = 0f
     private var finishNotified = false
 
     /** Extra zoom applied around the payoff, the "punch-in". */
@@ -383,6 +386,15 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             payoffNotified = true
             punch = if (safety.reduceMotion) 0f else 1f
             shake = if (safety.reduceMotion) 0f else 1f
+            // The engine performs the payoff — DESIGN says so, and so does rule
+            // 10: slow motion, a punch-in, a sweep, a flash and a heavy haptic,
+            // none of which a sim implements. Four of those five were here; the
+            // flash was left entirely to each sim's own request, and measured,
+            // 31 of the 58 never make one. So more than half the payoffs in the
+            // app were missing a fifth of what they promise. The limiter and
+            // Reduce flashing still decide what reaches the screen, and a sim
+            // that asks for its own is max()'d with this rather than replaced.
+            payoffFlash = PAYOFF_FLASH
             mapping.finalSweep()
             if (safety.haptics) haptics?.heavy()
             onPayoff?.invoke()
@@ -395,7 +407,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         // Punch-in: a small, quick push towards the action when the payoff lands.
         // In Studio the timeline owns the camera, so the automatic push stays out.
         if (punch > 0f) {
-            punch = max(0f, punch - dt * 0.9f)
+            punch = max(0f, punch - dt / PUNCH_SECONDS)
         }
         if (shake > 0f) {
             shake = max(0f, shake - dt / SHAKE_SECONDS)
@@ -408,7 +420,18 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             // than seen, and off entirely when Reduce motion is on.
             val breathing =
                 if (safety.reduceMotion) 1f else 1f + BREATH_DEPTH * kotlin.math.sin(breath)
-            camera.zoom = baseZoom * breathing * (1f + 0.045f * punch)
+            // Squared, so the zoom comes back quickly and then settles.
+            //
+            // This was linear, and it was the one part of the payoff that was:
+            // the slow motion eases out, the shake eases out, the flash fades.
+            // A constant-rate ramp is the curve the eye reads as mechanical,
+            // and because it ran 1.11 s it was also the last thing still
+            // moving — holding the frame for a tenth of a second after time
+            // was back to normal and the sweep had finished, which is what
+            // made the payoff read as three twitches and a drift rather than
+            // one event. At 0.8 s squared, all five parts end inside a second.
+            val punchEase = punch * punch
+            camera.zoom = baseZoom * breathing * (1f + 0.045f * punchEase)
 
             // Screen shake: a few pixels for a moment, on the heaviest frames.
             // Added to the camera at render time rather than written into it,
@@ -417,7 +440,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
                 shakeSeed = shakeSeed * 1103515245 + 12345
                 val a = ((shakeSeed shr 16) and 0xFF) / 255f - 0.5f
                 val b = ((shakeSeed shr 8) and 0xFF) / 255f - 0.5f
-                val amount = SHAKE_WORLD * shake * shake
+                // Divided by the zoom, because this offset is in world units
+                // and the renderer multiplies it by the zoom on the way to the
+                // screen. DESIGN asks for "a few pixels of world", and at zoom
+                // 1 that is about fourteen — but the pinch reaches 40x, where
+                // the same constant was two hundred times the intended
+                // amplitude: a lurch rather than a tick.
+                val amount = SHAKE_WORLD * shake * shake / camera.zoom.coerceAtLeast(0.05f)
                 shakeOffsetX = a * amount
                 shakeOffsetY = b * amount
             } else {
@@ -432,14 +461,17 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
         mapping.pump(core.events, dt)
 
-        val allowed = flashLimiter.allow(max(g.flashRequest, timelineFlash), dt)
+        val allowed =
+            flashLimiter.allow(max(max(g.flashRequest, timelineFlash), payoffFlash), dt)
+        // Asked for on the payoff frame only; the limiter owns the fade.
+        payoffFlash = 0f
         if (shakeOffsetX != 0f || shakeOffsetY != 0f) {
             shaken.copyFrom(camera)
             shaken.x += shakeOffsetX
             shaken.y += shakeOffsetY
-            scene.render(g, shaken, allowed)
+            scene.render(g, shaken, allowed, dt)
         } else {
-            scene.render(g, camera, allowed)
+            scene.render(g, camera, allowed, dt)
         }
     }
 
@@ -525,6 +557,19 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     companion object {
+        /**
+         * How hard the engine flashes at a payoff, before the limiter and the
+         * person's Reduce flashing setting have their say. Well above the 0.08
+         * that counts as a glow rather than a flash, and below full white.
+         */
+        const val PAYOFF_FLASH = 0.55f
+
+        /**
+         * How long the punch-in takes to come back, squared on the way. Chosen
+         * to finish with the synth sweep rather than after it.
+         */
+        const val PUNCH_SECONDS = 0.8f
+
         /**
          * How long Evolve stands off a value after a hand moves it. Long enough
          * to let go, look at it and move it again; short enough that Evolve is
