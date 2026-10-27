@@ -275,7 +275,7 @@ worth watching.
 
 Fifteen trap formats, each with its own hook line: Will it escape?, Marble race,
 Colour battle, Number go up, Chain reaction, Perfect fit, Cut crush squish, Clean
-and reveal, Fill to the line, Grow and build, Song mode, Last one standing,
+and reveal, Fill it up, Grow and build, Song mode, Last one standing,
 Perfect loop, Guess the winner, Slow build sudden snap. Every one of them is
 reachable: a format no sim can produce is deleted, not listed.
 

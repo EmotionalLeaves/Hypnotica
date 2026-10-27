@@ -38,19 +38,28 @@ enum class Shelf(val title: String) {
     ART("Art & music")
 }
 
-/** A hook wrapper that can be laid over many sims. */
+/**
+ * A hook wrapper that can be laid over many sims.
+ *
+ * Hooks are captions on screen, so each has to be true of every sim that
+ * carries its format. Four were not: "Stop at the line" asked the viewer to
+ * stop something they cannot stop, at a line that is not drawn; "One tap, then
+ * this" promised a tap nothing waits for; "The bounces play the tune" captioned
+ * sorts, which do not bounce; and "Wait for the squish" sat over a cloth that
+ * tears.
+ */
 enum class TrapFormat(val title: String, val hook: String) {
     ESCAPE("Will it escape?", "Will it escape?"),
     RACE("Marble race", "Pick a colour"),
     COLOR_BATTLE("Colour battle", "Which colour wins?"),
     NUMBER_UP("Number go up", "How high does it go?"),
-    CHAIN("Chain reaction", "One tap, then this"),
+    CHAIN("Chain reaction", "One thing sets off the next"),
     PERFECT_FIT("Perfect fit", "Watch it fit"),
-    CUT("Cut, crush, squish", "Wait for the squish"),
+    CUT("Cut, crush, squish", "Wait for it to give"),
     REVEAL("Clean and reveal", "What is under it?"),
-    FILL("Fill to the line", "Stop at the line"),
+    FILL("Fill it up", "Watch it fill"),
     GROW("Grow and build", "Watch it grow"),
-    SONG("Song mode", "The bounces play the tune"),
+    SONG("Song mode", "Every hit is a note"),
     LAST_STANDING("Last one standing", "Last one standing"),
     LOOP("Perfect loop", "It never restarts"),
     GUESS("Guess the winner", "Guess before it ends"),
