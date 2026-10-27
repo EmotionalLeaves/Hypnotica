@@ -875,6 +875,7 @@ class OpticsSim : Sim {
             heroLabel = "New angle",
             defaultPalette = "Spectrum",
             typicalSeconds = 16f,
+            loopSeconds = 31.42f,
             params = listOf(
                 Param.choice("shape", "Glass", listOf("Prism", "Lens", "Slab"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("rays", "Rays", 1, 60, 9, card = Card.DATA),
@@ -1035,7 +1036,7 @@ class ChargesSim : Sim {
             shelf = Shelf.PHYSICS,
             family = "Electricity & magnetism",
             blurb = "Tracers following the field, so its shape is visible.",
-            formats = listOf(TrapFormat.REVEAL, TrapFormat.LOOP, TrapFormat.COLOR_BATTLE),
+            formats = listOf(TrapFormat.REVEAL, TrapFormat.COLOR_BATTLE),
             lawKnobs = setOf(LawKnob.CHARGE),
             heroLabel = "New charges",
             defaultPalette = "Aurora",

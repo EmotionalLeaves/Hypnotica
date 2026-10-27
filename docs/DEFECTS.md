@@ -19,11 +19,6 @@ Measured, not yet acted on.
   as long as you watch, those positions are reached — late. Lowering them would
   take away the long-exposure picture from the person who stays; leaving them
   means a slider whose top does nothing for a while. Kept, and written down.
-- **Nine of the ten sims that loop are declared at a length that is not their
-  loop period.** The hypercube closes at 49.8 s and declares 26, the pendulum
-  wave at 31.0 and declares 38. Nothing cuts a clip at that number, but Studio's
-  "Perfect loop" template sets its project length from it, and that project
-  does not loop.
 - **The size slider ignores the device benchmark.** `Bench` measures the phone
   and only TickTock's clips use the result; the player's slider offers 400,000
   particles to a phone already measured as modest.
@@ -55,6 +50,12 @@ Measured, not yet acted on.
   copy of it merging keyframes closer than 0.3 s, so a clip could be missing a
   key the preview showed.
 - Seeds above 2^53 coming back as a different number from a pasted run.
+- Three more false "Perfect loop" claims — Mandelbrot, the particle field and
+  charges — let through because LoopClaimTest compared only the shape buffer,
+  and a sim drawn in points was judged on its point count alone.
+- Studio's "Perfect loop" template set its length from the typical length,
+  which is no sim's loop period; it lays out whole measured cycles now, and is
+  only offered on a sim that loops.
 
 ## What the last two rounds found
 

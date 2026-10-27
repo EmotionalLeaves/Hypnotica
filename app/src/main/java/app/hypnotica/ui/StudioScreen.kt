@@ -560,18 +560,24 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             }
 
             SectionLabel("Template")
+            // "Perfect loop" only where the sim loops: on any other it promises
+            // a clip whose last frame meets its first, and the sim never comes
+            // back to where it started.
+            val templates = remember(state.currentDef.id) {
+                Project.TEMPLATES.filter { it != "Perfect loop" || state.currentDef.loopSeconds != null }
+            }
             // A template replaces the project outright. After Record moves the
             // row used to highlight a template that was not loaded, so tapping
             // it to confirm what you were looking at destroyed the recording.
             if (confirmTemplate >= 0) {
                 Text(
-                    "Tap \"" + Project.TEMPLATES[confirmTemplate] +
+                    "Tap \"" + templates[confirmTemplate] +
                         "\" again to replace every keyframe and caption here.",
                     color = Tokens.Accent,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
-            } else if (Project.TEMPLATES.indexOf(project.name) < 0) {
+            } else if (templates.indexOf(project.name) < 0) {
                 Text(
                     "Showing \"" + project.name + "\". Choosing a template replaces it.",
                     color = Tokens.TextSecondary,
@@ -583,15 +589,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             // with no undo — and after Record moves the row used to highlight a
             // template that was not loaded, so tapping it to confirm what you
             // were looking at destroyed the recording.
-            ChipRow(Project.TEMPLATES, Project.TEMPLATES.indexOf(project.name)) { index ->
+            ChipRow(templates, templates.indexOf(project.name)) { index ->
                 if (confirmTemplate != index && project.hasAnyKeyframes()) {
                     confirmTemplate = index
                     return@ChipRow
                 }
                 confirmTemplate = -1
                 val fresh = Project.template(
-                    Project.TEMPLATES[index], state.currentDef.id, state.engine.core.seed,
-                    state.currentDef.typicalSeconds
+                    templates[index], state.currentDef.id, state.engine.core.seed,
+                    state.currentDef.typicalSeconds, state.currentDef.loopSeconds
                 )
                 state.project = fresh
                 state.engine.project = fresh

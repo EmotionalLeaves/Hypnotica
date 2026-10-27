@@ -250,7 +250,7 @@ class ParticleFieldSim : Sim {
             shelf = Shelf.LIFE,
             family = "Particles & flocking",
             blurb = "Up to 400,000 particles in one flow field, one draw call.",
-            formats = listOf(TrapFormat.LOOP, TrapFormat.GROW),
+            formats = listOf(TrapFormat.GROW),
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.BOUNCE,
                 LawKnob.FRICTION, LawKnob.CONTACT, LawKnob.SPACE),
             heroLabel = "New field",

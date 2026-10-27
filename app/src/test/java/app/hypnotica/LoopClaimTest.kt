@@ -28,13 +28,26 @@ class LoopClaimTest {
         val g = G()
         g.reset()
         core.sim.draw(core.env, g, 1f)
+        // Shapes and points both. It used to read only the shape buffer, so a
+        // sim drawn in points — Mandelbrot, the particle field — was compared
+        // on nothing but how many points it drew, and any frame with the same
+        // count passed as a return. Both claimed a perfect loop that way, and
+        // neither ever comes back.
         val n = minOf(g.instanceCount, 600)
-        val out = FloatArray(n * 2 + 1)
+        val m = minOf(g.pointCount, 600)
+        val out = FloatArray(n * 2 + m * 2 + 1)
         for (i in 0 until n) {
             out[i * 2] = g.instances[i * G.STRIDE]
             out[i * 2 + 1] = g.instances[i * G.STRIDE + 1]
         }
-        out[n * 2] = g.instanceCount.toFloat() + g.pointCount.toFloat()
+        // Spread across the whole buffer rather than its first 600, which for
+        // a big sim is one corner.
+        val stride = maxOf(1, g.pointCount / maxOf(1, m))
+        for (j in 0 until m) {
+            out[n * 2 + j * 2] = g.pointPos[j * stride * 3]
+            out[n * 2 + j * 2 + 1] = g.pointPos[j * stride * 3 + 1]
+        }
+        out[n * 2 + m * 2] = g.instanceCount.toFloat() + g.pointCount.toFloat()
         return out
     }
 
@@ -76,5 +89,45 @@ class LoopClaimTest {
                 "return to their first frame within twice their own length: $broken",
             broken.isEmpty()
         )
+    }
+
+    /**
+     * The declared period is the period.
+     *
+     * Studio's "Perfect loop" template lays out whole cycles of loopSeconds, so
+     * a wrong number there is a clip whose last frame does not meet its first —
+     * the defect this field was added to fix. Every sim that loops declares
+     * one, nothing else does, and one cycle on the picture is back where it
+     * started by the same measure as the claim itself.
+     */
+    @Test
+    fun theDeclaredLoopPeriodIsWhereThePictureComesBack() {
+        val wrong = ArrayList<String>()
+        for (def in SimRegistry.all) {
+            val claims = def.formats.contains(TrapFormat.LOOP)
+            val period = def.loopSeconds
+            if (claims && period == null) { wrong.add("${def.id} loops but declares no period"); continue }
+            if (!claims && period != null) { wrong.add("${def.id} declares a period and does not claim to loop"); continue }
+            if (period == null) continue
+            val core = SimCore(def)
+            core.setAspect(0.56f)
+            core.restart(5L)
+            repeat(6) { core.advance(1f / 60f) }
+            val start = snapshot(core)
+            val t0 = core.env.time
+            repeat(60) { core.advance(1f / 60f) }
+            val perSecond = distance(snapshot(core), start).coerceAtLeast(1e-6f)
+            // Within a third of a second either side of the declared period.
+            var best = Float.MAX_VALUE
+            while (core.env.time - t0 < period + 0.35f) {
+                core.advance(1f / 60f)
+                if (core.env.time - t0 > period - 0.35f) {
+                    val d = distance(snapshot(core), start)
+                    if (d < best) best = d
+                }
+            }
+            if (best >= perSecond * 0.1f) wrong.add("${def.id} is not back at ${period}s")
+        }
+        assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
     }
 }

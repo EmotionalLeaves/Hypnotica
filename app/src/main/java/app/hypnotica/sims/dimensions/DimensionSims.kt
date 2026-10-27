@@ -205,6 +205,7 @@ class HypercubeSim : Sim {
             heroLabel = "New angle",
             defaultPalette = "Aurora",
             typicalSeconds = 26f,
+            loopSeconds = 8.16f,
             params = listOf(
                 Param.int("dims", "Dimensions", 2, Nd.MAX_DIMS, 4, card = Card.DATA),
                 // Which plane turns is the most interesting thing about a
@@ -395,6 +396,7 @@ class SlicingSim : Sim {
             heroLabel = "Send it through",
             defaultPalette = "Ocean",
             typicalSeconds = 8f,
+            loopSeconds = 13.25f,
             params = listOf(
                 Param.choice(
                     "shape", "Object", listOf("Hypersphere", "Hypercube", "Cone"), 0,

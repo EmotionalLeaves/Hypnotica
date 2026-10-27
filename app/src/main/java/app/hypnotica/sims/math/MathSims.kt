@@ -189,7 +189,7 @@ class MandelbrotSim : Sim {
             shelf = Shelf.MATH,
             family = "Fractals & iteration",
             blurb = "One equation, infinite depth. Tap to steer.",
-            formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL, TrapFormat.LOOP),
+            formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "New target",
             defaultPalette = "Aurora",
             typicalSeconds = 30f,

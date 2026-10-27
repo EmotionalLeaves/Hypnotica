@@ -194,6 +194,7 @@ class TowerSim : Sim {
             heroLabel = "New bricks",
             defaultPalette = "Ocean",
             typicalSeconds = 20f,
+            loopSeconds = 17.9f,
             params = listOf(
                 Param.int("bricks", "Bricks", 4, MAX_BRICKS, 400, card = Card.DATA, logScale = true),
                 Param.int("perrow", "Bricks per row", 2, 60, 12, card = Card.DATA),

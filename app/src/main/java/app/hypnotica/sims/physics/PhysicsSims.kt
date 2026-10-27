@@ -529,6 +529,7 @@ class PendulumWaveSim : Sim {
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.FRICTION),
             heroLabel = "Drop again",
             typicalSeconds = 38f,
+            loopSeconds = 30.5f,
             params = listOf(
                 Param.int("count", "Pendulums", 3, 20000, 15, card = Card.DATA, logScale = true),
                 Param.float("period", "Cycle length", 6f, 120f, 30f, card = Card.MOTION, unit = "s"),

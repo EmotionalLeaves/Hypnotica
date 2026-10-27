@@ -158,6 +158,15 @@ data class SimDef(
      */
     val typicalSeconds: Float = 24f,
     /**
+     * One full cycle, in seconds, for a sim that genuinely comes back to its
+     * first frame; null for everything else. Studio's "Perfect loop" template
+     * lays out whole cycles of it — it used to take the typical length, which
+     * is not the loop period on any of the sims that loop, so a "perfect loop"
+     * clip did not loop. Measured by the same return test LoopClaimTest uses,
+     * and only a sim that claims LOOP may set it.
+     */
+    val loopSeconds: Float? = null,
+    /**
      * The laws this sim actually reads.
      *
      * The Laws card used to be the same on every sim that showed it, so six of

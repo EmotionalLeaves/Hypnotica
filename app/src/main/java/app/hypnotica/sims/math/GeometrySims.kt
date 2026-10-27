@@ -537,6 +537,7 @@ class CurvedSpaceSim : Sim {
             heroLabel = "Move the mass",
             defaultPalette = "Aurora",
             typicalSeconds = 22f,
+            loopSeconds = 18.65f,
             params = listOf(
                 Param.float("mass", "Mass", 0.1f, 4f, 1f, card = Card.DATA),
                 Param.int("rays", "Light rays", 1, 16, 7, card = Card.DATA),

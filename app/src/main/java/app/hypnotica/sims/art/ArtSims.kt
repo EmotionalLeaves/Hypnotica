@@ -146,6 +146,7 @@ class PolyrhythmSim : Sim {
             defaultPalette = "Aurora",
             defaultSound = "Marimba",
             typicalSeconds = 26f,
+            loopSeconds = 24.0f,
             params = listOf(
                 Param.choice("layout", "Layout", listOf("Rings", "Lines"), 0, card = Card.LOOK, input = ParamInput.TILES),
                 Param.int("wheels", "Wheels", 2, 48, 12, card = Card.DATA),

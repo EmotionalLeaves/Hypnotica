@@ -287,7 +287,13 @@ class Project(var simId: String, var seed: Long) {
          * app and twenty-three seconds after another's. The whole point of the
          * template is that those three land together on the moment.
          */
-        fun template(name: String, simId: String, seed: Long, seconds: Float = 30f): Project {
+        fun template(
+            name: String,
+            simId: String,
+            seed: Long,
+            seconds: Float = 30f,
+            loopSeconds: Float? = null
+        ): Project {
             val p = Project(simId, seed)
             p.name = name
             // A project shorter than a few seconds cannot be keyframed usefully.
@@ -340,8 +346,15 @@ class Project(var simId: String, var seed: Long) {
                     )
                 }
                 "Perfect loop" -> {
-                    // Half the length, so the zoom in and out is symmetric.
-                    p.duration = d
+                    // Whole cycles of the sim's own loop, as near twenty
+                    // seconds as they come, so the last frame meets the first.
+                    // The zoom peaks halfway, so the camera loops with it.
+                    p.duration = if (loopSeconds != null && loopSeconds > 0f) {
+                        loopSeconds * max(1f, kotlin.math.round(LOOP_TARGET / loopSeconds))
+                    } else {
+                        d
+                    }
+                    val d = p.duration
                     p.track(TrackKind.ZOOM).set(0f, 1f, Easing.EASE_IN_OUT)
                     p.track(TrackKind.ZOOM).set(d * 0.5f, 1.1f, Easing.EASE_IN_OUT)
                     p.track(TrackKind.ZOOM).set(d, 1f, Easing.EASE_IN_OUT)
@@ -355,5 +368,8 @@ class Project(var simId: String, var seed: Long) {
         }
 
         val TEMPLATES = listOf("Build-up to payoff", "Slow orbit", "Gravity flip", "Perfect loop", "Empty")
+
+        /** About how long a "Perfect loop" clip runs, before rounding to whole cycles. */
+        private const val LOOP_TARGET = 20f
     }
 }
