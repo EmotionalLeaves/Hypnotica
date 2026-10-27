@@ -37,6 +37,7 @@ import app.hypnotica.core.sim.TrapFormat
 
 @Composable
 fun SettingsScreen(state: AppState, versionName: String) {
+    var showGestures by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -167,6 +168,18 @@ fun SettingsScreen(state: AppState, versionName: String) {
         // Lua becomes a sim like any other — and its only door was Advanced,
         // the fifth tab, below a JSON blob. Somebody handed a recipe in a chat
         // message had no way to paste it in.
+        // The gesture card is shown once ever and the flag that hides it is
+        // never cleared, so a stray tap on its scrim took the only explanation
+        // the app offers with it. This is the same list, any time.
+        SectionLabel("Gestures")
+        if (showGestures) {
+            GestureList()
+            Spacer(Modifier.height(8.dp))
+        }
+        Pill(if (showGestures) "Hide" else "What the gestures do", selected = showGestures) {
+            showGestures = !showGestures
+        }
+
         SectionLabel("Your own sims")
         BigButton("Write a sim") { state.screen = Screen.RECIPES }
         Text(

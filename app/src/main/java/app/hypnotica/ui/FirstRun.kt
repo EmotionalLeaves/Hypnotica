@@ -57,23 +57,7 @@ fun FirstRunCard(state: AppState) {
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
-            Text(
-                "One gesture, one meaning",
-                color = Tokens.TextPrimary,
-                style = MaterialTheme.typography.titleLarge
-            )
-            Spacer(Modifier.height(8.dp))
-            GESTURES.forEach { (gesture, meaning) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(
-                        gesture,
-                        color = Tokens.Accent,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.width(132.dp)
-                    )
-                    Text(meaning, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            GestureList()
             Spacer(Modifier.height(16.dp))
             BigButton("Start watching", Modifier.fillMaxWidth(), primary = true) {
                 state.dismissFirstRun()
@@ -82,12 +66,57 @@ fun FirstRunCard(state: AppState) {
     }
 }
 
-private val GESTURES = listOf(
-    "Tap" to "show or hide the controls",
+/**
+ * The gestures, as a block that can be shown anywhere.
+ *
+ * It used to exist only inside the first-run card, which is shown once ever:
+ * dismissFirstRun writes a flag that nothing else clears, so a stray tap on
+ * the scrim meant the only explanation the app offers was gone for good. The
+ * card keeps its one-time job; Settings can show the same list any time.
+ */
+@Composable
+fun GestureList() {
+    Text(
+        "One gesture, one meaning",
+        color = Tokens.TextPrimary,
+        style = MaterialTheme.typography.titleLarge
+    )
+    Spacer(Modifier.height(8.dp))
+    GESTURES.forEach { (gesture, meaning) ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text(
+                gesture,
+                color = Tokens.Accent,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.width(116.dp)
+            )
+            Text(
+                meaning,
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
+}
+
+/**
+ * What the app can be told to do, shown once on first launch and available
+ * from Settings afterwards.
+ *
+ * Swipe was missing, which is the feed's entire navigation — the only place it
+ * was ever mentioned was a hint line that disappears after the first swipe and
+ * never says that down works too. Drag was missing, and many sims respond to
+ * it. "Tap" also said "show or hide the controls", which is true in the player
+ * and in TickTock but not on the feed, where the card is actually shown.
+ */
+internal val GESTURES = listOf(
+    "Swipe up or down" to "the next sim, or the one before",
+    "Tap" to "open the controls, or hide them",
+    "Drag" to "reach into the sim",
     "Long-press" to "open the full drawer",
     "Pinch" to "zoom",
     "Two-finger twist" to "rotate the whole sim",
     "Two-finger drag" to "pan",
     "Double-tap" to "like, in TickTock",
-    "Settings" to "two hidden buttons: TickTock and Studio"
+    "Settings, at the bottom" to "two hidden buttons"
 )
