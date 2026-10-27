@@ -236,11 +236,19 @@ class BallEscapeSim : Sim {
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
-        if (e.kind == TouchEvent.Kind.TAP && balls.size < 180) {
-            val a = env.rng.range(0f, TWO_PI)
-            balls.add(Ball(e.x * 0.5f, e.y * 0.5f, cos(a), sin(a), 0.04f, env.rng.nextFloat()))
-            env.emit(EventKind.BIRTH, 0.7f, 0f, 0.8f)
-        }
+        if (e.kind == TouchEvent.Kind.TAP) addBall(env, e.x * 0.5f, e.y * 0.5f)
+    }
+
+    /** "Add ball": near the middle, where a new ball has room to bounce. */
+    override fun hero(env: SimEnv) {
+        addBall(env, env.rng.range(-0.15f, 0.15f), env.rng.range(-0.15f, 0.15f))
+    }
+
+    private fun addBall(env: SimEnv, x: Float, y: Float) {
+        if (balls.size >= 180) return
+        val a = env.rng.range(0f, TWO_PI)
+        balls.add(Ball(x, y, cos(a), sin(a), 0.04f, env.rng.nextFloat()))
+        env.emit(EventKind.BIRTH, 0.7f, 0f, 0.8f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -868,7 +876,7 @@ class GaltonBoardSim : Sim {
             blurb = "Random beads, every time the same bell curve.",
             formats = listOf(TrapFormat.FILL, TrapFormat.GROW),
             lawKnobs = setOf(LawKnob.GRAVITY),
-            heroLabel = "Drop more",
+            heroLabel = "Drop again",
             typicalSeconds = 24f,
             params = listOf(
                 Param.int("rows", "Peg rows", 4, 20, 10, card = Card.DATA),

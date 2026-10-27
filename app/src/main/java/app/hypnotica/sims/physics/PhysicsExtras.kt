@@ -535,6 +535,28 @@ class ClothSim : Sim {
         }
     }
 
+    /**
+     * "Shake it": a gust through the cloth that is hanging there, not a new
+     * cloth. The button used to restart the run, so the label promised one
+     * thing and the button did another. Verlet keeps velocity as the gap to
+     * the previous position, so a gust is that gap widened — more at the free
+     * hem than near the pins, with a little lift, so it billows.
+     */
+    override fun hero(env: SimEnv) {
+        val side = if (env.rng.nextFloat() < 0.5f) -1f else 1f
+        val strength = GUST * env.rng.range(0.7f, 1.2f)
+        for (r in 0 until rows) {
+            val hang = (r + 1f) / rows
+            for (c in 0 until cols) {
+                val i = r * cols + c
+                if (pinned[i] || cut[i]) continue
+                ox[i] -= side * strength * hang
+                oy[i] -= strength * 0.35f * hang * kotlin.math.sin(c * 0.5f)
+            }
+        }
+        env.emit(EventKind.HIT, 0.7f, side * 0.6f, 0.8f)
+    }
+
     override fun onInput(env: SimEnv, e: TouchEvent) {
         // Drag the cloth about; it settles again on its own.
         val n = cols * rows
@@ -556,6 +578,9 @@ class ClothSim : Sim {
         listOf("points" to (cols * rows).toString())
 
     companion object {
+        /** A gust's push, in world units a step, at the hem. */
+        private const val GUST = 0.012f
+
         /** Share of its own peak motion below which the sheet has arrived. */
         const val CALM_SHARE = 0.22f
 
@@ -571,6 +596,7 @@ class ClothSim : Sim {
             formats = listOf(TrapFormat.CUT),
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.FRICTION),
             heroLabel = "Shake it",
+            heroRestarts = false,
             defaultPalette = "Ocean",
             typicalSeconds = 48f,
             params = listOf(

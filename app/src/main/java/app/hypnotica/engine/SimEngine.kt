@@ -262,6 +262,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (pendingTouches.size < MAX_PENDING_TOUCHES) pendingTouches.add(e)
     }
 
+    /** Hero presses waiting for the GL thread, which owns the sim. */
+    private val pendingHero = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** Press the hero button on the running sim; applied between frames. */
+    fun hero() {
+        if (pendingHero.get() < MAX_PENDING_TOUCHES) pendingHero.incrementAndGet()
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         scene.surfaceCreated()
         flashLimiter.reset()
@@ -333,6 +341,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             val touch = pendingTouches.poll() ?: break
             core.onInput(touch)
         }
+        repeat(pendingHero.getAndSet(0)) { core.hero() }
 
         core.env.reduceMotion = safety.reduceMotion
         flashLimiter.reduceFlashing = safety.reduceFlashing

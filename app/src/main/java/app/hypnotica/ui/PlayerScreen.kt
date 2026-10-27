@@ -50,7 +50,6 @@ import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
-import app.hypnotica.core.sim.TouchEvent
 import kotlinx.coroutines.delay
 
 /**
@@ -239,17 +238,8 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
             state.togglePause()
         }
         BigButton(state.currentDef.heroLabel, Modifier.weight(1.4f), primary = true) {
-            if (state.currentDef.heroRestarts) {
-                state.restart(newSeed = true)
-            } else {
-                state.engine.onTouch(
-                    TouchEvent(
-                        TouchEvent.Kind.TAP,
-                        uiRandom.nextFloat() * 0.6f - 0.3f,
-                        uiRandom.nextFloat() * 0.6f - 0.3f
-                    )
-                )
-            }
+            if (state.currentDef.heroRestarts) state.restart(newSeed = true)
+            else state.engine.hero()
         }
         GlyphButton("≡", selected = state.controlsOpen) {
             state.controlsOpen = !state.controlsOpen
@@ -351,16 +341,6 @@ private fun visibleCards(state: AppState): List<Card> {
 }
 
 /** Renders every parameter that belongs on one card. */
-/**
- * The hero button's own randomness.
- *
- * Not the sim's: that generator is seeded, stepped on the GL thread, and is
- * what makes a run reproducible from its seed — which replay links, Studio and
- * the exporter all depend on. Drawing from it here both raced the sim thread
- * and advanced the stream, so an exported clip no longer matched the screen.
- */
-private val uiRandom = java.util.Random()
-
 @Composable
 private fun CardControls(state: AppState, card: Card, showEmpty: Boolean = true) {
     // Reading paramVersion is what makes a value change recompose this card.

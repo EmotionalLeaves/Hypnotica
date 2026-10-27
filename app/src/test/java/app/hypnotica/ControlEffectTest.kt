@@ -253,4 +253,62 @@ class ControlEffectTest {
             }
         }
     }
+
+    /**
+     * The hero button does what its label says to the run that is playing.
+     *
+     * Three labels promised an action on the current run — "Shake it",
+     * "Shake the box", "Drop more" — and the button threw the run away and
+     * started a new one. Where a sim keeps the run, the press has to move the
+     * picture: two runs from one seed, one pressed, measured half a second
+     * later by how far what is drawn has moved, as a share of the screen.
+     */
+    @Test
+    fun theHeroButtonMovesTheRunItIsPressedOn() {
+        val weak = ArrayList<String>()
+        var checked = 0
+        for (def in SimRegistry.all) {
+            if (def.heroRestarts) continue
+            checked++
+            val plain = SimCore(def, 21L)
+            val pressed = SimCore(def, 21L)
+            for (core in listOf(plain, pressed)) {
+                core.setAspect(0.56f)
+                repeat(180) { core.advance(1f / 60f) }
+            }
+            pressed.hero()
+            repeat(30) {
+                plain.advance(1f / 60f)
+                pressed.advance(1f / 60f)
+            }
+            val moved = meanShift(plain, pressed)
+            if (moved < 0.01f) weak.add("${def.id} (\"${def.heroLabel}\") moved the picture ${moved}")
+        }
+        assertTrue("no sim keeps its run on the hero button, so this proves nothing", checked > 0)
+        assertTrue(weak.joinToString("\n"), weak.isEmpty())
+    }
+
+    /** Mean distance between what two runs draw, element by element. */
+    private fun meanShift(a: SimCore, b: SimCore): Float {
+        val ga = G(); ga.reset(); a.sim.draw(a.env, ga, 1f)
+        val gb = G(); gb.reset(); b.sim.draw(b.env, gb, 1f)
+        var sum = 0f
+        var n = 0
+        val inst = minOf(ga.instanceCount, gb.instanceCount)
+        for (i in 0 until inst) {
+            sum += kotlin.math.abs(ga.instances[i * G.STRIDE] - gb.instances[i * G.STRIDE]) +
+                kotlin.math.abs(ga.instances[i * G.STRIDE + 1] - gb.instances[i * G.STRIDE + 1])
+            n++
+        }
+        val pts = minOf(ga.pointCount, gb.pointCount)
+        for (i in 0 until pts) {
+            sum += kotlin.math.abs(ga.pointPos[i * 3] - gb.pointPos[i * 3]) +
+                kotlin.math.abs(ga.pointPos[i * 3 + 1] - gb.pointPos[i * 3 + 1])
+            n++
+        }
+        // A press that adds something — a new ball — changes the count rather
+        // than moving what was there; that counts as a whole screen of change.
+        if (ga.instanceCount != gb.instanceCount || ga.pointCount != gb.pointCount) return 1f
+        return if (n == 0) 0f else sum / n / 2f
+    }
 }

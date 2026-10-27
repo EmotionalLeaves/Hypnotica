@@ -266,6 +266,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
 
     fun onInput(e: TouchEvent) = sim.onInput(env, e)
 
+    fun hero() = sim.hero(env)
+
     companion object {
 
         /**

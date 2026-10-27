@@ -868,6 +868,18 @@ class NdBounceSim : Sim {
         }
     }
 
+    /**
+     * "Shake the box": a kick, in every dimension, to the balls already in it.
+     * The button used to restart the run — new balls, the label promising one
+     * thing and the button doing another. A box whose balls have settled under
+     * gravity is the one that most wants shaking.
+     */
+    override fun hero(env: SimEnv) {
+        val kick = env.params.f("speed", 0.7f) * SHAKE
+        for (i in 0 until count * dims) vel[i] += env.rng.range(-kick, kick)
+        env.emit(EventKind.HIT, 0.8f, 0f, 0.9f)
+    }
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
@@ -878,6 +890,9 @@ class NdBounceSim : Sim {
     )
 
     companion object {
+        /** A shake's kick, as a share of the speed slider. */
+        private const val SHAKE = 1.6f
+
         /** The drop into the box, before there is a rhythm to measure. */
         private const val SETTLE_SECONDS = 1.5f
         /** Long enough for the rhythm to establish what normal is. */
@@ -898,6 +913,7 @@ class NdBounceSim : Sim {
             formats = listOf(TrapFormat.SONG, TrapFormat.ESCAPE),
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.BOUNCE, LawKnob.CONTACT),
             heroLabel = "Shake the box",
+            heroRestarts = false,
             defaultPalette = "Ember",
             typicalSeconds = 26f,
             params = listOf(

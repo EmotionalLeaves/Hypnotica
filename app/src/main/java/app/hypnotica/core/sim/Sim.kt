@@ -118,6 +118,15 @@ interface Sim {
 
     fun onInput(env: SimEnv, e: TouchEvent) {}
 
+    /**
+     * The hero button, for a sim whose [SimDef.heroRestarts] is false: the
+     * one big action, done to the run that is playing. It used to arrive as a
+     * tap at a random point, which is also what every tap on the screen sends —
+     * so an action like "Shake it" could only have been built by shaking the
+     * sim every time someone tapped to show the controls.
+     */
+    fun hero(env: SimEnv) {}
+
     /** True on the frame the satisfying moment lands. Drives slow-mo and the sweep. */
     fun payoff(): Boolean = false
 
