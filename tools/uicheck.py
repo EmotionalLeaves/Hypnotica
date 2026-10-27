@@ -780,6 +780,63 @@ for f in files:
                 f"resolves to the ColumnScope overload and will not compile; "
                 f"animate an alpha, or put it in a Column")
 
+# 20. A stacking slot handed a column's worth of siblings.
+#
+# AnimatedContent and Crossfade lay their content out the way a Box does, so
+# everything the slot emits is drawn at the same position. That is invisible
+# when the slot holds one composable and catastrophic when it holds a call that
+# emits a card: Simple mode's whole drawer drew on one line — the macro slider,
+# its caption, the section label and the next slider all at the same y, two
+# thumbs on top of each other, the readouts overlapping in the corner. It
+# compiles, so only this or a screenshot can catch it.
+#
+# The test is what the slot OPENS with. A layout first is always fine. Anything
+# else, with more than one composable call anywhere inside, is the broken shape
+# — including a `when` over cards, which is what hid this: strip the nested
+# braces and a `when` leaves nothing capitalised behind to count.
+LAYOUTS = ('Column', 'Row', 'Box', 'LazyColumn', 'LazyRow', 'LazyVerticalGrid',
+           'Scaffold', 'FlowRow', 'BoxWithConstraints')
+for f in files:
+    src = strip(open(f).read())
+    for m in re.finditer(r'(?<![\w.])(AnimatedContent|Crossfade)\s*\(', src):
+        i = src.find('(', m.end() - 1)
+        depth, j = 0, i
+        while j < len(src):
+            if src[j] == '(':
+                depth += 1
+            elif src[j] == ')':
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        k = src.find('{', j)
+        if k < 0:
+            continue
+        depth, e = 0, k
+        while e < len(src):
+            if src[e] == '{':
+                depth += 1
+            elif src[e] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            e += 1
+        body = src[k + 1:e]
+        # The lambda's own parameter list ("card ->") is not content.
+        body = re.sub(r'\A[^\n{}]*->', '', body, count=1)
+        head = body.strip()
+        if head.startswith(LAYOUTS):
+            continue
+        # More than one composable call inside means the slot is being asked to
+        # stack them. One call may still emit many, but this cannot know that.
+        calls = re.findall(r'(?<![\w.])([A-Z]\w*)\s*[({]', body)
+        if len(calls) > 1:
+            line = src[:m.start()].count('\n') + 1
+            problems.append(
+                f"{f}:{line}: {m.group(1)} lays its content out like a Box, and "
+                f"this slot emits more than one thing — open it with a Column or "
+                f"Row, or everything inside draws on top of everything else")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

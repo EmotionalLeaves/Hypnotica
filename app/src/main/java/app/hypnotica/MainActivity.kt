@@ -33,7 +33,6 @@ import app.hypnotica.sims.SimRegistry
 import app.hypnotica.ui.AppState
 import app.hypnotica.ui.BigButton
 import app.hypnotica.ui.FeedScreen
-import app.hypnotica.ui.FirstRunCard
 import app.hypnotica.ui.HypnoticaTheme
 import app.hypnotica.ui.LibraryScreen
 import app.hypnotica.ui.PlayerScreen
@@ -85,10 +84,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = true) {
                     if (!state.goBack()) finish()
                 }
-                Box(Modifier.fillMaxSize()) {
-                    AppRoot(state, surface, versionName())
-                    if (state.showFirstRun) FirstRunCard(state)
-                }
+                AppRoot(state, surface, versionName())
             }
         }
     }

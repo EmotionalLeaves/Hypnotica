@@ -53,7 +53,9 @@ class Prefs(context: Context) {
         set(value) = sp.edit().putBoolean(KEY_REDUCE_MOTION, value).apply()
 
     var haptics: Boolean
-        get() = sp.getBoolean(KEY_HAPTICS, true)
+        // Off until it is asked for. A phone buzzing at every collision is a
+        // lot to have chosen for you.
+        get() = sp.getBoolean(KEY_HAPTICS, false)
         set(value) = sp.edit().putBoolean(KEY_HAPTICS, value).apply()
 
     var showCounters: Boolean
@@ -97,10 +99,6 @@ class Prefs(context: Context) {
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
 
-    var seenFirstLaunch: Boolean
-        get() = sp.getBoolean(KEY_FIRST_LAUNCH, false)
-        set(value) = sp.edit().putBoolean(KEY_FIRST_LAUNCH, value).apply()
-
     private companion object {
         const val KEY_FAVOURITES = "favourites"
         const val KEY_PALETTE = "palette"
@@ -114,7 +112,6 @@ class Prefs(context: Context) {
         const val KEY_TIME_CHECK = "time_check"
         const val KEY_ADVANCED = "advanced"
         const val KEY_LAST_SIM = "last_sim"
-        const val KEY_FIRST_LAUNCH = "first_launch"
         const val KEY_TIER = "device_tier"
         const val KEY_BENCH = "bench_note"
         const val KEY_TASTE = "taste"

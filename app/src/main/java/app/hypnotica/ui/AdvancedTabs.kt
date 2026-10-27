@@ -70,12 +70,17 @@ fun AdvancedPanel(state: AppState, tab: AdvancedTab) {
         },
         label = "advancedTab"
     ) { shown ->
-        when (shown) {
-            AdvancedTab.DATA -> DataTab(state)
-            AdvancedTab.PARAMS -> ParamsTab(state)
-            AdvancedTab.LAWS -> LawsTab(state)
-            AdvancedTab.SOUND -> SoundTab(state)
-            AdvancedTab.CODE -> CodeTab(state)
+        // A Column: this slot stacks what it is given the way a Box does, and
+        // every tab below emits a tab's worth of siblings. Without it they all
+        // drew at the same position, on top of each other.
+        Column {
+            when (shown) {
+                AdvancedTab.DATA -> DataTab(state)
+                AdvancedTab.PARAMS -> ParamsTab(state)
+                AdvancedTab.LAWS -> LawsTab(state)
+                AdvancedTab.SOUND -> SoundTab(state)
+                AdvancedTab.CODE -> CodeTab(state)
+            }
         }
     }
 }

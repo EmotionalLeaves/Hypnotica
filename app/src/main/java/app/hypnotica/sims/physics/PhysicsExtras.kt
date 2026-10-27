@@ -623,7 +623,11 @@ class OpticsSim : Sim {
             rays.add(Ray(t, 1f + 0.12f * t))
         }
         sourceY = p.f("height", 0.35f)
-        angle = p.f("angle", -0.35f)
+        // Not read at all while the sweep owns it. Reading it and then
+        // overwriting it on the first step left the slider deciding the first
+        // frames and the moment the focus is found, so the drawer dimmed a
+        // control that still did something — which is its own kind of lie.
+        angle = if (p.b("sweep", true)) -0.35f else p.f("angle", -0.35f)
         elapsed = 0f
         payoffFrame = false
         focused = false

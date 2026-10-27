@@ -319,12 +319,21 @@ private fun ControlDrawer(state: AppState) {
                     },
                     label = "simpleCard"
                 ) { card ->
-                    when (card) {
-                        Card.DATA -> CardControls(state, Card.DATA)
-                        Card.MOTION -> MotionCard(state)
-                        Card.LOOK -> LookCard(state)
-                        Card.SOUND -> SoundCard(state)
-                        Card.LAWS -> LawsCard(state)
+                    // A Column, because AnimatedContent's slot stacks what it
+                    // is given the way a Box does, and every one of these emits
+                    // a card's worth of siblings. Without it the whole of
+                    // Simple mode drew on one line: the macro slider, its
+                    // "Moves nodes, speed", the section label and the Nodes
+                    // slider all at the same y, two thumbs on top of each other
+                    // and the readouts overlapping in the corner.
+                    Column {
+                        when (card) {
+                            Card.DATA -> CardControls(state, Card.DATA)
+                            Card.MOTION -> MotionCard(state)
+                            Card.LOOK -> LookCard(state)
+                            Card.SOUND -> SoundCard(state)
+                            Card.LAWS -> LawsCard(state)
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))

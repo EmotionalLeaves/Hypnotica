@@ -15,7 +15,7 @@ import kotlin.math.min
  */
 class SoundMapping(private val synth: Synth) {
 
-    var preset: SoundPreset = SoundPreset.MUSIC_BOX
+    var preset: SoundPreset = SoundPreset.EIGHT_BIT
         set(value) {
             field = value
             scale = Scale.byName(value.scaleName)
@@ -26,16 +26,16 @@ class SoundMapping(private val synth: Synth) {
     // The sound tab writes these from the UI thread while pump() reads them on
     // the sim thread. They are independent scalars, so volatile is enough.
     @Volatile
-    var scale: Scale = Scale.byName(SoundPreset.MUSIC_BOX.scaleName)
+    var scale: Scale = Scale.byName(SoundPreset.EIGHT_BIT.scaleName)
 
     @Volatile
-    var baseHz: Float = SoundPreset.MUSIC_BOX.baseHz
+    var baseHz: Float = SoundPreset.EIGHT_BIT.baseHz
 
     @Volatile
-    var octaves: Float = SoundPreset.MUSIC_BOX.octaves
+    var octaves: Float = SoundPreset.EIGHT_BIT.octaves
 
     @Volatile
-    var decay: Float = SoundPreset.MUSIC_BOX.decay
+    var decay: Float = SoundPreset.EIGHT_BIT.decay
 
     /** Notes per second ceiling. Above this, events merge instead of stacking. */
     @Volatile

@@ -143,7 +143,7 @@ data class SimDef(
     /** True: the hero button starts a fresh run. False: it taps the sim instead. */
     val heroRestarts: Boolean = true,
     val defaultPalette: String = "Spectrum",
-    val defaultSound: String = "Music box",
+    val defaultSound: String = "8-bit",
     /**
      * Typical length of a satisfying run: long enough to contain the payoff
      * with room to breathe after it.

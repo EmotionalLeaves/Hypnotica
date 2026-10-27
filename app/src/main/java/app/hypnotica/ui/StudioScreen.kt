@@ -261,10 +261,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             contentAlignment = Alignment.Center
         ) {
             Box(
+                // No rounded clip and no hairline frame: the sim is the
+                // subject, and a border around it makes the thing you are
+                // editing look like a thumbnail of itself.
                 (if (tallerThanSlot) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
                     .aspectRatio(previewAspect, matchHeightConstraintsFirst = tallerThanSlot)
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
             ) {
                 SimCanvas(
                     surface = surface,

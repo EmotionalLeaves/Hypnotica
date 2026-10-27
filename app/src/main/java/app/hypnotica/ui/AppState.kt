@@ -252,15 +252,6 @@ class AppState(
     var benchNote by mutableStateOf<String?>(null)
         private set
 
-    /** The gesture card, shown once on the first launch. */
-    var showFirstRun by mutableStateOf(false)
-        private set
-
-    fun dismissFirstRun() {
-        showFirstRun = false
-        prefs?.seenFirstLaunch = true
-    }
-
     /**
      * Measure what this phone can carry, once, and tell the clip generator. Call
      * from a background thread: it runs the heaviest sim for about a second.
@@ -408,7 +399,6 @@ class AppState(
             chosenSound = p.soundPreset
             cameraDragState = p.cameraDrag
             applySafety()
-            showFirstRun = !p.seenFirstLaunch
             director.importTaste(p.taste)
             director.importMuted(p.mutedFormats)
             mutedFormats = director.mutedFormats.toSet()

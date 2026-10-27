@@ -56,6 +56,10 @@ class BoidsSim : Sim {
     // Uniform grid for neighbour lookup.
     private var cellSize = 0.12f
     private var gridW = 0
+    /** How far the birds see, in world units: the slider, honoured. */
+    private var perception = 0.12f
+    /** Cells to walk either side to cover [perception]. */
+    private var cellRadius = 1
     private var gridH = 0
     private var cellStart = IntArray(0)
     private var cellCount = IntArray(0)
@@ -70,6 +74,10 @@ class BoidsSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var flockiness = 0f
+    /** The best order the flock has reached, and how long since it improved. */
+    private var bestOrder = 0f
+    private var orderStalledFor = 0f
+    private var earlyOrder = -1f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -84,10 +92,37 @@ class BoidsSim : Sim {
         // whole sim quadratic in the population. Sizing it by density keeps the
         // cost flat, and a bird in a dense flock perceiving a smaller patch is
         // what happens in a real one.
-        val perception = p.f("range", 0.12f).coerceAtLeast(0.02f)
-        val area = 4f * env.halfWidth
-        val byDensity = sqrt(Flock.TARGET_PER_CELL * area / max(1, n))
-        cellSize = byDensity.coerceIn(0.012f, perception)
+        // The grid is sized for cost; the perception radius is the person's.
+        //
+        // These used to be one number: cellSize was the density-derived size
+        // capped at the slider, and the flocking physics used cellSize as its
+        // radius. So whenever density wanted a smaller cell than the slider
+        // asked for — which is the normal case, and is true at the shipped
+        // value — "Neighbour range" did nothing. Measured at nine positions, it
+        // drew the same picture at seven of them: everything above 0.0975 of a
+        // slider that goes to 0.3.
+        //
+        // Now the radius is what the slider says and the scan covers it, by
+        // walking as many cells as the radius spans. The per-bird neighbour cap
+        // that keeps this linear is doing the work of bounding the cost.
+        perception = p.f("range", 0.12f).coerceAtLeast(0.02f)
+        // One cell per perception radius, so three by three covers it exactly.
+        //
+        // The cell used to be sized by density and capped at the slider, and
+        // the flocking physics used the CELL as its radius — so whenever
+        // density wanted a smaller cell than the slider asked for, which is the
+        // normal case and is true at the shipped value, "Neighbour range" did
+        // nothing. Measured at nine positions it drew the same picture at seven
+        // of them: everything above 0.0975 of a slider that goes to 0.3.
+        //
+        // Sizing the cell to the radius instead was measured against two other
+        // arrangements. Density-sized cells with a wider walk covers the same
+        // ground and costs more — 182 ms a step for sixty thousand birds at the
+        // narrowest range against 41 before — because it is twenty-five cells
+        // of bookkeeping rather than nine. The budget below is what bounds the
+        // work now, and it bounds it wherever the birds happen to be.
+        cellSize = perception.coerceAtLeast(0.012f)
+        cellRadius = 1
 
         px = FloatArray(n); py = FloatArray(n)
         vx = FloatArray(n); vy = FloatArray(n)
@@ -114,6 +149,9 @@ class BoidsSim : Sim {
         elapsed = 0f
         payoffFrame = false
         flockiness = 0f
+        bestOrder = 0f
+        orderStalledFor = 0f
+        earlyOrder = -1f
     }
 
     private fun rebuildGrid(halfW: Float) {
@@ -184,7 +222,26 @@ class BoidsSim : Sim {
         if (elapsed > 2f) {
             env.emit(EventKind.STEP, flockiness.coerceIn(0f, 1f), 0f, 0.25f)
         }
-        if (!flocked && elapsed > 6f && flockiness > 0.72f) {
+        // The payoff is the flock having finished organising: the order it is
+        // heading towards, reached.
+        //
+        // It was an absolute 72% of global alignment, which only a tight
+        // perception radius reaches — a wide one averages over so many birds
+        // that the flock mills rather than aligns, and measured at a quarter of
+        // the Neighbour range slider's travel it never paid off at all. How much
+        // better than it started, and whether it is still improving, are
+        // questions a flock can answer at any radius.
+        if (earlyOrder < 0f && elapsed > Flock.ORDER_BASELINE_AT) earlyOrder = flockiness
+        if (flockiness > bestOrder) {
+            bestOrder = flockiness
+            orderStalledFor = 0f
+        } else {
+            orderStalledFor += abs(dt)
+        }
+        val organised = earlyOrder > 0f && bestOrder > earlyOrder * Flock.ORDER_GAIN
+        if (!flocked && elapsed > 6f &&
+            ((organised && orderStalledFor > Flock.ORDER_STALL) || elapsed > Flock.ORDER_BACKSTOP)
+        ) {
             flocked = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
@@ -192,7 +249,7 @@ class BoidsSim : Sim {
     }
 
     private fun flock(from: Int, to: Int, dt: Float, halfW: Float, wrap: Boolean) {
-        val r2 = cellSize * cellSize
+        val r2 = perception * perception
         for (i in from until to) {
             // A bird in a dense flock has hundreds of neighbours inside its
             // perception radius, and the averages have converged long before
@@ -205,33 +262,63 @@ class BoidsSim : Sim {
 
             val gx = (((px[i] + halfW) / cellSize).toInt()).coerceIn(0, gridW - 1)
             val gy = (((py[i] + 1f) / cellSize).toInt()).coerceIn(0, gridH - 1)
-            for (oy in -1..1) {
-                if (neighbours >= Flock.MAX) break
-                val cy = gy + oy
-                if (cy < 0 || cy >= gridH) continue
-                for (ox in -1..1) {
-                    if (neighbours >= Flock.MAX) break
-                    val cx = gx + ox
-                    if (cx < 0 || cx >= gridW) continue
-                    val c = cy * gridW + cx
-                    var k = cellStart[c]
-                    val end = cellStart[c] + cellCount[c]
-                    while (k < end && neighbours < Flock.MAX) {
-                        val j = order[k]
-                        k++
-                        if (j == i) continue
-                        val dx = px[j] - px[i]
-                        val dy = py[j] - py[i]
-                        val d2 = dx * dx + dy * dy
-                        if (d2 > r2 || d2 < 1e-9f) continue
-                        neighbours++
-                        cohX += px[j]; cohY += py[j]
-                        aliX += vx[j]; aliY += vy[j]
-                        val inv = 1f / d2
-                        sepX -= dx * inv * 0.0012f
-                        sepY -= dy * inv * 0.0012f
+            // Outwards in rings, nearest cells first.
+            //
+            // The walk stops at Flock.MAX neighbours, and it used to start at a
+            // corner of the block of cells — which is harmless over three by
+            // three, where every cell is a neighbour, and wrong as soon as the
+            // block is wider: the cap filled up with whatever happened to be in
+            // the far corner and the bird steered by birds three cells away
+            // while ignoring the ones beside it. Measured, that stopped boids
+            // flocking at all — the payoff never fired under any law.
+            // Candidates examined, not just those accepted. The accepted cap
+            // alone does not bound the walk: with a small radius in a dense
+            // flock most candidates fail the distance test, so nothing
+            // short-circuits and every cell in range is walked in full —
+            // measured at 182 ms a step for sixty thousand birds at the
+            // narrowest range, against 41 before the radius was honoured.
+            // Nearest-first ordering is what makes a budget safe to spend.
+            var looked = 0
+            var ring = 0
+            while (ring <= cellRadius && neighbours < Flock.MAX && looked < Flock.LOOK) {
+                var oy = -ring
+                while (oy <= ring && neighbours < Flock.MAX && looked < Flock.LOOK) {
+                    val cy = gy + oy
+                    val edgeY = oy == -ring || oy == ring
+                    var ox = -ring
+                    while (ox <= ring && neighbours < Flock.MAX && looked < Flock.LOOK) {
+                        // Only the perimeter of this ring; the inside was done
+                        // by the rings before it.
+                        if (!edgeY && ox != -ring && ox != ring) {
+                            ox = ring
+                            continue
+                        }
+                        val cx = gx + ox
+                        ox++
+                        if (cy < 0 || cy >= gridH || cx < 0 || cx >= gridW) continue
+                        val c = cy * gridW + cx
+                        var k = cellStart[c]
+                        val end = cellStart[c] + cellCount[c]
+                        while (k < end && neighbours < Flock.MAX && looked < Flock.LOOK) {
+                            val j = order[k]
+                            k++
+                            if (j == i) continue
+                            looked++
+                            val dx = px[j] - px[i]
+                            val dy = py[j] - py[i]
+                            val d2 = dx * dx + dy * dy
+                            if (d2 > r2 || d2 < 1e-9f) continue
+                            neighbours++
+                            cohX += px[j]; cohY += py[j]
+                            aliX += vx[j]; aliY += vy[j]
+                            val inv = 1f / d2
+                            sepX -= dx * inv * 0.0012f
+                            sepY -= dy * inv * 0.0012f
+                        }
                     }
+                    oy++
                 }
+                ring++
             }
 
             var ax = 0f
@@ -322,6 +409,24 @@ class BoidsSim : Sim {
 
         /** Birds per grid cell the sizing aims for. */
         const val TARGET_PER_CELL = 6f
+
+        /**
+         * Birds a bird will look at, accepted or not. Bounds the walk whatever
+         * the radius and the density, which the accepted cap cannot.
+         */
+        const val LOOK = 120
+
+        /** When the starting disorder is read, after the first scatter settles. */
+        const val ORDER_BASELINE_AT = 3f
+
+        /** How much more ordered than that counts as having flocked. */
+        const val ORDER_GAIN = 1.6f
+
+        /** Not improving for this long means it has arrived. */
+        const val ORDER_STALL = 2.5f
+
+        /** A flock that never organises still owes a payoff. */
+        const val ORDER_BACKSTOP = 26f
     }
 
     companion object {
@@ -342,7 +447,16 @@ class BoidsSim : Sim {
                 Param.float("alignment", "Alignment", 0f, 3f, 1f, card = Card.MOTION),
                 Param.float("cohesion", "Cohesion", 0f, 3f, 1f, card = Card.MOTION),
                 Param.float("speed", "Speed", 0.1f, 1.6f, 0.55f, card = Card.MOTION),
-                Param.float("range", "Neighbour range", 0.03f, 0.3f, 0.12f, card = Card.MOTION, advancedOnly = true)
+                // The shipped value is the radius the sim was really using.
+                // It said 0.12 and used the density-derived cell size, which at
+                // three thousand birds is 0.067 — so the flocking weights are
+                // tuned for 0.07, and setting the slider's default to what the
+                // code did keeps the shipped flock exactly as it was while the
+                // control around it becomes real.
+                Param.float(
+                    "range", "Neighbour range", 0.03f, 0.3f, 0.07f,
+                    card = Card.MOTION, advancedOnly = true
+                )
             ),
             macros = listOf(
                 Macro("chaos", "Chaos", Card.MOTION, mapOf("separation" to 0.2f..3f, "alignment" to 2.5f..0.2f), 0.3f)
