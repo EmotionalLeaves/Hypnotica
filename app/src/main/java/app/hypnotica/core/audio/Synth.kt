@@ -42,6 +42,15 @@ class Synth(private val sampleRate: Int = 44100) {
          * k = 1 - exp(-2*pi*fc/fs).
          */
         const val LOWPASS_K = 0.575f
+        /** The leveller's aim: about where the middle of the catalogue sat. */
+        private const val LEVEL_TARGET = 0.09
+        private const val LEVEL_MIN_GAIN = 0.5f
+        private const val LEVEL_MAX_GAIN = 2f
+        private const val LEVEL_SECONDS = 2.0
+        private const val GAIN_DOWN_SECONDS = 0.8f
+        private const val GAIN_UP_SECONDS = 3f
+        /** Below this the mix is silence, and the leveller holds still. */
+        private const val SILENCE_POWER = 1e-7
         private const val KS_SIZE = 1024
         private const val REVERB_SAMPLES = 14700 // ~0.33 s
     }
@@ -82,6 +91,13 @@ class Synth(private val sampleRate: Int = 44100) {
     /** Attack ramp length, and the one-pole low-pass state for the mix. */
     private val attackSamples = (sampleRate * ATTACK_SECONDS).toInt().coerceAtLeast(1)
     private var lowL = 0f
+
+    /**
+     * The leveller's state: a slow running mean of the mix's power, measured
+     * before the master volume, and the gain it is currently applying.
+     */
+    private var levelPower = -1.0
+    private var levelGain = 1f
     private var lowR = 0f
     private var nextVoice = 0
 
@@ -361,6 +377,8 @@ class Synth(private val sampleRate: Int = 44100) {
             out[i * 2 + 1] = lowR
         }
 
+        level(out, frames, vol)
+
         // Soft limiter: keeps a wall of events from clipping.
         for (i in 0 until frames * 2) {
             val x = out[i]
@@ -368,6 +386,50 @@ class Synth(private val sampleRate: Int = 44100) {
                 (0.85f + kotlin.math.tanh((abs(x) - 0.85f) * 3f) * 0.14f) * (if (x < 0) -1f else 1f)
             } else x
         }
+    }
+
+    /**
+     * A slow leveller, so one sim is not five times louder than the next.
+     *
+     * Measured at 8-bit over every sim, the quietest ran at a sixteenth of the
+     * loudest's level: swiping from the Lorenz attractor to bubble sort was a
+     * jolt. This follows the mix over a couple of seconds and leans it toward
+     * one level, by at most a factor of two either way, so a sim keeps its own
+     * character — a sparse one stays sparser than a dense one — and a payoff
+     * still lands, because nothing here moves faster than about a second.
+     *
+     * Measured before the master volume, so it never undoes the volume slider,
+     * and frozen through silence, so a pause is not met by a swell of gain
+     * when the next note comes.
+     */
+    private fun level(out: FloatArray, frames: Int, vol: Float) {
+        if (frames <= 0 || vol <= 0.001f) return
+        var sum = 0.0
+        for (i in 0 until frames * 2) {
+            val x = out[i]
+            sum += (x * x).toDouble()
+        }
+        val power = sum / (frames * 2) / (vol * vol)
+        val seconds = frames.toDouble() / sampleRate
+        if (power > SILENCE_POWER) {
+            if (levelPower < 0.0) levelPower = power
+            val a = 1.0 - kotlin.math.exp(-seconds / LEVEL_SECONDS)
+            levelPower += (power - levelPower) * a
+        }
+        val target = if (levelPower > SILENCE_POWER) {
+            (LEVEL_TARGET / kotlin.math.sqrt(levelPower)).toFloat().coerceIn(LEVEL_MIN_GAIN, LEVEL_MAX_GAIN)
+        } else levelGain
+        // Down faster than up: a sudden wall of notes is tamed within a
+        // second, a quiet stretch is brought up over a few.
+        val tc = if (target < levelGain) GAIN_DOWN_SECONDS else GAIN_UP_SECONDS
+        val next = levelGain + (target - levelGain) * (1f - kotlin.math.exp(-seconds / tc).toFloat())
+        val from = levelGain
+        for (i in 0 until frames) {
+            val g = from + (next - from) * (i + 1) / frames
+            out[i * 2] *= g
+            out[i * 2 + 1] *= g
+        }
+        levelGain = next
     }
 
     private fun renderVoice(v: Voice, out: FloatArray, frames: Int, vol: Float) {

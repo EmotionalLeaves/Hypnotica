@@ -46,6 +46,12 @@ Measured, not yet acted on.
   sometimes straddled; it now sounds every time another block of dots lands.
   The Mandelbrot dive's beat is every half-again of zoom, not every doubling —
   one note every three seconds was too sparse to read as a beat.
+- **One sim was up to twenty times louder than the next.** Measured at 8-bit, the
+  Lorenz attractor and the chaos game sat at a twentieth of bubble sort's
+  level, so a swipe could be a jolt. The synth now has a slow leveller —
+  two-second window, at most a factor of two either way, measured before the
+  volume slider and frozen through silence — and the spread is five times, not
+  twenty.
 
 - The payoff flash and chime, live and in export; the bell at the end note.
 - The vignette, which drew a dark frame around every sim.
