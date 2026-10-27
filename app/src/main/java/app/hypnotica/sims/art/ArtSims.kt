@@ -123,7 +123,7 @@ class PolyrhythmSim : Sim {
     override fun counters(): List<Pair<String, String>> = listOf(
         "wheels" to count.toString(),
         "hits" to hits.toString(),
-        "cycle" to String.format("%.0f%%", (elapsed % cycleSeconds) / cycleSeconds * 100f)
+        "cycle" to String.format(java.util.Locale.US, "%.0f%%", (elapsed % cycleSeconds) / cycleSeconds * 100f)
     )
 
     companion object {
@@ -239,7 +239,7 @@ class HarmonographSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("ink" to String.format("%,d", filled))
+        listOf("ink" to String.format(java.util.Locale.US, "%,d", filled))
 
     companion object {
         fun def(): SimDef = SimDef(
@@ -394,7 +394,7 @@ class CirclePackingSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "circles" to count.toString(),
-        "coverage" to String.format("%.0f%%", coverage * 100f)
+        "coverage" to String.format(java.util.Locale.US, "%.0f%%", coverage * 100f)
     )
 
     companion object {
@@ -529,7 +529,7 @@ class SpirographSim : Sim {
         count >= trailX.size || (closedAt >= 0f && restAfterClose > REST_AFTER_CLOSE)
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("ink" to String.format("%,d", count))
+        listOf("ink" to String.format(java.util.Locale.US, "%,d", count))
 
     companion object {
         fun def(): SimDef = SimDef(

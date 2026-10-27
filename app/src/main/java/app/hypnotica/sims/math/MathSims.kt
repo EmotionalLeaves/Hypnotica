@@ -158,7 +158,7 @@ class MandelbrotSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "zoom" to String.format("%.0fx", zoom / 0.6),
+        "zoom" to String.format(java.util.Locale.US, "%.0fx", zoom / 0.6),
         "detail" to maxIter.toString()
     )
 
@@ -283,7 +283,7 @@ class ChaosGameSim : Sim {
     override fun finished(): Boolean = count >= capacity
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("dots" to String.format("%,d", count))
+        listOf("dots" to String.format(java.util.Locale.US, "%,d", count))
 
     companion object {
         fun def(): SimDef = SimDef(
@@ -438,8 +438,8 @@ class PrimeSpiralSim : Sim {
     override fun finished(): Boolean = drawn >= limit && restSeconds in -1000f..0f
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "numbers" to String.format("%,d", drawn),
-        "primes" to String.format("%,d", primeCount)
+        "numbers" to String.format(java.util.Locale.US, "%,d", drawn),
+        "primes" to String.format(java.util.Locale.US, "%,d", primeCount)
     )
 
     companion object {
@@ -549,8 +549,8 @@ class MonteCarloPiSim : Sim {
     override fun finished(): Boolean = total >= capacity
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "pi" to String.format("%.5f", estimate()),
-        "darts" to String.format("%,d", total)
+        "pi" to String.format(java.util.Locale.US, "%.5f", estimate()),
+        "darts" to String.format(java.util.Locale.US, "%,d", total)
     )
 
     companion object {
@@ -802,7 +802,7 @@ class CollatzSim : Sim {
     override fun counters(): List<Pair<String, String>> = listOf(
         "start" to start.toString(),
         "steps" to length.toString(),
-        "peak" to String.format("%,d", peak)
+        "peak" to String.format(java.util.Locale.US, "%,d", peak)
     )
 
     companion object {

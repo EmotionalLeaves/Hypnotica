@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.sim.TrapFormat
 import app.hypnotica.core.audio.SoundPreset
@@ -159,6 +160,18 @@ fun SettingsScreen(state: AppState, versionName: String) {
             Spacer(Modifier.width(26.dp))
             QuietGlyph("✇") { state.screen = Screen.STUDIO }
         }
+        // The glyphs are meant to be found rather than advertised, but they
+        // composite at about 1.4:1 against the background — invisible outdoors
+        // — and the only hint was on the first-run card, shown once and never
+        // again. A line this quiet keeps them a discovery and stops them being
+        // lost for good.
+        Text(
+            "◷ endless scroll   ✇ make a video",
+            color = Tokens.TextSecondary.copy(alpha = 0.33f),
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        )
         Spacer(Modifier.height(36.dp))
     }
 }

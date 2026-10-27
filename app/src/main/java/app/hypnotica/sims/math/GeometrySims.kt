@@ -322,8 +322,8 @@ class RiemannSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rectangles" to bars.toString(),
-        "area" to String.format("%.5f", estimate),
-        "exact" to String.format("%.5f", exactArea())
+        "area" to String.format(java.util.Locale.US, "%.5f", estimate),
+        "exact" to String.format(java.util.Locale.US, "%.5f", exactArea())
     )
 
     companion object {
@@ -513,7 +513,7 @@ class CurvedSpaceSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rays" to rays.toString(),
-        "mass" to String.format("%.1f", massAmount)
+        "mass" to String.format(java.util.Locale.US, "%.1f", massAmount)
     )
 
     companion object {

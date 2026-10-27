@@ -303,7 +303,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
     )
 
     private fun formatCount(v: Long): String =
-        if (v < 10_000) v.toString() else String.format("%,d", v)
+        if (v < 10_000) v.toString() else String.format(java.util.Locale.US, "%,d", v)
 
     companion object {
         const val MAX_OPS_PER_STEP = 400_000

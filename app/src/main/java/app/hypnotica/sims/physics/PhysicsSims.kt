@@ -492,7 +492,7 @@ class PendulumWaveSim : Sim {
     override fun counters(): List<Pair<String, String>> = listOf(
         "crossings" to crossings.toString(),
         if (swinging || stillSeconds <= 0f) {
-            "cycle" to String.format("%.0f%%", (elapsed % cyclePeriod) / cyclePeriod * 100f)
+            "cycle" to String.format(java.util.Locale.US, "%.0f%%", (elapsed % cyclePeriod) / cyclePeriod * 100f)
         } else {
             "gravity" to "none — nothing to swing it"
         }

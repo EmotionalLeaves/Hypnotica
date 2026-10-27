@@ -330,10 +330,10 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 fun formatValue(v: Float): String = when {
-    abs(v) >= 10000f -> String.format("%,.0f", v)
-    abs(v) >= 100f -> String.format("%.0f", v)
-    abs(v) >= 10f -> String.format("%.1f", v)
-    else -> String.format("%.2f", v)
+    abs(v) >= 10000f -> String.format(java.util.Locale.US, "%,.0f", v)
+    abs(v) >= 100f -> String.format(java.util.Locale.US, "%.0f", v)
+    abs(v) >= 10f -> String.format(java.util.Locale.US, "%.1f", v)
+    else -> String.format(java.util.Locale.US, "%.2f", v)
 }
 
 /**

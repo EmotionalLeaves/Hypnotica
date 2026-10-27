@@ -273,7 +273,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    String.format("%.0f%%", exportProgress * 100f),
+                    String.format(java.util.Locale.US, "%.0f%%", exportProgress * 100f),
                     color = Tokens.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f)
@@ -383,7 +383,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 TrackKind.entries.indexOf(selectedTrack)
             ) { selectedTrack = TrackKind.entries[it] }
 
-            val firstKey = remember(version, selectedTrack) {
+            val firstKey = remember(revision, selectedTrack) {
                 project.track(selectedTrack).size == 0
             }
             SectionLabel(
@@ -463,7 +463,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             // Read through the revision: the project is a plain object, so this
             // slider only redraws because something in scope asked for it.
             val shownDuration = remember(revision) { project.duration }
-            ValueSlider("Duration", shownDuration, 4f, 60f, valueText = String.format("%.0f s", shownDuration)) {
+            ValueSlider("Duration", shownDuration, 4f, 60f, valueText = String.format(java.util.Locale.US, "%.0f s", shownDuration)) {
                 project.duration = it
                 revision++
             }
@@ -530,7 +530,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        String.format("%.1fs  %s", clip.start, clip.text),
+                        String.format(java.util.Locale.US, "%.1fs  %s", clip.start, clip.text),
                         color = Tokens.TextSecondary,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f),
@@ -657,10 +657,10 @@ private fun previewsOnScreen(kind: TrackKind): Boolean = when (kind) {
 
 /** The value in the units the track is actually in. */
 private fun keyValueText(kind: TrackKind, v: Float): String = when (kind) {
-    TrackKind.FLASH, TrackKind.TRAILS -> String.format("%.0f%%", v * 100f)
-    TrackKind.ROTATION -> String.format("%.0f°", v * 180f / Math.PI.toFloat())
-    TrackKind.ZOOM, TrackKind.SPEED -> String.format("%.2fx", v)
-    else -> String.format("%.2f", v)
+    TrackKind.FLASH, TrackKind.TRAILS -> String.format(java.util.Locale.US, "%.0f%%", v * 100f)
+    TrackKind.ROTATION -> String.format(java.util.Locale.US, "%.0f°", v * 180f / Math.PI.toFloat())
+    TrackKind.ZOOM, TrackKind.SPEED -> String.format(java.util.Locale.US, "%.2fx", v)
+    else -> String.format(java.util.Locale.US, "%.2f", v)
 }
 
 /**

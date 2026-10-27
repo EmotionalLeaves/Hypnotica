@@ -728,13 +728,13 @@ class AppState(
             } else if (p.type == ParamType.BOOL) {
                 sb.append(core.params.b(p.key))
             } else {
-                sb.append(String.format("%.4f", core.params.f(p.key)))
+                sb.append(String.format(java.util.Locale.US, "%.4f", core.params.f(p.key)))
             }
         }
         sb.append("\n  },\n")
         sb.append("  \"laws\": \"").append(laws.name).append("\",\n")
         sb.append("  \"look\": { \"palette\": \"").append(paletteName)
-            .append("\", \"trails\": ").append(String.format("%.2f", trails)).append(" },\n")
+            .append("\", \"trails\": ").append(String.format(java.util.Locale.US, "%.2f", trails)).append(" },\n")
         sb.append("  \"sound\": { \"preset\": \"").append(soundPresetName)
             .append("\", \"scale\": \"").append(engine.mapping.scale.name).append("\" }\n")
         sb.append("}")

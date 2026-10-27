@@ -539,6 +539,24 @@ for f in files:
                     f"below, on line {line}, inside {fn}() — a local function "
                     f"is only in scope after its declaration")
 
+        # The same mistake with a local value rather than a local function,
+        # which is what the second round trip was spent on: a `remember(version,
+        # ...)` eighty lines above `val version = revision`. Only names this
+        # file declares exactly once are considered, so a local that shadows
+        # something from an outer scope is left alone.
+        for m in re.finditer(r'\n\s{4,}(?:val|var)\s+(\w+)\s*[:=]', body):
+            name, at = m.group(1), m.start()
+            if len(re.findall(r'(?:val|var)\s+' + name + r'\s*[:=]', src)) != 1:
+                continue
+            use = re.search(r'(?<![\w.])' + name + r'(?![\w(])', body)
+            if use and use.start() < at:
+                line = src[:offset + at].count('\n') + 2
+                useline = src[:offset + use.start()].count('\n') + 1
+                problems.append(
+                    f"{f}:{useline}: '{name}' is used here but declared below, "
+                    f"on line {line}, inside {fn}() — a local value is only in "
+                    f"scope after its declaration")
+
 # 14. The same local name declared twice in one scope.
 #
 #     Rule 5 catches this at package level. It happens just as easily inside a
@@ -583,6 +601,23 @@ for f in files:
                 i = m.end()
                 continue
             i += 1
+
+# 15. String.format without an explicit locale.
+#
+#     Every numeric readout in the app goes through it, and the default locale
+#     is the phone's: on a comma-decimal or Arabic-Indic device every slider
+#     value, time and percentage changes shape, and the replay JSON stateJson()
+#     writes stops being parseable by anything expecting a dot.
+for f in sorted(glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=True)):
+    src = strip(open(f).read())
+    for m in re.finditer(r'String\.format\s*\(\s*([^\n,)]*)', src):
+        first = m.group(1).strip()
+        if 'Locale' in first:
+            continue
+        line = src[:m.start()].count('\n') + 1
+        problems.append(
+            f"{f}:{line}: String.format without a locale — the phone's own "
+            f"locale decides the decimal separator, so pass java.util.Locale.US")
 
 for p in problems:
     print(p)

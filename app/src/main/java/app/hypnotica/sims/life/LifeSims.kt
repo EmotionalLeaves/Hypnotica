@@ -301,8 +301,8 @@ class BoidsSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "birds" to String.format("%,d", n),
-        "alignment" to String.format("%.0f%%", flockiness * 100f)
+        "birds" to String.format(java.util.Locale.US, "%,d", n),
+        "alignment" to String.format(java.util.Locale.US, "%.0f%%", flockiness * 100f)
     )
 
     private object Flock {
@@ -447,8 +447,8 @@ class LangtonsAntSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "steps" to String.format("%,d", steps),
-        if (highwayAt > 0) ("highway at" to String.format("%,d", highwayAt)) else ("black" to blackCount.toString())
+        "steps" to String.format(java.util.Locale.US, "%,d", steps),
+        if (highwayAt > 0) ("highway at" to String.format(java.util.Locale.US, "%,d", highwayAt)) else ("black" to blackCount.toString())
     )
 
     companion object {
@@ -590,7 +590,7 @@ class FallingSandSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("grains" to String.format("%,d", filled))
+        listOf("grains" to String.format(java.util.Locale.US, "%,d", filled))
 
     companion object {
         fun def(): SimDef = SimDef(
@@ -738,8 +738,8 @@ class PredatorPreySim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "prey" to String.format("%.2f", prey),
-        "predators" to String.format("%.2f", predators),
+        "prey" to String.format(java.util.Locale.US, "%.2f", prey),
+        "predators" to String.format(java.util.Locale.US, "%.2f", predators),
         "cycles" to cycles.toString()
     )
 
@@ -890,7 +890,7 @@ class ReactionDiffusionSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("generations" to String.format("%,d", generations))
+        listOf("generations" to String.format(java.util.Locale.US, "%,d", generations))
 
     companion object {
         fun def(): SimDef = SimDef(

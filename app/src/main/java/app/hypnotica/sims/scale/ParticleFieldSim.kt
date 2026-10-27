@@ -223,7 +223,7 @@ class ParticleFieldSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("particles" to String.format("%,d", n))
+        listOf("particles" to String.format(java.util.Locale.US, "%,d", n))
 
     companion object {
         /**
@@ -410,7 +410,7 @@ class GameOfLifeSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "generation" to generation.toString(),
-        "alive" to String.format("%,d", alive)
+        "alive" to String.format(java.util.Locale.US, "%,d", alive)
     )
 
     companion object {

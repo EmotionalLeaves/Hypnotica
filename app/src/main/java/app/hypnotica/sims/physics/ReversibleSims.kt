@@ -170,7 +170,7 @@ class TowerSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "bricks" to "$placed/$bricks",
-        "time" to if (progress >= 0.999f) "complete" else String.format("%.0f%%", progress * 100f)
+        "time" to if (progress >= 0.999f) "complete" else String.format(java.util.Locale.US, "%.0f%%", progress * 100f)
     )
 
     companion object {

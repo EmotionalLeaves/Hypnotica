@@ -373,9 +373,9 @@ class SlicingSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "dimensions" to dims.toString(),
-        "slice width" to String.format("%.2f", sliceSize()),
+        "slice width" to String.format(java.util.Locale.US, "%.2f", sliceSize()),
         // What the flat world measures: a (dims - 1)-dimensional content.
-        "slice seen" to String.format("%.3f", sliceContent()),
+        "slice seen" to String.format(java.util.Locale.US, "%.3f", sliceContent()),
         "passes" to passes.toString()
     )
 
@@ -888,7 +888,7 @@ class BallVolumeSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "dimension" to shown.toInt().toString(),
-        "volume" to String.format("%.3f", Nd.unitBallVolume(max(1, shown.toInt())))
+        "volume" to String.format(java.util.Locale.US, "%.3f", Nd.unitBallVolume(max(1, shown.toInt())))
     )
 
     companion object {

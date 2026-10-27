@@ -205,7 +205,7 @@ class EquationSim : Sim {
         val err = error
         if (err != null) return listOf("formula" to err)
         return listOf(
-            "points" to String.format("%,d", filled),
+            "points" to String.format(java.util.Locale.US, "%,d", filled),
             "laps" to laps.toString()
         ) + if (resets > 0) listOf("restarts" to resets.toString()) else emptyList()
     }

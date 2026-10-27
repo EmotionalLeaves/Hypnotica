@@ -139,7 +139,7 @@ class HanoiSim : Sim {
     override fun finished(): Boolean = played >= moves.size && restSeconds in -1000f..0f
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "moves" to String.format("%,d / %,d", played, moves.size),
+        "moves" to String.format(java.util.Locale.US, "%,d / %,d", played, moves.size),
         "discs" to discs.toString()
     )
 
@@ -294,8 +294,8 @@ class NQueensSim : Sim {
     override fun finished(): Boolean = solved && restSeconds in -1000f..0f
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "placements tried" to String.format("%,d", tries),
-        "backtracks" to String.format("%,d", backtracks)
+        "placements tried" to String.format(java.util.Locale.US, "%,d", tries),
+        "backtracks" to String.format(java.util.Locale.US, "%,d", backtracks)
     )
 
     companion object {
@@ -720,7 +720,7 @@ class GradientDescentSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "best loss" to String.format("%.4f", best),
+        "best loss" to String.format(java.util.Locale.US, "%.4f", best),
         "walkers" to walkers.toString()
     )
 

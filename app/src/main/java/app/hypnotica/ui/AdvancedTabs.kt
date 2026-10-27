@@ -108,11 +108,11 @@ private fun ParamsTab(state: AppState) {
     SectionLabel("The run")
     ValueSlider(
         "Speed", state.speed, 0.1f, 10f, logScale = true,
-        valueText = String.format("%.2fx", state.speed)
+        valueText = String.format(java.util.Locale.US, "%.2fx", state.speed)
     ) { state.speed = it }
     ValueSlider(
         "Trails", state.trails, 0f, 0.96f,
-        valueText = if (state.trails < 0.02f) "none" else String.format("%.0f%%", state.trails * 100f)
+        valueText = if (state.trails < 0.02f) "none" else String.format(java.util.Locale.US, "%.0f%%", state.trails * 100f)
     ) { state.trails = it }
     TimeControls(state)
     SectionLabel("Palette")
@@ -374,7 +374,7 @@ fun LawsControls(state: AppState, advanced: Boolean) {
             0.05f,
             8f,
             logScale = true,
-            valueText = String.format("%.2fx", laws.electricStrength)
+            valueText = String.format(java.util.Locale.US, "%.2fx", laws.electricStrength)
         ) { v -> state.editLaws { it.copy(electricStrength = v) } }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill("Like charges attract", selected = laws.chargeSign < 0f) {
@@ -390,7 +390,7 @@ fun LawsControls(state: AppState, advanced: Boolean) {
     if (has(LawKnob.LIGHT_SPEED)) {
         ValueSlider("Speed of light", laws.lightSpeed, 0.5f, 1e6f, logScale = true,
             valueText = if (laws.lightSpeed > 1e5f) "unlimited"
-            else String.format("%.1f", laws.lightSpeed)) { v ->
+            else String.format(java.util.Locale.US, "%.1f", laws.lightSpeed)) { v ->
             state.editLaws { it.copy(lightSpeed = v) }
         }
     }
@@ -515,7 +515,7 @@ private fun SoundTab(state: AppState) {
         enabled = !songOn,
         valueText = when {
             songOn -> songNote
-            mapping.octaves > fits + 0.05f -> String.format(
+            mapping.octaves > fits + 0.05f -> String.format(java.util.Locale.US, 
                 java.util.Locale.US,
                 "%.1f of %.1f octaves — the rest is above the pitch ceiling",
                 mapping.octaves, fits
@@ -526,12 +526,12 @@ private fun SoundTab(state: AppState) {
         state.soundChanged()
     }
     ValueSlider("Decay", mapping.decay, 0.03f, 2f, logScale = true,
-        valueText = String.format("%.2f s", mapping.decay)) {
+        valueText = String.format(java.util.Locale.US, "%.2f s", mapping.decay)) {
         mapping.decay = it
         state.soundChanged()
     }
     ValueSlider("Notes per second", mapping.maxNotesPerSecond, 4f, 400f, logScale = true,
-        valueText = String.format("%.0f", mapping.maxNotesPerSecond)) {
+        valueText = String.format(java.util.Locale.US, "%.0f", mapping.maxNotesPerSecond)) {
         mapping.maxNotesPerSecond = it
         state.soundChanged()
     }

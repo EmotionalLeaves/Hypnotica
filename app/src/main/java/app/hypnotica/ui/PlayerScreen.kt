@@ -545,7 +545,7 @@ private fun SoundCard(state: AppState) {
     }
     ValueSlider(
         "Brightness", brightness, 0f, 1f,
-        valueText = String.format("%.0f Hz, %.1f octaves", mapping.baseHz, mapping.octaves)
+        valueText = String.format(java.util.Locale.US, "%.0f Hz, %.1f octaves", mapping.baseHz, mapping.octaves)
     ) { t ->
         mapping.baseHz = Macro.valueAt(60f..880f, 523f, t, log = true)
         mapping.octaves = Macro.valueAt(1f..6f, 3f, t)
@@ -556,7 +556,7 @@ private fun SoundCard(state: AppState) {
     }
     ValueSlider(
         "Busyness", busyness, 0f, 1f,
-        valueText = String.format("%.0f notes/s, %.2f s decay", mapping.maxNotesPerSecond, mapping.decay)
+        valueText = String.format(java.util.Locale.US, "%.0f notes/s, %.2f s decay", mapping.maxNotesPerSecond, mapping.decay)
     ) { t ->
         mapping.maxNotesPerSecond = Macro.valueAt(4f..400f, 60f, t, log = true)
         // Busier means shorter notes, or they pile into a drone.

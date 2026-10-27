@@ -181,7 +181,7 @@ class NBodySim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("bodies" to String.format("%,d", n))
+        listOf("bodies" to String.format(java.util.Locale.US, "%,d", n))
 
     companion object {
         private const val MAX_SPEED = 3.2f
@@ -319,7 +319,7 @@ class GearsSim : Sim {
         val ratio = gears.first().teeth.toFloat() / gears.last().teeth
         return listOf(
             "gears" to gears.size.toString(),
-            "ratio" to String.format("%.2f : 1", 1f / ratio)
+            "ratio" to String.format(java.util.Locale.US, "%.2f : 1", 1f / ratio)
         )
     }
 
@@ -802,7 +802,7 @@ class OpticsSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rays" to rays.size.toString(),
-        "angle" to String.format("%.0f°", angle * 180f / PI.toFloat())
+        "angle" to String.format(java.util.Locale.US, "%.0f°", angle * 180f / PI.toFloat())
     )
 
     companion object {
@@ -972,7 +972,7 @@ class ChargesSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "charges" to count.toString(),
-        "tracers" to String.format("%,d", particles)
+        "tracers" to String.format(java.util.Locale.US, "%,d", particles)
     )
 
     companion object {
