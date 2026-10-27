@@ -687,6 +687,7 @@ class GradientDescentSim : Sim {
     private var payoffFrame = false
     private var elapsed = 0f
     private var converged = false
+    private var convergedFor = 0f
     private var bumps = 3f
     private var momentum = 0.86f
     private var rate = 0.05f
@@ -711,6 +712,7 @@ class GradientDescentSim : Sim {
         payoffFrame = false
         elapsed = 0f
         converged = false
+        convergedFor = 0f
     }
 
     /** A bowl with ripples: one true minimum, plenty of local dips. */
@@ -750,7 +752,19 @@ class GradientDescentSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
+        if (converged) convergedFor += abs(dt)
     }
+
+    /**
+     * Seconds the finished picture is held before the run reports finished,
+     * and the screens give it the resolve beat and start a fresh one. It
+     * reached its end and then sat there — measured, twenty-seven seconds frozen and fifty silent in a sixty-second run, the walkers parked in the minimum — without ever saying
+     * it was done, so nothing restarted it: a still, silent screen that read
+     * as the app having stopped.
+     */
+    private val HOLD_SECONDS = 2f
+
+    override fun finished(): Boolean = converged && convergedFor > HOLD_SECONDS
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette

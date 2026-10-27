@@ -48,6 +48,8 @@ class MandelbrotSim : Sim {
     private var sinceRecompute = 999f
     /** The zoom the current image was computed at. */
     private var computedZoom = 0.6
+    /** Doublings of magnification so far, each one a note. */
+    private var doublings = 0
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -58,6 +60,7 @@ class MandelbrotSim : Sim {
         maxIter = p.i("detail", 220).coerceIn(40, 1200)
         zoom = 0.6
         computedZoom = 0.6
+        doublings = 0
         targetZoom = 0.6
         zoomRate = p.f("zoom", 0.22f)
         when (p.choiceIndex("target")) {
@@ -82,6 +85,16 @@ class MandelbrotSim : Sim {
         // An escape-time image costs far more than a physics step, so it is
         // recomputed on its own clock rather than once per 120 Hz step. Eight
         // images a second is past the point where a slow zoom looks continuous.
+        // A note each time the magnification doubles: the dive's own beat.
+        // The only other sound follows the iteration count at the centre, which
+        // deep in a zoom can hold steady for twenty seconds — measured, the
+        // longest silence of any sim that never stops moving.
+        val nowDoublings = (ln(zoom / 0.6) / ln(2.0)).toInt()
+        if (nowDoublings > doublings) {
+            doublings = nowDoublings
+            env.emit(EventKind.STEP, ((doublings % 12) / 12f), 0f, 0.3f)
+        }
+
         sinceRecompute += abs(dt)
         if (sinceRecompute < 1f / REFRESH_HZ) return
         sinceRecompute = 0f

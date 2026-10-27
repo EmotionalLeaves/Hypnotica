@@ -602,6 +602,7 @@ class FallingSandSim : Sim {
 
     /** The payoff fires once; without this the bell retriggers every step. */
     private var settled = false
+    private var settledFor = 0f
 
     private var w = 140
     private var h = 220
@@ -627,6 +628,7 @@ class FallingSandSim : Sim {
         pourX = w / 2
         capacity = (w * h * 0.32f).toInt()
         settled = false
+        settledFor = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -679,7 +681,19 @@ class FallingSandSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
+        if (settled) settledFor += abs(dt)
     }
+
+    /**
+     * Seconds the finished picture is held before the run reports finished,
+     * and the screens give it the resolve beat and start a fresh one. It
+     * reached its end and then sat there — measured, twenty seconds frozen and silent in a sixty-second run — without ever saying
+     * it was done, so nothing restarted it: a still, silent screen that read
+     * as the app having stopped.
+     */
+    private val HOLD_SECONDS = 1.5f
+
+    override fun finished(): Boolean = settled && settledFor > HOLD_SECONDS
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette

@@ -58,21 +58,24 @@ class HypercubeSim : Sim {
         screenX = FloatArray(n)
         screenY = FloatArray(n)
         screenD = FloatArray(n)
-        behind = BooleanArray(n) { verts[it * dims + (dims - 1)] < 0f }
-        // Both sliders offer 0..MAX_DIMS-1 while only 0..dims-1 axes exist, so
-        // at the default four dimensions the top third of each used to clamp to
-        // the same axis and do nothing. Wrapping fixed that but put both ends
-        // of the second slider on the same axis, which the control test caught:
-        // the first position resolved to 0, hit the "planes must differ" rule
-        // and became 1, and the last position wrapped to 1 as well.
-        //
-        // So the second plane is an offset from the first, over the axes that
-        // are left. Every position names a real axis, none of them is ever the
-        // first plane, and the two ends of the slider are always different.
+        // Both sliders offer 0..MAX_DIMS-1 while only 0..dims-1 axes exist. The
+        // first wraps, so every position names a real axis.
         planeA = Math.floorMod(p.i("planeA", 0), dims)
-        val others = max(1, dims - 1)
-        val offset = 1 + Math.floorMod(p.i("planeB", min(3, dims - 1)), others)
-        planeB = (planeA + offset) % dims
+        // The slider's number is the axis, capped at the highest axis this
+        // many dimensions has, and moved on one if it lands on the first axis.
+        // Two earlier mappings each broke the shipped tesseract in a different
+        // way. An offset over the remaining axes sent the shipped 3 to axis 1,
+        // so the default turned in the flat x–y plane — a spinning cube, no
+        // corner ever passing through the fourth dimension. Its fix put 4D
+        // right but left 3D spinning flat in the screen plane, and in five and
+        // six dimensions the spin missed the axis the notes listen on, so a
+        // six-cube made one sound in a whole turn. With this rule the shipped
+        // value turns x–z in 3D and x–w from 4D up, and the two ends of the
+        // slider still land on different axes.
+        val wanted = min(p.i("planeB", 3).coerceAtLeast(0), dims - 1)
+        planeB = if (wanted == planeA) (planeA + 1) % dims else wanted
+        // After planeB, which it is measured against.
+        behind = BooleanArray(n) { verts[it * dims + planeB] < 0f }
         elapsed = 0f
         payoffFrame = false
         turns = 0L
@@ -97,16 +100,27 @@ class HypercubeSim : Sim {
         // Every corner that crosses the far side of the extra axis is a note, so
         // the sound follows the shape rather than waiting for a whole turn.
         if (dims >= 3) {
-            val axis = dims - 1
+            // The axis the spin passes through, so every turn is heard. It was
+            // always the last axis, which from five dimensions up the spin
+            // never touches.
+            val axis = planeB
             for (i in 0 until n) {
                 val w = verts[i * dims + axis]
                 val wasBehind = behind[i]
                 val isBehind = w < 0f
                 if (isBehind != wasBehind) {
                     behind[i] = isBehind
-                    if (isBehind) {
-                        env.emit(EventKind.CROSS, 0.25f + 0.6f * (i.toFloat() / n), 0f, 0.55f)
-                    }
+                    // Both ways through, an octave apart. Only the trip behind
+                    // used to sound, and the crossings come in bunches, so half
+                    // of every turn was silent — twelve seconds at a stretch,
+                    // measured, on a sim that never stops moving.
+                    val pitch = 0.25f + 0.6f * (i.toFloat() / n)
+                    env.emit(
+                        EventKind.CROSS,
+                        if (isBehind) pitch else (pitch + 0.15f).coerceAtMost(1f),
+                        0f,
+                        if (isBehind) 0.55f else 0.4f
+                    )
                 }
             }
         }
@@ -205,7 +219,7 @@ class HypercubeSim : Sim {
             heroLabel = "New angle",
             defaultPalette = "Aurora",
             typicalSeconds = 26f,
-            loopSeconds = 8.16f,
+            loopSeconds = 10.61f,
             params = listOf(
                 Param.int("dims", "Dimensions", 2, Nd.MAX_DIMS, 4, card = Card.DATA),
                 // Which plane turns is the most interesting thing about a
