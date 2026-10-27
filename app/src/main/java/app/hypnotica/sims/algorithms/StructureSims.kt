@@ -29,8 +29,15 @@ class HanoiSim : Sim {
     private var discs = 7
     private val pegs = Array(3) { ArrayList<Int>() }
     private val moves = ArrayList<IntArray>()
+
+    /** However many discs, the tower is finished inside this many seconds. */
+    private val TARGET_SECONDS = 19f
+
+    /** Moves a second that become notes; the rest are heard as texture. */
+    private val MAX_NOTES_PER_SECOND = 110f
     private var played = 0
     private var carry = 0f
+
     private var payoffFrame = false
     private var restSeconds = -1f
     private var lifting = -1
@@ -65,7 +72,13 @@ class HanoiSim : Sim {
             restSeconds -= abs(dt)
             return
         }
-        carry += abs(dt) * env.params.f("rate", 6.5f)
+        // 2^n - 1 moves: at eighteen discs that is a quarter of a million, and
+        // a fixed rate meant the tower was never finished. The slider sets the
+        // pace, but never slower than finishing inside a watchable run.
+        val minimumRate = moves.size / TARGET_SECONDS
+        val rate = max(env.params.f("rate", 6.5f), minimumRate)
+        val voiceEvery = max(1, (rate / MAX_NOTES_PER_SECOND).toInt())
+        carry += abs(dt) * rate
         while (carry >= 1f && played < moves.size) {
             carry -= 1f
             val m = moves[played]
@@ -76,12 +89,17 @@ class HanoiSim : Sim {
             lifting = disc
             liftProgress = 0f
             played++
-            env.emit(
-                EventKind.SWAP,
-                1f - (disc.toFloat() / discs),
-                (toPeg - 1).toFloat() * 0.7f,
-                0.6f
-            )
+            // Eighteen discs is a quarter of a million moves in twenty seconds.
+            // Only a sample of them becomes a note; the rest are the texture of
+            // the tower moving.
+            if (played % voiceEvery == 0) {
+                env.emit(
+                    EventKind.SWAP,
+                    1f - (disc.toFloat() / discs),
+                    (toPeg - 1).toFloat() * 0.7f,
+                    0.6f
+                )
+            }
         }
         liftProgress = min(1f, liftProgress + abs(dt) * 6f)
         if (played >= moves.size && restSeconds < 0f) {
@@ -151,6 +169,9 @@ class HanoiSim : Sim {
  */
 class NQueensSim : Sim {
 
+    /** Scales the try rate with the board, so a big board still solves. */
+    private val BASE_TRIES = 34f
+
     private var n = 10
     private var cols = IntArray(0)
     private var row = 0
@@ -163,7 +184,7 @@ class NQueensSim : Sim {
     private var lastRejected = -1
 
     override fun setup(env: SimEnv) {
-        n = env.params.i("size", 13).coerceIn(4, 24)
+        n = env.params.i("size", 10).coerceIn(4, 16)
         cols = IntArray(n) { -1 }
         row = 0
         tries = 0
@@ -190,8 +211,12 @@ class NQueensSim : Sim {
             return
         }
         if (solved) return
-        carry += abs(dt) * env.params.f("rate", 34f)
-        var budget = min(carry.toInt(), 20000)
+        // Backtracking cost climbs steeply with the board: at 24 queens a fixed
+        // thirty-four tries a second never reaches an answer. The floor rises
+        // with the board so every size on the slider finishes.
+        val minimumRate = BASE_TRIES * n * n * n / 400f
+        carry += abs(dt) * max(env.params.f("rate", 34f), minimumRate)
+        var budget = min(carry.toInt(), 200000)
         carry -= budget
         while (budget-- > 0 && !solved) {
             if (row >= n) {
@@ -283,9 +308,11 @@ class NQueensSim : Sim {
             formats = listOf(TrapFormat.PERFECT_FIT, TrapFormat.GUESS, TrapFormat.LAST_STANDING),
             heroLabel = "Solve again",
             defaultPalette = "Ember",
-            typicalSeconds = 20f,
+            typicalSeconds = 14f,
             params = listOf(
-                Param.int("size", "Board size", 4, 24, 13, card = Card.DATA),
+                // Plain backtracking, which is the point of watching it, does
+                // not finish a board much past this inside a run.
+                Param.int("size", "Board size", 4, 16, 10, card = Card.DATA),
                 Param.float("rate", "Speed", 2f, 20000f, 34f, card = Card.MOTION, unit = "/s", logScale = true)
             ),
             create = { NQueensSim() }

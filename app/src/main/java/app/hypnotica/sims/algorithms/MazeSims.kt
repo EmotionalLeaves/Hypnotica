@@ -311,6 +311,8 @@ class PathfindingSim : Sim {
     private var goal = 0
     private var found = false
     private var pathCells = IntArray(0)
+    private var terrain = FloatArray(0)
+    private var weighted = false
     private var pathLength = 0
     private var revealed = 0f
     private var visitedCount = 0
@@ -332,10 +334,16 @@ class PathfindingSim : Sim {
         pathCells = IntArray(n)
 
         when (p.choiceIndex("algorithm")) {
-            0 -> { heuristicWeight = 0f; depthFirst = false }   // Breadth-first
-            1 -> { heuristicWeight = 0f; depthFirst = true }    // Depth-first
-            2 -> { heuristicWeight = 0f; depthFirst = false }   // Dijkstra
-            else -> { heuristicWeight = 1f; depthFirst = false } // A*
+            0 -> { heuristicWeight = 0f; depthFirst = false; weighted = false } // Breadth-first
+            1 -> { heuristicWeight = 0f; depthFirst = true; weighted = false }  // Depth-first
+            // Dijkstra is breadth-first with costs, so the ground has costs:
+            // without them it was the same search under a different label.
+            2 -> { heuristicWeight = 0f; depthFirst = false; weighted = true }  // Dijkstra
+            else -> { heuristicWeight = 1f; depthFirst = false; weighted = false } // A*
+        }
+        terrain = FloatArray(n) {
+            if (!weighted) 1f
+            else 1f + 5f * (env.rng.nextFloat() * env.rng.nextFloat())
         }
 
         val density = p.f("walls", 0.3f)
@@ -427,16 +435,22 @@ class PathfindingSim : Sim {
             0.35f
         )
         for (d in 0 until 4) {
-            val nx = cx + intArrayOf(0, 1, 0, -1)[d]
-            val ny = cy + intArrayOf(-1, 0, 1, 0)[d]
+            val nx = cx + DX[d]
+            val ny = cy + DY[d]
             if (nx !in 0 until w || ny !in 0 until h) continue
             val n = ny * w + nx
             if (blocked[n] || closed[n]) continue
-            val cost = dist[current] + 1f
+            val cost = dist[current] + terrain[n]
             if (cost < dist[n]) {
                 dist[n] = cost
                 cameFrom[n] = current
-                if (openSize < open.size) open[openSize++] = n
+                if (openSize >= open.size) {
+                    // The list holds one entry per cell; a cell can be offered
+                    // more than once as a cheaper route is found, so it grows
+                    // rather than dropping the better route on the floor.
+                    open = open.copyOf(open.size * 2)
+                }
+                open[openSize++] = n
             }
         }
         return true

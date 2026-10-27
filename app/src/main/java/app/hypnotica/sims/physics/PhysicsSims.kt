@@ -35,6 +35,9 @@ class BallEscapeSim : Sim {
     )
 
     private val balls = ArrayList<Ball>()
+
+    /** Balls born this step, appended once the loop over [balls] has finished. */
+    private val spawned = ArrayList<Ball>()
     private var ringRadius = 0.88f
     private var rings = 1
     private var ringRadii = FloatArray(1)
@@ -63,6 +66,7 @@ class BallEscapeSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         balls.clear()
+        spawned.clear()
         rings = p.i("rings", 1).coerceIn(1, 12)
         gapWidth = p.f("gap", 0.75f)
         growth = 1f + p.f("growth", 1.1f) * 0.01f
@@ -158,6 +162,11 @@ class BallEscapeSim : Sim {
         }
 
         if (balls.none { it.alive } && restSeconds < 0f) restSeconds = 1.2f
+
+        if (spawned.isNotEmpty()) {
+            balls.addAll(spawned)
+            spawned.clear()
+        }
     }
 
     private fun bounce(env: SimEnv, b: Ball, rr: Float, d: Float) {
@@ -195,10 +204,14 @@ class BallEscapeSim : Sim {
             b.colorT = (b.colorT + 0.013f) % 1f
             hits++
             env.emit(EventKind.HIT, b.colorT, nx.coerceIn(-1f, 1f) * 0.8f, min(1f, 0.4f + b.r * 6f))
-            if (multiply && balls.size < 180) {
+            if (multiply && balls.size + spawned.size < 180) {
                 val a = env.rng.range(0f, TWO_PI)
                 val sp = hypot(b.vx, b.vy)
-                balls.add(Ball(b.x * 0.4f, b.y * 0.4f, cos(a) * sp, sin(a) * sp, b.r * 0.8f, env.rng.nextFloat()))
+                // Queued, not added: bounce() runs inside the loop over balls,
+                // and adding to the list there throws.
+                spawned.add(
+                    Ball(b.x * 0.4f, b.y * 0.4f, cos(a) * sp, sin(a) * sp, b.r * 0.8f, env.rng.nextFloat())
+                )
                 env.emit(EventKind.BIRTH, env.rng.nextFloat(), 0f, 0.5f)
             }
         }
@@ -248,7 +261,7 @@ class BallEscapeSim : Sim {
             usesLaws = true,
             heroLabel = "Add ball",
             heroRestarts = false,
-            typicalSeconds = 30f,
+            typicalSeconds = 34f,
             params = listOf(
                 Param.int("balls", "Balls", 1, 64, 1, card = Card.DATA),
                 Param.float("size", "Ball size", 0.012f, 0.14f, 0.045f, card = Card.DATA),
@@ -256,7 +269,7 @@ class BallEscapeSim : Sim {
                 // gap and speed-up escapes on every seed, around 16 s in.
                 // More rings make a longer, less certain run on purpose.
                 Param.int("rings", "Rings", 1, 12, 1, card = Card.DATA),
-                Param.float("gap", "Gap", 0.12f, 1.6f, 0.75f, card = Card.DATA, unit = "rad"),
+                Param.float("gap", "Gap", 0.12f, 1.6f, 0.55f, card = Card.DATA, unit = "rad"),
                 Param.float("speed0", "Start speed", 0.2f, 3f, 0.7f, card = Card.MOTION),
                 Param.float("growth", "Growth per hit", 0f, 5f, 1.1f, card = Card.MOTION, unit = "%"),
                 Param.float("speedup", "Speed-up per hit", 0f, 5f, 3f, card = Card.MOTION, unit = "%"),
@@ -289,6 +302,10 @@ class PendulumWaveSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var crossings = 0L
+    private var aligned = false
+
+    /** Lengths and gravity are scaled together, so the periods are unchanged. */
+    private var gravityScale = 1f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -302,34 +319,50 @@ class PendulumWaveSim : Sim {
         lengths = FloatArray(count)
         lastSide = BooleanArray(count)
 
+        // The wave only comes back into line because the lengths are exactly
+        // L = g/w^2 for harmonically related w. Clamping them to fit the screen
+        // broke that — most of the "Cycle length" slider collapsed into one
+        // length, with nothing to realign. Instead the whole system is scaled:
+        // multiplying every length and the gravity they fall under by the same
+        // number leaves each period untouched, so it fits the screen and still
+        // realigns.
+        var longest = 0f
         for (i in 0 until count) {
-            // n_i oscillations in one cycle gives the classic wave.
             val osc = baseOscillations + i
             val period = cyclePeriod / osc
             val w = 2f * PI.toFloat() / period
-            // L = g / w^2, with g scaled to sim units.
-            lengths[i] = (GRAVITY_SIM / (w * w)).coerceIn(0.1f, 1.45f)
+            val raw = GRAVITY_SIM / (w * w)
+            lengths[i] = raw
+            if (raw > longest) longest = raw
+        }
+        gravityScale = if (longest <= 1e-6f) 1f else MAX_LENGTH / longest
+        for (i in 0 until count) {
+            lengths[i] = lengths[i] * gravityScale
             angles[i] = amplitude
             omegas[i] = 0f
             lastSide[i] = true
         }
         elapsed = 0f
         payoffFrame = false
+        aligned = false
         crossings = 0L
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        elapsed += dt
-        val g = GRAVITY_SIM * (env.laws.gravity / 9.81f)
+        elapsed += abs(dt)
+        val g = GRAVITY_SIM * gravityScale * (env.laws.gravity / 9.81f)
         val damping = 1f - (env.laws.friction * dt * 0.4f).coerceIn(0f, 0.05f)
 
         // Each pendulum is independent, so twenty thousand of them split cleanly
         // across cores. Only a sample of them is allowed to make a sound: ten
         // thousand crossings a second is a hiss, not a wave.
         val voiceEvery = maxOf(1, count / VOICES)
-        var crossed = 0
+        // Counted per slice and summed afterwards: a monitor per crossing inside
+        // a parallel loop is both a lock and a boxed allocation in step().
+        val crossedPerSlice = java.util.concurrent.atomic.AtomicInteger(0)
         Parallel.forRange(count) { from, to ->
+            var localCrossed = 0
             for (i in from until to) {
                 val l = lengths[i]
                 // Exact pendulum, not the small-angle approximation.
@@ -340,20 +373,33 @@ class PendulumWaveSim : Sim {
                 val side = angles[i] >= 0f
                 if (side != lastSide[i]) {
                     lastSide[i] = side
-                    synchronized(this) { crossed++ }
+                    localCrossed++
                     if (i % voiceEvery == 0) {
                         val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
                         env.emit(EventKind.CROSS, t, (t * 2f - 1f) * 0.85f, 0.75f)
                     }
                 }
             }
+            crossedPerSlice.addAndGet(localCrossed)
         }
-        crossings += crossed
+        crossings += crossedPerSlice.get()
 
-        // Realignment: every pendulum back near its start at the same moment.
-        val phase = elapsed % cyclePeriod
-        if (phase < dt * 2f && elapsed > dt * 3f) {
-            payoffFrame = true
+        // Realignment is the payoff, so it is measured rather than timed: a
+        // stopwatch fired on a frozen screen under Zero-G, and never at all
+        // when time ran backwards.
+        if (!aligned && elapsed > cyclePeriod * 0.25f) {
+            var together = true
+            val first = angles[0]
+            for (i in 1 until count) {
+                if (abs(angles[i] - first) > ALIGN_RADIANS) {
+                    together = false
+                    break
+                }
+            }
+            if (together) {
+                aligned = true
+                payoffFrame = true
+            }
         }
     }
 
@@ -407,6 +453,12 @@ class PendulumWaveSim : Sim {
     companion object {
         private const val GRAVITY_SIM = 9.81f
 
+        /** How close every pendulum must be for the wave to count as back in line. */
+        const val ALIGN_RADIANS = 0.12f
+
+        /** The longest string on screen; every other length scales with it. */
+        const val MAX_LENGTH = 1.42f
+
         /** The curtain can be twenty thousand strings wide. */
         const val MAX_PENDULUMS = 20_000
 
@@ -425,7 +477,7 @@ class PendulumWaveSim : Sim {
             formats = listOf(TrapFormat.LOOP, TrapFormat.SONG),
             usesLaws = true,
             heroLabel = "Drop again",
-            typicalSeconds = 32f,
+            typicalSeconds = 38f,
             params = listOf(
                 Param.int("count", "Pendulums", 3, 20000, 15, card = Card.DATA, logScale = true),
                 Param.float("period", "Cycle length", 6f, 120f, 30f, card = Card.MOTION, unit = "s"),
@@ -566,11 +618,31 @@ class NewtonsCradleSim : Sim {
 /** A Galton board: beads fall through pegs and pile into a bell curve. */
 class GaltonBoardSim : Sim {
 
-    private class Bead(var x: Float, var y: Float, var vy: Float, var bin: Int, var colorT: Float, var settled: Boolean)
+    private class Bead(
+        var x: Float,
+        var y: Float,
+        var vy: Float,
+        var bin: Int,
+        var colorT: Float,
+        var settled: Boolean
+    ) {
+        /** Which peg row it has passed, so each one can be heard and seen. */
+        var row = 0
+
+        /** Decays after a peg, for the visual knock. */
+        var bounce = 0f
+    }
 
     private val beads = ArrayList<Bead>()
     private var bins = IntArray(21)
     private var rows = 10
+
+    /** Height of one bead in the pile, scaled so a full board fits on screen. */
+    private var pileStep = 0.012f
+
+    /** Only a sample of peg knocks becomes a note. */
+    private var pegVoice = 0
+    private var pegVoiceEvery = 1
     private var dropped = 0
     private var total = 400
     private var dropTimer = 0f
@@ -591,6 +663,12 @@ class GaltonBoardSim : Sim {
         peak = 1
         restSeconds = -1f
         curveDone = false
+        // A tall board with twenty thousand beads would pile far off screen,
+        // and twenty thousand knocks a second is a hiss, so both are scaled.
+        val expectedPerBin = max(1f, total.toFloat() / max(1, rows + 1))
+        pileStep = (0.5f / expectedPerBin).coerceIn(0.0012f, 0.02f)
+        pegVoice = 0
+        pegVoiceEvery = max(1, total / 400)
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -617,11 +695,28 @@ class GaltonBoardSim : Sim {
             active++
             b.vy -= g * dt
             b.y += b.vy * dt
-            // Drift sideways towards the chosen bin as it falls.
+            // Drift sideways towards the chosen bin as it falls, one peg row at
+            // a time: a bead that slid along a straight line never touched a peg,
+            // which is the whole picture the board is meant to show.
             val targetX = (b.bin - rows * 0.5f) * targetSpacing
             val fall = ((0.95f - b.y) / 1.5f).coerceIn(0f, 1f)
-            b.x = targetX * fall
-            val floor = -0.78f + bins[b.bin] * 0.012f
+            val rowNow = (fall * rows).toInt().coerceIn(0, rows)
+            b.x = targetX * (rowNow.toFloat() / rows)
+            if (rowNow > b.row) {
+                b.row = rowNow
+                b.bounce = 1f
+                if (pegVoice++ % pegVoiceEvery == 0) {
+                    env.emit(
+                        EventKind.STEP,
+                        (rowNow.toFloat() / rows).coerceIn(0f, 1f),
+                        b.x.coerceIn(-1f, 1f),
+                        0.22f
+                    )
+                }
+            }
+            b.bounce = max(0f, b.bounce - abs(dt) * 6f)
+            // The pile is scaled so a full board still fits on screen.
+            val floor = -0.78f + bins[b.bin] * pileStep
             if (b.y <= floor) {
                 b.y = floor
                 b.settled = true
@@ -653,7 +748,12 @@ class GaltonBoardSim : Sim {
         }
         for (b in beads) {
             val c = palette.at(b.colorT)
-            g.disc(b.x, b.y, 0.012f, c)
+            // A bead that has just passed a peg flashes and spreads, so the
+            // knock is seen as well as heard.
+            if (b.bounce > 0.01f) {
+                g.glow(b.x, b.y, 0.03f + b.bounce * 0.05f, Palette.brighten(c, 0.3f), b.bounce * 0.7f)
+            }
+            g.disc(b.x, b.y, 0.012f + b.bounce * 0.004f, c)
         }
         // The curve the bins are making.
         for (i in bins.indices) {

@@ -329,4 +329,7 @@ Every sim, before its round is done:
 - [ ] Loops cleanly, or hands off smoothly to the next clip
 - [ ] Inside the flash and loudness limits above
 - [ ] At least one Simple-mode macro worth dragging
-- [ ] Reaches its payoff under every law preset the smoke test runs
+- [ ] Reaches its payoff under every law preset that keeps its premise — the
+      test asserts this for Our universe, Bouncy, Sticky, Ghosts and
+      Wrap-around space; Zero-G and Backwards time deliberately remove what
+      some sims are about, and are checked for crashes instead

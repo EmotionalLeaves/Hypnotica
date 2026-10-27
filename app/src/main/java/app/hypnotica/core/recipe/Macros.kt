@@ -53,8 +53,12 @@ object Macros {
     private fun size(def: SimDef): Macro? {
         // Any card: "how much" is the trail on a curve sim and the grid on a
         // life sim just as much as it is the count on a particle one.
+        // Wide enough to be worth a slider of its own. The old bar — four
+        // times the minimum plus eight — left sims whose size parameter is a
+        // small count, like a chess board of 4 to 16, with nothing in Simple
+        // mode at all.
         val candidates = def.params.filter {
-            it.type == ParamType.INT && !it.advancedOnly && it.max >= it.min * 4f + 8f
+            it.type == ParamType.INT && !it.advancedOnly && it.max >= it.min * 2f + 4f
         }
         val biggest = candidates.maxByOrNull { it.max } ?: return null
         return Macro(

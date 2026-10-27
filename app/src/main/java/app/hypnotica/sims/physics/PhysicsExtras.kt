@@ -327,7 +327,8 @@ class GearsSim : Sim {
                 Param.int("gears", "Gears", 2, 9, 5, card = Card.DATA),
                 Param.int("teeth", "First tooth count", 6, 40, 14, card = Card.DATA),
                 Param.int("step", "Teeth added each gear", 0, 12, 4, card = Card.DATA),
-                Param.float("speed", "Drive speed", 0.05f, 4f, 0.9f, card = Card.MOTION)
+                // Below this the gears do not visibly turn and the run is silent.
+                Param.float("speed", "Drive speed", 0.2f, 4f, 0.9f, card = Card.MOTION)
             ),
             create = { GearsSim() }
         )

@@ -130,7 +130,13 @@ class RecipeStore(private val dir: File) {
                   end
                 end
 
-                function payoff(s) return s.laps == 3 end
+                -- >= and a latch, not ==: a counter can step past a number when
+                -- time is scaled, and then the payoff never comes.
+                function payoff(s)
+                  if s.paid then return false end
+                  if s.laps >= 3 then s.paid = true; return true end
+                  return false
+                end
 
                 function draw(s, alpha)
                   glow(0, 0, 0.22, palette(0.9), 0.6)
@@ -178,7 +184,13 @@ class RecipeStore(private val dir: File) {
                   end
                 end
 
-                function payoff(s) return s.peaks == 6 end
+                -- Latched: payoff() is asked every step, so a bare condition
+                -- would fire the bell a hundred times a second.
+                function payoff(s)
+                  if s.paid then return false end
+                  if s.peaks >= 6 then s.paid = true; return true end
+                  return false
+                end
 
                 function draw(s, alpha)
                   local w = aspect() * 0.95
@@ -233,7 +245,11 @@ class RecipeStore(private val dir: File) {
                   end
                 end
 
-                function payoff(s) return s.count == 40 end
+                function payoff(s)
+                  if s.paid then return false end
+                  if s.count >= 40 then s.paid = true; return true end
+                  return false
+                end
 
                 function draw(s, alpha)
                   local life = param("life")

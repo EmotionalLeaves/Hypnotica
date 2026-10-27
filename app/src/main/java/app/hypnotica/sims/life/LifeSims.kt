@@ -24,6 +24,10 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/** The ant's four headings, hoisted: this runs up to 120,000 times a step. */
+private val ANT_DX = intArrayOf(0, 1, 0, -1)
+private val ANT_DY = intArrayOf(-1, 0, 1, 0)
+
 /**
  * Boids: three local rules, no leader, and a flock appears anyway.
  *
@@ -31,6 +35,15 @@ import kotlin.math.sqrt
  * what turns an impossible n-squared problem into fifty thousand birds.
  */
 class BoidsSim : Sim {
+
+    // Front and back buffers: see the swap in step().
+    private var nextPx = FloatArray(0)
+    private var nextPy = FloatArray(0)
+    private var nextVx = FloatArray(0)
+    private var nextVy = FloatArray(0)
+
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var flocked = false
 
     private var n = 3000
     private var px = FloatArray(0)
@@ -64,10 +77,21 @@ class BoidsSim : Sim {
         alignment = p.f("alignment", 1f)
         cohesion = p.f("cohesion", 1f)
         maxSpeed = p.f("speed", 0.55f)
-        cellSize = p.f("range", 0.12f).coerceAtLeast(0.02f)
+        // The grid cell is the perception radius, but never so large that a
+        // single cell holds a crowd: the neighbour walk costs one pass over
+        // every bird in the nine cells around it, so a fixed cell size makes the
+        // whole sim quadratic in the population. Sizing it by density keeps the
+        // cost flat, and a bird in a dense flock perceiving a smaller patch is
+        // what happens in a real one.
+        val perception = p.f("range", 0.12f).coerceAtLeast(0.02f)
+        val area = 4f * env.halfWidth
+        val byDensity = sqrt(Flock.TARGET_PER_CELL * area / max(1, n))
+        cellSize = byDensity.coerceIn(0.012f, perception)
 
         px = FloatArray(n); py = FloatArray(n)
         vx = FloatArray(n); vy = FloatArray(n)
+        nextPx = FloatArray(n); nextPy = FloatArray(n)
+        nextVx = FloatArray(n); nextVy = FloatArray(n)
         tint = FloatArray(n)
         cellOf = IntArray(n)
         order = IntArray(n)
@@ -115,6 +139,7 @@ class BoidsSim : Sim {
             order[cellStart[c] + cursor[c]] = i
             cursor[c]++
         }
+        flocked = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -127,6 +152,11 @@ class BoidsSim : Sim {
         Parallel.forRange(n) { from, to ->
             flock(from, to, dt, halfW, wrap)
         }
+        // Swap, rather than copy: the arrays are the state.
+        var swap = px; px = nextPx; nextPx = swap
+        swap = py; py = nextPy; nextPy = swap
+        swap = vx; vx = nextVx; nextVx = swap
+        swap = vy; vy = nextVy; nextVy = swap
 
         // How aligned the flock is, which is what "it worked" looks like.
         var sx = 0f
@@ -142,7 +172,8 @@ class BoidsSim : Sim {
         if (elapsed > 2f) {
             env.emit(EventKind.STEP, flockiness.coerceIn(0f, 1f), 0f, 0.25f)
         }
-        if (!payoffFrame && elapsed > 6f && flockiness > 0.72f) {
+        if (!flocked && elapsed > 6f && flockiness > 0.72f) {
+            flocked = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
@@ -151,6 +182,10 @@ class BoidsSim : Sim {
     private fun flock(from: Int, to: Int, dt: Float, halfW: Float, wrap: Boolean) {
         val r2 = cellSize * cellSize
         for (i in from until to) {
+            // A bird in a dense flock has hundreds of neighbours inside its
+            // perception radius, and the averages have converged long before
+            // that. Stopping at a fixed number turns the cost from quadratic in
+            // the population into linear, and looks the same.
             var sepX = 0f; var sepY = 0f
             var aliX = 0f; var aliY = 0f
             var cohX = 0f; var cohY = 0f
@@ -159,15 +194,17 @@ class BoidsSim : Sim {
             val gx = (((px[i] + halfW) / cellSize).toInt()).coerceIn(0, gridW - 1)
             val gy = (((py[i] + 1f) / cellSize).toInt()).coerceIn(0, gridH - 1)
             for (oy in -1..1) {
+                if (neighbours >= Flock.MAX) break
                 val cy = gy + oy
                 if (cy < 0 || cy >= gridH) continue
                 for (ox in -1..1) {
+                    if (neighbours >= Flock.MAX) break
                     val cx = gx + ox
                     if (cx < 0 || cx >= gridW) continue
                     val c = cy * gridW + cx
                     var k = cellStart[c]
                     val end = cellStart[c] + cellCount[c]
-                    while (k < end) {
+                    while (k < end && neighbours < Flock.MAX) {
                         val j = order[k]
                         k++
                         if (j == i) continue
@@ -206,12 +243,23 @@ class BoidsSim : Sim {
             }
             var nx = px[i] + nvx * dt
             var ny = py[i] + nvy * dt
-            if (wrap || true) {
-                // A flock needs somewhere to go; the edges wrap so it never piles up.
+            if (wrap) {
+                // Wrap-around space: the flock leaves one edge and returns at
+                // the other.
                 if (nx > halfW) nx -= 2 * halfW else if (nx < -halfW) nx += 2 * halfW
                 if (ny > 1f) ny -= 2f else if (ny < -1f) ny += 2f
+            } else {
+                // In a box, the birds turn at the walls rather than piling up.
+                if (nx > halfW) { nx = halfW; nvx = -abs(nvx) }
+                else if (nx < -halfW) { nx = -halfW; nvx = abs(nvx) }
+                if (ny > 1f) { ny = 1f; nvy = -abs(nvy) }
+                else if (ny < -1f) { ny = -1f; nvy = abs(nvy) }
             }
-            px[i] = nx; py[i] = ny; vx[i] = nvx; vy[i] = nvy
+            // Written to the back buffer: a bird near a slice boundary would
+            // otherwise read neighbours that another thread had already moved,
+            // which makes the step depend on thread timing — and determinism is
+            // what the payoff pre-check and the offline render rely on.
+            nextPx[i] = nx; nextPy[i] = ny; nextVx[i] = nvx; nextVy[i] = nvy
         }
     }
 
@@ -255,6 +303,14 @@ class BoidsSim : Sim {
         "birds" to String.format("%,d", n),
         "alignment" to String.format("%.0f%%", flockiness * 100f)
     )
+
+    private object Flock {
+        /** Neighbours any one bird will consider. Averages converge long before. */
+        const val MAX = 64
+
+        /** Birds per grid cell the sizing aims for. */
+        const val TARGET_PER_CELL = 6f
+    }
 
     companion object {
         fun def(): SimDef = SimDef(
@@ -333,11 +389,14 @@ class LangtonsAntSim : Sim {
             blackCount += if (black) -1 else 1
             recentTurns[turnIndex and 255] = if (black) 0 else 1
             turnIndex++
-            ax += intArrayOf(0, 1, 0, -1)[dir]
-            ay += intArrayOf(-1, 0, 1, 0)[dir]
+            ax += ANT_DX[dir]
+            ay += ANT_DY[dir]
+            // Wrapping, not clamping: an ant pinned against a wall flips the
+            // same two cells forever, and the highway — which is the payoff —
+            // never appears.
             if (ax < 0 || ax >= w || ay < 0 || ay >= h) {
-                ax = ax.coerceIn(0, w - 1)
-                ay = ay.coerceIn(0, h - 1)
+                ax = ((ax % w) + w) % w
+                ay = ((ay % h) + h) % h
             }
             steps++
             if (steps % 97L == 0L) {
@@ -417,6 +476,9 @@ class LangtonsAntSim : Sim {
  */
 class FallingSandSim : Sim {
 
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var settled = false
+
     private var w = 140
     private var h = 220
     private var grid = ByteArray(0)
@@ -440,6 +502,7 @@ class FallingSandSim : Sim {
         payoffFrame = false
         pourX = w / 2
         capacity = (w * h * 0.32f).toInt()
+        settled = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -487,7 +550,8 @@ class FallingSandSim : Sim {
         if (moved > 0) {
             env.emit(EventKind.STEP, (moved.toFloat() / max(1, filled)).coerceIn(0f, 1f), 0f, 0.3f)
         }
-        if (!payoffFrame && filled >= capacity && moved == 0) {
+        if (!settled && filled >= capacity && moved == 0) {
+            settled = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
@@ -557,6 +621,10 @@ class PredatorPreySim : Sim {
 
     private var prey = 0.9
     private var predators = 0.4
+    private var voiceClock = 0f
+
+    /** Seconds between the two tracking voices. */
+    private val VOICE_EVERY = 0.19f
     private var a = 1.1
     private var b = 0.4
     private var c = 0.4
@@ -574,6 +642,7 @@ class PredatorPreySim : Sim {
         val p = env.params
         prey = p.f("prey0", 0.9f).toDouble()
         predators = p.f("pred0", 0.4f).toDouble()
+        voiceClock = 0f
         a = p.f("growth", 1.1f).toDouble()
         b = p.f("predation", 0.4f).toDouble()
         c = p.f("efficiency", 0.4f).toDouble()
@@ -607,6 +676,25 @@ class PredatorPreySim : Sim {
         historyY[head] = predators.toFloat()
         head = (head + 1) % historyX.size
         if (filled < historyX.size) filled++
+
+        // The populations rising and falling are themselves the sound: two
+        // voices tracking each curve, so the model is heard and not only seen.
+        voiceClock += abs(dt)
+        if (voiceClock >= VOICE_EVERY) {
+            voiceClock = 0f
+            env.emit(
+                EventKind.STEP,
+                (prey / 4.0).toFloat().coerceIn(0f, 1f),
+                -0.6f,
+                (0.2f + (prey / 8.0).toFloat()).coerceIn(0.15f, 0.7f)
+            )
+            env.emit(
+                EventKind.BIRTH,
+                (predators / 3.0).toFloat().coerceIn(0f, 1f),
+                0.6f,
+                (0.18f + (predators / 6.0).toFloat()).coerceIn(0.15f, 0.6f)
+            )
+        }
 
         val rising = k2x > 0
         if (rising != lastRising) {
@@ -686,6 +774,9 @@ class PredatorPreySim : Sim {
  */
 class ReactionDiffusionSim : Sim {
 
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var aged = false
+
     private var w = 150
     private var h = 220
     private var a = FloatArray(0)
@@ -725,6 +816,7 @@ class ReactionDiffusionSim : Sim {
         carry = 0f
         generations = 0
         payoffFrame = false
+        aged = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -744,7 +836,8 @@ class ReactionDiffusionSim : Sim {
         var i = 0
         while (i < w * h) { total += b[i]; i += 37 }
         env.emit(EventKind.STEP, (total / (w * h / 37f)).coerceIn(0f, 1f), 0f, 0.25f)
-        if (!payoffFrame && generations > 900) {
+        if (!aged && generations > 900) {
+            aged = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }

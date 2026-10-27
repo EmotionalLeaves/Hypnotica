@@ -143,9 +143,10 @@ table, and the functions `setup`, `step`, `draw` and optionally `payoff` and
 a recipe reads like a script rather than like an API.
 
 The sandbox has no `io`, `os`, `require`, `package`, `load`, `loadstring`,
-`dofile`, `loadfile` or `collectgarbage`, and each call has a time budget; a
-recipe that overruns it repeatedly is stopped rather than allowed to freeze the
-frame.
+`dofile`, `loadfile` or `collectgarbage`. Every call is timed: `setup` has 600
+ms to build the world, `step` and `draw` have 8 ms each, and a recipe that
+overruns either repeatedly is stopped — it stops drawing as well as stepping,
+and the editor shows why.
 
 ```lua
 meta = {
@@ -173,7 +174,14 @@ function step(s, dt)         -- dt is fixed, and negative when time runs backwar
   emit("cross", 0.5, s.x, 0.8)
 end
 
-function payoff(s) return s.laps == 3 end
+-- payoff() is asked on every step, so latch it: a bare condition that stays
+-- true fires the payoff bell a hundred times a second. Use >= rather than ==
+-- too, because a counter can step past a number when time is scaled.
+function payoff(s)
+  if s.paid then return false end
+  if s.laps >= 3 then s.paid = true; return true end
+  return false
+end
 
 function draw(s, alpha)
   glow(0, 0, 0.22, palette(0.9), 0.6)

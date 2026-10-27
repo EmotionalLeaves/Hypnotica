@@ -3,6 +3,7 @@ package app.hypnotica.core.audio
 import app.hypnotica.core.safety.SafetySettings
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.EventQueue
+import kotlin.math.ln
 import kotlin.math.min
 
 /**
@@ -57,6 +58,10 @@ class SoundMapping(private val synth: Synth) {
     var song: Song? = null
     private var songIndex = 0
 
+    private var sweepRemaining = 0
+    private var sweepIndex = 0
+    private var sweepClock = 0f
+
     private var budget = 0f
     private var mergedStrength = 0f
     private var mergedValue = 0f
@@ -92,6 +97,7 @@ class SoundMapping(private val synth: Synth) {
      * Call once per frame from the render thread.
      */
     fun pump(queue: EventQueue, frameSeconds: Float) {
+        advanceSweep(frameSeconds)
         budget = min(maxNotesPerSecond, budget + frameSeconds * maxNotesPerSecond)
 
         var seen = 0
@@ -127,6 +133,14 @@ class SoundMapping(private val synth: Synth) {
         }
     }
 
+    /** Nothing below this is a note; the sweep and the transposer both stop here. */
+    private val MIN_HZ = 40f
+
+    /** Seconds between the notes of the final sweep. */
+    private val SWEEP_GAP = 0.055f
+
+    private val LN2 = ln(2f)
+
     /**
      * The kinds that get a tick. A comparison in a sort does not: a thousand a
      * second would be a buzz, not a feeling.
@@ -140,7 +154,8 @@ class SoundMapping(private val synth: Synth) {
             EventKind.STEP,
             mergedValue / n,
             mergedPan / n,
-            (mergedStrength * min(1.6f, 0.6f + n * 0.05f)).coerceAtMost(1f)
+            (mergedStrength * min(1.6f, 0.6f + n * 0.05f)).coerceAtMost(1f),
+            advanceSong = true
         )
         mergedCount = 0
         mergedStrength = 0f
@@ -148,16 +163,27 @@ class SoundMapping(private val synth: Synth) {
         mergedPan = 0f
     }
 
-    private fun play(kind: EventKind, value: Float, pan: Float, strength: Float) {
+    private fun play(
+        kind: EventKind,
+        value: Float,
+        pan: Float,
+        strength: Float,
+        advanceSong: Boolean = true
+    ) {
         val tune = song
         var hz = if (tune != null && tune.notes.isNotEmpty()) {
             val n = tune.notes[songIndex % tune.notes.size]
-            songIndex++
+            // A merged burst is one note, not one per event it swallowed: the
+            // melody used to run away at the merge rate under load.
+            if (advanceSong) songIndex++
             440f * Math.pow(2.0, ((n - 69) / 12.0)).toFloat()
         } else {
-            scale.hz(value, baseHz, octaves)
+            scale.hz(value, baseHz, fittedOctaves())
         }
-        if (hz > safety.maxHz) hz = safety.maxHz
+        // Transposing, not clamping: clamping turned the top of the range into
+        // a single pitch, so every loud event played the same note.
+        while (hz > safety.maxHz) hz *= 0.5f
+        if (hz < MIN_HZ) hz = MIN_HZ
 
         val type = when (kind) {
             EventKind.DONE -> VoiceType.BELL
@@ -171,11 +197,45 @@ class SoundMapping(private val synth: Synth) {
         synth.note(hz, amp.coerceAtMost(0.75f), pan, type, dec)
     }
 
-    /** Play a rising sweep: the "it is finished" moment. */
+    /**
+     * How many octaves actually fit under the safety ceiling from [baseHz].
+     * Asking for six from 880 Hz wanted 56 kHz, which the ceiling then flattened.
+     */
+    private fun fittedOctaves(): Float {
+        val room = ln(safety.maxHz / baseHz.coerceAtLeast(MIN_HZ)) / LN2
+        return octaves.coerceAtMost(room.coerceAtLeast(1f))
+    }
+
+    /**
+     * The "it is finished" moment: a rising run, one note at a time rather than
+     * fourteen on the same sample, which was a chord and a limiter full of it.
+     */
     fun finalSweep(steps: Int = 14) {
-        for (i in 0 until steps) {
-            val t = i / (steps - 1f)
-            synth.note(scale.hz(t, baseHz, octaves), 0.2f, 0f, preset.voice, decay * 1.4f)
+        sweepRemaining = steps
+        sweepIndex = 0
+        sweepClock = 0f
+    }
+
+    /** Advances the sweep; called from pump, so it follows the run's own clock. */
+    private fun advanceSweep(frameSeconds: Float) {
+        if (sweepRemaining <= 0) return
+        sweepClock += frameSeconds
+        while (sweepRemaining > 0 && sweepClock >= SWEEP_GAP) {
+            sweepClock -= SWEEP_GAP
+            val total = sweepIndex + sweepRemaining
+            val t = sweepIndex / (total - 1f).coerceAtLeast(1f)
+            val tune = song
+            val hz = if (tune != null && tune.notes.isNotEmpty()) {
+                val n = tune.notes[(sweepIndex * 2) % tune.notes.size]
+                440f * Math.pow(2.0, ((n - 69) / 12.0)).toFloat()
+            } else {
+                scale.hz(t, baseHz, fittedOctaves())
+            }
+            var pitch = hz
+            while (pitch > safety.maxHz) pitch *= 0.5f
+            synth.note(pitch, 0.22f, 0f, preset.voice, decay * 1.4f)
+            sweepIndex++
+            sweepRemaining--
         }
     }
 }

@@ -122,6 +122,7 @@ class VideoExporter(
             val g = G()
             val flash = FlashLimiter()
             val frameSeconds = 1f / settings.fps
+            var sweptAt = false
             val audioFramesPerVideoFrame = (SAMPLE_RATE / settings.fps)
             val mixBuffer = FloatArray(audioFramesPerVideoFrame * 2)
 
@@ -170,6 +171,10 @@ class VideoExporter(
                 }
 
                 if (audioPcm != null) {
+                    if (core.payoffFired && !sweptAt) {
+                        sweptAt = true
+                        mapping.finalSweep()
+                    }
                     mapping.pump(core.events, frameSeconds)
                     java.util.Arrays.fill(mixBuffer, 0f)
                     synth.renderOffline(mixBuffer, audioFramesPerVideoFrame)

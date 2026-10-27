@@ -57,7 +57,10 @@ class PolyrhythmSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        elapsed += dt
+        // The wheels turn whichever way time runs, but the arc always advances:
+        // a negative elapsed sent every wheel past its own phase every step,
+        // which was a thousand notes a second and no payoff at all.
+        elapsed += abs(dt)
         for (i in 0 until count) {
             val phase = (elapsed / cycleSeconds) * loopsFor(i)
             val wrapped = phase - kotlin.math.floor(phase)
@@ -269,6 +272,10 @@ class HarmonographSim : Sim {
  */
 class CirclePackingSim : Sim {
 
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var packed = false
+    private var spawnCarry = 0f
+
     private var cx = FloatArray(0)
     private var cy = FloatArray(0)
     private var cr = FloatArray(0)
@@ -292,6 +299,8 @@ class CirclePackingSim : Sim {
         attempts = 0
         payoffFrame = false
         coverage = 0f
+        packed = false
+        spawnCarry = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -315,7 +324,12 @@ class CirclePackingSim : Sim {
         }
 
         // Drop new seeds into whatever gaps remain.
-        var toSpawn = (spawn * abs(dt)).toInt() + if (stillGrowing == 0) 1 else 0
+        // Accumulated, not truncated: at 120 steps a second, spawn * dt is under
+        // one for every rate below 120, so the lower two-thirds of the slider
+        // used to spawn nothing and the fallback did all the work.
+        spawnCarry += spawn * abs(dt)
+        var toSpawn = spawnCarry.toInt() + if (stillGrowing == 0) 1 else 0
+        spawnCarry -= (spawnCarry.toInt()).toFloat()
         var guard = 400
         while (toSpawn > 0 && count < target && guard-- > 0) {
             val x = env.rng.range(-halfW * 0.98f, halfW * 0.98f)
@@ -334,7 +348,8 @@ class CirclePackingSim : Sim {
         for (i in 0 until count) area += cr[i] * cr[i] * PI.toFloat()
         coverage = (area / (4f * halfW)).coerceIn(0f, 1f)
 
-        if (!payoffFrame && (count >= target || coverage > 0.78f)) {
+        if (!packed && (count >= target || coverage > 0.78f)) {
+            packed = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
@@ -413,12 +428,19 @@ class SpirographSim : Sim {
     private var trailX = FloatArray(0)
     private var trailY = FloatArray(0)
     private var count = 0
-    private var theta = 0f
+    private var theta = 0.0
+
+    /** The turn at which the pen comes back to its starting point. */
+    private var closingTheta = 0.0
     private var bigR = 0.9f
     private var smallR = 0.27f
     private var penOffset = 0.2f
     private var payoffFrame = false
     private var closedAt = -1f
+    private var restAfterClose = 0f
+
+    /** Seconds spent looking at the closed curve before the run ends. */
+    private val REST_AFTER_CLOSE = 5f
     private var carry = 0f
 
     override fun setup(env: SimEnv) {
@@ -430,10 +452,23 @@ class SpirographSim : Sim {
         trailX = FloatArray(len)
         trailY = FloatArray(len)
         count = 0
-        theta = 0f
+        theta = 0.0
         payoffFrame = false
         closedAt = -1f
+        restAfterClose = 0f
         carry = 0f
+
+        // R and r in lowest terms: the curve closes after r / gcd(R - r, r)
+        // revolutions. Scaled to whole numbers first, because the radii are
+        // slider values rather than integers.
+        val bigSteps = Math.round(bigR * 1000f).toInt()
+        val smallSteps = Math.round(smallR * 1000f).toInt().coerceAtLeast(1)
+        var a = bigSteps - smallSteps
+        var b = smallSteps
+        while (b != 0) { val t = b; b = a % b; a = t }
+        val gcd = if (a == 0) 1 else kotlin.math.abs(a)
+        val turns = (smallSteps / gcd).coerceIn(1, 400)
+        closingTheta = turns * 2.0 * PI
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -441,12 +476,15 @@ class SpirographSim : Sim {
         carry += abs(dt) * env.params.f("rate", 900f)
         var budget = min(carry.toInt(), 20000)
         carry -= budget
-        val step = 0.004f
+        val step = 0.004
+        val k = ((bigR - smallR) / smallR).toDouble()
         while (budget-- > 0 && count < trailX.size) {
+            // theta is a Double: a Float accumulated in 0.004 steps three
+            // hundred thousand times has lost the precision exactly where the
+            // curve is supposed to close on itself.
             theta += step
-            val k = (bigR - smallR) / smallR
-            val x = (bigR - smallR) * cos(theta) + penOffset * cos(k * theta)
-            val y = (bigR - smallR) * sin(theta) - penOffset * sin(k * theta)
+            val x = ((bigR - smallR) * cos(theta) + penOffset * cos(k * theta)).toFloat()
+            val y = ((bigR - smallR) * sin(theta) - penOffset * sin(k * theta)).toFloat()
             trailX[count] = x
             trailY[count] = y
             count++
@@ -454,11 +492,17 @@ class SpirographSim : Sim {
                 env.emit(EventKind.STEP, ((y + 1f) * 0.5f).coerceIn(0f, 1f), (x).coerceIn(-1f, 1f) * 0.7f, 0.3f)
             }
         }
-        if (closedAt < 0f && count > trailX.size * 7 / 10) {
-            closedAt = env.time
+        // The curve closes when the pen returns to where it started, which
+        // happens after a whole number of turns set by the wheel ratio — not
+        // when the buffer happens to be seven tenths full.
+        if (closedAt < 0f && theta >= closingTheta) {
+            closedAt = abs(env.time)
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
+        // Once it has closed, the drawing is the drawing: a few seconds to look
+        // at it and the run is done.
+        if (closedAt >= 0f) restAfterClose += abs(dt)
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -469,8 +513,8 @@ class SpirographSim : Sim {
             g.point(trailX[i], trailY[i], size, palette.at((i.toFloat() / max(1, count)) % 1f))
         }
         // The rolling wheel, so the mechanism is visible, not just the result.
-        val cxw = (bigR - smallR) * cos(theta)
-        val cyw = (bigR - smallR) * sin(theta)
+        val cxw = ((bigR - smallR) * cos(theta)).toFloat()
+        val cyw = ((bigR - smallR) * sin(theta)).toFloat()
         g.ring(0f, 0f, bigR, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.4f))
         g.ring(cxw, cyw, smallR, 0.003f, Palette.withAlpha(Palette.ACCENT, 0.7f))
         if (count > 0) {
@@ -481,7 +525,8 @@ class SpirographSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = count >= trailX.size
+    override fun finished(): Boolean =
+        count >= trailX.size || (closedAt >= 0f && restAfterClose > REST_AFTER_CLOSE)
 
     override fun counters(): List<Pair<String, String>> =
         listOf("ink" to String.format("%,d", count))

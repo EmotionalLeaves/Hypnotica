@@ -68,7 +68,7 @@ class HypercubeSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        elapsed += dt
+        elapsed += abs(dt)
         val n = 1 shl dims
         val speed = env.params.f("spin", 0.55f)
         val tilt = env.params.f("tilt", 0.22f)
@@ -310,6 +310,7 @@ class RandomWalkSim : Sim {
         walkers = p.i("walkers", 40).coerceIn(1, 4000)
         pos = FloatArray(walkers * dims)
         home = BooleanArray(walkers)
+        wandered = BooleanArray(walkers)
         val trail = p.i("trail", 6000).coerceIn(500, 40000)
         trailX = FloatArray(trail)
         trailY = FloatArray(trail)
@@ -320,13 +321,26 @@ class RandomWalkSim : Sim {
         payoffFrame = false
         paid = false
         carry = 0f
+        wandered = BooleanArray(walkers)
+        textureClock = 0f
     }
 
     /** True once the payoff has fired, so it fires once. */
     private var paid = false
 
     /** Share of walkers home before the payoff: above 3D, not all can return. */
-    private val RETURN_SHARE = 0.45f
+    private val RETURN_SHARE = 0.35f
+
+    /** How far out a walker must get before its return is a return. */
+    private val AWAY_STEPS = 5f
+
+    /** Which walkers have been far enough from the origin to count. */
+    private var wandered = BooleanArray(0)
+
+    private var textureClock = 0f
+
+    /** Micro-steps between texture notes. */
+    private val TEXTURE_EVERY = 90f
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -342,7 +356,16 @@ class RandomWalkSim : Sim {
                 val base = w * dims
                 val axis = env.rng.int(0, dims)
                 pos[base + axis] += if (env.rng.bool()) stepSize else -stepSize
-                if (Nd.length(pos, base, dims) < stepSize * 0.75f) {
+                val distance = Nd.length(pos, base, dims)
+                // A walker has to get properly lost before coming back counts.
+                // Every walker starts at the origin, so without this the first
+                // wobble back through zero was "the drunk walker got home" —
+                // the payoff landed a tenth of a second into a thirty-second run.
+                if (!wandered[w]) {
+                    if (distance > stepSize * AWAY_STEPS) wandered[w] = true
+                    continue
+                }
+                if (distance < stepSize * 0.75f) {
                     home[w] = true
                     returned++
                     env.emit(EventKind.CROSS, 0.35f + 0.5f * (returned.toFloat() / walkers), 0f, 0.7f)
@@ -356,6 +379,25 @@ class RandomWalkSim : Sim {
                     }
                 }
             }
+            // The swarm spreading is itself the sound, so the run is never
+            // silent between returns.
+            textureClock += 1f
+            if (textureClock >= TEXTURE_EVERY) {
+                textureClock = 0f
+                var spread = 0f
+                var sampled = 0
+                var k = 0
+                while (k < walkers) {
+                    spread += Nd.length(pos, k * dims, dims)
+                    sampled++
+                    k += maxOf(1, walkers / 24)
+                }
+                if (sampled > 0) {
+                    val mean = (spread / sampled / 1.6f).coerceIn(0f, 1f)
+                    env.emit(EventKind.STEP, mean, 0f, 0.22f + mean * 0.3f)
+                }
+            }
+
             // Record the first walker's path as the visible trail.
             if (walkers > 0) {
                 Nd.project(pos, 0, dims, 3f, proj)

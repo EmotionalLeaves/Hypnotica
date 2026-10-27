@@ -30,6 +30,9 @@ import kotlin.math.sqrt
  */
 class MandelbrotSim : Sim {
 
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var reached = false
+
     private var cols = 0
     private var rows = 0
     private var iterations = IntArray(0)
@@ -64,6 +67,7 @@ class MandelbrotSim : Sim {
         payoffFrame = false
         lastSoundIter = 0
         sinceRecompute = 999f
+        reached = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -113,7 +117,8 @@ class MandelbrotSim : Sim {
             lastSoundIter = centreIter
             env.emit(EventKind.STEP, (centreIter.toFloat() / mi).coerceIn(0f, 1f), 0f, 0.4f)
         }
-        if (!payoffFrame && elapsed > 18f && elapsed < 18f + abs(dt) * 1.5f) {
+        if (!reached && elapsed > 18f && elapsed < 18f + abs(dt) * 1.5f) {
+            reached = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
@@ -189,6 +194,9 @@ class MandelbrotSim : Sim {
  */
 class ChaosGameSim : Sim {
 
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var formed = false
+
     private var corners = 3
     private var ratio = 0.5f
     private var px = 0f
@@ -219,6 +227,7 @@ class ChaosGameSim : Sim {
         }
         px = 0f
         py = 0f
+        formed = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -239,7 +248,8 @@ class ChaosGameSim : Sim {
             env.emit(EventKind.WRITE, (count.toFloat() / capacity).coerceIn(0f, 1f), 0f, 0.35f)
         }
         // The payoff is the moment the shape is unmistakable.
-        if (!payoffFrame && count >= capacity * 6 / 10 && count - (capacity * 6 / 10) < 2000) {
+        if (!formed && count >= capacity * 6 / 10 && count - (capacity * 6 / 10) < 2000) {
+            formed = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
@@ -279,7 +289,7 @@ class ChaosGameSim : Sim {
             params = listOf(
                 Param.int("corners", "Corners", 3, 12, 3, card = Card.DATA),
                 Param.float("ratio", "Jump fraction", 0.2f, 0.8f, 0.5f, card = Card.DATA),
-                Param.int("dots", "Dots", 1000, 400000, 120000, card = Card.DATA, logScale = true),
+                Param.int("dots", "Dots", 20000, 400000, 120000, card = Card.DATA, logScale = true),
                 Param.float("rate", "Speed", 200f, 120000f, 6000f, card = Card.MOTION, logScale = true),
                 Param.float("dot", "Dot size", 0.001f, 0.012f, 0.0035f, card = Card.LOOK)
             ),
@@ -293,6 +303,10 @@ class ChaosGameSim : Sim {
  * diagonal streaks nobody can fully explain are the payoff.
  */
 class PrimeSpiralSim : Sim {
+
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var spiralled = false
+    private var restSeconds = -1f
 
     private var limit = 40000
     private var drawn = 0
@@ -367,10 +381,16 @@ class PrimeSpiralSim : Sim {
                 }
             }
         }
+        spiralled = false
+        restSeconds = -1f
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        if (restSeconds >= 0f) {
+            restSeconds -= abs(dt)
+            return
+        }
         carry += abs(dt) * env.params.f("rate", 2600f)
         var budget = min(carry.toInt(), 80000)
         carry -= budget
@@ -380,8 +400,12 @@ class PrimeSpiralSim : Sim {
         if (drawn > before && primeCount > 0) {
             env.emit(EventKind.WRITE, (drawn.toFloat() / limit).coerceIn(0f, 1f), 0f, 0.3f)
         }
-        if (!payoffFrame && drawn >= limit) {
+        if (!spiralled && drawn >= limit) {
+            spiralled = true
             payoffFrame = true
+            // The finished spiral is the thing worth looking at, so the run
+            // holds on it instead of ending on the same step as its payoff.
+            restSeconds = 4f
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
@@ -401,7 +425,7 @@ class PrimeSpiralSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = drawn >= limit
+    override fun finished(): Boolean = drawn >= limit && restSeconds in -1000f..0f
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "numbers" to String.format("%,d", drawn),
@@ -421,7 +445,7 @@ class PrimeSpiralSim : Sim {
             typicalSeconds = 16f,
             params = listOf(
                 Param.choice("layout", "Layout", listOf("Ulam square", "Sacks"), 0, card = Card.DATA, input = ParamInput.TILES),
-                Param.int("limit", "Numbers", 200, 400000, 40000, card = Card.DATA, logScale = true),
+                Param.int("limit", "Numbers", 8000, 400000, 40000, card = Card.DATA, logScale = true),
                 Param.float("rate", "Speed", 200f, 200000f, 2600f, card = Card.MOTION, logScale = true)
             ),
             create = { PrimeSpiralSim() }
@@ -482,7 +506,14 @@ class MonteCarloPiSim : Sim {
         if (total % 512 < 24) {
             env.emit(EventKind.STEP, (estimate() / 4f).coerceIn(0f, 1f), 0f, 0.3f)
         }
-        if (!converged && total > max(20000, (capacity * 0.7f).toInt()) && abs(estimate() - PI.toFloat()) < 0.006f) {
+        // The estimate is only ever as good as the sample is large — the error
+        // falls off as 1/sqrt(n) — so the tolerance follows the count instead
+        // of being a fixed 0.006 that a five-hundred-dart run can never meet
+        // and that four seeds in twenty-four never met even at full size.
+        val tolerance = max(0.006f, 2.4f / sqrt(max(1, total).toFloat()))
+        if (!converged && total > (capacity * 0.6f).toInt() &&
+            abs(estimate() - PI.toFloat()) < tolerance
+        ) {
             converged = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
@@ -524,7 +555,7 @@ class MonteCarloPiSim : Sim {
             defaultPalette = "Ocean",
             typicalSeconds = 18f,
             params = listOf(
-                Param.int("dots", "Darts", 500, 400000, 60000, card = Card.DATA, logScale = true),
+                Param.int("dots", "Darts", 20000, 400000, 60000, card = Card.DATA, logScale = true),
                 Param.float("rate", "Speed", 100f, 80000f, 5000f, card = Card.MOTION, logScale = true)
             ),
             create = { MonteCarloPiSim() }
@@ -583,12 +614,12 @@ class FourierSim : Sim {
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         val speed = env.params.f("speed", 0.9f)
-        theta += speed * dt
+        theta += speed * abs(dt)
         if (theta > 2f * PI.toFloat()) {
             theta -= 2f * PI.toFloat()
             loops++
             // The payoff is the shape closing on itself for the first time.
-            if (loops == 3) {
+            if (loops == 2) {
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.8f, 0f, 1f)
             }
@@ -667,11 +698,11 @@ class FourierSim : Sim {
 class CollatzSim : Sim {
 
     private var start = 27
-    private var sequence = IntArray(0)
+    private var sequence = LongArray(0)
     private var length = 0
     private var shown = 0f
     private var payoffFrame = false
-    private var peak = 0
+    private var peak = 0L
     private var autoAdvance = true
 
     override fun setup(env: SimEnv) {
@@ -682,18 +713,24 @@ class CollatzSim : Sim {
         payoffFrame = false
     }
 
+    /**
+     * A Collatz trajectory climbs far above its starting number — from 1.7
+     * million it passes two billion — so it is kept in longs. Truncating it to
+     * Int made negative values, and the logarithm of a negative number is NaN,
+     * which reached both the draw list and the synth and stayed there.
+     */
     private fun buildSequence(from: Int) {
-        val list = ArrayList<Int>(256)
+        val list = ArrayList<Long>(256)
         var n = from.toLong()
         var guard = 2000
-        peak = from
+        peak = from.toLong()
         while (n != 1L && guard-- > 0) {
-            list.add(n.toInt())
+            list.add(n)
             n = if (n % 2L == 0L) n / 2 else 3 * n + 1
-            if (n > peak && n < Int.MAX_VALUE) peak = n.toInt()
+            if (n > peak) peak = n
         }
-        list.add(1)
-        sequence = list.toIntArray()
+        list.add(1L)
+        sequence = LongArray(list.size) { list[it] }
         length = sequence.size
     }
 
@@ -706,7 +743,7 @@ class CollatzSim : Sim {
             val v = sequence[i]
             env.emit(
                 EventKind.WRITE,
-                (ln(1f + v.toFloat()) / ln(1f + peak.toFloat())).coerceIn(0f, 1f),
+                (ln(1f + v.toFloat()) / logPeak()).coerceIn(0f, 1f),
                 (i.toFloat() / length) * 2f - 1f,
                 0.55f
             )
@@ -722,12 +759,15 @@ class CollatzSim : Sim {
         }
     }
 
+    /** Never zero, so nothing divides by it. */
+    private fun logPeak(): Float = max(1e-3f, ln(1f + peak.toFloat()))
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth * 0.94f
         val n = min(length, max(1, shown.toInt()))
         val stepX = 2f * halfW / max(1, length - 1)
-        val logPeak = ln(1f + peak.toFloat())
+        val logPeak = logPeak()
         for (i in 0 until n) {
             val v = sequence[i]
             val t = ln(1f + v.toFloat()) / logPeak

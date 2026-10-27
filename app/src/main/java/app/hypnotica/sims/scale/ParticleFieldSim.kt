@@ -87,7 +87,7 @@ class ParticleFieldSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        elapsed += dt
+        elapsed += abs(dt)
         val laws = env.laws
         val w = env.halfWidth
         val gx = laws.gravityDirX * laws.gravity * 0.01f
@@ -422,6 +422,16 @@ class GameOfLifeSim : Sim {
 /** The Lorenz attractor, drawn as the trail it carves. */
 class LorenzSim : Sim {
 
+    private var settled = false
+    private var settleClock = 0f
+    private var lastX = 0.0
+    private var lastZ = 0.0
+
+    /** How long before the "it has settled" test starts, and how often it runs. */
+    private val SETTLE_AFTER = 6f
+    private val SETTLE_SAMPLE = 1.5f
+    private val SETTLE_SPEED = 0.02
+
     private var trailX = FloatArray(0)
     private var trailY = FloatArray(0)
     private var head = 0
@@ -454,10 +464,15 @@ class LorenzSim : Sim {
         payoffFrame = false
         lobeSwaps = 0
         lastLobe = 1
+        settled = false
+        settleClock = 0f
+        lastX = x
+        lastZ = z
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        settleClock += abs(dt)
         val speed = env.params.f("rate", 1200f)
         carry += abs(dt) * speed
         var steps = min(carry.toInt(), 6000)
@@ -494,6 +509,22 @@ class LorenzSim : Sim {
                 }
                 env.emit(EventKind.CROSS, ((z - 5.0) / 40.0).toFloat().coerceIn(0f, 1f), lobe * 0.6f, 0.7f)
             }
+        }
+
+        // Below rho about 24.7 the attractor has no wings to swap between: the
+        // trajectory spirals into a fixed point and stays there. That settling
+        // is the thing to watch at those values, so it is the payoff rather
+        // than a run that never pays off at all.
+        if (!settled && settleClock > SETTLE_AFTER) {
+            val speedNow = kotlin.math.abs(x - lastX) + kotlin.math.abs(z - lastZ)
+            if (speedNow < SETTLE_SPEED) {
+                settled = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.4f, 0f, 0.9f)
+            }
+            lastX = x
+            lastZ = z
+            settleClock = SETTLE_AFTER - SETTLE_SAMPLE
         }
     }
 

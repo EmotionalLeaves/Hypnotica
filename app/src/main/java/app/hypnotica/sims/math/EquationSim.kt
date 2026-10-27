@@ -28,6 +28,9 @@ class EquationSim : Sim {
 
     private enum class Mode { PARAMETRIC, ODE, MAP }
 
+    /** The payoff fires once; without this the bell retriggers every step. */
+    private var drawnEnough = false
+
     private var mode = Mode.PARAMETRIC
     private var exprX: Expr? = null
     private var exprY: Expr? = null
@@ -87,6 +90,7 @@ class EquationSim : Sim {
         laps = 0
         lastQuadrant = 0
         resets = 0
+        drawnEnough = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -157,7 +161,8 @@ class EquationSim : Sim {
                 )
             }
         }
-        if (!payoffFrame && filled >= trailX.size * 7 / 10) {
+        if (!drawnEnough && filled >= trailX.size * 7 / 10) {
+            drawnEnough = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }

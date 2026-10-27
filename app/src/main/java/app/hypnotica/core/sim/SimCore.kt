@@ -141,7 +141,10 @@ class SimCore(def: SimDef, seed: Long = 1L) {
 
             if (!payoffFired && sim.payoff()) {
                 payoffFired = true
-                payoffAt = env.time
+                // How far into the run it landed. Backwards time makes env.time
+                // negative, and a negative payoff time looks like "never" to the
+                // clip director.
+                payoffAt = kotlin.math.abs(env.time)
                 slowMoRemaining = SLOWMO_SECONDS
                 events.emit(EventKind.DONE, 1f, 0f, 1f)
             }
@@ -170,7 +173,13 @@ class SimCore(def: SimDef, seed: Long = 1L) {
             stepCount++
             if (!payoffFired && sim.payoff()) {
                 payoffFired = true
-                payoffAt = env.time
+                // How far into the run it landed. Backwards time makes env.time
+                // negative, and a negative payoff time looks like "never" to the
+                // clip director.
+                payoffAt = kotlin.math.abs(env.time)
+                // The same chord the live loop emits: the offline render reads
+                // this stream, and without it an exported clip loses its payoff.
+                events.emit(EventKind.DONE, 1f, 0f, 1f)
             }
             if (sim.finished()) finished = true
             i++

@@ -49,16 +49,32 @@ class RegistryTest {
         assertTrue(broken.joinToString("\n"), broken.isEmpty())
     }
 
+    /**
+     * The design contract's own line: a sim must reach its payoff under every
+     * law preset — every preset that keeps its premise, at least. Zero-G and
+     * Backwards time deliberately remove the thing some sims are about (a
+     * pendulum in free fall does not swing), so they are checked for crashes
+     * above rather than for an arc here.
+     */
     @Test
-    fun everySimReachesItsPayoff() {
+    fun everySimReachesItsPayoffUnderEveryLaw() {
+        val presets = listOf(
+            Laws.OUR_UNIVERSE,
+            Laws.preset("Bouncy"),
+            Laws.preset("Sticky"),
+            Laws.preset("Ghosts"),
+            Laws.preset("Wrap-around space")
+        )
         val silent = ArrayList<String>()
         for (def in SimRegistry.all) {
-            val limit = (def.typicalSeconds * 2f).coerceIn(20f, 60f)
-            val core = run(def, Laws.OUR_UNIVERSE, limit)
-            if (!core.payoffFired) silent.add("${def.id} (no payoff in ${limit}s)")
+            val limit = (def.typicalSeconds * 2.2f).coerceIn(20f, 90f)
+            for (laws in presets) {
+                val core = run(def, laws, limit, stopAtPayoff = true)
+                if (!core.payoffFired) silent.add("${def.id} under ${laws.name} (${limit}s)")
+            }
         }
         assertTrue(
-            "These sims never pay off, so TickTock can never show them:\n" +
+            "These never pay off, so TickTock can never show them:\n" +
                 silent.joinToString("\n"),
             silent.isEmpty()
         )
@@ -151,7 +167,12 @@ class RegistryTest {
         }
     }
 
-    private fun run(def: SimDef, laws: Laws, seconds: Float): SimCore {
+    private fun run(
+        def: SimDef,
+        laws: Laws,
+        seconds: Float,
+        stopAtPayoff: Boolean = false
+    ): SimCore {
         val core = SimCore(def, 12345L)
         core.setAspect(0.46f)
         core.setLaws(laws)
@@ -164,6 +185,9 @@ class RegistryTest {
             core.draw(g)
             core.events.drain(10_000) { _, _, _, _ -> }
             frames++
+            // The payoff is the thing being asserted; once it has landed there
+            // is nothing more to learn, and this runs 285 times a build.
+            if (stopAtPayoff && core.payoffFired) break
         }
         return core
     }

@@ -19,6 +19,9 @@ import kotlin.math.sin
  */
 class Synth(private val sampleRate: Int = 44100) {
 
+    /** A click is this many samples of noise and then silence. */
+    private val CLICK_SAMPLES = 220
+
     companion object {
         const val MAX_VOICES = 64
         private const val KS_SIZE = 1024
@@ -156,6 +159,9 @@ class Synth(private val sampleRate: Int = 44100) {
      */
     fun note(hz: Float, amplitude: Float, pan: Float, type: VoiceType, decaySeconds: Float) {
         if (muted) return
+        // coerceIn does not rescue a NaN, and one NaN voice poisons the mix and
+        // the reverb tail for the rest of the session, so it stops here.
+        if (!hz.isFinite() || !amplitude.isFinite() || !pan.isFinite()) return
         val f = hz.coerceIn(20f, 8000f)
         synchronized(lock) {
             val v = allocate()
@@ -219,12 +225,19 @@ class Synth(private val sampleRate: Int = 44100) {
      */
     fun renderOffline(out: FloatArray, frames: Int) = render(out, frames)
 
+    /** A voice whose envelope is no longer a number can never decay away. */
+    private fun Voice.isSane(): Boolean = amp.isFinite() && phaseInc.isFinite()
+
     private fun render(out: FloatArray, frames: Int) {
         java.util.Arrays.fill(out, 0f)
         val vol = if (muted) 0f else volume.coerceIn(0f, 1f)
         synchronized(lock) {
             for (v in voices) {
                 if (!v.active) continue
+                if (!v.isSane()) {
+                    v.active = false
+                    continue
+                }
                 renderVoice(v, out, frames, vol)
             }
         }
@@ -295,7 +308,7 @@ class Synth(private val sampleRate: Int = 44100) {
                 VoiceType.CLICK -> {
                     seed = seed * 1103515245 + 12345
                     val n = ((seed shr 16) and 0x7FFF) / 16384f - 1f
-                    n * (if (v.age < 220) 1f else 0f)
+                    n * (if (v.age < CLICK_SAMPLES) 1f else 0f)
                 }
                 VoiceType.NOISE -> {
                     seed = seed * 1103515245 + 12345
@@ -314,6 +327,11 @@ class Synth(private val sampleRate: Int = 44100) {
         v.phase = phase
         v.modPhase = modPhase
         v.noiseState = seed
+        // A click is five milliseconds of noise and then nothing, but its
+        // envelope kept decaying for as long as the preset said — holding a
+        // voice that made no sound, and one the allocator preferred to keep
+        // because it was the quietest.
+        if (v.type == VoiceType.CLICK && v.age >= CLICK_SAMPLES) v.active = false
     }
 
     /** Number of voices currently sounding, for the UI's load indicator. */

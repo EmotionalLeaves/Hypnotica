@@ -268,6 +268,7 @@ class LuaSim(private val source: String) : Sim {
     private var g: G? = null
     private var payoffFrame = false
     private var overBudgetSteps = 0
+    private var overBudgetDraws = 0
 
     /** Set when the recipe threw or ran away; shown in the UI, never a crash. */
     var error: String? = null
@@ -291,7 +292,16 @@ class LuaSim(private val source: String) : Sim {
             fnPayoff = lua.get("payoff")
             state = LuaTable()
             globals = lua
-            if (!fnSetup.isnil()) fnSetup.call(state)
+            if (!fnSetup.isnil()) {
+                val setupStart = System.nanoTime()
+                fnSetup.call(state)
+                val setupMs = (System.nanoTime() - setupStart) / 1_000_000f
+                if (setupMs > SETUP_BUDGET_MS) {
+                    error = "Recipe setup took ${setupMs.toInt()} ms; the limit is " +
+                        "${SETUP_BUDGET_MS.toInt()}"
+                    globals = null
+                }
+            }
         } catch (e: Throwable) {
             error = LuaRecipe.cleanMessage(e.message)
             globals = null
@@ -327,11 +337,26 @@ class LuaSim(private val source: String) : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         this.g = g
         this.env = env
-        if (globals == null) return
+        // A recipe stopped for being too slow kept drawing every frame, which
+        // was the freeze the budget existed to prevent.
+        if (globals == null || error != null) return
+        val started = System.nanoTime()
         try {
             if (!fnDraw.isnil()) fnDraw.call(state, LuaValue.valueOf(alpha.toDouble()))
         } catch (e: Throwable) {
             if (error == null) error = LuaRecipe.cleanMessage(e.message)
+            return
+        }
+        // draw had no budget at all, so a slow one froze the frame however well
+        // behaved its step was.
+        val tookMs = (System.nanoTime() - started) / 1_000_000f
+        if (tookMs > DRAW_BUDGET_MS) {
+            overBudgetDraws++
+            if (overBudgetDraws > OVER_BUDGET_LIMIT) {
+                error = "Recipe draws too slowly: over ${DRAW_BUDGET_MS.toInt()} ms a frame"
+            }
+        } else if (overBudgetDraws > 0) {
+            overBudgetDraws--
         }
     }
 
@@ -480,6 +505,12 @@ class LuaSim(private val source: String) : Sim {
 
     companion object {
         const val STEP_BUDGET_MS = 8f
+
+        /** A frame is 16 ms; drawing may have half of it before it counts. */
+        const val DRAW_BUDGET_MS = 8f
+
+        /** setup() builds the world once, so it may take longer — but not forever. */
+        const val SETUP_BUDGET_MS = 600f
         const val OVER_BUDGET_LIMIT = 90
     }
 }
