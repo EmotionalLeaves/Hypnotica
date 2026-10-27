@@ -1,5 +1,11 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -271,13 +277,19 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
         NoticeLine(state.notice)
 
-        if (catchingUp) {
-            Text(
-                "catching up…",
-                color = Tokens.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp)
-            )
+        Box(Modifier.fillMaxWidth().height(20.dp)) {
+            AnimatedVisibility(
+                visible = catchingUp,
+                enter = fadeIn(tween(Tokens.Fast)),
+                exit = fadeOut(tween(Tokens.Fast))
+            ) {
+                Text(
+                    "catching up…",
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
 
         if (exporting) {
@@ -362,18 +374,31 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 .height(32.dp)
                 .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .pointerInput(project.duration) {
-                    detectHorizontalDragGestures { change, _ ->
+                    // The playhead follows the finger every sample; the sim is
+                    // asked to catch up when the finger stops. Seeking on every
+                    // delta meant a hundred seeks a second, each of which the
+                    // next one interrupted.
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            playing = false
+                            state.engine.studioPlaying = false
+                        },
+                        onDragEnd = { state.engine.seek(playhead) },
+                        onDragCancel = { state.engine.seek(playhead) }
+                    ) { change, _ ->
                         val fraction = (change.position.x / size.width).coerceIn(0f, 1f)
                         playhead = fraction * project.duration
-                        playing = false
-                        state.engine.studioPlaying = false
-                        state.engine.seek(playhead)
                     }
                 }
         ) {
+            val fill by animateFloatAsState(
+                (playhead / project.duration).coerceIn(0f, 1f),
+                tween(60, easing = LinearEasing),
+                label = "scrubFill"
+            )
             Box(
                 Modifier
-                    .fillMaxWidth((playhead / project.duration).coerceIn(0f, 1f))
+                    .fillMaxWidth(fill)
                     .height(32.dp)
                     .background(Tokens.Accent.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
             )

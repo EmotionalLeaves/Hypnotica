@@ -1,12 +1,15 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -289,12 +292,24 @@ private fun ControlDrawer(state: AppState) {
             ChipRow(cards.map { it.title }, selected) { state.card = cards[it] }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                when (shown) {
-                    Card.DATA -> CardControls(state, Card.DATA)
-                    Card.MOTION -> MotionCard(state)
-                    Card.LOOK -> LookCard(state)
-                    Card.SOUND -> SoundCard(state)
-                    Card.LAWS -> LawsCard(state)
+                // Crossfaded, with the drawer's height carried along: Sound is
+                // much taller than Look, so switching used to swap the panel
+                // and snap the drawer's height in the same frame.
+                AnimatedContent(
+                    targetState = shown,
+                    transitionSpec = {
+                        (fadeIn(tween(Tokens.Fast)) togetherWith fadeOut(tween(Tokens.Fast)))
+                            .using(SizeTransform(clip = false) { _, _ -> tween(Tokens.Base) })
+                    },
+                    label = "simpleCard"
+                ) { card ->
+                    when (card) {
+                        Card.DATA -> CardControls(state, Card.DATA)
+                        Card.MOTION -> MotionCard(state)
+                        Card.LOOK -> LookCard(state)
+                        Card.SOUND -> SoundCard(state)
+                        Card.LAWS -> LawsCard(state)
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
             }

@@ -346,9 +346,25 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             pendingSeek?.let { target ->
                 pendingSeek = null
                 cameraPosed = false
-                core.restart(core.seed)
-                resetRunState()
-                seekRemaining = (target * core.stepHz).toInt().coerceIn(0, MAX_SEEK_STEPS)
+                // Only rebuild the run when going backwards.
+                //
+                // Every seek used to restart from the seed, and the scrubber
+                // fires one per drag delta — sixty to a hundred and twenty a
+                // second while a finger is moving. Each restart threw the run
+                // back to zero and then paid off at most 900 steps a frame, so
+                // a playhead at twenty seconds needed three frames to catch up
+                // and the next delta arrived first: the preview sat pinned near
+                // the start of the run, flickering, for the whole drag. Seeking
+                // forward is just more steps from where we already are.
+                val here = kotlin.math.abs(core.env.time)
+                if (target < here) {
+                    core.restart(core.seed)
+                    resetRunState()
+                    seekRemaining = (target * core.stepHz).toInt().coerceIn(0, MAX_SEEK_STEPS)
+                } else {
+                    seekRemaining =
+                        ((target - here) * core.stepHz).toInt().coerceIn(0, MAX_SEEK_STEPS)
+                }
                 studioTime = target
             }
             // A seek re-simulates from the seed. Five minutes of sim is 36,000

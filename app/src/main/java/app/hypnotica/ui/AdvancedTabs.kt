@@ -1,5 +1,11 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -37,8 +43,8 @@ import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
-import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.LawKnob
 
 /** The tabs Advanced mode offers, in order. */
 enum class AdvancedTab(val title: String) {
@@ -47,12 +53,27 @@ enum class AdvancedTab(val title: String) {
 
 @Composable
 fun AdvancedPanel(state: AppState, tab: AdvancedTab) {
-    when (tab) {
-        AdvancedTab.DATA -> DataTab(state)
-        AdvancedTab.PARAMS -> ParamsTab(state)
-        AdvancedTab.LAWS -> LawsTab(state)
-        AdvancedTab.SOUND -> SoundTab(state)
-        AdvancedTab.CODE -> CodeTab(state)
+    // Crossfaded, and the drawer's height is taken along with it.
+    //
+    // Tapping Look -> Sound replaced the whole panel in a single frame, and
+    // because the drawer is content-sized the drawer's height snapped at the
+    // same instant — under the finger that was still on the chip row above it.
+    // The SizeTransform is the half that matters.
+    AnimatedContent(
+        targetState = tab,
+        transitionSpec = {
+            (fadeIn(tween(Tokens.Fast)) togetherWith fadeOut(tween(Tokens.Fast)))
+                .using(SizeTransform(clip = false) { _, _ -> tween(Tokens.Base) })
+        },
+        label = "advancedTab"
+    ) { shown ->
+        when (shown) {
+            AdvancedTab.DATA -> DataTab(state)
+            AdvancedTab.PARAMS -> ParamsTab(state)
+            AdvancedTab.LAWS -> LawsTab(state)
+            AdvancedTab.SOUND -> SoundTab(state)
+            AdvancedTab.CODE -> CodeTab(state)
+        }
     }
 }
 
