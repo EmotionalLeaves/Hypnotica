@@ -32,15 +32,41 @@ jobs:
 
       - name: Install a browser to compile against
         run: |
-          npm init -y > /dev/null
-          npm install --no-save playwright@1.48.2
-          npx playwright install --with-deps chromium
+          set -o pipefail
+          node -v 2>&1 | tee -a shader-output.txt
+          npm -v 2>&1 | tee -a shader-output.txt
+          npm init -y 2>&1 | tee -a shader-output.txt
+          npm install --no-save playwright@1.49.1 2>&1 | tee -a shader-output.txt
+          npx --yes playwright install --with-deps chromium 2>&1 | tee -a shader-output.txt
 
       - name: Compile and link every shader
-        run: node tools/glslcheck.js
+        run: |
+          set -o pipefail
+          node tools/glslcheck.js 2>&1 | tee -a shader-output.txt
 
       - name: Measure what the shaders draw
-        run: node tools/glslpixels.js
+        run: |
+          set -o pipefail
+          node tools/glslpixels.js 2>&1 | tee -a shader-output.txt
+
+      # Same reason as the build job: the log archive is not reachable from
+      # every network, so the failure comes back on the commit instead.
+      - name: Report failure on the commit
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo '### Shader check failed'
+            echo
+            echo '```'
+            tail -80 shader-output.txt 2>/dev/null || echo '(no output captured)'
+            echo '```'
+          } > shader-failure.md
+          head -c 60000 shader-failure.md > shader-failure-trimmed.md
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat shader-failure-trimmed.md)" > /dev/null
+          echo "Posted shader failure details as a commit comment."
 
   build:
     runs-on: ubuntu-latest
