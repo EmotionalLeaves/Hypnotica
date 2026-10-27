@@ -85,11 +85,11 @@ class MandelbrotSim : Sim {
         // An escape-time image costs far more than a physics step, so it is
         // recomputed on its own clock rather than once per 120 Hz step. Eight
         // images a second is past the point where a slow zoom looks continuous.
-        // A note each time the magnification doubles: the dive's own beat.
-        // The only other sound follows the iteration count at the centre, which
-        // deep in a zoom can hold steady for twenty seconds — measured, the
-        // longest silence of any sim that never stops moving.
-        val nowDoublings = (ln(zoom / 0.6) / ln(2.0)).toInt()
+        // A note each time the magnification grows by half again: the dive's
+        // own beat. The only other sound follows the iteration count at the
+        // centre, which deep in a zoom can hold steady for twenty seconds. A
+        // note per doubling was one every three seconds at the shipped speed.
+        val nowDoublings = (ln(zoom / 0.6) / ln(1.5)).toInt()
         if (nowDoublings > doublings) {
             doublings = nowDoublings
             env.emit(EventKind.STEP, ((doublings % 12) / 12f), 0f, 0.3f)
@@ -280,6 +280,7 @@ class ChaosGameSim : Sim {
         // thrown away the instant it had finished becoming worth looking at.
         if (formed) breath += abs(dt) * BREATH_HZ * 2f * PI.toFloat()
         val r = ratio * (1f + BREATH_DEPTH * sin(breath))
+        val before = count
         while (budget-- > 0) {
             val c = env.rng.int(0, corners)
             px += (cornerX[c] - px) * r
@@ -290,7 +291,11 @@ class ChaosGameSim : Sim {
             tints[slot] = c.toFloat() / corners
             count++
         }
-        if (count % 2048 < 32 && count > 0) {
+        // A note every time another block of dots lands. The old test — the
+        // count landing in a narrow window — only caught that window when a
+        // frame's batch happened to straddle it, so the notes came in random
+        // clumps with three-second silences between.
+        if (count / NOTE_EVERY != before / NOTE_EVERY) {
             val level = if (formed) 0.5f + 0.5f * sin(breath)
             else (count.toFloat() / capacity).coerceIn(0f, 1f)
             env.emit(EventKind.WRITE, level, 0f, 0.35f)
@@ -327,6 +332,7 @@ class ChaosGameSim : Sim {
     companion object {
         /** One slow breath every twenty-five seconds. */
         private const val BREATH_HZ = 0.04f
+        private const val NOTE_EVERY = 2048L
 
         /** How far the jump ratio breathes either side of the slider's value. */
         private const val BREATH_DEPTH = 0.06f

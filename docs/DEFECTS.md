@@ -41,6 +41,11 @@ Measured, not yet acted on.
   under a fifth of the run and it is six times louder on average. The outer gap
   now starts overhead: started anywhere, it sat under the ball one run in ten
   and the ball fell out before anything had built.
+- **The chaos game's notes came in clumps with three-second silences.** It sounded
+  when the dot count fell inside a narrow window, which a frame's batch only
+  sometimes straddled; it now sounds every time another block of dots lands.
+  The Mandelbrot dive's beat is every half-again of zoom, not every doubling —
+  one note every three seconds was too sparse to read as a beat.
 
 - The payoff flash and chime, live and in export; the bell at the end note.
 - The vignette, which drew a dark frame around every sim.
