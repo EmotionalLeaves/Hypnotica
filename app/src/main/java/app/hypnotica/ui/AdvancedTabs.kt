@@ -333,6 +333,15 @@ fun LawsControls(state: AppState, advanced: Boolean) {
             state.editLaws { it.copy(friction = v) }
         }
     }
+    // How fast this universe's clock runs, as a law: Advanced only, on the
+    // Laws tab. On the Motion card it sat right under Speed and read as the
+    // same slider twice.
+    if (advanced) {
+        ValueSlider(
+            "Universe clock", laws.timeScale, 0.05f, 4f, logScale = true,
+            valueText = String.format(java.util.Locale.US, "%.2fx", laws.timeScale)
+        ) { v -> state.editLaws { it.copy(timeScale = v) } }
+    }
     // Only when there is a law here to break: on the gravity-only and the
     // charge-only sims the heading sat over nothing.
     if (has(LawKnob.FRICTION) || has(LawKnob.PAIRWISE_FORCE) || has(LawKnob.SPACE) ||
