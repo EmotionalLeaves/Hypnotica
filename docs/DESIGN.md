@@ -391,6 +391,11 @@ Every sim, before its round is done:
 - [ ] No stutter at 60 fps on the reference phone
 - [ ] Trails or blur on anything moving faster than a screen-width a second
 - [ ] The final state is worth a screenshot
+- [ ] Fits a phone held upright — the screen there is under half a unit wide.
+      Lay out inside `env.halfWidth`, or, for a shape drawn at a fixed size,
+      say how far it reaches with `frameHalfWidth` and the view pulls back
+      (`FrameTest`)
+- [ ] No two-second silence while something is still moving
 - [ ] Loops cleanly, or hands off smoothly to the next clip
 - [ ] Inside the flash and loudness limits above
 - [ ] At least one Simple-mode macro worth dragging
