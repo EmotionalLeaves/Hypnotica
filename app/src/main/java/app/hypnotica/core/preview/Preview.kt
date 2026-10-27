@@ -1,5 +1,7 @@
 package app.hypnotica.core.preview
 
+import kotlin.math.min
+
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.SimCore
@@ -49,18 +51,22 @@ class Preview(val data: FloatArray, val count: Int, val background: Int) {
 object Previews {
 
     /**
-     * Run [def] for [seconds] of simulated time and snapshot the frame.
+     * Run [def] to its best moment and snapshot the frame: just after the
+     * payoff, or the end of its run, or — for a sim that has neither in
+     * reach — as far as [MAX_SECONDS]. With [seconds] given, exactly that long.
      *
-     * Deliberately short: the point is a card that looks like the sim, not a
-     * finished run. Anything that throws returns an empty preview rather than
-     * taking the Library down with it.
+     * It was always the first 1.6 seconds, and a sim that builds — a prime
+     * spiral, a Collatz path, Langton's ant, the ball-volume bars, falling
+     * sand — showed as an all-but-empty card: the Library sold every sim on
+     * the moment before anything had happened. Anything that throws returns
+     * an empty preview rather than taking the Library down with it.
      */
     /** Why the last preview came back empty, for the test that checks them. */
     @Volatile
     var lastError: String? = null
         private set
 
-    fun build(def: SimDef, seconds: Float = 1.6f, aspect: Float = 1.35f): Preview {
+    fun build(def: SimDef, seconds: Float? = null, aspect: Float = 1.35f): Preview {
         return try {
             val core = SimCore(def, SEED)
             core.setAspect(aspect)
@@ -72,12 +78,23 @@ object Previews {
                 if (core.params.f(p.key) > cap) core.params.set(p.key, cap)
             }
             core.restart(SEED)
-            val steps = (seconds * core.stepHz).toInt()
+            val limit = seconds ?: min(def.typicalSeconds * 1.15f, MAX_SECONDS)
+            val steps = (limit * core.stepHz).toInt()
+            val after = (AFTER_PAYOFF_SECONDS * core.stepHz).toInt()
             var done = 0
+            var payoffSeenAt = -1
+            // A card is not worth more than this much of a phone's time: a
+            // deep Mandelbrot zoom costs more every second it runs.
+            val budgetEnds = System.nanoTime() + WALL_BUDGET_MS * 1_000_000L
             while (done < steps && !core.finished) {
+                if (seconds == null && done > 0 && System.nanoTime() > budgetEnds) break
                 core.advanceSteps(STEP_CHUNK)
                 core.events.clear()
                 done += STEP_CHUNK
+                if (seconds == null) {
+                    if (payoffSeenAt < 0 && core.payoffFired) payoffSeenAt = done
+                    if (payoffSeenAt >= 0 && done - payoffSeenAt >= after) break
+                }
             }
             val g = G()
             g.reset()
@@ -190,4 +207,13 @@ object Previews {
 
     private const val SEED = 20260615L
     private const val STEP_CHUNK = 60
+
+    /** The furthest a card will run looking for its sim's best moment. */
+    private const val MAX_SECONDS = 24f
+
+    /** How long after the payoff the picture is taken: the moment has landed. */
+    private const val AFTER_PAYOFF_SECONDS = 0.5f
+
+    /** Wall-clock time one card may spend getting there. */
+    private const val WALL_BUDGET_MS = 300L
 }

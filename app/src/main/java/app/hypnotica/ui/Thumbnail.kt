@@ -46,7 +46,7 @@ object PreviewCache {
 }
 
 /**
- * A Library card's picture: the sim's own first second, painted from its draw
+ * A Library card's picture: the sim at its best moment, painted from its draw
  * list. Falls back to a palette bar chart for the moment before it is ready, so
  * a card is never empty.
  */
