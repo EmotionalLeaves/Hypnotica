@@ -120,11 +120,14 @@ private fun ParamsTab(state: AppState) {
         state.setPalette(Palette.NAMES[it])
     }
     Spacer(Modifier.height(6.dp))
-    ToggleRow(
-        if (state.canEvolve) "Evolve" else "Evolve — nothing on this sim drifts",
-        state.evolve,
-        enabled = state.canEvolve
-    ) { state.evolve = it }
+    ToggleRow("Evolve", state.evolve, enabled = state.canEvolve) { state.evolve = it }
+    if (!state.canEvolve) {
+        Text(
+            "Nothing on this sim drifts.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state.recording) {
             Pill("Stop and edit", selected = true) { state.stopRecording() }
@@ -515,9 +518,10 @@ private fun SoundTab(state: AppState) {
         enabled = !songOn,
         valueText = when {
             songOn -> songNote
+            // Short enough to sit beside the label on a 360 dp phone: the long
+            // form ran to about 350 dp of a 332 dp row.
             mapping.octaves > fits + 0.05f -> String.format(
-                java.util.Locale.US,
-                "%.1f of %.1f octaves — the rest is above the pitch ceiling",
+                java.util.Locale.US, "%.1f of %.1f — pitch caps it",
                 mapping.octaves, fits
             )
             else -> String.format(java.util.Locale.US, "%.1f octaves", mapping.octaves)
@@ -537,6 +541,13 @@ private fun SoundTab(state: AppState) {
     }
 
     SectionLabel("Which events make a sound")
+    // Said once above the group rather than appended to all nine rows, which
+    // was both repetitive and wider than a small phone at this text size.
+    Text(
+        "Dimmed kinds are ones this sim does not make.",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall
+    )
     Column {
         // Dimmed rather than hidden for the kinds this sim does not make, so
         // the list does not reflow as a run produces its first of each. Every
@@ -549,8 +560,7 @@ private fun SoundTab(state: AppState) {
                 events.hasEmitted(kind)
             }
             ToggleRow(
-                kind.name.lowercase().replaceFirstChar { it.uppercase() } +
-                    (if (made) "" else " — not used by this sim"),
+                kind.name.lowercase().replaceFirstChar { it.uppercase() },
                 on,
                 enabled = made
             ) {

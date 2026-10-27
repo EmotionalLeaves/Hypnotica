@@ -426,11 +426,14 @@ private fun MotionCard(state: AppState) {
     TimeControls(state)
     CardControls(state, Card.MOTION)
     Spacer(Modifier.height(4.dp))
-    ToggleRow(
-        if (state.canEvolve) "Evolve" else "Evolve — nothing on this sim drifts",
-        state.evolve,
-        enabled = state.canEvolve
-    ) { state.evolve = it }
+    ToggleRow("Evolve", state.evolve, enabled = state.canEvolve) { state.evolve = it }
+    if (!state.canEvolve) {
+        Text(
+            "Nothing on this sim drifts.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
     Text(
         "Lets the settings drift slowly while it plays, so a loop never settles.",
         color = Tokens.TextSecondary,
@@ -513,6 +516,12 @@ private fun SoundCard(state: AppState) {
     // Pills rather than nine toggle rows: tapping one silences that kind of
     // event, which is a thing people want on a long run and was Advanced-only.
     val kinds = remember { EventKind.entries.toList() }
+    Text(
+        "Dimmed kinds are ones this sim does not make.",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(bottom = 4.dp)
+    )
     Column {
         kinds.chunked(3).forEach { row ->
             Row(
