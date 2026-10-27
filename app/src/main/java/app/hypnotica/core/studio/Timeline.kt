@@ -1,6 +1,7 @@
 package app.hypnotica.core.studio
 
 import app.hypnotica.core.render.Camera
+import kotlin.math.max
 import kotlin.math.abs
 import kotlin.math.pow
 
@@ -57,6 +58,15 @@ enum class TrackKind(val title: String, val min: Float, val max: Float, val defa
 
 data class Keyframe(val time: Float, val value: Float, val easing: Easing = Easing.EASE_IN_OUT)
 
+/**
+ * How close to a key counts as being on it, when a project has not said.
+ *
+ * A quarter of a second of a thirty-second project is about three dp of a
+ * phone-width scrub bar, which is why Remove key used to miss almost every
+ * time. [Project.grab] scales it to the project instead; this is the floor.
+ */
+const val DEFAULT_GRAB = 0.3f
+
 /** One animated value over the length of a project. */
 class Track(val kind: TrackKind) {
 
@@ -66,19 +76,49 @@ class Track(val kind: TrackKind) {
 
     fun keyframes(): List<Keyframe> = keys
 
-    fun set(time: Float, value: Float, easing: Easing = Easing.EASE_IN_OUT) {
+    /**
+     * Add a key, or replace the one already at this spot.
+     *
+     * [within] is how close counts as the same spot, and every one of set,
+     * [removeNear] and [moveNear] must be handed the same number. They used
+     * 0.02 s, 0.25 s and 0.6 s respectively, which meant pressing Key twice at
+     * what looked like one place made two keys a fiftieth of a second apart,
+     * drawn as a single marker — and then Remove, working to a window twelve
+     * times wider, could take only one of them. A key you could make was a key
+     * you could not reliably unmake. [Project.grab] is the shared answer.
+     */
+    fun set(
+        time: Float,
+        value: Float,
+        easing: Easing = Easing.EASE_IN_OUT,
+        within: Float = DEFAULT_GRAB
+    ) {
         val t = max0(time)
-        val existing = keys.indexOfFirst { abs(it.time - t) < 0.02f }
+        val existing = nearest(t, within)
         val k = Keyframe(t, value, easing)
         if (existing >= 0) keys[existing] = k else keys.add(k)
         keys.sortBy { it.time }
     }
 
-    fun removeNear(time: Float): Boolean {
-        val i = keys.indexOfFirst { abs(it.time - time) < 0.25f }
+    fun removeNear(time: Float, within: Float = DEFAULT_GRAB): Boolean {
+        val i = nearest(time, within)
         if (i < 0) return false
         keys.removeAt(i)
         return true
+    }
+
+    /** The key closest to [time] inside [within], or -1. Closest, not first. */
+    private fun nearest(time: Float, within: Float): Int {
+        var best = -1
+        var gap = within
+        for (i in keys.indices) {
+            val d = abs(keys[i].time - time)
+            if (d < gap) {
+                gap = d
+                best = i
+            }
+        }
+        return best
     }
 
     fun clear() = keys.clear()
@@ -89,7 +129,7 @@ class Track(val kind: TrackKind) {
      * The docs have promised draggable keys since the strip was built; without
      * this a recorded move could only be wiped, never adjusted.
      */
-    fun moveNear(from: Float, to: Float, within: Float = 0.6f): Boolean {
+    fun moveNear(from: Float, to: Float, within: Float = DEFAULT_GRAB): Boolean {
         var best = -1
         var bestGap = within
         for (i in keys.indices) {
@@ -155,6 +195,16 @@ class Project(var simId: String, var seed: Long) {
     val freezes = ArrayList<Pair<Float, Float>>()
 
     fun track(kind: TrackKind): Track = tracks.getValue(kind)
+
+    /**
+     * How close to a key counts as being on it, for this project's length.
+     *
+     * The scrub bar is the only way to place the playhead, so the window has to
+     * be worth a usable number of pixels: about a hundredth of the length, so a
+     * thirty-second project gives three dp of thumb travel either side rather
+     * than the third of a dp the old 0.02 s window allowed.
+     */
+    val grab: Float get() = max(DEFAULT_GRAB, duration / 100f)
 
     fun isFrozenAt(time: Float): Boolean = freezes.any { time >= it.first && time < it.second }
 

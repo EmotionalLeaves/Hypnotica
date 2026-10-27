@@ -127,6 +127,7 @@ private fun ParamsTab(state: AppState) {
             Pill("Record moves") { state.notice = null; state.startRecording() }
         }
     }
+    NoticeLine(state.notice)
 }
 
 /** One parameter with its slider, its exact value and a formula box. */
@@ -371,11 +372,22 @@ fun LawsControls(state: AppState, advanced: Boolean) {
         }
     }
     if (has(LawKnob.PAIRWISE_FORCE)) {
+        // A typed force law replaces the whole pairwise force, so the falloff
+        // is not read at all while one is set. The slider still moved and
+        // renamed the universe, and the orbits did not change. The constant
+        // survives, because an expression can reference g.
+        val typedForce = laws.forceExpr != null
         ValueSlider("Force falloff", laws.falloff, 0.5f, 4f,
-            valueText = String.format("1/r^%.2f", laws.falloff)) { v ->
+            enabled = !typedForce,
+            valueText = if (typedForce) "set by the force law below"
+                else String.format(java.util.Locale.US, "1/r^%.2f", laws.falloff)) { v ->
             state.editLaws { it.copy(falloff = v) }
         }
-        ValueSlider("Gravitational constant", laws.gravityConstant, -3f, 3f) { v ->
+        ValueSlider(
+            if (typedForce) "Gravitational constant (g in the force law)"
+            else "Gravitational constant",
+            laws.gravityConstant, -3f, 3f
+        ) { v ->
             state.editLaws { it.copy(gravityConstant = v) }
         }
     }
@@ -446,8 +458,20 @@ private fun SoundTab(state: AppState) {
     ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
+    // A song supplies its own notes, so the scale, the base pitch and the range
+    // are not consulted at all while one is playing. All three sat directly
+    // under the Song chips looking fully live, which is the most reachable
+    // cluster of dead controls in the app: pick "Rising", drag Base pitch from
+    // 262 Hz to 700 Hz, and the sound is identical.
+    val songOn = remember(version, state.songIndex) { mapping.song != null }
+    val songNote = "set by Song mode"
+
     SectionLabel("Scale")
-    ChipRow(Scale.NAMES, remember(version) { Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0) }) {
+    ChipRow(
+        Scale.NAMES,
+        remember(version) { Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0) },
+        enabled = !songOn
+    ) {
         mapping.scale = Scale.byIndex(it)
         state.soundChanged()
     }
@@ -455,12 +479,26 @@ private fun SoundTab(state: AppState) {
     ChipRow(Song.NAMES, state.songIndex) { state.setSong(it) }
 
     ValueSlider("Base pitch", mapping.baseHz, 60f, 880f, logScale = true,
-        valueText = String.format("%.0f Hz", mapping.baseHz)) {
+        enabled = !songOn,
+        valueText = if (songOn) songNote
+            else String.format(java.util.Locale.US, "%.0f Hz", mapping.baseHz)) {
         mapping.baseHz = it
         state.soundChanged()
     }
+    // The safety ceiling caps this well below the slider's own top, and the
+    // readout used to claim the number it could not deliver.
+    val fits = remember(version) { mapping.octavesThatFit() }
     ValueSlider("Range", mapping.octaves, 1f, 6f,
-        valueText = String.format("%.1f octaves", mapping.octaves)) {
+        enabled = !songOn,
+        valueText = when {
+            songOn -> songNote
+            mapping.octaves > fits + 0.05f -> String.format(
+                java.util.Locale.US,
+                "%.1f of %.1f octaves — the rest is above the pitch ceiling",
+                mapping.octaves, fits
+            )
+            else -> String.format(java.util.Locale.US, "%.1f octaves", mapping.octaves)
+        }) {
         mapping.octaves = it
         state.soundChanged()
     }
@@ -490,7 +528,14 @@ private fun SoundTab(state: AppState) {
 @Composable
 private fun CodeTab(state: AppState) {
     val version = state.paramVersion
-    val text = remember(version, state.currentDef.id) { state.stateJson() }
+    // Everything stateJson reports has to be in these keys. It also prints the
+    // laws, the palette, the trails and the sound preset, none of which bump
+    // paramVersion — so the panel that calls itself "everything needed to
+    // replay it" went on saying "Our universe" after you switched to Moon.
+    val text = remember(
+        version, state.currentDef.id, state.laws, state.paletteName,
+        state.trails, state.soundPresetName, state.soundVersion
+    ) { state.stateJson() }
     Text(
         "This run, exactly. Everything needed to replay it.",
         color = Tokens.TextSecondary,

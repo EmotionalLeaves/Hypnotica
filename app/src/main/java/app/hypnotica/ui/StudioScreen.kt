@@ -115,6 +115,10 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     DisposableEffect(Unit) {
         state.engine.project = project
         state.engine.studioPlaying = false
+        // Pause survives into Studio otherwise, and nothing here clears it: the
+        // route Player -> Pause -> back -> Settings -> Studio left Play
+        // flipping its label and counting up over a frozen still.
+        state.engine.core.paused = false
         state.engine.seek(0f)
         onDispose {
             // An export is a blocking job on another thread: cancelling the
@@ -244,6 +248,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             }
         }
 
+        NoticeLine(state.notice)
+
         if (state.engine.seeking) {
             Text(
                 "catching up…",
@@ -314,14 +320,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 } else {
                     keyValue
                 }
-                project.track(selectedTrack).set(playhead, value, easing)
+                project.track(selectedTrack).set(playhead, value, easing, project.grab)
                 state.engine.releaseCamera()
                 revision++
             }
             Spacer(Modifier.weight(1f))
             Text(
-                String.format("%.1f / %.0fs", playhead, project.duration),
+                String.format(java.util.Locale.US, "%.1f / %.0fs", playhead, project.duration),
                 color = Tokens.TextSecondary,
+                maxLines = 1,
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -395,13 +402,19 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             val version = revision
             SectionLabel("Keyframes")
             TrackStrip(project, selectedTrack, playhead, version) { from, to ->
-                if (project.track(selectedTrack).moveNear(from, to)) revision++
+                if (project.track(selectedTrack).moveNear(from, to, project.grab)) revision++
             }
 
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Pill("Remove key here") {
-                    project.track(selectedTrack).removeNear(playhead)
-                    revision++
+                    // Saying so when there is nothing to remove: silence here
+                    // read as a dead button, and with the old quarter-second
+                    // window it was silent most of the time.
+                    if (project.track(selectedTrack).removeNear(playhead, project.grab)) {
+                        revision++
+                    } else {
+                        state.notice = "No key here — scrub onto a ◆ first."
+                    }
                 }
                 Pill("Clear track") {
                     project.track(selectedTrack).clear()
@@ -528,11 +541,16 @@ private fun TrackStrip(
         // since the strip was built: without it a recorded move could only be
         // thrown away, never adjusted.
         val duration = project.duration.coerceAtLeast(0.001f)
-        var dragFrom by remember(version, kind) { mutableFloatStateOf(-1f) }
+        // Neither of these may depend on `version`. onMove bumps the revision
+        // on every successful move, and a changed pointerInput key tears down
+        // the node and cancels the drag in flight — so a key nudged once and
+        // then stopped following the finger. The strip still redraws, because
+        // `keys` aliases the live list and `version` invalidates TrackStrip.
+        var dragFrom by remember(kind) { mutableFloatStateOf(-1f) }
         Box(
             Modifier
                 .matchParentSize()
-                .pointerInput(version, kind, duration) {
+                .pointerInput(kind, duration) {
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
                             dragFrom = (offset.x / size.width).coerceIn(0f, 1f) * duration

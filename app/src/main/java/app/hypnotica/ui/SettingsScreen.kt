@@ -197,7 +197,10 @@ private fun FormatMutes(state: AppState) {
                     Pill(
                         format.title,
                         selected = format !in muted,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        // The last one still showing cannot be turned off, so it
+                        // reads as unavailable rather than as a dead pill.
+                        enabled = !state.isLastShowingFormat(format)
                     ) {
                         state.setFormatMuted(format, format !in muted)
                     }
@@ -205,5 +208,6 @@ private fun FormatMutes(state: AppState) {
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+        NoticeLine(state.notice)
     }
 }

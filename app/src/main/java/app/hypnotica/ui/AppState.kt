@@ -108,6 +108,28 @@ class AppState(
 
     var paused by mutableStateOf(false)
     var paletteName by mutableStateOf("Spectrum")
+
+    /**
+     * A palette and sound the person picked themselves, which outrank each
+     * sim's own default until they clear them. Without this, picking a palette
+     * in Settings looked like it worked and was then thrown away by the next
+     * sim change — and the Settings screen has no preview, so the pill lit up
+     * and nothing visible happened at all.
+     */
+    private var chosenPalette: String? = null
+    private var chosenSound: String? = null
+
+    /**
+     * Where the person is in the feed.
+     *
+     * It used to be a `remember` inside FeedScreen, which the navigation
+     * `when` disposes: leaving the feed and coming back reset it to zero and
+     * reloaded the first sim of the shuffle. So you lost your place every time
+     * you opened the player, the palette you had just picked went with it, and
+     * the "pick up where you left off" that the saved sim id promises was
+     * overwritten one frame after launch — permanently, on disk.
+     */
+    var feedIndex by mutableIntStateOf(0)
     var soundPresetName by mutableStateOf("Music box")
     var songIndex by mutableIntStateOf(0)
     // These three write themselves through. Three screens changed them without
@@ -167,16 +189,21 @@ class AppState(
 
     private var cameraDragState by mutableStateOf(false)
 
-    /** When on, one finger pans the view instead of reaching into the sim. */
+    /**
+     * When on, one finger pans the view instead of reaching into the sim.
+     *
+     * The surface field is written only by SimCanvas's own `cameraMode`
+     * parameter now. It used to be written from here through a callback as
+     * well, and the player called SimCanvas without the parameter — so every
+     * recomposition wrote the default `false` back over the person's choice.
+     * The switch stayed on and the gesture went back to poking the sim.
+     */
     var cameraDrag: Boolean
         get() = cameraDragState
         set(value) {
             cameraDragState = value
-            onCameraDrag?.invoke(value)
+            prefs?.cameraDrag = value
         }
-
-    /** Set by the activity, which owns the surface the gesture lives on. */
-    var onCameraDrag: ((Boolean) -> Unit)? = null
 
     /**
      * TickTock's generator. It lives here rather than in the screen so the
@@ -235,14 +262,24 @@ class AppState(
         private set
 
     fun setFormatMuted(format: TrapFormat, muted: Boolean) {
-        if (muted) director.mutedFormats.add(format) else director.mutedFormats.remove(format)
-        // Muting everything would leave the feed with nothing to show.
-        if (director.mutedFormats.size >= TrapFormat.entries.size) {
-            director.mutedFormats.remove(format)
+        // Turning the last one off would leave the feed with nothing to show.
+        // This used to add it and then quietly take it back, so the pill stayed
+        // selected and the tap looked like a dead control; the guard was right,
+        // its silence was the bug.
+        if (muted && director.mutedFormats.size >= TrapFormat.entries.size - 1) {
+            notice = "At least one kind has to stay on, or the feed has nothing to show."
+            return
         }
+        if (muted) director.mutedFormats.add(format) else director.mutedFormats.remove(format)
+        notice = null
         mutedFormats = director.mutedFormats.toSet()
         prefs?.mutedFormats = director.exportMuted()
     }
+
+    /** True when [format] is the last one still showing, so its pill can say so. */
+    fun isLastShowingFormat(format: TrapFormat): Boolean =
+        format !in director.mutedFormats &&
+            director.mutedFormats.size >= TrapFormat.entries.size - 1
 
     fun resetTaste() {
         director.resetTaste()
@@ -322,7 +359,13 @@ class AppState(
             showCountersState = p.showCounters
             timeCheckState = p.timeCheckMinutes
             advancedState = p.advanced
-            engine.synth.volume = p.volume
+            // Through the property, so the slider shows the restored value;
+            // writing the synth directly leaves the mirrored state at its
+            // default and the thumb in the wrong place.
+            volume = p.volume
+            chosenPalette = p.paletteName
+            chosenSound = p.soundPreset
+            cameraDragState = p.cameraDrag
             applySafety()
             showFirstRun = !p.seenFirstLaunch
             director.importTaste(p.taste)
@@ -335,9 +378,18 @@ class AppState(
 
     fun load(def: SimDef, restartSeed: Long = System.nanoTime()) {
         currentDef = def
-        paletteName = def.defaultPalette
-        soundPresetName = def.defaultSound
-        engine.loadSim(def, restartSeed)
+        val palette = chosenPalette ?: def.defaultPalette
+        val sound = chosenSound ?: def.defaultSound
+        paletteName = palette
+        soundPresetName = sound
+        // keepLook stops the engine re-applying the sim's own defaults on the
+        // next GL frame, which is what used to undo the person's choice.
+        engine.loadSim(def, restartSeed, keepLook = true)
+        engine.setPalette(palette)
+        engine.setSoundPreset(sound)
+        // The sound mapping is rebuilt by the preset, so the Sound tab's
+        // sliders are describing the previous sim until this says otherwise.
+        soundChanged()
         macroPositions.clear()
         macroRevisions.clear()
         paramVersion++
@@ -358,6 +410,7 @@ class AppState(
     fun setPalette(name: String) {
         paletteName = name
         engine.setPalette(name)
+        chosenPalette = name
         prefs?.paletteName = name
     }
 
@@ -378,6 +431,7 @@ class AppState(
     fun setSoundPreset(name: String) {
         soundPresetName = name
         engine.setSoundPreset(name)
+        chosenSound = name
         prefs?.soundPreset = name
         soundChanged()
     }
@@ -385,6 +439,10 @@ class AppState(
     fun setSong(index: Int) {
         songIndex = index
         engine.setSong(Song.byIndex(index))
+        // The only sound writer that used to skip this. Harmless while nothing
+        // on the tab depended on it; load-bearing now that the scale, pitch and
+        // range controls dim themselves when a song is playing.
+        soundChanged()
     }
 
     fun setLaws(name: String) {

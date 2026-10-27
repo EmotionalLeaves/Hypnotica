@@ -125,6 +125,25 @@ fun BigButton(
     }
 }
 
+/**
+ * The one-line message channel, wherever controls can produce one.
+ *
+ * It used to be rendered in exactly one place — Simple mode's Motion card —
+ * while three screens wrote to it, so the Advanced "Stop and edit" pill
+ * discarded a recording too short to use and said nothing at all, which is the
+ * silence the message was added to fix.
+ */
+@Composable
+fun NoticeLine(text: String?, modifier: Modifier = Modifier) {
+    text ?: return
+    Text(
+        text,
+        color = Tokens.Accent,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = modifier.padding(top = 4.dp)
+    )
+}
+
 /** A chip row that scrolls sideways when it does not fit. */
 @Composable
 fun ChipRow(
@@ -317,15 +336,43 @@ fun formatValue(v: Float): String = when {
     else -> String.format("%.2f", v)
 }
 
+/**
+ * Where a value sits on a log slider, as a fraction of the track.
+ *
+ * A range that starts at or below zero cannot be mapped by log alone, and the
+ * old code substituted 0.0001 for the floor: ln(0.0001) is -9.2 against
+ * ln(40000) = 10.6, so the left 46% of that slider mapped to values between a
+ * ten-thousandth and one — every one of which rounded to the same integer. Half
+ * the travel did nothing. For those, the log is taken over the distance from the
+ * bottom of the range instead, which puts the bottom of the range at exactly
+ * position zero and spends the travel evenly.
+ *
+ * The offset form is only used when it has to be. Applied to a range like
+ * 0.0002..0.08 it would be very nearly linear, which is the opposite of what a
+ * log slider is for, so a range that is positive throughout keeps the plain log.
+ */
 private fun toLog(value: Float, min: Float, max: Float): Float {
-    val lo = ln(min.coerceAtLeast(0.0001f))
+    val span = max - min
+    if (span <= 0f) return 0f
+    if (min <= 0f) {
+        val hi = ln(span + 1f)
+        return (ln((value - min).coerceIn(0f, span) + 1f) / hi).coerceIn(0f, 1f)
+    }
+    val lo = ln(min)
     val hi = ln(max.coerceAtLeast(min + 0.001f))
-    val v = ln(value.coerceIn(min.coerceAtLeast(0.0001f), max))
+    val v = ln(value.coerceIn(min, max))
     return ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
 }
 
+/** The exact inverse of [toLog], so a thumb cannot drift under the finger. */
 private fun fromLog(position: Float, min: Float, max: Float): Float {
-    val lo = ln(min.coerceAtLeast(0.0001f))
+    val p = position.coerceIn(0f, 1f)
+    val span = max - min
+    if (span <= 0f) return min
+    if (min <= 0f) {
+        return min + kotlin.math.E.toFloat().pow(p * ln(span + 1f)) - 1f
+    }
+    val lo = ln(min)
     val hi = ln(max.coerceAtLeast(min + 0.001f))
-    return kotlin.math.E.toFloat().pow(lo + (hi - lo) * position.coerceIn(0f, 1f))
+    return kotlin.math.E.toFloat().pow(lo + (hi - lo) * p)
 }

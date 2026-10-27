@@ -84,7 +84,8 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             onLongPress = {
                 overlayVisible = true
                 state.controlsOpen = true
-            }
+            },
+            cameraMode = state.cameraDrag
         )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -165,8 +166,8 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
                 state.engine.onTouch(
                     TouchEvent(
                         TouchEvent.Kind.TAP,
-                        state.engine.core.env.rng.range(-0.3f, 0.3f),
-                        state.engine.core.env.rng.range(-0.3f, 0.3f)
+                        uiRandom.nextFloat() * 0.6f - 0.3f,
+                        uiRandom.nextFloat() * 0.6f - 0.3f
                     )
                 )
             }
@@ -247,8 +248,18 @@ private fun visibleCards(state: AppState): List<Card> {
 }
 
 /** Renders every parameter that belongs on one card. */
+/**
+ * The hero button's own randomness.
+ *
+ * Not the sim's: that generator is seeded, stepped on the GL thread, and is
+ * what makes a run reproducible from its seed — which replay links, Studio and
+ * the exporter all depend on. Drawing from it here both raced the sim thread
+ * and advanced the stream, so an exported clip no longer matched the screen.
+ */
+private val uiRandom = java.util.Random()
+
 @Composable
-private fun CardControls(state: AppState, card: Card) {
+private fun CardControls(state: AppState, card: Card, showEmpty: Boolean = true) {
     // Reading paramVersion is what makes a value change recompose this card.
     val version = state.paramVersion
     val params = remember(version, state.currentDef.id, state.advanced, card) {
@@ -258,7 +269,10 @@ private fun CardControls(state: AppState, card: Card) {
     // that moves a single value which is already shown below, exactly, is the
     // same control stated vaguely — "How much: a lot" above a slider reading
     // "Trail 8,000" is strictly worse than the slider.
-    val shown = remember(version, state.currentDef.id, card) {
+    // state.advanced belongs in these keys: `params` above is remembered with
+    // it, and this closes over `params`, so without it a round trip through
+    // Advanced could leave the two describing different parameter sets.
+    val shown = remember(version, state.currentDef.id, state.advanced, card) {
         val exact = params.map { it.key }.toSet()
         state.macros(card).filter { it.targets.size > 1 || !exact.containsAll(it.targets.keys) }
     }
@@ -270,7 +284,7 @@ private fun CardControls(state: AppState, card: Card) {
         }
     }
     if (params.isEmpty()) {
-        if (shown.isEmpty()) {
+        if (shown.isEmpty() && showEmpty) {
             Text(
                 "Nothing to set here for this sim.",
                 color = Tokens.TextSecondary,
@@ -418,14 +432,7 @@ private fun MotionCard(state: AppState) {
             Pill("Start recording") { state.notice = null; state.startRecording() }
         }
     }
-    state.notice?.let {
-        Text(
-            it,
-            color = Tokens.Accent,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-    }
+    NoticeLine(state.notice)
     Text(
         if (state.recording) {
             "Pinch, drag and twist the sim. Stopping opens it in Studio as keyframes."
@@ -543,7 +550,7 @@ private fun SoundCard(state: AppState) {
         state.soundChanged()
     }
 
-    CardControls(state, Card.SOUND)
+    CardControls(state, Card.SOUND, showEmpty = false)
 }
 
 @Composable
@@ -555,5 +562,5 @@ private fun LawsCard(state: AppState) {
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 8.dp)
     )
-    CardControls(state, Card.LAWS)
+    CardControls(state, Card.LAWS, showEmpty = false)
 }

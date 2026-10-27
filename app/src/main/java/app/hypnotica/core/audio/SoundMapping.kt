@@ -201,6 +201,15 @@ class SoundMapping(private val synth: Synth) {
      * How many octaves actually fit under the safety ceiling from [baseHz].
      * Asking for six from 880 Hz wanted 56 kHz, which the ceiling then flattened.
      */
+    /**
+     * How many octaves actually fit above the base pitch before the safety
+     * ceiling, which is usually fewer than the Range slider offers: at the
+     * default pitch about four of its six, and at the top of the pitch slider
+     * about two. The slider kept reading "6.0 octaves" either way, so this is
+     * public for the label to tell the truth with.
+     */
+    fun octavesThatFit(): Float = fittedOctaves()
+
     private fun fittedOctaves(): Float {
         val room = ln(safety.maxHz / baseHz.coerceAtLeast(MIN_HZ)) / LN2
         return octaves.coerceAtMost(room.coerceAtLeast(1f))

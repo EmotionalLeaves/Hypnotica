@@ -32,6 +32,7 @@ import app.hypnotica.core.director.Clip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,17 +72,31 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
      */
     suspend fun fillOne(): Boolean {
         if (queue.isNotEmpty()) return true
-        val clip = withContext(Dispatchers.Default) { director.generate() } ?: return false
+        val clip = generateCancellably() ?: return false
         queue.addLast(clip)
         return true
     }
 
     suspend fun prefetch() {
         while (queue.size < 2) {
-            val clip = withContext(Dispatchers.Default) { director.generate() } ?: break
+            val clip = generateCancellably() ?: break
             queue.addLast(clip)
         }
     }
+
+    /**
+     * Generate one clip, and actually stop when the coroutine is cancelled.
+     *
+     * generate() is a dozen headless payoff checks with no suspension point in
+     * it — about eleven seconds of CPU — so cancelling the coroutine could not
+     * unwind it, and the director's own `isInterrupted` check never fired
+     * because cancelling a coroutine sets no interrupt flag. Swiping again, or
+     * leaving the screen, left the work saturating the dispatcher the GL thread
+     * shares, which is what the stutter on the way out was. runInterruptible is
+     * what connects the two.
+     */
+    private suspend fun generateCancellably(): Clip? =
+        withContext(Dispatchers.Default) { runInterruptible { director.generate() } }
 
     fun play(clip: Clip) {
         current = clip
@@ -107,7 +122,12 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     }
 
     LaunchedEffect(Unit) {
-        state.engine.onFinished = { generating = scope.launch { advance() } }
+        // Same reason as the swipe: this fires from the GL thread and used to
+        // launch a third advance alongside whatever was already running.
+        state.engine.onFinished = {
+            generating?.cancel()
+            generating = scope.launch { advance() }
+        }
         generating = scope.launch { advance() }
     }
 
@@ -147,6 +167,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     onDragEnd = {
                         if (travelled <= -SWIPE_PIXELS) {
                             current?.let { state.skipClip(it) }
+                            generating?.cancel()
                             generating = scope.launch { advance() }
                         } else if (travelled >= SWIPE_PIXELS) {
                             state.screen = Screen.SETTINGS

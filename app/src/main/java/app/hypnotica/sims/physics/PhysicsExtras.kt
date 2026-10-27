@@ -204,7 +204,10 @@ class NBodySim : Sim {
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.int("bodies", "Bodies", 2, 4000, 400, card = Card.DATA, logScale = true),
                 Param.float("central", "Central mass", 0f, 200f, 60f, card = Card.DATA),
-                Param.int("trail", "Trails", 0, 40000, 4000, card = Card.LOOK, logScale = true)
+                // Not "Trails": the Look card already carries the player's own
+                // smear slider under that name, and two identical labels on one
+                // card meant the dead one looked like the live one.
+                Param.int("trail", "Path length", 0, 40000, 4000, card = Card.LOOK, logScale = true)
             ),
             create = { NBodySim() }
         )

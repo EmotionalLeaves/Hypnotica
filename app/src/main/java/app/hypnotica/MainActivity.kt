@@ -57,11 +57,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HypnoticaTheme {
-                val state = remember {
-                    AppState(engine, prefs, recipeStore).also { made ->
-                        made.onCameraDrag = { on -> surface.cameraMode = on }
-                    }
-                }
+                val state = remember { AppState(engine, prefs, recipeStore) }
                 // Measure the phone once, off the main thread — and not in the
                 // first seconds, which belong to the simulation that is already
                 // running. Rule 2: motion before anything else.

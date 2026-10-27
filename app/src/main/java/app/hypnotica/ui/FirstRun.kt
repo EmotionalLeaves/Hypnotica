@@ -2,6 +2,7 @@ package app.hypnotica.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,13 +13,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
 /**
@@ -42,6 +46,15 @@ fun FirstRunCard(state: AppState) {
                 .padding(16.dp)
                 .fillMaxWidth()
                 .background(Tokens.Surface.copy(alpha = 0.97f), RoundedCornerShape(20.dp))
+                // The card swallows its own taps. The scrim behind it dismisses,
+                // and the card had no handler of its own, so a tap anywhere on
+                // it fell through and closed the only explanation the app ever
+                // shows — while reading the gesture list.
+                .pointerInput(Unit) { detectTapGestures { } }
+                // And it scrolls: the content is about 400 dp, so on a first
+                // launch in landscape the "Start watching" button was pushed
+                // off the bottom edge where it could not be reached at all.
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
             Text(

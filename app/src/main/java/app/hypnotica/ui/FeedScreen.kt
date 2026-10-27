@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,19 +38,28 @@ import app.hypnotica.sims.SimRegistry
 @Composable
 fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     val order = remember { SimRegistry.all.shuffled(java.util.Random(7)) }
-    var index by remember { mutableStateOf(0) }
+    // Start wherever the player actually is, so arriving here does not yank the
+    // sim out from under the person, and so the sim restored at launch is the
+    // one they were watching.
+    LaunchedEffect(Unit) {
+        val here = order.indexOfFirst { it.id == state.currentDef.id }
+        if (here >= 0 && here != state.feedIndex) state.feedIndex = here
+    }
+    val index = state.feedIndex
     var hint by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
         // Endless mode: when a run resolves, move on by itself.
         state.engine.onFinished = {
-            index = (index + 1) % order.size
+            state.feedIndex = (state.feedIndex + 1) % order.size
         }
         onDispose { state.engine.onFinished = null }
     }
 
+    // Keyed on the sim rather than Unit: re-entering the feed used to reload,
+    // which threw away the run, the look and the person's place in it.
     DisposableEffect(index) {
-        state.load(order[index])
+        if (order[index].id != state.currentDef.id) state.load(order[index])
         onDispose { }
     }
 
@@ -67,10 +77,10 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     onDragEnd = {
                         if (travelled <= -SWIPE) {
                             hint = false
-                            index = (index + 1) % order.size
+                            state.feedIndex = (index + 1) % order.size
                         } else if (travelled >= SWIPE) {
                             hint = false
-                            index = (index - 1 + order.size) % order.size
+                            state.feedIndex = (index - 1 + order.size) % order.size
                         }
                         travelled = 0f
                     }

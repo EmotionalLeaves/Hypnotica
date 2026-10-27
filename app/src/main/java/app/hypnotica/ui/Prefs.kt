@@ -19,17 +19,30 @@ class Prefs(context: Context) {
         get() = sp.getStringSet(KEY_FAVOURITES, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_FAVOURITES, value).apply()
 
-    var paletteName: String
-        get() = sp.getString(KEY_PALETTE, "Spectrum") ?: "Spectrum"
+    /**
+     * The palette the person picked, or null if they never have.
+     *
+     * Null matters: these were stored as a name defaulting to "Spectrum", and
+     * nothing ever read them back, so the choice was discarded on the next sim
+     * change and gone on the next launch. Telling "they chose Spectrum" from
+     * "they chose nothing" is what lets the choice survive without overriding
+     * every sim's own default for people who never set one.
+     */
+    var paletteName: String?
+        get() = sp.getString(KEY_PALETTE, null)
         set(value) = sp.edit().putString(KEY_PALETTE, value).apply()
 
-    var soundPreset: String
-        get() = sp.getString(KEY_SOUND, "Music box") ?: "Music box"
+    var soundPreset: String?
+        get() = sp.getString(KEY_SOUND, null)
         set(value) = sp.edit().putString(KEY_SOUND, value).apply()
 
     var volume: Float
         get() = sp.getFloat(KEY_VOLUME, 0.8f)
         set(value) = sp.edit().putFloat(KEY_VOLUME, value).apply()
+
+    var cameraDrag: Boolean
+        get() = sp.getBoolean(KEY_CAMERA_DRAG, false)
+        set(value) = sp.edit().putBoolean(KEY_CAMERA_DRAG, value).apply()
 
     var reduceFlashing: Boolean
         get() = sp.getBoolean(KEY_REDUCE_FLASH, false)
@@ -93,6 +106,7 @@ class Prefs(context: Context) {
         const val KEY_PALETTE = "palette"
         const val KEY_SOUND = "sound"
         const val KEY_VOLUME = "volume"
+        const val KEY_CAMERA_DRAG = "cameraDrag"
         const val KEY_REDUCE_FLASH = "reduce_flashing"
         const val KEY_REDUCE_MOTION = "reduce_motion"
         const val KEY_HAPTICS = "haptics"
