@@ -14,6 +14,7 @@ import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.render.SceneRenderer
 import app.hypnotica.core.safety.FlashLimiter
+import app.hypnotica.core.safety.SafetySettings
 import app.hypnotica.core.sim.SimCore
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.studio.Project
@@ -59,7 +60,9 @@ class VideoExporter(
     private val settings: ExportSettings = ExportSettings.VERTICAL,
     /** The look the player had, used wherever a track has nothing to say. */
     private val trails: Float = 0f,
-    private val vignette: Float = 0.35f
+    private val vignette: Float = 0.35f,
+    /** The accessibility settings the preview was running under. */
+    private val safety: SafetySettings = SafetySettings()
 ) {
 
     /** The render owns its own copy; Studio stays editable while it runs. */
@@ -132,7 +135,12 @@ class VideoExporter(
             val camera = Camera()
             val overlay = TextOverlay().also { it.prepare() }
             val g = G()
-            val flash = FlashLimiter()
+            // The same limits the preview ran under. A bare limiter here meant
+            // somebody who turned on Reduce flashing, checked the preview and
+            // exported got a file with full-strength flashes in it — and then
+            // shared that file.
+            val flash = FlashLimiter().also { it.reduceFlashing = safety.reduceFlashing }
+            core.env.reduceMotion = safety.reduceMotion
             val frameSeconds = 1f / settings.fps
             var sweptAt = false
             // Carried, not divided: 44100 does not divide evenly by every frame

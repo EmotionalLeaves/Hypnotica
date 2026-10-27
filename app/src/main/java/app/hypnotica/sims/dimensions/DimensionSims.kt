@@ -175,6 +175,15 @@ class HypercubeSim : Sim {
  *
  * The slice is all the inhabitants can see, so a whole sphere arrives as a
  * circle that appears from nothing, grows, shrinks and vanishes.
+ *
+ * The dimension is the point of the sim, so it has to be visible. The radius of
+ * the slice happens not to depend on it — the slice of an n-ball at distance d
+ * is an (n-1)-ball of radius sqrt(R^2 - d^2) whatever n is — but what the
+ * inhabitants would actually measure is the content of that slice, which is
+ * proportional to radius^(n-1). In two dimensions the thing arrives gently; in
+ * six it is nothing at all until the last moment and then blooms. That curve,
+ * the wireframe of the object passing through, and the number of corners it has
+ * are all driven from [dims] here.
  */
 class SlicingSim : Sim {
 
@@ -185,10 +194,19 @@ class SlicingSim : Sim {
     private var passes = 0L
     private var peaked = false
     private var shape = 0
+    private var spin = 0f
+    private var verts = FloatArray(0)
+    private var edges = IntArray(0)
+    private var proj = FloatArray(3)
 
     override fun setup(env: SimEnv) {
-        dims = env.params.i("dims", 3).coerceIn(2, 5)
+        dims = env.params.i("dims", 3).coerceIn(2, Nd.MAX_DIMS)
         shape = env.params.choiceIndex("shape")
+        spin = 0f
+        // The object itself, in full: more dimensions, visibly more structure.
+        verts = Nd.hypercubeVertices(dims)
+        edges = Nd.hypercubeEdges(dims)
+        proj = FloatArray(maxOf(3, dims))
         position = -1.4f
         direction = 1f
         payoffFrame = false
@@ -203,9 +221,16 @@ class SlicingSim : Sim {
         if (position > 1.4f) { position = 1.4f; direction = -1f; passes++ }
         if (position < -1.4f) { position = -1.4f; direction = 1f; passes++ }
 
-        val r = sliceSize()
-        if (r > 0.001f) {
-            env.emit(EventKind.STEP, (r / 0.9f).coerceIn(0f, 1f), 0f, 0.35f)
+        spin += dt * 0.35f
+        if (verts.isNotEmpty()) {
+            Nd.rotatePlane(verts, 1 shl dims, dims, 0, dims - 1, dt * 0.35f)
+        }
+
+        // The note follows what the flat world measures, not the radius, so a
+        // six-dimensional pass is heard as a sudden arrival too.
+        val content = sliceContent()
+        if (content > 0.001f) {
+            env.emit(EventKind.STEP, content.coerceIn(0f, 1f), 0f, 0.35f)
         }
         // The payoff is the widest moment: the sphere's equator passing through.
         if (!peaked && abs(position) < 0.02f) {
@@ -222,33 +247,88 @@ class SlicingSim : Sim {
         else -> Nd.sliceRadius(0.9f, position)                           // hypersphere
     }
 
+    /**
+     * What the flat world would measure, as a fraction of the widest it ever
+     * gets: the (dims - 1)-dimensional content of the slice. This is where the
+     * dimension shows itself — the same radius means far less content the
+     * higher the dimension, so the arrival sharpens into a spike.
+     */
+    private fun sliceContent(): Float {
+        val r = sliceSize()
+        if (r <= 0f) return 0f
+        val n = (dims - 1).coerceAtLeast(1)
+        val fraction = (r / 0.9f).coerceIn(0f, 1f)
+        var v = fraction
+        for (k in 2..n) v *= fraction
+        return v
+    }
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val r = sliceSize()
+        val content = sliceContent()
         val worldY = -0.1f
+        val centreY = worldY - position * 0.72f
 
         // The flat world the slice lives in.
         g.line(-env.halfWidth * 0.95f, worldY, env.halfWidth * 0.95f, worldY, 0.004f, Palette.TEXT_SECONDARY, 0.4f)
 
-        // The whole object, drawn faintly, so you can see what is passing through.
+        // The whole object, drawn faintly, so you can see what is passing
+        // through. A hypercube is drawn as its own wireframe, so its corners
+        // and edges multiply as the dimension rises; a round object as nested
+        // shells, one per dimension.
         val ghost = Palette.withAlpha(palette.at(0.25f), 0.22f)
-        g.ring(0f, worldY - position * 0.72f, 0.9f * 0.72f, 0.004f, ghost, alpha = 0.5f)
+        if (shape == 1) {
+            drawWireframe(g, centreY, ghost)
+        } else {
+            for (d in 1 until dims) {
+                val shell = 0.9f * 0.72f * (1f - (d - 1) * 0.16f)
+                if (shell > 0.02f) g.ring(0f, centreY, shell, 0.004f, ghost, alpha = 0.45f)
+            }
+        }
 
         if (r > 0.001f) {
-            val c = palette.at((r / 0.9f).coerceIn(0f, 1f))
+            val c = palette.at(content.coerceIn(0f, 1f))
             val halfWidthOnLine = r * 0.72f
-            g.glow(0f, worldY, halfWidthOnLine * 1.6f, c, 0.45f)
-            g.rect(0f, worldY, halfWidthOnLine, 0.018f, Palette.brighten(c, 0.25f))
+            // The glow and the thickness follow the content, the length follows
+            // the radius: the slice is as wide as the geometry says and as
+            // bright as the flat world would find it.
+            g.glow(0f, worldY, halfWidthOnLine * (0.6f + content), c, 0.2f + content * 0.5f)
+            g.rect(
+                0f, worldY, halfWidthOnLine, 0.008f + 0.02f * content,
+                Palette.brighten(c, 0.25f)
+            )
             // What the slice would look like one dimension up.
-            g.ring(0f, 0.52f, r * 0.42f, 0.006f, c, alpha = 0.9f)
+            g.ring(0f, 0.52f, r * 0.42f, 0.006f, c, alpha = 0.35f + 0.6f * content)
         }
         if (payoffFrame) g.flash(0.35f)
+    }
+
+    private fun drawWireframe(g: G, centreY: Float, colour: Int) {
+        if (verts.isEmpty() || edges.isEmpty()) return
+        val n = 1 shl dims
+        val scale = 0.42f
+        var i = 0
+        while (i + 1 < edges.size) {
+            val a = edges[i]
+            val b = edges[i + 1]
+            i += 2
+            if (a >= n || b >= n) continue
+            Nd.project(verts, a * dims, dims, 3f, proj)
+            val ax = proj[0] * scale
+            val ay = proj[1] * scale
+            Nd.project(verts, b * dims, dims, 3f, proj)
+            g.line(ax, centreY + ay, proj[0] * scale, centreY + proj[1] * scale, 0.003f, colour)
+        }
     }
 
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
+        "dimensions" to dims.toString(),
         "slice width" to String.format("%.2f", sliceSize()),
+        // What the flat world measures: a (dims - 1)-dimensional content.
+        "slice seen" to String.format("%.3f", sliceContent()),
         "passes" to passes.toString()
     )
 

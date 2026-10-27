@@ -54,30 +54,63 @@ data class Laws(
 ) {
 
     private val compiledForce: Expr? by lazy {
-        forceExpr?.let { Expr.compileOrNull(it) }
+        forceExpr?.let { compileCached(it) }
     }
 
-    /** Magnitude of the pairwise force between two masses at distance r. */
+    /**
+     * Magnitude of the pairwise force between two masses at distance r.
+     *
+     * The Gravity slider scales this as well as the downward kind. Without that
+     * the one sim actually named after gravity ignored the Gravity law
+     * entirely, so Zero-G, Moon and Heavy-and-bouncy did nothing to it and
+     * Studio's shipped gravity-flip template exported a clip where nothing
+     * flipped.
+     */
     fun pairForce(r: Float, m1: Float, m2: Float): Float {
         val rr = if (r < MIN_R) MIN_R else r
+        val scale = gravity / EARTH_GRAVITY
         val custom = compiledForce
         if (custom != null) {
-            return custom.eval { name ->
-                when (name) {
-                    "r" -> rr
-                    "m1" -> m1
-                    "m2" -> m2
-                    "g" -> gravityConstant
-                    else -> Float.NaN
-                }
-            }
+            // One holder per thread: pairForce runs inside the parallel loop,
+            // so a single shared holder would have threads overwriting each
+            // other's r and m between the write and the read.
+            return scale * custom.eval(vars.get().with(rr, m1, m2))
         }
         val denom = rr.toDouble().pow(falloff.toDouble()).toFloat()
         if (abs(denom) < 1e-20f) return 0f
-        return gravityConstant * m1 * m2 / denom
+        return scale * gravityConstant * m1 * m2 / denom
     }
 
-    val isReversed: Boolean get() = timeDirection < 0f
+    /**
+     * The variable lookup a typed force law is evaluated against, created once
+     * per Laws rather than once per force pair.
+     *
+     * A capturing lambda here was a fresh heap object on every call, and this is
+     * called up to eight hundred thousand times a step inside the parallel
+     * loop: a garbage collection pause is a visible stutter.
+     */
+    private val vars: ThreadLocal<ForceVars> = ThreadLocal.withInitial { ForceVars(this) }
+
+    private class ForceVars(private val laws: Laws) : Expr.Vars {
+        private var r = 0f
+        private var m1 = 0f
+        private var m2 = 0f
+
+        fun with(r: Float, m1: Float, m2: Float): Expr.Vars {
+            this.r = r
+            this.m1 = m1
+            this.m2 = m2
+            return this
+        }
+
+        override fun value(name: String): Float = when (name) {
+            "r" -> r
+            "m1" -> m1
+            "m2" -> m2
+            "g" -> laws.gravityConstant
+            else -> Float.NaN
+        }
+    }
 
     /**
      * The restitution a collision may actually use. With [conserveEnergy] on, a
@@ -87,6 +120,25 @@ data class Laws(
 
     companion object {
         const val MIN_R = 0.004f
+
+        /** What the Gravity slider reads as "our universe". */
+        const val EARTH_GRAVITY = 9.81f
+
+        // Dragging a law slider builds a new Laws every frame, and each one
+        // would parse the typed force law again on its first force pair —
+        // a full parse inside step(). The formula only changes when somebody
+        // types, so one remembered compile is enough.
+        private var cachedSource: String? = null
+        private var cachedExpr: Expr? = null
+
+        @Synchronized
+        private fun compileCached(source: String): Expr? {
+            if (source == cachedSource) return cachedExpr
+            val compiled = Expr.compileOrNull(source)
+            cachedSource = source
+            cachedExpr = compiled
+            return compiled
+        }
 
         val OUR_UNIVERSE = Laws()
 

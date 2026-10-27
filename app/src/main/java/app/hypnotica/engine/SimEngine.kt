@@ -76,6 +76,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     private var pendingLoad: Pair<SimDef, Long>? = null
 
     @Volatile
+    private var keepLookOnLoad = false
+
+    @Volatile
     private var pendingRestart: Long? = null
 
     @Volatile
@@ -108,6 +111,22 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** When set, the timeline drives the camera, speed, laws and look. */
     @Volatile
     var project: Project? = null
+        set(value) {
+            // The camera as the person left it, so Studio can give it back.
+            // A timeline drives the camera every frame while it is attached,
+            // and detaching used to restore the laws, the trails and the speed
+            // but not the view — so after loading the orbit template and
+            // scrubbing, every other screen was left upside down with no way
+            // back but a two-finger twist by eye.
+            if (value != null && field == null) {
+                beforeProject.copyFrom(camera)
+                hasCameraToRestore = true
+            }
+            field = value
+        }
+
+    private val beforeProject = Camera()
+    private var hasCameraToRestore = false
 
     @Volatile
     var studioTime: Float = 0f
@@ -144,6 +163,11 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         core.setLaws(laws)
         scene.trails = trails
         core.speed = speed
+        if (hasCameraToRestore) {
+            camera.copyFrom(beforeProject)
+            baseZoom = beforeProject.zoom
+            hasCameraToRestore = false
+        }
     }
 
     init {
@@ -159,7 +183,17 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         core.setPalette(Palette.byName(initial.defaultPalette))
     }
 
-    fun loadSim(def: SimDef, seed: Long = System.nanoTime()) {
+    /**
+      * Queue a sim for the GL thread.
+      *
+      * [keepLook] is for a caller that has already chosen the palette and the
+      * sound for this run — a generated clip, say. Without it the load applied
+      * the sim's own defaults a frame later and quietly threw the choice away,
+      * so half of TickTock's clips were meant to arrive in another palette and
+      * none of them ever did.
+      */
+    fun loadSim(def: SimDef, seed: Long = System.nanoTime(), keepLook: Boolean = false) {
+        keepLookOnLoad = keepLook
         pendingLoad = def to seed
     }
 
@@ -225,9 +259,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
         pendingLoad?.let {
             pendingLoad = null
+            val keepLook = keepLookOnLoad
+            keepLookOnLoad = false
             core.load(it.first, it.second)
-            core.setPalette(Palette.byName(it.first.defaultPalette))
-            mapping.applyPreset(SoundPreset.byName(it.first.defaultSound))
+            if (!keepLook) {
+                core.setPalette(Palette.byName(it.first.defaultPalette))
+                mapping.applyPreset(SoundPreset.byName(it.first.defaultSound))
+            }
             mapping.resetSong()
             resetRunState()
         }

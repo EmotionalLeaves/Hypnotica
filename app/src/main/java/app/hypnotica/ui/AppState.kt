@@ -52,6 +52,16 @@ class AppState(
     private val macroPositions = mutableStateMapOf<String, Float>()
 
     /**
+     * The parameter revision each cached macro position was true for.
+     *
+     * The cache used to be written once and never invalidated, so after a value
+     * was changed in Advanced — or drifted by Evolve — the Simple slider still
+     * sat where it had been left, and the next touch of it snapped everything
+     * back to a position that no longer described the sim.
+     */
+    private val macroRevisions = mutableStateMapOf<String, Int>()
+
+    /**
      * Bumped only when a formula changes from outside the keyboard, so a text
      * field knows to reload without being yanked out from under the typist.
      */
@@ -256,6 +266,7 @@ class AppState(
         soundPresetName = def.defaultSound
         engine.loadSim(def, restartSeed)
         macroPositions.clear()
+        macroRevisions.clear()
         paramVersion++
         exprEpoch++
         prefs?.lastSimId = def.id
@@ -343,16 +354,28 @@ class AppState(
      */
     fun macros(card: Card): List<Macro> = Macros.forDef(currentDef).filter { it.card == card }
 
-    fun macroPosition(macro: Macro): Float =
-        macroPositions[macro.key] ?: Macros.positionFor(macro, engine.core.params).also {
-            macroPositions[macro.key] = it
-        }
+    fun macroPosition(macro: Macro): Float {
+        val revision = engine.core.params.revision
+        val cached = macroPositions[macro.key]
+        if (cached != null && macroRevisions[macro.key] == revision) return cached
+        val fresh = Macros.positionFor(macro, engine.core.params)
+        macroPositions[macro.key] = fresh
+        macroRevisions[macro.key] = revision
+        return fresh
+    }
 
     fun setMacro(macro: Macro, position: Float) {
-        macroPositions[macro.key] = position.coerceIn(0f, 1f)
-        engine.core.params.applyMacro(macro, position)
+        val clamped = position.coerceIn(0f, 1f)
+        engine.core.params.applyMacro(macro, clamped)
+        // Recorded after the write, so this macro's own change does not look
+        // like somebody else's and send it back to be recomputed mid-drag.
+        macroPositions[macro.key] = clamped
+        macroRevisions[macro.key] = engine.core.params.revision
         paramVersion++
     }
+
+    /** True when a typed formula is driving [key], so the UI can say so. */
+    fun formulaOn(key: String): String? = engine.core.params.expressionSource(key)
 
     /** A macro that touches the Data card rebuilds the run, like its sliders do. */
     fun commitMacro(macro: Macro) {
@@ -423,7 +446,17 @@ class AppState(
         paletteName = clip.palette
         soundPresetName = clip.soundPreset
         laws = clip.laws
-        engine.loadSim(clip.def, clip.seed)
+        // A clip was checked for its payoff at normal speed with no smear, and
+        // it inherited whatever the player had been left on: at six times speed
+        // the director's four-to-forty-second window becomes under seven
+        // seconds, so clips resolved before the hook had been read. A pause
+        // carried over too, which showed a still frame with no way to clear it.
+        engine.core.paused = false
+        engine.core.speed = 1f
+        speed = 1f
+        trails = clip.trails
+        engine.scene.trails = clip.trails
+        engine.loadSim(clip.def, clip.seed, keepLook = true)
         engine.setLaws(clip.laws)
         engine.setPalette(clip.palette)
         engine.setSoundPreset(clip.soundPreset)

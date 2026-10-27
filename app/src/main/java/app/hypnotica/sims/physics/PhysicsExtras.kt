@@ -745,9 +745,12 @@ class ChargesSim : Sim {
     private var particles = 0
     private var elapsed = 0f
     private var payoffFrame = false
+    private var resolved = false
 
     override fun setup(env: SimEnv) {
         val p = env.params
+        resolved = false
+        elapsed = 0f
         count = p.i("charges", 4).coerceIn(1, 12)
         charges = FloatArray(count)
         cx = FloatArray(count)
@@ -797,11 +800,19 @@ class ChargesSim : Sim {
                     ex += dx * f / sqrt(r2)
                     ey += dy * f / sqrt(r2)
                 }
-                // A test particle follows the field line it sits on.
+                // A test particle follows the field line it sits on, and how
+                // fast it goes follows the strength of the field there. The old
+                // version divided the field by its own length and multiplied by
+                // a constant, which cancelled the strength out exactly: the
+                // slider, the law and the "Strong charges" preset all moved
+                // every tracer at the same speed. The cap is what stops a
+                // particle sitting on top of a charge from crossing the screen
+                // in a single step.
                 val len = hypot(ex, ey)
                 if (len > 1e-7f) {
-                    px[i] += ex / len * dt * 0.35f * sign
-                    py[i] += ey / len * dt * 0.35f * sign
+                    val speed = (len * FIELD_SPEED).coerceAtMost(MAX_TRACER_SPEED)
+                    px[i] += ex / len * dt * speed * sign
+                    py[i] += ey / len * dt * speed * sign
                 }
                 if (abs(px[i]) > env.halfWidth * 1.05f || abs(py[i]) > 1.05f) alive[i] = false
                 for (k in 0 until count) {
@@ -815,7 +826,11 @@ class ChargesSim : Sim {
             env.emit(EventKind.BIRTH, 0.5f, 0f, 0.6f)
         }
         env.emit(EventKind.STEP, 1f - (captured.toFloat() / particles), 0f, 0.25f)
-        if (!payoffFrame && elapsed > 10f && elapsed < 10f + abs(dt) * 1.5f) {
+        // The moment the picture resolves: most of the tracers have found a
+        // charge and the field lines are drawn. This used to be a stopwatch at
+        // ten seconds, which fires whether or not anything has happened.
+        if (!resolved && captured > particles * 0.7f && elapsed > 1.5f) {
+            resolved = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.75f, 0f, 1f)
         }
@@ -872,6 +887,16 @@ class ChargesSim : Sim {
             ),
             create = { ChargesSim() }
         )
+
+        /**
+         * Turns field magnitude into tracer speed. Chosen so the shipped
+         * strength of one moves a tracer at about the rate it always did, and
+         * the slider's hundredfold range is a hundredfold range of speed.
+         */
+        const val FIELD_SPEED = 12f
+
+        /** World units a second, so nothing steps over a charge. */
+        const val MAX_TRACER_SPEED = 2.5f
     }
 }
 

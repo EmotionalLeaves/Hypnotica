@@ -2,7 +2,6 @@ package app.hypnotica.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -121,19 +120,20 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     }
                 ) { _, drag -> travelled += drag }
             }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = {
-                        current?.let { state.likeClip(it); liked = true }
-                    },
-                    onLongPress = {
-                        current?.let { state.openClipInPlayer(it) }
-                    },
-                    onTap = { showChrome = !showChrome }
-                )
-            }
     ) {
-        SimCanvas(surface = surface, modifier = Modifier.fillMaxSize())
+        // The taps go to the surface, not to an ancestor of it. The surface
+        // consumes the touch down on the initial pass, so a tap detector out
+        // here never started: double-tap to like, long-press to open the clip
+        // and tap to hide the chrome were all dead, and the taste model only
+        // ever heard about skips. Vertical drags still arrived, which is why
+        // this looked wired up.
+        SimCanvas(
+            surface = surface,
+            modifier = Modifier.fillMaxSize(),
+            onTap = { showChrome = !showChrome },
+            onDoubleTap = { current?.let { state.likeClip(it); liked = true } },
+            onLongPress = { current?.let { state.openClipInPlayer(it) } }
+        )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
             AnimatedVisibility(visible = showChrome) {

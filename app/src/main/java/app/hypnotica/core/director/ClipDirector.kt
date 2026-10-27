@@ -22,6 +22,8 @@ data class Clip(
     val caption: String,
     val palette: String,
     val soundPreset: String,
+    /** Trail smear for this clip, 0 for none. Part of the variety, not a leftover. */
+    val trails: Float,
     val payoffSeconds: Float
 )
 
@@ -52,6 +54,17 @@ class ClipDirector(seed: Long = System.nanoTime()) {
 
     var minPayoffSeconds = 4f
     var maxPayoffSeconds = 40f
+
+    private companion object {
+        /** How many recent sim-and-hook pairs to avoid repeating. */
+        const val RECENT_PAIRS = 12
+
+        /** How many recent sims to avoid repeating, whatever the hook. */
+        const val RECENT_SIMS = 6
+
+        /** Draws allowed before taking whatever comes up. */
+        const val REDRAWS = 8
+    }
 
     /** How many seeds the last generate() had to try. Shown in the debug counter. */
     var lastAttempts = 0
@@ -132,12 +145,39 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             val candidate = propose() ?: return@repeat
             val payoff = checkPayoff(candidate)
             if (payoff in minPayoffSeconds..maxPayoffSeconds) {
+                remember(candidate)
                 return candidate.copy(payoffSeconds = payoff)
             }
             if (fallback == null && payoff > 0f) fallback = candidate.copy(payoffSeconds = payoff)
         }
+        // Nothing in the window. The fallback pays off outside it, so it is
+        // better than a swipe that appears to be swallowed, but it is not what
+        // the feed promises and the caller is told which it got.
+        fallback?.let { remember(it) }
         return fallback
     }
+
+    /**
+     * The sims and hooks just shown, so the next draw can avoid them.
+     *
+     * The weighted pick was independent each time, which over twenty swipes
+     * gave fourteen distinct sims, one of them three times — and because the
+     * caption is the format's hook, a repeat shows the identical headline. An
+     * infinite feed that says the same thing twice in eight swipes reads as a
+     * bug.
+     */
+    private val recentPairs = ArrayDeque<String>()
+    private val recentSims = ArrayDeque<String>()
+
+    private fun remember(clip: Clip) {
+        recentPairs.addLast(clip.def.id + "/" + clip.format.name)
+        while (recentPairs.size > RECENT_PAIRS) recentPairs.removeFirst()
+        recentSims.addLast(clip.def.id)
+        while (recentSims.size > RECENT_SIMS) recentSims.removeFirst()
+    }
+
+    private fun seenRecently(def: SimDef, format: TrapFormat): Boolean =
+        recentPairs.contains(def.id + "/" + format.name) || recentSims.contains(def.id)
 
     private fun propose(): Clip? {
         val pool = SimRegistry.all.filter { it.formats.any { f -> f !in mutedFormats } }
@@ -156,10 +196,19 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             }
         }
         if (pairs.isEmpty()) return null
-        val pick = rng.range(0f, total)
-        var index = cumulative.indexOfFirst { it >= pick }
-        if (index < 0) index = pairs.size - 1
-        val (def, format) = pairs[index]
+        // Draw, and draw again if it is something just shown. A handful of
+        // tries, then take what comes: with a small pool or a lot of muted
+        // formats there may be nothing else to offer.
+        var def = pairs[0].first
+        var format = pairs[0].second
+        for (attempt in 0 until REDRAWS) {
+            val pick = rng.range(0f, total)
+            var index = cumulative.indexOfFirst { it >= pick }
+            if (index < 0) index = pairs.size - 1
+            def = pairs[index].first
+            format = pairs[index].second
+            if (!seenRecently(def, format)) break
+        }
 
         val seed = (rng.nextInt().toLong() shl 20) xor rng.nextInt().toLong()
         val params = randomiseParams(def)
@@ -176,6 +225,9 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             caption = format.hook,
             palette = palette,
             soundPreset = def.defaultSound,
+            // Most clips crisp, some smeared: the smear is part of the variety
+            // rather than whatever the player happened to be left on.
+            trails = if (rng.bool(0.3f)) rng.range(0.55f, 0.9f) else 0f,
             payoffSeconds = -1f
         )
     }

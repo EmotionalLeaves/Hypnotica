@@ -188,23 +188,37 @@ private fun ControlDrawer(state: AppState) {
         Spacer(Modifier.height(12.dp))
 
         if (state.advanced) {
-            val tabs = AdvancedTab.entries
-            ChipRow(tabs.map { it.title }, tabs.indexOf(state.advancedTab)) {
-                state.advancedTab = tabs[it]
+            // The Laws tab goes where the Laws card goes. It used to be shown on
+            // all fifty-seven sims while only eleven read a law, so two thirds
+            // of the time it offered four sliders, nine pills and a force-law
+            // box that the running sim could not respond to — and editing any
+            // of them renamed the universe to "Custom" while the picture stayed
+            // exactly the same.
+            val tabs = remember(state.currentDef.id) {
+                AdvancedTab.entries.filter {
+                    it != AdvancedTab.LAWS || state.currentDef.usesLaws
+                }
             }
+            val selected = tabs.indexOf(state.advancedTab).coerceAtLeast(0)
+            val shown = tabs[selected]
+            ChipRow(tabs.map { it.title }, selected) { state.advancedTab = tabs[it] }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                AdvancedPanel(state, state.advancedTab)
+                AdvancedPanel(state, shown)
                 Spacer(Modifier.height(16.dp))
             }
         } else {
             val cards = visibleCards(state)
-            ChipRow(cards.map { it.title }, cards.indexOf(state.card).coerceAtLeast(0)) {
-                state.card = cards[it]
-            }
+            // The highlighted chip and the panel below it are the same value.
+            // Reading the panel from state.card instead let a sim with no laws
+            // highlight the first chip while still drawing the laws panel,
+            // because the card outlives the sim it was chosen on.
+            val selected = cards.indexOf(state.card).coerceAtLeast(0)
+            val shown = cards[selected]
+            ChipRow(cards.map { it.title }, selected) { state.card = cards[it] }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                when (state.card) {
+                when (shown) {
                     Card.DATA -> CardControls(state, Card.DATA)
                     Card.MOTION -> MotionCard(state)
                     Card.LOOK -> LookCard(state)
@@ -268,12 +282,22 @@ private fun MacroControl(state: AppState, macro: Macro) {
         valueText = describeMacro(position),
         onCommit = { state.commitMacro(macro) }
     ) { state.setMacro(macro, it) }
-    Text(
-        "Moves " + macro.targets.size + if (macro.targets.size == 1) " setting" else " settings",
-        color = Tokens.TextSecondary,
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.padding(bottom = 6.dp)
-    )
+    // Naming them beats counting them: "Moves beads, drop rate" tells you what
+    // the one slider reaches, where "Moves 2 settings" told you nothing.
+    val moves = remember(macro.key, state.currentDef.id) {
+        val labels = state.params()
+            .filter { macro.targets.containsKey(it.key) }
+            .map { it.label.lowercase() }
+        if (labels.isEmpty()) "" else "Moves " + labels.joinToString(", ")
+    }
+    if (moves.isNotEmpty()) {
+        Text(
+            moves,
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+    }
 }
 
 /** Plain words, because a macro has no unit of its own. */

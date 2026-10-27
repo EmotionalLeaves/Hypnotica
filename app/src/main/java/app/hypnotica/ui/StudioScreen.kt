@@ -142,7 +142,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             soundPresetName = state.soundPresetName,
                             params = state.engine.core.params.snapshot(),
                             settings = settings,
-                            trails = state.trails
+                            trails = state.trails,
+                            safety = state.engine.safety
                         )
                         runningExport = exporter
                         val progressJob = launch {

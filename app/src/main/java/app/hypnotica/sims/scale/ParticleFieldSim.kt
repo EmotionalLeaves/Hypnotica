@@ -92,7 +92,11 @@ class ParticleFieldSim : Sim {
         val w = env.halfWidth
         val gx = laws.gravityDirX * laws.gravity * 0.01f
         val gy = -laws.gravityDirY * laws.gravity * 0.01f
-        val dragF = 1f - (drag + laws.friction).coerceIn(0f, 0.6f) * dt * 8f
+        // The product is what has to be clamped. Clamping the coefficient and
+        // then multiplying by dt left this above 1 whenever time ran backwards,
+        // which turned drag into gain and drove every one of up to four hundred
+        // thousand particles to the speed limit within a few seconds.
+        val dragF = 1f - ((drag + laws.friction) * dt * 8f).coerceIn(0f, 0.6f)
         val t = elapsed * 0.35f
         val wrap = laws.space != app.hypnotica.core.laws.Space.BOX
         val restitution = if (laws.sticky) 0f else laws.bounce

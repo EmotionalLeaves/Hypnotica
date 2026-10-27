@@ -103,31 +103,84 @@ data class Macro(
      * sim already is, and dragging goes down towards each minimum and up towards
      * each maximum.
      */
-    val mids: Map<String, Float> = emptyMap()
+    val mids: Map<String, Float> = emptyMap(),
+    /**
+     * Which targets are spaced logarithmically, matching the parameter's own
+     * `logScale`. Without this a macro over a count of 1..100000 spent its
+     * whole upper half between twenty thousand and a hundred thousand, so the
+     * simple control could not express any of the values the precise slider
+     * right beneath it reached easily.
+     */
+    val logs: Set<String> = emptySet()
 ) {
     companion object {
         /**
          * One target's value at slider position [t]: a straight line when there
          * is no midpoint, and two lines meeting at the midpoint when there is.
          */
-        fun valueAt(range: ClosedFloatingPointRange<Float>, mid: Float?, t: Float): Float {
+        fun valueAt(
+            range: ClosedFloatingPointRange<Float>,
+            mid: Float?,
+            t: Float,
+            log: Boolean = false
+        ): Float {
             val lo = range.start
             val hi = range.endInclusive
-            if (mid == null) return lo + (hi - lo) * t
-            val m = mid.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+            // exp(ln(x)) does not come back exactly, and a few parts in a
+            // hundred million of four hundred thousand is enough to step
+            // outside the parameter's declared range.
+            val low = minOf(lo, hi)
+            val high = maxOf(lo, hi)
+            if (mid == null) {
+                if (log && canLog(lo, hi)) return (lo * pow(hi / lo, t)).coerceIn(low, high)
+                return lo + (hi - lo) * t
+            }
+            val m = mid.coerceIn(low, high)
+            if (log && canLog(lo, hi) && canLog(lo, m) && canLog(m, hi)) {
+                val v = if (t < 0.5f) lo * pow(m / lo, t / 0.5f)
+                else m * pow(hi / m, (t - 0.5f) / 0.5f)
+                return v.coerceIn(low, high)
+            }
             return if (t < 0.5f) lo + (m - lo) * (t / 0.5f)
             else m + (hi - m) * ((t - 0.5f) / 0.5f)
         }
 
+        /** Log spacing needs both ends on the same side of zero, and apart. */
+        private fun canLog(a: Float, b: Float): Boolean =
+            a > 0f && b > 0f && a != b
+
+        private fun pow(base: Float, e: Float): Float =
+            kotlin.math.exp(kotlin.math.ln(base) * e)
+
         /** The position that reproduces [value], the inverse of [valueAt]. */
-        fun positionOf(range: ClosedFloatingPointRange<Float>, mid: Float?, value: Float): Float {
+        fun positionOf(
+            range: ClosedFloatingPointRange<Float>,
+            mid: Float?,
+            value: Float,
+            log: Boolean = false
+        ): Float {
             val lo = range.start
             val hi = range.endInclusive
             if (mid == null) {
+                if (log && canLog(lo, hi)) {
+                    val v = value.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+                    if (!canLog(lo, v)) return 0f
+                    return (kotlin.math.ln(v / lo) / kotlin.math.ln(hi / lo)).coerceIn(0f, 1f)
+                }
                 val span = hi - lo
                 return if (span == 0f) 0f else ((value - lo) / span).coerceIn(0f, 1f)
             }
             val m = mid.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+            if (log && canLog(lo, hi) && canLog(lo, m) && canLog(m, hi)) {
+                val v = value.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+                if (!canLog(lo, v)) return 0f
+                return if (v <= m) {
+                    (0.5f * kotlin.math.ln(v / lo) / kotlin.math.ln(m / lo)).coerceIn(0f, 0.5f)
+                } else {
+                    (0.5f + 0.5f * kotlin.math.ln(v / m) / kotlin.math.ln(hi / m))
+                        .coerceIn(0.5f, 1f)
+                }
+            }
             return if (value <= m) {
                 val span = m - lo
                 if (span == 0f) 0.5f else (0.5f * (value - lo) / span).coerceIn(0f, 0.5f)
@@ -265,11 +318,19 @@ class ParamValues(val schema: List<Param>) {
         revision++
     }
 
-    /** Apply a macro position (0..1) across its target parameters. */
+    /**
+     * Apply a macro position (0..1) across its target parameters.
+     *
+     * Any formula attached to a target is dropped, because tick() would
+     * otherwise overwrite the value on the next step: the slider moved, the
+     * label changed, and the sim carried on exactly as before with nothing to
+     * say why.
+     */
     fun applyMacro(macro: Macro, position: Float) {
         val t = position.coerceIn(0f, 1f)
         for ((key, range) in macro.targets) {
-            set(key, Macro.valueAt(range, macro.mids[key], t))
+            clearExpression(key)
+            set(key, Macro.valueAt(range, macro.mids[key], t, macro.logs.contains(key)))
         }
     }
 

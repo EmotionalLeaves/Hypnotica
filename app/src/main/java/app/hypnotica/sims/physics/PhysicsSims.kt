@@ -305,6 +305,8 @@ class PendulumWaveSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var crossings = 0L
+    private var swinging = false
+    private var stillSeconds = 0f
     private var aligned = false
 
     /** Lengths and gravity are scaled together, so the periods are unchanged. */
@@ -350,6 +352,8 @@ class PendulumWaveSim : Sim {
         payoffFrame = false
         aligned = false
         crossings = 0L
+        swinging = false
+        stillSeconds = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -401,7 +405,21 @@ class PendulumWaveSim : Sim {
         // Realignment is the payoff, so it is measured rather than timed: a
         // stopwatch fired on a frozen screen under Zero-G, and never at all
         // when time ran backwards.
-        if (!aligned && elapsed > cyclePeriod * 0.25f) {
+        //
+        // Measuring alignment was not enough on its own. With no gravity every
+        // pendulum stays exactly where it started, which is perfect alignment,
+        // so the sim declared its payoff — slow motion, a punch-in, a chord and
+        // a flash — over a picture that had never moved. A wave that has not
+        // swung has not realigned.
+        var fastest = 0f
+        for (i in 0 until count) {
+            val w = abs(omegas[i])
+            if (w > fastest) fastest = w
+        }
+        swinging = fastest > STILL_OMEGA
+        if (!swinging) stillSeconds += abs(dt) else stillSeconds = 0f
+
+        if (!aligned && swinging && elapsed > cyclePeriod * 0.25f) {
             var together = true
             val first = angles[0]
             for (i in 1 until count) {
@@ -459,13 +477,30 @@ class PendulumWaveSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
+    /**
+     * A wave with no gravity to swing it will never do anything. Rather than
+     * hanging on a still picture until the person gives up and swipes, the run
+     * ends and the counter says why, so the feed moves on by itself.
+     */
+    override fun finished(): Boolean = stillSeconds > STILL_SECONDS
+
     override fun counters(): List<Pair<String, String>> = listOf(
         "crossings" to crossings.toString(),
-        "cycle" to String.format("%.0f%%", (elapsed % cyclePeriod) / cyclePeriod * 100f)
+        if (swinging || stillSeconds <= 0f) {
+            "cycle" to String.format("%.0f%%", (elapsed % cyclePeriod) / cyclePeriod * 100f)
+        } else {
+            "gravity" to "none — nothing to swing it"
+        }
     )
 
     companion object {
         private const val GRAVITY_SIM = 9.81f
+
+        /** Below this the wave is standing still, not swinging slowly. */
+        const val STILL_OMEGA = 0.004f
+
+        /** How long a still picture is allowed to last before the run gives up. */
+        const val STILL_SECONDS = 2.5f
 
         /** How close every pendulum must be for the wave to count as back in line. */
         const val ALIGN_RADIANS = 0.12f
@@ -517,10 +552,12 @@ class NewtonsCradleSim : Sim {
     private var clicks = 0L
     private var elapsed = 0f
     private var payoffDone = false
+    private var stillSeconds = 0f
 
     override fun setup(env: SimEnv) {
         elapsed = 0f
         payoffDone = false
+        stillSeconds = 0f
         n = env.params.i("count", 5).coerceIn(3, 9)
         radius = (0.62f / n).coerceIn(0.03f, 0.09f)
         val lift = env.params.i("lift", 1).coerceIn(1, n - 1)
@@ -540,6 +577,14 @@ class NewtonsCradleSim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val g = 9.81f * (env.laws.gravity / 9.81f)
+        // With no gravity the lifted ball never swings down, so there is never
+        // a click, never a payoff and never an end. Better to say so and let
+        // the feed move on than to hold a still picture indefinitely.
+        if (abs(g) < 1e-5f) {
+            stillSeconds += abs(dt)
+            return
+        }
+        stillSeconds = 0f
         val l = 1.1f
         val damping = 1f - (env.laws.friction * dt * 0.1f).coerceIn(0f, 0.02f)
 
@@ -600,9 +645,16 @@ class NewtonsCradleSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun counters(): List<Pair<String, String>> = listOf("clicks" to clicks.toString())
+    override fun finished(): Boolean = stillSeconds > STILL_SECONDS
+
+    override fun counters(): List<Pair<String, String>> =
+        if (stillSeconds > 0f) listOf("gravity" to "none — nothing swings")
+        else listOf("clicks" to clicks.toString())
 
     companion object {
+        /** How long a still cradle is allowed to last before the run gives up. */
+        const val STILL_SECONDS = 2.5f
+
         fun def(): SimDef = SimDef(
             id = "physics/newtons-cradle",
             title = "Newton's cradle",
@@ -664,9 +716,11 @@ class GaltonBoardSim : Sim {
     private var peak = 1
     private var restSeconds = -1f
     private var curveDone = false
+    private var stillSeconds = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
+        stillSeconds = 0f
         rows = p.i("rows", 10).coerceIn(4, 20)
         total = p.i("beads", 400).coerceIn(10, 20000)
         bins = IntArray(rows + 1)
@@ -692,7 +746,10 @@ class GaltonBoardSim : Sim {
             return
         }
         val rate = env.params.f("rate", 30f)
-        dropTimer += dt * rate
+        // abs: with time reversed this ran the timer away from the threshold
+        // instead of towards it, so not one bead was ever released and the
+        // board sat empty with no events and no ending.
+        dropTimer += abs(dt) * rate
         while (dropTimer >= 1f && dropped < total) {
             dropTimer -= 1f
             var bin = 0
@@ -703,6 +760,13 @@ class GaltonBoardSim : Sim {
 
         val targetSpacing = (1.7f * env.halfWidth) / (rows + 1)
         val g = 1.6f * (env.laws.gravity / 9.81f)
+        // Nothing falls without gravity, and nothing ever settles, so the run
+        // would never finish and the feed would never move on.
+        if (abs(g) < 1e-5f) {
+            stillSeconds += abs(dt)
+            return
+        }
+        stillSeconds = 0f
         var active = 0
         for (b in beads) {
             if (b.settled) continue
@@ -781,12 +845,20 @@ class GaltonBoardSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = curveDone && restSeconds in -1000f..0f
+    override fun finished(): Boolean =
+        (curveDone && restSeconds in -1000f..0f) || stillSeconds > STILL_SECONDS
 
     override fun counters(): List<Pair<String, String>> =
-        listOf("beads" to dropped.toString(), "tallest bin" to peak.toString())
+        if (stillSeconds > 0f) {
+            listOf("beads" to dropped.toString(), "gravity" to "none — nothing falls")
+        } else {
+            listOf("beads" to dropped.toString(), "tallest bin" to peak.toString())
+        }
 
     companion object {
+        /** How long a still board is allowed to last before the run gives up. */
+        const val STILL_SECONDS = 2.5f
+
         fun def(): SimDef = SimDef(
             id = "physics/galton-board",
             title = "Galton board",

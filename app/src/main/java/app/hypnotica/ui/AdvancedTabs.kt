@@ -207,7 +207,10 @@ fun LawsControls(state: AppState, advanced: Boolean) {
     ValueSlider("Gravity", laws.gravity, 0f, 40f, valueText = gravityWord(laws.gravity)) { v ->
         state.editLaws { it.copy(gravity = v) }
     }
-    ValueSlider("Bounciness", laws.restitution, 0f, 1.3f, valueText = bounceWord(laws.restitution)) { v ->
+    ValueSlider(
+        "Bounciness", laws.restitution, 0f, 1.3f,
+        valueText = bounceWord(laws.restitution, laws.conserveEnergy)
+    ) { v ->
         state.editLaws { it.copy(restitution = v) }
     }
     ValueSlider("Friction", laws.friction, 0f, 1f, valueText = frictionWord(laws.friction)) { v ->
@@ -241,6 +244,15 @@ fun LawsControls(state: AppState, advanced: Boolean) {
         Pill("Upside-down", selected = laws.gravityDirY < 0f) {
             state.editLaws { it.copy(gravityDirY = -it.gravityDirY) }
         }
+    }
+    Spacer(Modifier.height(8.dp))
+    // Two sims read this and nothing could ever set it, so sideways gravity was
+    // a field in the table with no way in.
+    ValueSlider(
+        "Gravity tilt", laws.gravityDirX, -1f, 1f,
+        valueText = tiltWord(laws.gravityDirX)
+    ) { v ->
+        state.editLaws { it.copy(gravityDirX = v) }
     }
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -414,12 +426,26 @@ private fun gravityWord(g: Float): String = when {
     else -> "crushing"
 }
 
-private fun bounceWord(r: Float): String = when {
+/**
+ * [conserveEnergy] caps a bounce at the energy it was given, so the top of the
+ * slider does nothing while it is on. Saying "gains energy" there was a label
+ * describing a setting the physics was ignoring.
+ */
+private fun bounceWord(r: Float, conserveEnergy: Boolean): String = when {
     r <= 0.05f -> "dead"
     r < 0.4f -> "soft"
     r < 0.8f -> "normal"
     r < 1.0f -> "lively"
+    conserveEnergy -> "capped — turn on Free energy"
     else -> "gains energy"
+}
+
+private fun tiltWord(x: Float): String = when {
+    x <= -0.6f -> "hard left"
+    x < -0.08f -> "left"
+    x < 0.08f -> "straight down"
+    x < 0.6f -> "right"
+    else -> "hard right"
 }
 
 private fun frictionWord(f: Float): String = when {
