@@ -980,9 +980,14 @@ class BallVolumeSim : Sim {
         val halfW = env.halfWidth * 0.92f
         val barW = 2f * halfW / upTo
         val maxV = 5.264f
-        for (d in 1..min(upTo, shown.toInt())) {
+        // Each bar rises while its dimension is being counted, rather than
+        // appearing whole once it has been: the first bar used to arrive a
+        // second and a half in, over an empty screen.
+        for (d in 1..min(upTo, kotlin.math.ceil(shown).toInt())) {
             val v = Nd.unitBallVolume(d).toFloat()
-            val h = (v / maxV) * 1.5f
+            val rise = (shown - (d - 1)).coerceIn(0f, 1f)
+            val eased = 1f - (1f - rise) * (1f - rise)
+            val h = (v / maxV) * 1.5f * eased
             val x = -halfW + (d - 0.5f) * barW
             val isPeak = d == 5
             val c = if (isPeak) Palette.SUCCESS else palette.at(d.toFloat() / upTo)
@@ -997,8 +1002,9 @@ class BallVolumeSim : Sim {
     override fun finished(): Boolean = shown >= upTo
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "dimension" to shown.toInt().toString(),
-        "volume" to String.format(java.util.Locale.US, "%.3f", Nd.unitBallVolume(max(1, shown.toInt())))
+        // The dimension whose bar is rising, so it never reads zero.
+        "dimension" to max(1, kotlin.math.ceil(shown).toInt()).toString(),
+        "volume" to String.format(java.util.Locale.US, "%.3f", Nd.unitBallVolume(max(1, kotlin.math.ceil(shown).toInt())))
     )
 
     companion object {
