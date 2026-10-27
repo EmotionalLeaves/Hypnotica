@@ -628,6 +628,39 @@ for f in sorted(glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=T
             problems.append(
                 f"{f}:{line}: String.format's locale is not its first argument")
 
+# 16. A lowercase Compose function used without its import.
+#
+#     Rule 1 checks capitalised symbols, so a missing `Text` or `LaunchedEffect`
+#     is caught, and rule 2 checks modifier extensions. A bare lowercase call
+#     like `remember(` is neither, and a composable that uses one without the
+#     import fails to compile with a cascade of unrelated-looking errors — a
+#     type that cannot be inferred, a @Composable invocation "outside a
+#     @Composable function" — none of which name the real cause. One build was
+#     spent reading those.
+COMPOSE_CALLS = [
+    'remember', 'mutableStateOf', 'mutableIntStateOf', 'mutableFloatStateOf',
+    'mutableLongStateOf', 'mutableDoubleStateOf', 'mutableStateMapOf',
+    'mutableStateListOf', 'derivedStateOf', 'rememberCoroutineScope',
+    'rememberScrollState', 'rememberLazyListState', 'rememberLazyGridState',
+    'produceState', 'rememberUpdatedState', 'collectAsState', 'snapshotFlow',
+    'rememberSaveable', 'rememberInfiniteTransition', 'rememberTextMeasurer',
+]
+for f in files:
+    raw = open(f).read()
+    src = strip(raw)
+    if re.search(r'^import androidx\.compose\.\w+\.\*$', raw, re.M):
+        continue
+    imported = set(re.findall(r'^import (?:.*\.)?(\w+)$', raw, re.M))
+    local = set(re.findall(r'\bfun\s+(\w+)\s*\(', src))
+    for name in COMPOSE_CALLS:
+        if name in imported or name in local:
+            continue
+        m = re.search(r'(?<![\w.])' + name + r'\s*[({]', src)
+        if m:
+            line = src[:m.start()].count('\n') + 1
+            problems.append(
+                f"{f}:{line}: uses {name}( but does not import it")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")
