@@ -85,7 +85,10 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     var captionText by remember { mutableStateOf("") }
     var captionBig by remember { mutableStateOf(true) }
     // Flash has nothing live to read, so Studio holds the value to be keyed.
-    var flashValue by remember { mutableFloatStateOf(0.6f) }
+    // The value the next key will take. Every track gets one, not just Flash:
+    // the other eight could only be keyed to whatever the timeline was already
+    // producing, which meant they could not be authored at all.
+    var keyValue by remember { mutableFloatStateOf(0f) }
     var exportProgress by remember { mutableFloatStateOf(0f) }
     var runningExport by remember { mutableStateOf<VideoExporter?>(null) }
     var formatIndex by remember { mutableIntStateOf(0) }
@@ -104,6 +107,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             // Hand the sim back as the player left it, laws and all.
             state.engine.detachProject(state.laws, state.trails, state.speed)
         }
+    }
+
+    LaunchedEffect(selectedTrack, state.currentDef.id) {
+        keyValue = currentValueFor(state, selectedTrack, playhead)
+            .coerceIn(selectedTrack.min, selectedTrack.max)
     }
 
     LaunchedEffect(playing) {
@@ -265,9 +273,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 revision++
             }
             BigButton("Key ◆", primary = true) {
-                val current = if (selectedTrack == TrackKind.FLASH) flashValue
-                else currentValueFor(state, selectedTrack, playhead)
-                project.track(selectedTrack).set(playhead, current, easing)
+                // A view framed by hand wins: posing with a twist or a drag and
+                // then keying is the whole authoring flow for a camera move.
+                val value = if (isCameraTrack(selectedTrack) && state.engine.cameraPosed) {
+                    currentValueFor(state, selectedTrack, playhead)
+                } else {
+                    keyValue
+                }
+                project.track(selectedTrack).set(playhead, value, easing)
+                state.engine.releaseCamera()
                 revision++
             }
             Spacer(Modifier.weight(1f))
@@ -323,19 +337,32 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 easing = Easing.entries[it]
             }
 
-            if (selectedTrack == TrackKind.FLASH) {
-                ValueSlider(
-                    "Flash to key",
-                    flashValue,
-                    0f,
-                    1f,
-                    valueText = String.format("%.0f%%", flashValue * 100f)
-                ) { flashValue = it }
+            // Dragging this previews the value on screen as well as choosing
+            // it, so a key is always set to something that has been seen.
+            ValueSlider(
+                "Value to key",
+                keyValue,
+                selectedTrack.min,
+                selectedTrack.max,
+                valueText = keyValueText(selectedTrack, keyValue)
+            ) { v ->
+                keyValue = v
+                previewKeyValue(state, selectedTrack, v)
+            }
+            if (isCameraTrack(selectedTrack)) {
+                Text(
+                    "Or frame it by hand — drag and twist the preview, then Key.",
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
             }
 
             val version = revision
             SectionLabel("Keyframes")
-            TrackStrip(project, selectedTrack, playhead, version)
+            TrackStrip(project, selectedTrack, playhead, version) { from, to ->
+                if (project.track(selectedTrack).moveNear(from, to)) revision++
+            }
 
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Pill("Remove key here") {
@@ -355,7 +382,18 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             }
 
             SectionLabel("Template")
-            ChipRow(Project.TEMPLATES, Project.TEMPLATES.indexOf(project.name).coerceAtLeast(0)) { index ->
+            // A template replaces the project outright. After Record moves the
+            // row used to highlight a template that was not loaded, so tapping
+            // it to confirm what you were looking at destroyed the recording.
+            if (Project.TEMPLATES.indexOf(project.name) < 0) {
+                Text(
+                    "Showing \"" + project.name + "\". Choosing a template replaces it.",
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+            ChipRow(Project.TEMPLATES, Project.TEMPLATES.indexOf(project.name)) { index ->
                 val fresh = Project.template(
                     Project.TEMPLATES[index], state.currentDef.id, state.engine.core.seed
                 )
@@ -418,17 +456,46 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
 /** A simple strip showing where the keys sit on the selected track. */
 @Composable
-private fun TrackStrip(project: Project, kind: TrackKind, playhead: Float, version: Int) {
+private fun TrackStrip(
+    project: Project,
+    kind: TrackKind,
+    playhead: Float,
+    version: Int,
+    onMove: (Float, Float) -> Unit
+) {
     val keys = remember(version, kind) { project.track(kind).keyframes() }
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .height(40.dp)
             .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
     ) {
+        // Keys can be dragged along the strip, which the guide has promised
+        // since the strip was built: without it a recorded move could only be
+        // thrown away, never adjusted.
+        val duration = project.duration.coerceAtLeast(0.001f)
+        var dragFrom by remember(version, kind) { mutableFloatStateOf(-1f) }
+        Box(
+            Modifier
+                .matchParentSize()
+                .pointerInput(version, kind, duration) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            dragFrom = (offset.x / size.width).coerceIn(0f, 1f) * duration
+                        },
+                        onDragEnd = { dragFrom = -1f },
+                        onDragCancel = { dragFrom = -1f }
+                    ) { change, _ ->
+                        if (dragFrom < 0f) return@detectHorizontalDragGestures
+                        val to = (change.position.x / size.width).coerceIn(0f, 1f) * duration
+                        onMove(dragFrom, to)
+                        dragFrom = to
+                    }
+                }
+        )
         if (keys.isEmpty()) {
             Text(
-                "no keys yet — set one with Key",
+                "no keys yet — set one with Key, or drag one along once it is there",
                 color = Tokens.TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.Center)
@@ -436,28 +503,59 @@ private fun TrackStrip(project: Project, kind: TrackKind, playhead: Float, versi
         }
         // Laid out by offset rather than by nested full-width boxes: a key at
         // t=0 used to have width zero, which made it invisible.
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val span = maxWidth - MARKER
-            keys.forEach { k ->
-                val fraction = (k.time / project.duration.coerceAtLeast(0.001f)).coerceIn(0f, 1f)
-                Text(
-                    "◆",
-                    color = Tokens.Accent,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .offset(x = span * fraction)
-                        .align(Alignment.CenterStart)
-                )
-            }
-            val head = (playhead / project.duration.coerceAtLeast(0.001f)).coerceIn(0f, 1f)
-            Box(
-                Modifier
-                    .offset(x = span * head + MARKER / 2)
-                    .width(2.dp)
-                    .height(40.dp)
-                    .background(Tokens.Success)
+        val span = maxWidth - MARKER
+        keys.forEach { k ->
+            val fraction = (k.time / duration).coerceIn(0f, 1f)
+            Text(
+                "◆",
+                color = Tokens.Accent,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .offset(x = span * fraction)
+                    .align(Alignment.CenterStart)
             )
         }
+        val head = (playhead / duration).coerceIn(0f, 1f)
+        Box(
+            Modifier
+                .offset(x = span * head + MARKER / 2)
+                .width(2.dp)
+                .height(40.dp)
+                .background(Tokens.Success)
+        )
+    }
+}
+
+private fun isCameraTrack(kind: TrackKind): Boolean = when (kind) {
+    TrackKind.CAMERA_X, TrackKind.CAMERA_Y, TrackKind.ZOOM, TrackKind.ROTATION -> true
+    else -> false
+}
+
+/** The value in the units the track is actually in. */
+private fun keyValueText(kind: TrackKind, v: Float): String = when (kind) {
+    TrackKind.FLASH, TrackKind.TRAILS -> String.format("%.0f%%", v * 100f)
+    TrackKind.ROTATION -> String.format("%.0f°", v * 180f / Math.PI.toFloat())
+    TrackKind.ZOOM, TrackKind.SPEED -> String.format("%.2fx", v)
+    else -> String.format("%.2f", v)
+}
+
+/**
+ * Show the value that is about to be keyed, so a key is never set to a number
+ * nobody has seen. Flash is the exception: a flash is one frame, and previewing
+ * it on every slider pixel would be a strobe.
+ */
+private fun previewKeyValue(state: AppState, kind: TrackKind, v: Float) {
+    val engine = state.engine
+    when (kind) {
+        TrackKind.CAMERA_X -> { engine.camera.x = v; engine.poseCamera() }
+        TrackKind.CAMERA_Y -> { engine.camera.y = v; engine.poseCamera() }
+        TrackKind.ZOOM -> { engine.setBaseZoom(v); engine.poseCamera() }
+        TrackKind.ROTATION -> { engine.camera.rotation = v; engine.poseCamera() }
+        TrackKind.SPEED -> engine.core.speed = v
+        TrackKind.TRAILS -> engine.scene.trails = v
+        TrackKind.GRAVITY -> engine.core.setLaws(engine.core.env.laws.copy(gravity = v))
+        TrackKind.BOUNCINESS -> engine.core.setLaws(engine.core.env.laws.copy(restitution = v))
+        TrackKind.FLASH -> Unit
     }
 }
 
@@ -468,10 +566,12 @@ private fun currentValueFor(state: AppState, kind: TrackKind, time: Float): Floa
     TrackKind.ZOOM -> state.engine.camera.zoom
     TrackKind.ROTATION -> state.engine.camera.rotation
     TrackKind.SPEED -> state.engine.core.speed
-    TrackKind.GRAVITY -> state.laws.gravity
-    TrackKind.BOUNCINESS -> state.laws.restitution
-    TrackKind.TRAILS -> state.trails
-    // Flash is keyed from Studio's own slider, not from here.
+    // The laws the sim is running under, not the player's: with a project
+    // attached the timeline may be driving them, and keying the player's value
+    // recorded a number that was not on screen.
+    TrackKind.GRAVITY -> state.engine.core.env.laws.gravity
+    TrackKind.BOUNCINESS -> state.engine.core.env.laws.restitution
+    TrackKind.TRAILS -> state.engine.scene.trails
     TrackKind.FLASH -> state.project?.track(TrackKind.FLASH)?.valueAt(time) ?: 0f
 }
 

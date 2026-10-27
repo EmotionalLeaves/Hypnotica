@@ -22,25 +22,14 @@ nothing is a bug, and the menu must not promise what the code does not do.*
   stop it.
 - **The size cap covers 7 of 16 big parameters** (`ClipDirector.kt:216-225`), so
   the pre-check can be handed 400,000 darts or 80,000 tracers.
-- **A failed generation makes the swipe do nothing, silently.** The swipe looks
-  swallowed rather than saying it could not find anything, and the fallback
-  shown when nothing fits the payoff window is not flagged as one.
-- **Keyframing can only re-stamp the value the timeline is already producing,**
-  so eight of the nine tracks cannot be authored by hand: the track drives the
-  camera every frame, undoing the gesture before the next draw. Pinch-to-zoom
-  does nothing at all in Studio, and keying gravity always records the player's
-  value.
-- **The export renders a different seed from the preview.** The preview uses the
-  live engine seed, the exporter uses `project.seed`, and the project is cached
-  for the life of the app while the Feed re-seeds on every composition.
-- **Keyframes cannot be dragged** though DESIGN.md and QA.md both promise it, so
-  a recorded project can only be wiped, not adjusted.
-- **The Template chips destroy the project with no confirmation,** and after
-  Record moves the row highlights a template that is not loaded.
+- **The Template chips destroy the project with no confirmation.** The row no
+  longer highlights a template that is not loaded, and says what replacing it
+  will cost, but a tap still wipes the work with no undo.
 - **The preview accepts pokes the export cannot reproduce,** and scrubbing
   erases them with nothing said.
-- **A recording under 1.5 s vanishes silently,** and the 60 s auto-stop
-  navigates by writing state during composition.
+- **The 60 s auto-stop on Record moves navigates by writing state during
+  composition** (`PlayerScreen.kt:119-124`), which can double-invalidate a
+  frame.
 - **Scrub catch-up has no indicator** even though `SimEngine.seeking` exists for
   exactly that.
 
@@ -96,24 +85,3 @@ nothing is a bug, and the menu must not promise what the code does not do.*
 - **The recipe editor is reachable only through Advanced → Code,** and Lua
   recipes cannot declare macros at all, so every user-written sim is stuck with
   a single derived slider.
-- **The Simple/Advanced choice is not persisted,** nor are the TickTock time
-  check, "Show live counters" or the volume slider — `applySafety()` is the only
-  writer of those preferences and three screens never call it.
-
-## Docs
-
-- `DESIGN.md:181` says one Laws table is shared by every physics sim and
-  `:193` says every field is read by something; both are false above.
-  `:184-188` omits four law switches that exist in the UI. `:196-199` lists
-  five of six Dimensions sims and describes the slicing sim as something it
-  does not do.
-- `ROUNDS.md:18` names "backwards time rebuilds a collapsed tower", which
-  nothing implements, and `:36` says seven synth voices against 64.
-- `AGENTS.md:81` says the sims are grouped by shelf; four are not.
-- `RECIPE_SPEC.md:80` lists `g.polyline` in the Lua surface, which is not
-  installed; `:97` documents bare ids while `LuaRecipe.kt:112` rewrites them
-  with a `recipe/` prefix; nothing says ids must be unique.
-- `QA.md` has lines that cannot be ticked (46, 49, 50) and no coverage at all of
-  the Dimensions shelf, the force law, Recipes or Settings.
-- Three of the six mockups under `docs/images/` show layouts the code cannot
-  produce.

@@ -158,6 +158,26 @@ for f in sorted(set(glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursi
             f"{f}:{line}: fun {m.group(1)}{m.group(2)}() has the same JVM "
             f"signature as the accessor of '{name}'")
 
+# 5. one name declared twice at the top level of a package
+#    A redeclaration is a compile error that no single-file check can see, and
+#    the Android build is the only real compiler here, so catching it saves a
+#    whole CI run.
+declared = {}
+for f in sorted(set(
+        glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=True) +
+        glob.glob('app/src/test/java/app/hypnotica/**/*.kt', recursive=True))):
+    src = open(f).read()
+    head = re.search(r'^package\s+([\w.]+)', src, re.M)
+    package = head.group(1) if head else ''
+    for m in re.finditer(
+            r'^(?:public |internal |private |abstract |open |sealed |data |enum |annotation |value )*'
+            r'(?:class|object|interface)\s+(\w+)', src, re.M):
+        declared.setdefault((package, m.group(1)), []).append(f)
+for (package, name), where in sorted(declared.items()):
+    if len(set(where)) > 1:
+        problems.append(
+            f"{package}.{name} is declared in " + " and ".join(sorted(set(where))))
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

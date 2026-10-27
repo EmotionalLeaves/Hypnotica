@@ -30,7 +30,7 @@ class SafetyTest {
         return worst
     }
 
-    private fun run(limiter: FlashLimiter, fps: Int, seconds: Int, request: Float): List<Float> {
+    private fun drive(limiter: FlashLimiter, fps: Int, seconds: Int, request: Float): List<Float> {
         val dt = 1f / fps
         val times = ArrayList<Float>()
         var previous = 0f
@@ -49,7 +49,7 @@ class SafetyTest {
         for (fps in intArrayOf(24, 30, 60, 90, 120)) {
             val limiter = FlashLimiter()
             limiter.reset()
-            val worst = worstSecond(run(limiter, fps, 10, 1f))
+            val worst = worstSecond(drive(limiter, fps, 10, 1f))
             assertTrue(
                 "at $fps fps a full flash every frame produced $worst in one second",
                 worst <= 3
@@ -64,7 +64,7 @@ class SafetyTest {
         limiter.reset()
         val first = limiter.allow(1f, 1f / 60f)
         assertTrue("a reduced flash should be softened, got $first", first <= 0.26f)
-        val worst = worstSecond(run(limiter, 60, 10, 1f))
+        val worst = worstSecond(drive(limiter, 60, 10, 1f))
         assertTrue("reduce flashing let $worst through in one second", worst <= 1)
     }
 
@@ -74,7 +74,7 @@ class SafetyTest {
         limiter.maxPerSecond = 60f
         assertEquals(FlashLimiter.HARD_CEILING, limiter.maxPerSecond, 1e-6f)
         limiter.reset()
-        val worst = worstSecond(run(limiter, 60, 10, 1f))
+        val worst = worstSecond(drive(limiter, 60, 10, 1f))
         assertTrue("asking for sixty a second produced $worst", worst <= 3)
     }
 
@@ -83,7 +83,7 @@ class SafetyTest {
         val limiter = FlashLimiter()
         limiter.maxPerSecond = 1f
         limiter.reset()
-        val worst = worstSecond(run(limiter, 60, 10, 1f))
+        val worst = worstSecond(drive(limiter, 60, 10, 1f))
         assertTrue("a cap of one let $worst through in one second", worst <= 1)
     }
 

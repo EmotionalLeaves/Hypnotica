@@ -53,6 +53,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     var watched by remember { mutableIntStateOf(0) }
     var secondsWatching by remember { mutableIntStateOf(0) }
     var showTimeCheck by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun fill() {
@@ -70,7 +71,14 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
     suspend fun advance() {
         fill()
-        val next = queue.removeFirstOrNull() ?: return
+        val next = queue.removeFirstOrNull()
+        if (next == null) {
+            // The swipe used to look swallowed: the gesture landed, nothing
+            // happened, and the clip on screen stayed put with no explanation.
+            notice = "Nothing came up — swipe again."
+            return
+        }
+        notice = null
         play(next)
         watched++
         fill()
@@ -146,6 +154,9 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(visible = liked) {
                 Text("★ more like this", color = Tokens.Accent, style = MaterialTheme.typography.titleMedium)
+            }
+            notice?.let {
+                Text(it, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
             AnimatedVisibility(visible = showTimeCheck) {
                 Column {

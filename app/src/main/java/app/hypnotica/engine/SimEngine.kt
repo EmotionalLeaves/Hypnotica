@@ -128,6 +128,24 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     private val beforeProject = Camera()
     private var hasCameraToRestore = false
 
+    /**
+     * True once the person has moved the view by hand in Studio, until the
+     * timeline is given it back — by playing, scrubbing, or keying the pose.
+     */
+    @Volatile
+    var cameraPosed = false
+        private set
+
+    /** Called by the gestures: from here on the pose is the person's. */
+    fun poseCamera() {
+        if (project != null) cameraPosed = true
+    }
+
+    /** Give the view back to the timeline. */
+    fun releaseCamera() {
+        cameraPosed = false
+    }
+
     @Volatile
     var studioTime: Float = 0f
 
@@ -297,6 +315,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (proj != null) {
             pendingSeek?.let { target ->
                 pendingSeek = null
+                cameraPosed = false
                 core.restart(core.seed)
                 resetRunState()
                 seekRemaining = (target * core.stepHz).toInt().coerceIn(0, MAX_SEEK_STEPS)
@@ -313,6 +332,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             }
             seeking = seekRemaining > 0
 
+            if (studioPlaying) cameraPosed = false
             if (studioPlaying && !seeking) {
                 studioTime += dt
                 if (studioTime >= proj.duration) {
@@ -321,7 +341,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
                 }
             }
             frozen = proj.isFrozenAt(studioTime)
-            proj.applyCamera(studioTime, camera)
+            // While the view has been posed by hand, the timeline leaves it
+            // alone so the pose can be keyed. Driving the camera from the
+            // tracks on every frame undid a twist before the next draw, which
+            // meant the Key button could only ever re-stamp the value the
+            // timeline was already producing: eight of the nine tracks could
+            // not be authored by hand at all.
+            if (!cameraPosed) proj.applyCamera(studioTime, camera)
             // An empty track means "leave this alone": its default would
             // otherwise overwrite the speed, trails or laws the person chose.
             proj.track(TrackKind.SPEED).let { if (!it.isEmpty()) core.speed = it.valueAt(studioTime) }
@@ -450,6 +476,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     fun setBaseZoom(z: Float) {
         baseZoom = z.coerceIn(0.2f, 40f)
+        // With a project attached the breathing path below is skipped, so the
+        // pinch would never reach the camera and zoom could not be posed.
+        if (project != null) {
+            camera.zoom = baseZoom
+            cameraPosed = true
+        }
     }
 
     fun baseZoom(): Float = baseZoom

@@ -51,6 +51,16 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_TIME_CHECK, 0)
         set(value) = sp.edit().putInt(KEY_TIME_CHECK, value).apply()
 
+    /**
+     * Whether the drawer opens on the exact controls.
+     *
+     * The audience that wants them was re-tapping Advanced on every cold start,
+     * which is precisely the sort of choice this file exists to keep.
+     */
+    var advanced: Boolean
+        get() = sp.getBoolean(KEY_ADVANCED, false)
+        set(value) = sp.edit().putBoolean(KEY_ADVANCED, value).apply()
+
     /** The sim the person was last watching, so the app picks up where it left off. */
     var lastSimId: String?
         get() = sp.getString(KEY_LAST_SIM, null)
@@ -88,6 +98,7 @@ class Prefs(context: Context) {
         const val KEY_HAPTICS = "haptics"
         const val KEY_COUNTERS = "counters"
         const val KEY_TIME_CHECK = "time_check"
+        const val KEY_ADVANCED = "advanced"
         const val KEY_LAST_SIM = "last_sim"
         const val KEY_FIRST_LAUNCH = "first_launch"
         const val KEY_TIER = "device_tier"

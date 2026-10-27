@@ -371,8 +371,16 @@ private fun MotionCard(state: AppState) {
         if (state.recording) {
             Pill("Stop and edit", selected = true) { state.stopRecording() }
         } else {
-            Pill("Start recording") { state.startRecording() }
+            Pill("Start recording") { state.notice = null; state.startRecording() }
         }
+    }
+    state.notice?.let {
+        Text(
+            it,
+            color = Tokens.Accent,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
     Text(
         if (state.recording) {

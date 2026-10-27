@@ -48,9 +48,12 @@ fun SettingsScreen(state: AppState, versionName: String) {
         }
         ValueSlider(
             label = "Volume",
-            value = state.engine.synth.volume,
+            value = state.volume,
             min = 0f,
-            max = 1f
+            max = 1f,
+            // Saved when the thumb is let go rather than on every pixel of the
+            // drag: a hundred writes to disk for one gesture is not free.
+            onCommit = { state.applySafety() }
         ) { state.engine.synth.volume = it }
 
         SectionLabel("Look")

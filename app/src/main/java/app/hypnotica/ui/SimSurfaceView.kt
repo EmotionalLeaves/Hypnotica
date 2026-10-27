@@ -99,6 +99,9 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                     while (turn < -Math.PI) turn += TWO_PI
                     if (abs(turn) > ROTATE_SLOP) {
                         engine.camera.rotation += turn
+                        // In Studio this is how a shot gets framed before it is
+                        // keyed, so the timeline stops driving the view.
+                        engine.poseCamera()
                         lastPinchAngle = angle
                     }
 
@@ -174,6 +177,7 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
         val s = kotlin.math.sin(engine.camera.rotation)
         engine.camera.x += dx * c - dy * s
         engine.camera.y += dx * s + dy * c
+        engine.poseCamera()
     }
 
     private fun pinchDistance(e: MotionEvent): Float =

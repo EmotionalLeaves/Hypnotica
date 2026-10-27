@@ -54,6 +54,12 @@ data class TouchEvent(
  */
 class SimEnv(
     val rng: Rng,
+    /**
+     * Written from the UI thread when a law is edited and read by the sim on
+     * every step, so a step cannot see half of a change. Laws itself is
+     * immutable, so publishing the new reference is the whole job.
+     */
+    @Volatile
     var laws: Laws,
     var params: ParamValues,
     val events: EventQueue

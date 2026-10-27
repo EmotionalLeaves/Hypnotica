@@ -6,7 +6,6 @@ import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamValues
 import app.hypnotica.core.render.Palette
-import app.hypnotica.core.safety.FlashLimiter
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.EventQueue
 import app.hypnotica.core.sim.Rng
@@ -224,40 +223,6 @@ class EventQueueTest {
         var n = 0
         q.drain(100) { _, _, _, _ -> n++ }
         assertTrue("queue should still deliver what it kept", n in 1..8)
-    }
-}
-
-class SafetyTest {
-
-    @Test
-    fun largeFlashesAreCappedAtThreePerSecond() {
-        val limiter = FlashLimiter()
-        limiter.reset()
-        var full = 0
-        // Ten big flashes inside a tenth of a second.
-        repeat(10) {
-            val allowed = limiter.allow(1f, 0.01f)
-            if (allowed > 0.5f) full++
-        }
-        assertTrue("expected at most 3 full flashes, got $full", full <= 3)
-    }
-
-    @Test
-    fun smallGlowsAreNotRateLimited() {
-        val limiter = FlashLimiter()
-        limiter.reset()
-        repeat(50) {
-            val allowed = limiter.allow(0.05f, 0.001f)
-            assertEquals(0.05f, allowed, 1e-5f)
-        }
-    }
-
-    @Test
-    fun reduceFlashingSoftensEverything() {
-        val limiter = FlashLimiter()
-        limiter.reset()
-        limiter.reduceFlashing = true
-        assertTrue(limiter.allow(1f, 0.5f) <= 0.3f)
     }
 }
 

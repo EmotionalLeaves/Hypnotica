@@ -43,7 +43,13 @@ class AppState(
         private set
 
     var controlsOpen by mutableStateOf(false)
-    var advanced by mutableStateOf(false)
+    private var advancedState by mutableStateOf(false)
+    var advanced: Boolean
+        get() = advancedState
+        set(value) {
+            advancedState = value
+            applySafety()
+        }
     var card by mutableStateOf(Card.DATA)
     var advancedTab by mutableStateOf(AdvancedTab.DATA)
     var paramVersion by mutableIntStateOf(0)
@@ -91,10 +97,32 @@ class AppState(
     var paletteName by mutableStateOf("Spectrum")
     var soundPresetName by mutableStateOf("Music box")
     var songIndex by mutableIntStateOf(0)
-    var showCounters by mutableStateOf(true)
+    // These three write themselves through. Three screens changed them without
+    // calling applySafety(), which is the only thing that saved them, so they
+    // came back off after a force quit.
+    private var showCountersState by mutableStateOf(true)
+    var showCounters: Boolean
+        get() = showCountersState
+        set(value) {
+            showCountersState = value
+            applySafety()
+        }
 
     /** 0 = off. Minutes between TickTock's "you have been scrolling" card. */
-    var timeCheckMinutes by mutableIntStateOf(0)
+    private var timeCheckState by mutableIntStateOf(0)
+    var timeCheckMinutes: Int
+        get() = timeCheckState
+        set(value) {
+            timeCheckState = value
+            applySafety()
+        }
+
+    /** The synth's volume. Saved by the caller when the gesture ends. */
+    var volume: Float
+        get() = engine.synth.volume
+        set(value) {
+            engine.synth.volume = value
+        }
 
     private var evolveState by mutableStateOf(false)
 
@@ -202,7 +230,18 @@ class AppState(
     /** The project Studio edits, made on the spot the first time it is asked for. */
     fun projectForStudio(): Project {
         val existing = project
-        if (existing != null) return existing
+        if (existing != null) {
+            // The project was cached for the life of the app while every visit
+            // to the Feed re-seeded the engine, so the preview re-simulated one
+            // run and the export re-simulated another: same sim, different
+            // collisions, keyframes landing on the wrong moments. Worse, after
+            // changing sims the file held the new sim with the old sim's seed.
+            // The keyframes are the person's work and are kept; what the run is
+            // follows the sim actually on screen.
+            existing.simId = currentDef.id
+            existing.seed = engine.core.seed
+            return existing
+        }
         val made = Project.template("Build-up to payoff", currentDef.id, engine.core.seed)
         project = made
         return made
@@ -219,11 +258,19 @@ class AppState(
     }
 
     /** Stop and open the recording in Studio, where it can be trimmed. */
+    /** Set when something the person did could not be carried out, cleared on read. */
+    var notice by mutableStateOf<String?>(null)
+
     fun stopRecording() {
         val rec = engine.recorder ?: run { recording = false; return }
         engine.recorder = null
         recording = false
-        if (rec.seconds < 1.5f) return
+        if (rec.seconds < 1.5f) {
+            // Tapping start and stop in quick succession used to do nothing at
+            // all, with the recording already thrown away and no word about it.
+            notice = "That was too short to edit — hold the move for a second or two."
+            return
+        }
         val built = rec.finish()
         project = built
         screen = Screen.STUDIO
@@ -247,8 +294,9 @@ class AppState(
             reduceFlashing = p.reduceFlashing
             reduceMotion = p.reduceMotion
             haptics = p.haptics
-            showCounters = p.showCounters
-            timeCheckMinutes = p.timeCheckMinutes
+            showCountersState = p.showCounters
+            timeCheckState = p.timeCheckMinutes
+            advancedState = p.advanced
             engine.synth.volume = p.volume
             applySafety()
             showFirstRun = !p.seenFirstLaunch
@@ -320,8 +368,9 @@ class AppState(
             it.reduceFlashing = reduceFlashing
             it.reduceMotion = reduceMotion
             it.haptics = haptics
-            it.showCounters = showCounters
-            it.timeCheckMinutes = timeCheckMinutes
+            it.showCounters = showCountersState
+            it.timeCheckMinutes = timeCheckState
+            it.advanced = advancedState
             it.volume = engine.synth.volume
         }
     }

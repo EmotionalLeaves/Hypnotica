@@ -83,6 +83,33 @@ class Track(val kind: TrackKind) {
 
     fun clear() = keys.clear()
 
+    /**
+     * Slide the key nearest [from] to [to], keeping its value and easing.
+     *
+     * The docs have promised draggable keys since the strip was built; without
+     * this a recorded move could only be wiped, never adjusted.
+     */
+    fun moveNear(from: Float, to: Float, within: Float = 0.6f): Boolean {
+        var best = -1
+        var bestGap = within
+        for (i in keys.indices) {
+            val gap = abs(keys[i].time - from)
+            if (gap <= bestGap) {
+                bestGap = gap
+                best = i
+            }
+        }
+        if (best < 0) return false
+        val moved = keys[best].copy(time = max0(to))
+        keys.removeAt(best)
+        // A key dragged onto another one replaces it, the same way setting a key
+        // at an occupied time does.
+        val collision = keys.indexOfFirst { abs(it.time - moved.time) < 0.02f }
+        if (collision >= 0) keys[collision] = moved else keys.add(moved)
+        keys.sortBy { it.time }
+        return true
+    }
+
     fun isEmpty(): Boolean = keys.isEmpty()
 
     /** Value at [time]; the track's default when it has no keyframes. */
