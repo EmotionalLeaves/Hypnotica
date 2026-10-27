@@ -27,6 +27,31 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **A read-through of every screen, as a phone shows it.**
+  - On the feed, once the buttons had faded, a tap to bring them back opened
+    the player instead; the first tap now only brings them back.
+  - Leaving the player with its drawer open left it open: the next Back
+    press only closed a drawer nobody could see, and it was open again on the
+    next visit. Changing screen now closes it and clears any notice, which
+    had followed people from Settings into Studio and the player.
+  - The on-screen ‹ and system Back went to different places. Both now go
+    back to where you came from.
+  - TickTock's caption and buttons never faded; they now fade like the feed's,
+    and come back with each clip. "1 clips" reads "1 clip", and "Nothing came
+    up" fades in and out instead of flashing for a frame.
+  - Settings printed the reset warning twice, once squeezed into a narrow
+    column. The version line sat mid-page, far from the hidden glyphs meant
+    to sit under it. Volume read "0.80"; it reads a percentage.
+  - Studio's "Clear track — sure?" survived a switch to another track, so the
+    next tap cleared a track it had not warned about. It is now tied to the
+    track, and both of Studio's two-tap confirmations stand down after four
+    seconds.
+  - The Evolve switch carried two contradicting captions; it has one.
+  - Simple mode's sound card showed hertz, notes a second and the engine's
+    own event names; it shows words. Motion showed "Speed" and "Time speed",
+    two sliders on the same clock; it shows one. "Break a law" no longer
+    sits over nothing on sims with no law to break.
+
 - **Three to four seconds of a still screen between runs.** Sims held their
   finished picture for up to two and a half seconds before reporting finished,
   and every screen then waited its own 1.8 s resolve beat on top. Holds are

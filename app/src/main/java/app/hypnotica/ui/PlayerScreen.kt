@@ -166,7 +166,7 @@ private fun TopBar(state: AppState, uiTick: Int) {
         Modifier.fillMaxWidth().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        GlyphButton("‹") { state.screen = Screen.LIBRARY }
+        GlyphButton("‹") { state.goBack() }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -511,15 +511,10 @@ private fun MotionCard(state: AppState) {
     CardControls(state, Card.MOTION)
     Spacer(Modifier.height(4.dp))
     ToggleRow("Evolve", state.evolve, enabled = state.canEvolve) { state.evolve = it }
-    if (!state.canEvolve) {
-        Text(
-            "Nothing on this sim drifts.",
-            color = Tokens.TextSecondary,
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
+    // One line, not both: a greyed-out switch was captioned "Nothing on this
+    // sim drifts" and "Settings drift slowly while it plays" at once.
     Text(
-        "Settings drift slowly while it plays.",
+        if (state.canEvolve) "Settings drift slowly while it plays." else "Nothing on this sim drifts.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -555,7 +550,8 @@ private fun LookCard(state: AppState) {
         value = state.trails,
         min = 0f,
         max = 0.96f,
-        valueText = if (state.trails < 0.02f) "off" else formatValue(state.trails)
+        // A share, as Advanced shows it, not "0.85".
+        valueText = if (state.trails < 0.02f) "off" else "${(state.trails * 100f).toInt()}%"
     ) { state.trails = it }
     ToggleRow("Drag pans the view", state.cameraDrag) { state.cameraDrag = it }
     Text(
@@ -564,6 +560,23 @@ private fun LookCard(state: AppState) {
         style = MaterialTheme.typography.bodySmall
     )
     CardControls(state, Card.LOOK)
+}
+
+/**
+ * What each kind of sound is called in Simple mode. The pills were the enum's
+ * own names — Compare, Write, Cross, Step, Done — which say how the engine is
+ * built rather than what you hear.
+ */
+private fun kindWord(kind: EventKind): String = when (kind) {
+    EventKind.COMPARE -> "Checks"
+    EventKind.SWAP -> "Swaps"
+    EventKind.WRITE -> "Changes"
+    EventKind.HIT -> "Hits"
+    EventKind.CROSS -> "Crossings"
+    EventKind.BIRTH -> "Births"
+    EventKind.DEATH -> "Deaths"
+    EventKind.STEP -> "Ticks"
+    EventKind.DONE -> "Finish"
 }
 
 @Composable
@@ -577,11 +590,6 @@ private fun SoundCard(state: AppState) {
     ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
-    Text(
-        "A preset sets the scale, the pitch, the range and the decay together.",
-        color = Tokens.TextSecondary,
-        style = MaterialTheme.typography.bodySmall
-    )
     SectionLabel("Scale")
     // A chip row is as simple as a control gets, and the scale is the thing a
     // person is most likely to want to change about the sound: it was behind
@@ -620,7 +628,7 @@ private fun SoundCard(state: AppState) {
                         state.engine.core.events.hasEmitted(kind)
                     }
                     Pill(
-                        kind.name.lowercase().replaceFirstChar { it.uppercase() },
+                        kindWord(kind),
                         selected = on,
                         modifier = Modifier.weight(1f),
                         enabled = made
@@ -643,7 +651,12 @@ private fun SoundCard(state: AppState) {
     }
     ValueSlider(
         "Brightness", brightness, 0f, 1f,
-        valueText = String.format(java.util.Locale.US, "%.0f Hz, %.1f octaves", mapping.baseHz, mapping.octaves)
+        // Words in Simple mode; the hertz are on the Advanced sound tab.
+        valueText = when {
+            brightness < 0.34f -> "deep"
+            brightness < 0.67f -> "middle"
+            else -> "bright"
+        }
     ) { t ->
         mapping.baseHz = Macro.valueAt(60f..880f, 523f, t, log = true)
         mapping.octaves = Macro.valueAt(1f..6f, 3f, t)
@@ -654,7 +667,11 @@ private fun SoundCard(state: AppState) {
     }
     ValueSlider(
         "Busyness", busyness, 0f, 1f,
-        valueText = String.format(java.util.Locale.US, "%.0f notes/s, %.2f s decay", mapping.maxNotesPerSecond, mapping.decay)
+        valueText = when {
+            busyness < 0.34f -> "sparse"
+            busyness < 0.67f -> "steady"
+            else -> "busy"
+        }
     ) { t ->
         mapping.maxNotesPerSecond = Macro.valueAt(4f..400f, 60f, t, log = true)
         // Busier means shorter notes, or they pile into a drone.

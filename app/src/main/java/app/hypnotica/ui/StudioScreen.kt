@@ -108,7 +108,17 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     var confirmTemplate by remember { mutableIntStateOf(-1) }
 
     /** Clearing a track takes two taps, like replacing a template does. */
-    var confirmClear by remember { mutableStateOf(false) }
+    // Keyed on the track: armed on Zoom, the pill still read "sure?" after
+    // switching to Speed, and the next tap wiped Speed with no warning.
+    var confirmClear by remember(selectedTrack) { mutableStateOf(false) }
+    // An armed confirmation stands down by itself after a few seconds.
+    LaunchedEffect(confirmClear, confirmTemplate) {
+        if (!confirmClear && confirmTemplate < 0) return@LaunchedEffect
+        delay(CONFIRM_MS)
+        confirmClear = false
+        confirmTemplate = -1
+        state.notice = null
+    }
     var exportProgress by remember { mutableFloatStateOf(0f) }
     var runningExport by remember { mutableStateOf<VideoExporter?>(null) }
     var formatIndex by remember { mutableIntStateOf(0) }
@@ -173,7 +183,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             .padding(horizontal = 16.dp)
     ) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            GlyphButton("‹") { state.screen = Screen.SETTINGS }
+            GlyphButton("‹") { state.goBack() }
             Spacer(Modifier.width(8.dp))
             Text("Studio", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
@@ -849,3 +859,6 @@ private val MARKER = 16.dp
 
 /** A pause in editing long enough to be worth writing down. */
 private const val SAVE_AFTER_MS = 400L
+
+/** How long a two-tap confirmation stays armed. */
+private const val CONFIRM_MS = 4000L

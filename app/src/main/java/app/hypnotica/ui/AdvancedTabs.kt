@@ -178,10 +178,9 @@ private fun ParamsTab(state: AppState) {
 @Composable
 internal fun TimeControls(state: AppState) {
     val laws = state.laws
-    ValueSlider(
-        "Time speed", laws.timeScale, 0.05f, 4f, logScale = true,
-        valueText = String.format(java.util.Locale.US, "%.2fx", laws.timeScale)
-    ) { v -> state.editLaws { it.copy(timeScale = v) } }
+    // No "Time speed" slider here. It multiplies into the same clock as Speed,
+    // directly above it, so the card showed two sliders labelled alike that
+    // did the same thing. A law preset can still change how fast time runs.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Pill("Reverse time", selected = laws.timeDirection < 0f) {
             state.editLaws { it.copy(timeDirection = if (it.timeDirection < 0f) 1f else -1f) }
@@ -334,7 +333,11 @@ fun LawsControls(state: AppState, advanced: Boolean) {
             state.editLaws { it.copy(friction = v) }
         }
     }
-    SectionLabel("Break a law")
+    // Only when there is a law here to break: on the gravity-only and the
+    // charge-only sims the heading sat over nothing.
+    if (has(LawKnob.FRICTION) || has(LawKnob.PAIRWISE_FORCE) || has(LawKnob.SPACE) ||
+        has(LawKnob.GRAVITY_DIRECTION)
+    ) SectionLabel("Break a law")
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (has(LawKnob.FRICTION)) {
             Pill("No friction", selected = laws.friction <= 0.0001f) {

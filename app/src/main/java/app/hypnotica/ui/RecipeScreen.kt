@@ -66,7 +66,7 @@ fun RecipeScreen(state: AppState) {
             // Back to where you came from: both routes into this screen are
             // from Settings ("Write a sim", and the Code tab's button), and the
             // Library has no route here at all.
-            GlyphButton("‹") { state.screen = Screen.SETTINGS }
+            GlyphButton("‹") { state.goBack() }
             Spacer(Modifier.width(8.dp))
             Text("Recipes", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))

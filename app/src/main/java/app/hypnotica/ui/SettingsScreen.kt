@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +48,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
             .verticalScroll(rememberScrollState())
     ) {
         Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            GlyphButton("‹") { state.screen = Screen.FEED }
+            GlyphButton("‹") { state.goBack() }
             Spacer(Modifier.width(12.dp))
             Text("Settings", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
         }
@@ -69,6 +70,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
             value = state.volume,
             min = 0f,
             max = 1f,
+            valueText = "${(state.volume * 100f).roundToInt()}%",
             // Saved when the thumb is let go rather than on every pixel of the
             // drag: a hundred writes to disk for one gesture is not free.
             onCommit = { state.applySafety() }
@@ -146,28 +148,14 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 state.notice = "Forgotten. TickTock starts fresh."
             }
         }
+        }
+        // One notice line for the section, under the row rather than beside
+        // the pill: there it was squeezed into a column six lines tall, and
+        // the format pills above printed the same message a second time.
         NoticeLine(state.notice)
-        }
 
-        Spacer(Modifier.height(28.dp))
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Text(
-                "Hypnotica $versionName",
-                color = Tokens.TextSecondary.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        // The recipe editor is the largest thing in the app — a sim written in
-        // Lua becomes a sim like any other — and its only door was Advanced,
-        // the fifth tab, below a JSON blob. Somebody handed a recipe in a chat
-        // message had no way to paste it in.
-        // The gesture card is shown once ever and the flag that hides it is
-        // never cleared, so a stray tap on its scrim took the only explanation
-        // the app offers with it. This is the same list, any time.
+        // What every gesture does, any time it is wanted, rather than on a card
+        // pushed at the person on first launch.
         SectionLabel("Gestures")
         if (showGestures) {
             GestureList()
@@ -195,10 +183,23 @@ fun SettingsScreen(state: AppState, versionName: String) {
             )
         }
 
-        // Below the version number, unlabelled, exactly as designed: a clock for
-        // TickTock and a film strip for Studio.
+        // The version number sits at the foot of the page, and below it,
+        // unlabelled, exactly as designed: a clock for TickTock and a film
+        // strip for Studio. The version used to sit mid-page, between TickTock
+        // and Gestures, so the glyphs were nowhere near it.
+        Spacer(Modifier.height(28.dp))
         Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp),
+            Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                "Hypnotica $versionName",
+                color = Tokens.TextSecondary.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.Center
         ) {
             QuietGlyph("◷") { state.screen = Screen.TICKTOCK }
@@ -206,10 +207,9 @@ fun SettingsScreen(state: AppState, versionName: String) {
             QuietGlyph("✇") { state.screen = Screen.STUDIO }
         }
         // The glyphs are meant to be found rather than advertised, but they
-        // composite at about 1.4:1 against the background — invisible outdoors
-        // — and the only hint was on the first-run card, shown once and never
-        // again. A line this quiet keeps them a discovery and stops them being
-        // lost for good.
+        // composite at about 1.4:1 against the background — invisible outdoors.
+        // A line this quiet keeps them a discovery and stops them being lost
+        // for good.
         Text(
             "◷ endless scroll   ✇ make a video",
             color = Tokens.TextSecondary.copy(alpha = 0.33f),
@@ -257,7 +257,7 @@ private const val STRIP_STEPS = 24
 private fun QuietGlyph(glyph: String, onClick: () -> Unit) {
     Box(
         Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
@@ -297,6 +297,5 @@ private fun FormatMutes(state: AppState) {
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        NoticeLine(state.notice)
     }
 }

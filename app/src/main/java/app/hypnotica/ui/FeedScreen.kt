@@ -112,6 +112,9 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     // brings it back.
     var touchedAt by remember { mutableLongStateOf(0L) }
     var chromeShown by remember { mutableStateOf(true) }
+    // Whether the chrome had faded when this touch began. The touch itself
+    // brings it back, so by the time the tap lands it is always showing.
+    var hiddenAtDown by remember { mutableStateOf(false) }
     LaunchedEffect(touchedAt, hint) {
         chromeShown = true
         if (hint) return@LaunchedEffect
@@ -150,6 +153,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.pressed && !it.previousPressed }) hiddenAtDown = !chromeShown
                         if (event.changes.any { it.pressed }) touchedAt = System.nanoTime()
                     }
                 }
@@ -193,7 +197,11 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // it would fix. The ★ in the row below already favourites this sim,
             // and double-tap stays what it is in TickTock, where the tap only
             // shows and hides the chrome.
-            onTap = { state.screen = Screen.PLAYER }
+            //
+            // Once the buttons have faded, the first tap only brings them
+            // back. It used to open the player as well, so on the feed the
+            // buttons could only be got back by starting a drag.
+            onTap = { if (!hiddenAtDown) state.screen = Screen.PLAYER }
         )
 
         // How far through the move, 0 at rest and 1 at the swap.
@@ -282,8 +290,8 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 BigButton("Open controls", Modifier.weight(1f), primary = true) {
-                    state.controlsOpen = true
                     state.screen = Screen.PLAYER
+                    state.controlsOpen = true
                 }
                 BigButton("Settings") { state.screen = Screen.SETTINGS }
             }
@@ -300,7 +308,7 @@ private fun hookFor(state: AppState): String {
 private const val SWIPE = 90f
 
 /** Rule 1's figure: chrome fades after this long with no touch. */
-private const val CHROME_IDLE_MS = 2600L
+internal const val CHROME_IDLE_MS = 2600L
 
 /** How far the chrome travels, as a share of the screen, before the swap. */
 private const val LEAVE = 0.32f

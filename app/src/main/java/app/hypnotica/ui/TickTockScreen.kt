@@ -1,6 +1,9 @@
 package app.hypnotica.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +62,25 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     var showTimeCheck by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Rule 1: the chrome fades after 2.6 s with no touch, as it does on the
+    // feed and in the player. Here it sat over every clip for good. Each new
+    // clip brings it back, so its hook is read before it goes.
+    LaunchedEffect(current) { showChrome = true }
+    LaunchedEffect(showChrome, current) {
+        if (!showChrome) return@LaunchedEffect
+        delay(CHROME_IDLE_MS)
+        showChrome = false
+    }
+    // A notice is read and then goes by itself. The last one is kept for the
+    // fade out, which would otherwise have nothing to draw.
+    var lastNotice by remember { mutableStateOf("") }
+    LaunchedEffect(notice) {
+        val n = notice ?: return@LaunchedEffect
+        lastNotice = n
+        delay(NOTICE_MS)
+        notice = null
+    }
 
     /** The generation in flight, so leaving the screen can stop it. */
     var generating by remember { mutableStateOf<Job?>(null) }
@@ -206,7 +228,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                             generating?.cancel()
                             generating = scope.launch { advance() }
                         } else if (travelled >= SWIPE_PIXELS) {
-                            state.screen = Screen.SETTINGS
+                            state.goBack()
                         }
                         travelled = 0f
                     }
@@ -228,7 +250,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
-            AnimatedVisibility(visible = showChrome) {
+            AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
                 Text(
                     current?.caption ?: "Finding something…",
                     color = Tokens.TextPrimary,
@@ -236,11 +258,12 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 )
             }
             Spacer(Modifier.weight(1f))
-            AnimatedVisibility(visible = liked) {
+            AnimatedVisibility(visible = liked, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
                 Text("★ more like this", color = Tokens.Accent, style = MaterialTheme.typography.titleMedium)
             }
-            notice?.let {
-                Text(it, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            // Faded rather than cut: it used to appear and vanish in a frame.
+            AnimatedVisibility(visible = notice != null, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
+                Text(lastNotice, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
             AnimatedVisibility(visible = showTimeCheck) {
                 Column {
@@ -264,7 +287,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     Spacer(Modifier.height(12.dp))
                 }
             }
-            AnimatedVisibility(visible = showChrome) {
+            AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
                         // Nothing is drawn until there is a clip. While the
@@ -292,7 +315,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                             // characters against 272 dp of column, so it always
                             // wrapped and left one word alone on a second line.
                             Text(
-                                "$watched clips  ·  hold to open",
+                                (if (watched == 1) "1 clip" else "$watched clips") + "  ·  hold to open",
                                 color = Tokens.TextSecondary.copy(alpha = 0.7f),
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
@@ -301,7 +324,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    GlyphButton("‹") { state.screen = Screen.SETTINGS }
+                    GlyphButton("‹") { state.goBack() }
                 }
             }
         }
@@ -310,6 +333,9 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE_PIXELS = 90f
+
+/** How long a line like "Nothing came up" stays before fading. */
+private const val NOTICE_MS = 3500L
 
 /** The least a clip lingers after its payoff, however early that came. */
 private const val MIN_RESOLVE_SECONDS = 3f

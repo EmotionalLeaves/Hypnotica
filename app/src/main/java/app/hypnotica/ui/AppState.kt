@@ -55,6 +55,9 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO, RECIPES }
  */
 internal const val RESOLVE_MS = 1000L
 
+/** How many screens Back remembers. */
+private const val MAX_TRAIL = 8
+
 /** Under this share of the phone's best frame rate counts as falling behind. */
 private const val SLOW_SHARE = 0.7f
 
@@ -67,7 +70,36 @@ class AppState(
     val recipeStore: RecipeStore? = null
 ) {
 
-    var screen by mutableStateOf(Screen.FEED)
+    private var screenState by mutableStateOf(Screen.FEED)
+
+    /**
+     * Where the person came from, so Back and the on-screen ‹ both return
+     * there. They used to disagree: the player's ‹ went to the Library and
+     * system Back to the feed, so someone who opened a sim from the feed
+     * tapped ‹ and landed on a screen they had never been to.
+     */
+    private val trail = ArrayList<Screen>()
+
+    /**
+     * The screen showing. Moving to another one closes the player's drawer and
+     * drops any notice: both used to follow the person around — the drawer
+     * open again on the next visit, swallowing the first Back, and "Tap again
+     * to forget everything" turning up in Studio.
+     */
+    var screen: Screen
+        get() = screenState
+        set(value) {
+            if (value == screenState) return
+            if (value == Screen.FEED) trail.clear()
+            else {
+                trail.remove(value)
+                trail.add(screenState)
+                if (trail.size > MAX_TRAIL) trail.removeAt(0)
+            }
+            screenState = value
+            controlsOpen = false
+            notice = null
+        }
     var currentDef by mutableStateOf(SimRegistry.defaultSim())
         private set
 
@@ -582,12 +614,13 @@ class AppState(
             true
         }
         screen == Screen.FEED -> false
-        screen == Screen.PLAYER -> {
-            screen = Screen.FEED
-            true
-        }
         else -> {
-            screen = Screen.FEED
+            val to = trail.removeLastOrNull() ?: Screen.FEED
+            // Set directly, so going back does not add to the trail.
+            screenState = to
+            controlsOpen = false
+            notice = null
+            if (to == Screen.FEED) trail.clear()
             true
         }
     }
@@ -798,8 +831,9 @@ class AppState(
     /** Hand the clip on screen to the normal player, controls and all. */
     fun openClipInPlayer(clip: Clip) {
         playClip(clip)
-        controlsOpen = true
+        // After the move: changing screen closes the drawer.
         screen = Screen.PLAYER
+        controlsOpen = true
     }
 
     /**
