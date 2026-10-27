@@ -26,7 +26,25 @@ Read this first, then `docs/ROUNDS.md` for the round you are on.
    its round is done.
 9. **A control that does nothing is a bug.** A law no sim reads, a format no sim
    can produce, a parameter nothing uses: delete it or wire it up. The menu must
-   not promise what the code does not do.
+   not promise what the code does not do. Three ways this has happened, all of
+   which a working handler hides, and all of which `tools/uicheck.py` now checks:
+   - **The row is never told to redraw.** Parameter values, the sound mapping and
+     `Project` are plain fields read by other threads, not snapshot state. A
+     composable that shows one must read something snapshot-backed in its own
+     body — `state.paramVersion`, `state.soundVersion`, `state.liveTick`, a local
+     `by remember` — or the control is handed the old value for ever and the
+     thumb springs back under the finger. Do not rely on the parent recomposing.
+   - **The sim only reads it while being built.** A value copied into a field in
+     `setup()` cannot change anything mid-run. `AppState.needsRestart` asks the
+     sim rather than assuming, via the live-read record in `ParamValues`, and
+     rebuilds for those. A new sim gets this for free; a sim that caches a value
+     and also wants it live should read it in `step()`.
+   - **Something else has taken it over.** A sweep, a song, a typed formula or a
+     conservation flag can own a value the control still offers. Say so: a
+     `Param` can name the switch that owns it with `mutedBy`, and `ValueSlider`,
+     `ChipRow`, `ToggleRow` and `Pill` all take `enabled`. A dimmed control that
+     names its owner is a setting the person can find; a bright one that does
+     nothing is a bug report.
 10. **The engine is shared, the sims are dumb.** Slow motion, punch-in, flashes,
    haptics, rate limiting and safety all live in the engine. A sim says what
    happened; the engine decides how it is performed.
@@ -78,13 +96,25 @@ run in seconds:
     tools/harness.sh probe.kt ProbeKt      run a main() against the engine
     tools/as-main.py Test.kt /tmp/R.kt T   turn a JUnit test into such a main()
 
-`uicheck.py` is eleven rules, each written after a real defect and each proven
+`uicheck.py` is fifteen rules, each written after a real defect and each proven
 to fire against it: unresolved references, `by remember` without its imports, a
 property and a `setX()` that compile to one JVM method, a name declared twice
 in a package, a payoff fired by the clock alone, a law nothing reads or nothing
 can set, a declared `LawKnob` that does not match the file's own `laws.` reads,
 a named argument the constructor does not have, a Library mock-up naming a sim
-that does not exist, and a luaj call not known to compile.
+that does not exist, a luaj call not known to compile, a control handed a value
+Compose cannot observe inside a composable that reads no snapshot state, a local
+used above its own declaration, a name declared twice in one scope, and
+`String.format` without an explicit locale.
+
+Proven is the operative word, and it means two things. A rule must fire against
+the commit that broke — `git stash push <file>` then run it — and it must still
+fire on a synthetic case in the fixed file, or a clean run is indistinguishable
+from a rule that has stopped looking. Three of these rules were wrong on their
+first draft in ways a clean run concealed: rule 12 compared the literal argument
+instead of resolving one level of local assignment, and so waved through all
+three of the rows it was written for; rule 14 compared indentation and flagged
+two perfectly legal `val shown` in an if/else.
 
 The rule the whole set exists to serve: **measure, do not argue.** A claim about
 the engine — that a ring draws at the thickness it asked for, that the walker

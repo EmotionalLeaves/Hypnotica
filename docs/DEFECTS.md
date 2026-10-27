@@ -9,31 +9,80 @@ bug, and the menu must not promise what the code does not do.*
 
 ## Open
 
-Nothing. Three audits — one on the hidden TickTock and Studio modes, one on the
-dual interface, one on the laws, the dimension sims and the guide — raised
-about fifty findings between them, and all of them are closed.
+Nothing.
 
-The last two to go were the ones that needed something built rather than
-repaired:
+### The control audit
 
-- **A sim that genuinely runs in reverse.** Every other sim integrates
-  forwards, so "Backwards time" reverses the physics and leaves a maze or a
-  sort alone — correctly, since neither unsolves. `physics/tower` is written
-  the other way round: each brick's position is a function of the clock, so
-  reversing time reverses the picture exactly, and the clock folds at the top
-  so neither direction ever runs out of tower. `RegistryTest.theTowerRunsBothWays`
-  checks the reverse retraces the build within two bricks and that a run which
-  starts reversed is not simply frozen.
-- **The per-event sound mutes**, now a row of pills on the Simple Sound card
-  beside the preset, the scale, Brightness and Busyness.
+The user, running the APK on a phone: *"not all buttons and sliders work."*
+Five audits, one per screen group, traced all 131 controls end to end. Three
+causes accounted for almost all of it, and each one is worth remembering
+because none of them was a broken handler — every handler ran, and every write
+landed.
+
+1. **Every per-sim slider sprang back.** Parameter values live in a
+   `ConcurrentHashMap` the sim thread reads each step, not in snapshot state,
+   and `ParamControl`, `ExactParamRow` and `MacroControl` each displayed one
+   without reading any snapshot state of their own. Compose had nothing to tell
+   it the row needed redrawing, so the row went on being handed the old number
+   and the thumb jumped back under the finger. `uicheck` rule 12 is this class,
+   and it reproduces all five instances against the code as it shipped.
+
+2. **Eighty-eight values did nothing at all.** `needsRestart` answered "is it on
+   the Data card", and only Data-card values restart the run — but eighty-eight
+   Motion and Look values are copied into a field in `setup()` and never looked
+   at again. Boids' entire Motion card. The sorting sims' Algorithm chip and
+   View. Mandelbrot's Resolution, Detail and Zoom speed. And, because every
+   value they move is one of those, the Chaos and Energy macros that Simple
+   mode leans on hardest were inert on four sims.
+
+   The fix is not a list, because a list of fifty would rot the first time a sim
+   changed. `ParamValues` records which keys are read while a run is stepping —
+   thirty frames after each setup, then it stops, so the steady-state cost is
+   one volatile read — and a value nothing reads live is applied by rebuilding.
+   `ControlEffectTest` is the proof and does not trust that bookkeeping: for
+   each such value it builds a fresh run at the bottom of the range, draws a
+   frame, builds one at the top, draws again, and compares what would be on
+   screen. 88 driven, 87 differ.
+
+3. **Studio was hiding fifteen of its twenty-two controls.** The preview sat in
+   a `fillMaxWidth().aspectRatio(0.62f)` box — about 1.6 times the screen width,
+   some 620 dp of an 860 dp phone — and the editor column below it had no
+   weight, so it was measured against what was left: fifteen dp on a large
+   phone, none on a small one.
+
+The eighty-eighth control was the one real find of a different kind: optics
+overwrites its Angle on every step while "Sweep the angle" is on, and that
+switch ships on, so no rebuild could rescue it. A `Param` can now name the
+switch that owns it, and the control goes dim and says so rather than lying.
+Song mode over the scale, pitch and range; a typed force law over Force
+falloff; `conserveEnergy` over bounce — all the same treatment, which is what
+`ValueSlider`, `ChipRow` and `ToggleRow` gained an `enabled` for.
+
+Three wrong measurements from that round, recorded because each looked like a
+finding: at 40 frames three trail lengths drew identical frames, because a
+trail cannot differ before enough of it exists to draw; testing parameters
+cumulatively on one core made the hypercube's second spin plane look dead when
+it was the first plane's value carrying over; and the first draft of rule 12
+compared the literal argument rather than resolving one level of local
+assignment, so it saw a bare `v` and waved all three broken rows through.
+
+Three builds also broke on the same class of mistake — a local declared below
+its use, and a name declared twice in one scope — which is now rules 13 and 14.
+Rule 14's first draft compared indentation and immediately flagged two
+perfectly legal `val shown` in an if/else; it walks braces instead.
 
 The checks that keep the findings closed, all of which reproduce the defect
-they were written for: `tools/uicheck.py` rules 5 to 10 (redeclarations, a
+they were written for: `tools/uicheck.py` rules 5 to 15 (redeclarations, a
 payoff fired by the clock alone, a law nothing reads or nothing can set, a
 declared `LawKnob` that does not match the code, a named argument the
-constructor does not have, and a Library mock-up naming a sim that does not
-exist), `tools/glslcheck.js` and `tools/glslpixels.js` (the shaders compiled
-and their pixels measured in a real rasteriser), `MacroTest` (Simple mode's
-contract across every sim), `SafetyTest` (the flash cap against the worst case
-the app can produce) and `RegistryTest` (every sim run under every law preset,
-paying off, making a sound, previewable, and at its largest size).
+constructor does not have, a Library mock-up naming a sim that does not exist,
+a luaj call not proven to compile, a control showing a value Compose cannot
+observe, a local used before its declaration, a name declared twice in one
+scope, and `String.format` without a locale), `tools/glslcheck.js` and
+`tools/glslpixels.js` (the shaders compiled and their pixels measured in a real
+rasteriser), `ControlEffectTest` (every control changes the picture),
+`DriftHoldTest` (Evolve standing off a value a hand just moved), `MacroTest`
+(Simple mode's contract across every sim), `SafetyTest` (the flash cap against
+the worst case the app can produce) and `RegistryTest` (every sim run under
+every law preset, paying off, making a sound, previewable, and at its largest
+size).
