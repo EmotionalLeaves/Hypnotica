@@ -201,7 +201,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
             ) {
-                SimCanvas(surface = surface, modifier = Modifier.fillMaxSize())
+                SimCanvas(
+                    surface = surface,
+                    modifier = Modifier.fillMaxSize(),
+                    cameraMode = true
+                )
                 project.textAt(playhead)?.let { clip ->
                     // Where TextOverlay will actually put it: clip space is y-up,
                     // Compose's bias is y-down, hence the sign.
@@ -217,6 +221,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                     )
                 }
             }
+        }
+
+        if (state.engine.seeking) {
+            Text(
+                "catching up…",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
 
         if (exporting) {

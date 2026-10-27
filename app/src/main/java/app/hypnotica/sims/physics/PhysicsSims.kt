@@ -5,6 +5,7 @@ import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.Parallel
@@ -258,7 +259,8 @@ class BallEscapeSim : Sim {
             family = "Bouncing & collisions",
             blurb = "Every bounce makes it bigger and faster. One gap out.",
             formats = listOf(TrapFormat.ESCAPE, TrapFormat.SONG, TrapFormat.NUMBER_UP),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.BOUNCE,
+                LawKnob.FRICTION, LawKnob.CONTACT, LawKnob.LIGHT_SPEED),
             heroLabel = "Add ball",
             heroRestarts = false,
             typicalSeconds = 34f,
@@ -524,7 +526,7 @@ class PendulumWaveSim : Sim {
             family = "Pendulums & oscillators",
             blurb = "Fifteen pendulums drift apart, then snap back into one line.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.SONG),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.FRICTION),
             heroLabel = "Drop again",
             typicalSeconds = 38f,
             params = listOf(
@@ -662,7 +664,7 @@ class NewtonsCradleSim : Sim {
             family = "Pendulums & oscillators",
             blurb = "Momentum passes straight through the middle.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.CHAIN),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.BOUNCE, LawKnob.FRICTION, LawKnob.CONTACT),
             heroLabel = "Lift and drop",
             typicalSeconds = 20f,
             params = listOf(
@@ -866,7 +868,7 @@ class GaltonBoardSim : Sim {
             family = "Bouncing & collisions",
             blurb = "Random beads, every time the same bell curve.",
             formats = listOf(TrapFormat.FILL, TrapFormat.GROW),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Drop more",
             typicalSeconds = 24f,
             params = listOf(

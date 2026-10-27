@@ -64,6 +64,13 @@ class ClipDirector(seed: Long = System.nanoTime()) {
 
         /** Draws allowed before taking whatever comes up. */
         const val REDRAWS = 8
+
+        /**
+         * The cap for any size parameter not named in [sizeCap]. Generous
+         * enough to look like plenty on a phone, small enough that twelve
+         * headless payoff checks of it are still quick.
+         */
+        const val DEFAULT_CAP = 6000f
     }
 
     /** How many seeds the last generate() had to try. Shown in the debug counter. */
@@ -141,6 +148,11 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         lastAttempts = 0
         var fallback: Clip? = null
         repeat(tries) {
+            // Generation runs on a background thread and used to have no
+            // suspension point or cancellation check anywhere in it, so leaving
+            // the screen did not stop it: the work carried on saturating the
+            // same dispatcher the GL thread shares.
+            if (Thread.currentThread().isInterrupted) return fallback
             lastAttempts++
             val candidate = propose() ?: return@repeat
             val payoff = checkPayoff(candidate)
@@ -265,6 +277,16 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         return out
     }
 
+    /**
+     * How large a generated clip may be.
+     *
+     * The default used to be no cap at all, which contradicted the paragraph
+     * above it: nine of sixteen big parameters fell through, so a proposal could
+     * be four hundred thousand darts or eighty thousand tracers, and each one is
+     * simulated through before anybody sees it. One flick could stall for
+     * seconds. Anything not named here is held to [DEFAULT_CAP], which is wide
+     * enough for every sim's shipped default and far short of its maximum.
+     */
     private fun sizeCap(key: String): Float = when (key) {
         "n" -> 2500f
         "count" -> 24000f
@@ -273,7 +295,13 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         "walkers" -> 400f
         "trail" -> 9000f
         "balls" -> 18f
-        else -> Float.MAX_VALUE
+        "dots", "points", "ink", "samples", "limit" -> 12000f
+        "nodes", "cells", "circles", "history", "tracers" -> 4000f
+        "maxbars" -> 900f
+        "bodies" -> 400f
+        "start" -> 9999f
+        "particles" -> 24000f
+        else -> DEFAULT_CAP
     }
 
     /**

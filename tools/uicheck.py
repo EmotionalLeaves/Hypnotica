@@ -178,6 +178,31 @@ for (package, name), where in sorted(declared.items()):
         problems.append(
             f"{package}.{name} is declared in " + " and ".join(sorted(set(where))))
 
+# 6. a payoff fired by the clock alone
+#    DESIGN.md: "satisfaction is designed, not hoped for", and the payoff is
+#    "the moment -- a snap, an escape, a completion". Eight sims used to set
+#    payoffFrame from a bare `elapsed > 14f`, which fires whether or not
+#    anything has happened and is what the arc is measured against.
+CLOCK_OK = {'elapsed', 'dt', 'abs', 'payoffFrame', 'f', 'true', 'false'}
+for f in sorted(glob.glob('app/src/main/java/app/hypnotica/sims/**/*.kt', recursive=True)):
+    src = open(f).read()
+    for m in re.finditer(r'^[ \t]*if\s*\((.+?)\)\s*\{?(.*(?:\n.*){0,2})', src, re.M):
+        condition, body = m.group(1), m.group(2)
+        if 'payoffFrame = true' not in body and 'payoffFrame = true' not in condition:
+            continue
+        if 'elapsed' not in condition:
+            continue
+        names = set(re.findall(r'[A-Za-z_]\w*', condition))
+        # A flag the same block latches is bookkeeping, not content: `!reached`
+        # only stops the payoff firing twice.
+        latches = set(re.findall(r'(\w+)\s*=\s*true', body))
+        if names - CLOCK_OK - latches:
+            continue          # the condition tests something the sim is doing
+        line = src[:m.start()].count('\n') + 1
+        problems.append(
+            f"{f}:{line}: the payoff fires on the clock alone ({condition.strip()}); "
+            f"it has to be a moment in the run")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

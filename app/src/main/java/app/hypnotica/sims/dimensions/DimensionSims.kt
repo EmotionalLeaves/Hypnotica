@@ -7,6 +7,7 @@ import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.Sim
@@ -40,6 +41,7 @@ class HypercubeSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var turns = 0L
+    private var paidTurn = false
     private var planeA = 0
     private var planeB = 3
     private var manualSpin = 0f
@@ -76,6 +78,9 @@ class HypercubeSim : Sim {
         Nd.rotatePlane(verts, n, dims, planeA, planeB, (speed + manualSpin) * dt)
         if (dims >= 3) Nd.rotatePlane(verts, n, dims, 0, 1, tilt * dt)
         if (dims >= 5) Nd.rotatePlane(verts, n, dims, 2, 4, tilt * 0.6f * dt)
+        // Without this the sixth axis never moved, so choosing six dimensions
+        // added thirty-two corners and no new motion at all.
+        if (dims >= 6) Nd.rotatePlane(verts, n, dims, 3, 5, tilt * 0.45f * dt)
         manualSpin *= (1f - 2f * dt).coerceIn(0f, 1f)
 
         // Every corner that crosses the far side of the extra axis is a note, so
@@ -101,7 +106,15 @@ class HypercubeSim : Sim {
         if (completed > turns) {
             turns = completed
             env.emit(EventKind.CROSS, 0.6f, 0f, 0.8f)
-            if (turns == 2L) payoffFrame = true
+            // A full turn brings every corner back where it started, which is
+            // the moment worth waiting for. It used to want the second turn and
+            // test for it with ==, so below a spin of about 0.48 the payoff
+            // landed after the clip had ended and TickTock threw every seed
+            // away. One turn is enough when a turn is slow.
+            if (!paidTurn && (turns >= 2L || elapsed > SLOW_TURN_SECONDS)) {
+                paidTurn = true
+                payoffFrame = true
+            }
         }
     }
 
@@ -116,20 +129,36 @@ class HypercubeSim : Sim {
             screenY[i] = proj[1] * scale
             screenD[i] = proj[2]
         }
+        // Nearness, spread over the range this frame actually spans. The raw
+        // factor only varies by a fifth either side of one, so used directly it
+        // gave every corner nearly the same colour; stretched, near and far are
+        // plainly different at two dimensions and at six.
+        var lowest = Float.MAX_VALUE
+        var highest = -Float.MAX_VALUE
+        for (i in 0 until n) {
+            if (screenD[i] < lowest) lowest = screenD[i]
+            if (screenD[i] > highest) highest = screenD[i]
+        }
+        val span = (highest - lowest).coerceAtLeast(1e-4f)
+        fun nearness(v: Float): Float = ((v - lowest) / span).coerceIn(0f, 1f)
+
         var e = 0
         while (e < edges.size) {
             val a = edges[e]
             val b = edges[e + 1]
-            val depth = (screenD[a] + screenD[b]) * 0.5f
-            val c = palette.at((depth * 0.7f).coerceIn(0f, 1f))
-            g.line(screenX[a], screenY[a], screenX[b], screenY[b], 0.004f + depth * 0.004f, c, (0.25f + depth * 0.6f).coerceAtMost(1f))
+            val near = (nearness(screenD[a]) + nearness(screenD[b])) * 0.5f
+            val c = palette.at(0.15f + near * 0.75f)
+            g.line(
+                screenX[a], screenY[a], screenX[b], screenY[b],
+                0.003f + near * 0.005f, c, 0.3f + near * 0.65f
+            )
             e += 2
         }
         for (i in 0 until n) {
-            val d = screenD[i]
-            val c = palette.at((d * 0.7f).coerceIn(0f, 1f))
-            g.glow(screenX[i], screenY[i], 0.05f * d, c, 0.35f)
-            g.disc(screenX[i], screenY[i], 0.012f * d, Palette.brighten(c, 0.2f))
+            val near = nearness(screenD[i])
+            val c = palette.at(0.15f + near * 0.75f)
+            g.glow(screenX[i], screenY[i], 0.03f + 0.045f * near, c, 0.25f + 0.25f * near)
+            g.disc(screenX[i], screenY[i], 0.008f + 0.011f * near, Palette.brighten(c, 0.2f))
         }
         if (payoffFrame) g.flash(0.3f)
     }
@@ -147,6 +176,15 @@ class HypercubeSim : Sim {
     )
 
     companion object {
+        /**
+         * When a turn is slower than this, one is enough for the payoff.
+         *
+         * The slider reaches a spin of 0.05, which is four minutes a turn, so
+         * waiting for the second turn put the payoff long after the clip had
+         * ended and TickTock threw every seed away.
+         */
+        const val SLOW_TURN_SECONDS = 14f
+
         fun def(): SimDef = SimDef(
             id = "dimensions/hypercube",
             title = "Rotating hypercube",
@@ -400,6 +438,11 @@ class RandomWalkSim : Sim {
         returned = 0
         payoffFrame = false
         paid = false
+        elapsed = 0f
+        lastReturned = -1
+        settledFor = 0f
+        viewScale = 1f
+        viewer = VIEWER
         carry = 0f
         wandered = BooleanArray(walkers)
         textureClock = 0f
@@ -408,8 +451,22 @@ class RandomWalkSim : Sim {
     /** True once the payoff has fired, so it fires once. */
     private var paid = false
 
-    /** Share of walkers home before the payoff: above 3D, not all can return. */
-    private val RETURN_SHARE = 0.35f
+    /**
+     * The payoff is the verdict, not a quota.
+     *
+     * A share of walkers home cannot be the gate: Polya's theorem says a walk
+     * on a line or a grid comes home with probability one and a walk in three
+     * dimensions with probability 0.34 — in infinite time. Measured over a
+     * thirty-second run, two and a half per cent of three-dimensional walkers
+     * get home and none at all above four, so a 35% gate meant the sim named
+     * "Will the walker get home?" could never pay off at the dimension it is
+     * named after. What is worth waiting for is the answer settling: the count
+     * stops climbing, and that is the result.
+     */
+    private val SETTLED_SECONDS = 4.5f
+
+    /** Nothing is settled before this much of the run has been seen. */
+    private val EARLIEST_PAYOFF = 8f
 
     /** How far out a walker must get before its return is a return. */
     private val AWAY_STEPS = 5f
@@ -424,6 +481,7 @@ class RandomWalkSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        updateView()
         carry += abs(dt) * env.params.f("rate", 260f)
         var budget = min(carry.toInt(), 4000)
         carry -= budget
@@ -449,14 +507,6 @@ class RandomWalkSim : Sim {
                     home[w] = true
                     returned++
                     env.emit(EventKind.CROSS, 0.35f + 0.5f * (returned.toFloat() / walkers), 0f, 0.7f)
-                    // Above three dimensions a random walk is not recurrent, so
-                    // waiting for every walker would wait forever. The payoff is
-                    // the moment most of those that can come back have.
-                    if (!paid && returned >= (walkers * RETURN_SHARE).toInt().coerceAtLeast(1)) {
-                        paid = true
-                        payoffFrame = true
-                        env.emit(EventKind.DONE, 1f, 0f, 1f)
-                    }
                 }
             }
             // The swarm spreading is itself the sound, so the run is never
@@ -478,22 +528,80 @@ class RandomWalkSim : Sim {
                 }
             }
 
-            // Record the first walker's path as the visible trail.
+            // Record the first walker's path as the visible trail. Stored in
+            // world units at the scale of the moment, so the trail keeps its
+            // shape as the view pulls back.
             if (walkers > 0) {
-                Nd.project(pos, 0, dims, 3f, proj)
-                trailX[trailHead] = proj[0] * 0.8f
-                trailY[trailHead] = proj[1] * 0.8f
+                Nd.project(pos, 0, dims, viewer, proj)
+                // Stored as projected, unscaled: the view pulls back as the
+                // cloud grows, and a trail written at an older scale would fly
+                // off the edges as it did.
+                trailX[trailHead] = proj[0]
+                trailY[trailHead] = proj[1]
                 trailHead = (trailHead + 1) % trailX.size
                 if (trailFill < trailX.size) trailFill++
             }
         }
-        if (!payoffFrame && returned > 0 && returned.toFloat() / walkers >= 0.5f && steps > 2000) {
-            // Half of them home is the moment the difference between dimensions shows.
-            payoffFrame = halfMarked.compareAndSet(false, true)
+        // The verdict: once the count has stopped climbing for a few seconds,
+        // the answer is in, and what it is depends entirely on the dimension —
+        // all of them on a line, most of them on a grid, hardly any in three.
+        // That contrast is the whole sim, and it is what gets the payoff.
+        elapsed += abs(dt)
+        if (returned != lastReturned) {
+            lastReturned = returned
+            settledFor = 0f
+        } else {
+            settledFor += abs(dt)
+        }
+        if (!paid && elapsed > EARLIEST_PAYOFF && settledFor > SETTLED_SECONDS) {
+            paid = true
+            payoffFrame = true
+            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 
-    private val halfMarked = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var elapsed = 0f
+    private var lastReturned = -1
+    private var settledFor = 0f
+
+    /**
+     * How far from the origin the cloud has spread, so the view can hold it.
+     *
+     * A walk is unbounded and [Nd.project] divides by a fixed viewer distance,
+     * so once a coordinate passed the viewer every point was multiplied by
+     * twenty: three quarters of the walkers left the screen in three dimensions
+     * and the furthest reached fourteen hundred screen-widths out in six. The
+     * cloud is scaled to fit instead, which is also the only way to see what it
+     * is doing.
+     */
+    private var viewScale = 1f
+    private var viewer = VIEWER
+
+    /**
+     * Pull the camera back as the cloud grows, then scale what comes out to fit.
+     *
+     * Scaling the world coordinates alone is not enough: the projection divides
+     * by (viewer - w), so the moment a walker passed the fixed viewer distance
+     * every point was multiplied by twenty and left the screen however the
+     * world was scaled. Keeping the viewer two and a half times the cloud's
+     * radius bounds that factor at 1.7, and then one scale holds the whole
+     * cloud in frame.
+     */
+    private fun updateView() {
+        var furthest = 0f
+        var w = 0
+        val stride = maxOf(1, walkers / 64)
+        while (w < walkers) {
+            val d = Nd.length(pos, w * dims, dims)
+            if (d > furthest) furthest = d
+            w += stride
+        }
+        val radius = furthest.coerceAtLeast(0.2f)
+        viewer = maxOf(VIEWER, radius * VIEWER_AHEAD)
+        val target = 0.85f / (radius * PROJECTION_GAIN)
+        // Eases towards the target so the view does not jump every frame.
+        viewScale += (target.coerceIn(0.01f, 4f) - viewScale) * 0.06f
+    }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
@@ -501,14 +609,19 @@ class RandomWalkSim : Sim {
         for (k in 0 until trailFill) {
             val idx = (trailHead - 1 - k + trailX.size * 2) % trailX.size
             val age = k.toFloat() / trailFill
-            g.point(trailX[idx], trailY[idx], 0.006f * (1.1f - age), Palette.withAlpha(palette.at(0.2f + age * 0.6f), 1f - age * 0.85f))
+            g.point(
+                trailX[idx] * viewScale, trailY[idx] * viewScale,
+                0.006f * (1.1f - age),
+                Palette.withAlpha(palette.at(0.2f + age * 0.6f), 1f - age * 0.85f)
+            )
         }
         for (w in 0 until walkers) {
-            Nd.project(pos, w * dims, dims, 3f, proj)
+            Nd.project(pos, w * dims, dims, viewer, proj)
             val c = if (home[w]) Palette.SUCCESS else palette.at(w.toFloat() / max(1, walkers))
-            g.point(proj[0] * 0.8f, proj[1] * 0.8f, 0.011f, c)
+            g.point(proj[0] * viewScale, proj[1] * viewScale, 0.011f, c)
         }
-        g.ring(0f, 0f, 0.035f, 0.004f, Palette.SUCCESS, alpha = 0.8f)
+        // Home, at the same scale as everything else.
+        g.ring(0f, 0f, (0.035f * viewScale).coerceIn(0.012f, 0.1f), 0.004f, Palette.SUCCESS, alpha = 0.8f)
         if (payoffFrame) g.flash(0.3f)
     }
 
@@ -521,6 +634,19 @@ class RandomWalkSim : Sim {
     )
 
     companion object {
+        /**
+         * Far enough back that a projection never divides by nearly zero. The
+         * walk is scaled into view separately, so this only sets how strong the
+         * perspective is.
+         */
+        const val VIEWER = 6f
+
+        /** The viewer sits this many cloud radii back, which bounds the gain. */
+        const val VIEWER_AHEAD = 2.5f
+
+        /** The most the projection can magnify once the viewer keeps ahead. */
+        const val PROJECTION_GAIN = 1.7f
+
         fun def(): SimDef = SimDef(
             id = "dimensions/random-walk",
             title = "Will the walker get home?",
@@ -561,10 +687,18 @@ class NdBounceSim : Sim {
     private var elapsed = 0f
     private var spin = 0f
 
+    /** Which of the 2*dims walls have been struck, so the payoff is a fact. */
+    private var wallHit = BooleanArray(Nd.MAX_DIMS * 2)
+    private var wallsTouched = 0
+    private var allWallsHit = false
+
     override fun setup(env: SimEnv) {
         val p = env.params
         dims = p.i("dims", 4).coerceIn(2, Nd.MAX_DIMS)
         count = p.i("balls", 24).coerceIn(1, 600)
+        wallHit = BooleanArray(Nd.MAX_DIMS * 2)
+        wallsTouched = 0
+        allWallsHit = false
         pos = FloatArray(count * dims)
         vel = FloatArray(count * dims)
         tint = FloatArray(count)
@@ -598,8 +732,10 @@ class NdBounceSim : Sim {
                 pos[base + d] += vel[base + d] * dt
                 if (pos[base + d] > wall) {
                     pos[base + d] = wall; vel[base + d] = -vel[base + d] * e; hitsThisStep++
+                    wallHit[d * 2] = true
                 } else if (pos[base + d] < -wall) {
                     pos[base + d] = -wall; vel[base + d] = -vel[base + d] * e; hitsThisStep++
+                    wallHit[d * 2 + 1] = true
                 }
             }
         }
@@ -614,7 +750,21 @@ class NdBounceSim : Sim {
         }
         spin += env.params.f("spin", 0.4f) * dt
         if (dims >= 4) Nd.rotatePlane(pos, count, dims, 0, 3, env.params.f("spin", 0.4f) * dt)
-        if (!payoffFrame && elapsed > 16f && elapsed < 16f + abs(dt) * 1.5f) payoffFrame = true
+
+        // Every wall struck at least once: in two dimensions that is four, in
+        // six it is twelve, so the moment arrives later the more dimensions
+        // there are — which is the point of the sim. A stopwatch at sixteen
+        // seconds said nothing about whether anything had happened.
+        if (!allWallsHit) {
+            var touched = 0
+            for (d in 0 until dims * 2) if (wallHit[d]) touched++
+            wallsTouched = touched
+            if (touched >= dims * 2) {
+                allWallsHit = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+            }
+        }
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -639,7 +789,7 @@ class NdBounceSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "dimensions" to dims.toString(),
-        "walls" to (dims * 2).toString(),
+        "walls hit" to "$wallsTouched/${dims * 2}",
         "bounces" to hits.toString()
     )
 
@@ -651,7 +801,7 @@ class NdBounceSim : Sim {
             family = "Physics in N dimensions",
             blurb = "More dimensions, more walls, a busier rhythm.",
             formats = listOf(TrapFormat.SONG, TrapFormat.LOOP, TrapFormat.ESCAPE),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.BOUNCE, LawKnob.CONTACT),
             heroLabel = "Shake the box",
             defaultPalette = "Ember",
             typicalSeconds = 26f,

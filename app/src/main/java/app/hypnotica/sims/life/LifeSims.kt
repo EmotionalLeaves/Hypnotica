@@ -6,6 +6,7 @@ import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.FastMath
 import app.hypnotica.core.sim.Parallel
@@ -320,7 +321,7 @@ class BoidsSim : Sim {
             family = "Particles & flocking",
             blurb = "Three rules, no leader, and a flock forms anyway.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.GROW, TrapFormat.COLOR_BATTLE),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.SPACE),
             heroLabel = "Scatter",
             defaultPalette = "Aurora",
             typicalSeconds = 28f,

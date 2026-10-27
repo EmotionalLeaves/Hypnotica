@@ -24,6 +24,22 @@ class RegistryTest {
     private val g = G()
 
     @Test
+    fun everyIdIsUniqueAndNamesItsShelf() {
+        val byId = HashMap<String, String>()
+        val wrongShelf = ArrayList<String>()
+        for (def in SimRegistry.all) {
+            val clash = byId.put(def.id, def.title)
+            assertTrue("two sims share the id ${def.id}: $clash and ${def.title}", clash == null)
+            // The prefix has to be a namespace somebody chose on purpose.
+            val prefix = def.id.substringBefore('/')
+            if (prefix !in SimRegistry.idNamespaces) {
+                wrongShelf.add("${def.id} starts with an unknown \"$prefix\"")
+            }
+        }
+        assertTrue("sim ids with a namespace nobody declared: $wrongShelf", wrongShelf.isEmpty())
+    }
+
+    @Test
     fun everySimRunsUnderEveryLaw() {
         val presets = listOf(
             Laws.OUR_UNIVERSE,
@@ -125,7 +141,7 @@ class RegistryTest {
     @Test
     fun theBigSizesRun() {
         val cases = listOf(
-            Triple("scale/particle-field", "count", 400_000f),
+            Triple("life/particle-field", "count", 400_000f),
             Triple("life/game-of-life", "grid", 1024f),
             Triple("sorting/quicksort", "n", 200_000f),
             Triple("sorting/bubble-sort", "n", 200_000f),

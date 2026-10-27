@@ -347,37 +347,54 @@ fun LawsControls(state: AppState, advanced: Boolean) {
 
 @Composable
 private fun SoundTab(state: AppState) {
+    val mapping = state.engine.mapping
+    // SoundMapping holds plain fields, not snapshot state, so nothing here
+    // recomposes on its own: these four sliders used to show their launch
+    // values for ever while the sound changed underneath them. Reading the
+    // version first makes every change redraw the readouts, and a preset tap
+    // — which overwrites pitch, range, decay and scale — now moves them too.
+    val version = state.soundVersion
+
     SectionLabel("Preset")
     ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
     SectionLabel("Scale")
-    val mapping = state.engine.mapping
-    var scaleIndex by remember { mutableStateOf(Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0)) }
-    ChipRow(Scale.NAMES, scaleIndex) {
-        scaleIndex = it
+    ChipRow(Scale.NAMES, remember(version) { Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0) }) {
         mapping.scale = Scale.byIndex(it)
+        state.soundChanged()
     }
     SectionLabel("Song mode")
     ChipRow(Song.NAMES, state.songIndex) { state.setSong(it) }
 
     ValueSlider("Base pitch", mapping.baseHz, 60f, 880f, logScale = true,
-        valueText = String.format("%.0f Hz", mapping.baseHz)) { mapping.baseHz = it }
+        valueText = String.format("%.0f Hz", mapping.baseHz)) {
+        mapping.baseHz = it
+        state.soundChanged()
+    }
     ValueSlider("Range", mapping.octaves, 1f, 6f,
-        valueText = String.format("%.1f octaves", mapping.octaves)) { mapping.octaves = it }
+        valueText = String.format("%.1f octaves", mapping.octaves)) {
+        mapping.octaves = it
+        state.soundChanged()
+    }
     ValueSlider("Decay", mapping.decay, 0.03f, 2f, logScale = true,
-        valueText = String.format("%.2f s", mapping.decay)) { mapping.decay = it }
+        valueText = String.format("%.2f s", mapping.decay)) {
+        mapping.decay = it
+        state.soundChanged()
+    }
     ValueSlider("Notes per second", mapping.maxNotesPerSecond, 4f, 400f, logScale = true,
-        valueText = String.format("%.0f", mapping.maxNotesPerSecond)) { mapping.maxNotesPerSecond = it }
+        valueText = String.format("%.0f", mapping.maxNotesPerSecond)) {
+        mapping.maxNotesPerSecond = it
+        state.soundChanged()
+    }
 
     SectionLabel("Which events make a sound")
-    var tick by remember { mutableStateOf(0) }
     Column {
         EventKind.entries.forEach { kind ->
-            val enabled = remember(tick, kind) { mapping.isEnabled(kind) }
+            val enabled = remember(version, kind) { mapping.isEnabled(kind) }
             ToggleRow(kind.name.lowercase().replaceFirstChar { it.uppercase() }, enabled) {
                 mapping.setEnabled(kind, it)
-                tick++
+                state.soundChanged()
             }
         }
     }

@@ -38,7 +38,7 @@ object Bench {
 
     const val PARTICLES = 40_000
     private const val STEPS = 90
-    private const val HEAVY_SIM = "scale/particle-field"
+    private const val HEAVY_SIM = "life/particle-field"
 
     /**
      * Measure, on whatever thread calls this — never the UI one. Takes about a

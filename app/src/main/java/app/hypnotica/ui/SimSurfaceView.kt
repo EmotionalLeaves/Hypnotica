@@ -24,7 +24,13 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
     var onDoubleTap: (() -> Unit)? = null
     var onLongPress: (() -> Unit)? = null
 
-    /** When true, a one-finger drag pans the view instead of reaching the sim. */
+    /**
+     * When true, gestures move the view and never reach the sim.
+     *
+     * Studio runs in this mode. A poke there looks like it works and then
+     * cannot be exported: the file is re-simulated from the seed with no input,
+     * and scrubbing wipes the poke out of the preview too.
+     */
     var cameraMode: Boolean = false
 
     private var downX = 0f
@@ -43,8 +49,10 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
         if (!moved && !pinching) {
             longPressFired = true
             onLongPress?.invoke()
-            val (wx, wy) = engine.worldFromScreen(downX, downY)
-            engine.onTouch(TouchEvent(TouchEvent.Kind.LONG_PRESS, wx, wy))
+            if (!cameraMode) {
+                val (wx, wy) = engine.worldFromScreen(downX, downY)
+                engine.onTouch(TouchEvent(TouchEvent.Kind.LONG_PRESS, wx, wy))
+            }
         }
     }
 
@@ -68,8 +76,10 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                 lastPanX = event.x
                 lastPanY = event.y
                 postDelayed(longPressRunnable, 450)
-                val (wx, wy) = engine.worldFromScreen(event.x, event.y)
-                engine.onTouch(TouchEvent(TouchEvent.Kind.DRAG_START, wx, wy))
+                if (!cameraMode) {
+                    val (wx, wy) = engine.worldFromScreen(event.x, event.y)
+                    engine.onTouch(TouchEvent(TouchEvent.Kind.DRAG_START, wx, wy))
+                }
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -143,10 +153,10 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                         onDoubleTap?.invoke()
                     } else {
                         lastTapAt = now
-                        engine.onTouch(TouchEvent(TouchEvent.Kind.TAP, wx, wy))
+                        if (!cameraMode) engine.onTouch(TouchEvent(TouchEvent.Kind.TAP, wx, wy))
                         onTap?.invoke()
                     }
-                } else {
+                } else if (!cameraMode) {
                     engine.onTouch(TouchEvent(TouchEvent.Kind.DRAG_END, wx, wy))
                 }
                 pinching = false

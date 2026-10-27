@@ -39,6 +39,9 @@ class VoronoiSim : Sim {
     private var cols = 0
     private var rows = 0
     private var owner = IntArray(0)
+    private var settled = false
+    private var closestPair = Float.MAX_VALUE
+    private var pinchHeld = 0f
     private var elapsed = 0f
     private var payoffFrame = false
     private var sinceRecompute = 999f
@@ -62,6 +65,9 @@ class VoronoiSim : Sim {
         rows = p.i("resolution", 150).coerceIn(30, 420)
         cols = max(8, (rows * env.aspect).toInt())
         owner = IntArray(cols * rows)
+        settled = false
+        closestPair = Float.MAX_VALUE
+        pinchHeld = 0f
         elapsed = 0f
         payoffFrame = false
         sinceRecompute = 999f
@@ -76,6 +82,33 @@ class VoronoiSim : Sim {
             sy[i] += svy[i] * dt
             if (sx[i] < -halfW || sx[i] > halfW) svx[i] = -svx[i]
             if (sy[i] < -1f || sy[i] > 1f) svy[i] = -svy[i]
+        }
+
+        // The pinch: two seeds at their closest, where the border between them
+        // is shortest and their cells are squeezed thin. Every seed always owns
+        // at least the cell it sits in, so a diagram of drifting seeds never
+        // settles and never completes — waiting for either waits for ever, and
+        // the fourteen-second clock this replaces said nothing about the
+        // picture at all.
+        if (elapsed > PINCH_EARLIEST && !settled) {
+            var nearest = Float.MAX_VALUE
+            for (i in 0 until seeds) {
+                for (j in i + 1 until seeds) {
+                    val d = hypot(sx[i] - sx[j], sy[i] - sy[j])
+                    if (d < nearest) nearest = d
+                }
+            }
+            if (nearest < closestPair) {
+                closestPair = nearest
+                pinchHeld = 0f
+            } else {
+                pinchHeld += abs(dt)
+            }
+            if (pinchHeld > PINCH_HELD) {
+                settled = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.75f, 0f, 1f)
+            }
         }
 
         // The nearest-seed test is per pixel, so it runs on its own clock.
@@ -104,10 +137,6 @@ class VoronoiSim : Sim {
             }
         }
         env.emit(EventKind.STEP, (elapsed * 0.1f) % 1f, 0f, 0.25f)
-        if (!payoffFrame && elapsed > 14f && elapsed < 14f + abs(dt) * 1.5f) {
-            payoffFrame = true
-            env.emit(EventKind.DONE, 0.75f, 0f, 1f)
-        }
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -144,6 +173,12 @@ class VoronoiSim : Sim {
         listOf("cells" to seeds.toString())
 
     companion object {
+        /** Nothing is the closest pair before this much of the run. */
+        const val PINCH_EARLIEST = 5f
+
+        /** How long the closest pair has to hold before it is the one. */
+        const val PINCH_HELD = 0.7f
+
         const val REFRESH_HZ = 12f
 
         fun def(): SimDef = SimDef(
@@ -326,6 +361,9 @@ class CurvedSpaceSim : Sim {
     private var massAmount = 1f
     private var massX = 0f
     private var massY = 0f
+    private var bentMost = false
+    private var closest = Float.MAX_VALUE
+    private var closingFor = 0f
     private var rays = 7
     private var elapsed = 0f
     private var payoffFrame = false
@@ -344,6 +382,9 @@ class CurvedSpaceSim : Sim {
         elapsed = 0f
         payoffFrame = false
         traceRays(env)
+        bentMost = false
+        closest = Float.MAX_VALUE
+        closingFor = 0f
     }
 
     /** How far a point is pulled towards the mass. */
@@ -391,9 +432,23 @@ class CurvedSpaceSim : Sim {
         }
         traceRays(env)
         env.emit(EventKind.STEP, ((massY + 1f) * 0.5f).coerceIn(0f, 1f), massX.coerceIn(-1f, 1f), 0.25f)
-        if (!payoffFrame && elapsed > 12f && elapsed < 12f + abs(dt) * 1.5f) {
-            payoffFrame = true
-            env.emit(EventKind.DONE, 0.75f, 0f, 1f)
+        // The mass at its closest approach, where the grid is pulled hardest
+        // and the rays bend most: the running minimum stops falling, and that
+        // turning point is the picture this sim exists to show. A clock at
+        // twelve seconds fired wherever the orbit happened to be.
+        if (elapsed > PAYOFF_EARLIEST) {
+            val reach = hypot(massX, massY)
+            if (reach < closest) {
+                closest = reach
+                closingFor = 0f
+            } else {
+                closingFor += abs(dt)
+            }
+            if (!bentMost && closingFor > CLOSEST_HELD) {
+                bentMost = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.75f, 0f, 1f)
+            }
         }
     }
 
@@ -462,6 +517,12 @@ class CurvedSpaceSim : Sim {
     )
 
     companion object {
+        /** Nothing is the closest approach before this much of the run. */
+        const val PAYOFF_EARLIEST = 6f
+
+        /** How long the closest approach has to hold before it is the one. */
+        const val CLOSEST_HELD = 0.6f
+
         fun def(): SimDef = SimDef(
             id = "dimensions/curved-space",
             title = "A mass bending space",

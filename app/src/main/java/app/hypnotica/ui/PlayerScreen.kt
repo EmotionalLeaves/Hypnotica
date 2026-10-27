@@ -119,8 +119,12 @@ private fun TopBar(state: AppState, uiTick: Int) {
             val line = if (state.recording) {
                 val rec = remember(uiTick) { state.engine.recorder }
                 // A recording that has run its length stops itself, rather than
-                // sitting at "60s" until somebody notices.
-                if (rec != null && rec.full) state.stopRecording()
+                // sitting at "60s" until somebody notices. Done in an effect,
+                // not here: stopRecording writes the project and the screen,
+                // and writing snapshot state while the frame is being composed
+                // can invalidate it twice over.
+                val full = rec != null && rec.full
+                LaunchedEffect(full) { if (full) state.stopRecording() }
                 "\u25CF  recording  ${(rec?.seconds ?: 0f).toInt()}s"
             } else if (state.showCounters && counters.isNotEmpty()) {
                 counters.joinToString("   ") { "${it.second} ${it.first}" }

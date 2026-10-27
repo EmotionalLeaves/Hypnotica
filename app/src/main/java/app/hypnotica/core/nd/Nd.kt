@@ -1,6 +1,8 @@
 package app.hypnotica.core.nd
 
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -46,7 +48,8 @@ object Nd {
     fun project(point: FloatArray, offset: Int, dims: Int, viewerDistance: Float, out: FloatArray) {
         var x = point[offset]
         var y = if (dims > 1) point[offset + 1] else 0f
-        var depth = 1f
+        var product = 1f
+        var axes = 0
         var d = dims - 1
         while (d >= 2) {
             val w = point[offset + d]
@@ -54,13 +57,24 @@ object Nd {
             val k = if (denom > 0.05f) viewerDistance / denom else 20f
             x *= k
             y *= k
-            depth *= (k / (1f + viewerDistance)).coerceIn(0.05f, 4f)
+            product *= k
+            axes++
             d--
         }
         out[0] = x
         out[1] = y
-        out[2] = depth.coerceIn(0.05f, 2.5f)
+        // The nearness cue is the average of the per-axis factors, not their
+        // product. A product compounds: each extra axis multiplied it by about a
+        // quarter, so a five-dimensional cube drew every corner twenty times
+        // smaller than a three-dimensional one and six looked identical to five
+        // once the clamp caught it — the depth cue vanished at exactly the
+        // dimensions where it matters most. An average keeps the same spread of
+        // nearness whatever the dimension.
+        out[2] = if (axes == 0) 1f else pow(product, 1f / axes).coerceIn(0.4f, 2.2f)
     }
+
+    private fun pow(base: Float, e: Float): Float =
+        if (base <= 0f) 0f else exp(ln(base) * e)
 
     /** The 2^dims corners of a unit hypercube, packed into one array. */
     fun hypercubeVertices(dims: Int): FloatArray {

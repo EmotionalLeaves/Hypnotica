@@ -9,6 +9,26 @@ import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 
 /** Top-level grouping in the Library. */
+/**
+ * A group of laws a sim can honour, as one thing a person can be offered.
+ *
+ * Grouped rather than one entry per field: "Contact" is sticky and pass-through
+ * together because a sim that bounces reads both, and "Pairwise force" is the
+ * gravitational constant, the falloff, the mass sign and the typed force law,
+ * which only mean anything together.
+ */
+enum class LawKnob(val title: String) {
+    GRAVITY("Gravity"),
+    GRAVITY_DIRECTION("Which way is down"),
+    PAIRWISE_FORCE("The force between masses"),
+    BOUNCE("Bounciness"),
+    FRICTION("Friction"),
+    CONTACT("What happens on contact"),
+    LIGHT_SPEED("The speed of light"),
+    CHARGE("Charge"),
+    SPACE("The shape of space")
+}
+
 enum class Shelf(val title: String) {
     ALGORITHMS("Algorithms"),
     PHYSICS("Physics"),
@@ -126,9 +146,22 @@ data class SimDef(
     val defaultSound: String = "Music box",
     /** Typical length of a satisfying run, used by TickTock and Studio templates. */
     val typicalSeconds: Float = 24f,
-    val usesLaws: Boolean = false,
+    /**
+     * The laws this sim actually reads.
+     *
+     * The Laws card used to be the same on every sim that showed it, so six of
+     * its controls plus a formula box were no-ops on whatever was in front of
+     * you — and each one renamed the universe to "Custom" while the picture
+     * stayed exactly the same. A sim lists what it honours and the card offers
+     * that, which is also the only way the guide's claim that changing a law
+     * changes the sim can be true.
+     */
+    val lawKnobs: Set<LawKnob> = emptySet(),
     val create: () -> Sim
 ) {
+    /** True when the Laws card has anything to offer on this sim. */
+    val usesLaws: Boolean get() = lawKnobs.isNotEmpty()
+
     fun newParamValues(): ParamValues = ParamValues(params)
 
     /** Parameters a Simple-mode card should show. */

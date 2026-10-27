@@ -5,6 +5,7 @@ import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.FastMath
 import app.hypnotica.core.sim.Parallel
@@ -220,13 +221,14 @@ class ParticleFieldSim : Sim {
         private const val PAYOFF_AT = 18f
 
         fun def(): SimDef = SimDef(
-            id = "scale/particle-field",
+            id = "life/particle-field",
             title = "Particle field",
             shelf = Shelf.LIFE,
             family = "Particles & flocking",
             blurb = "Up to 400,000 particles in one flow field, one draw call.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.GROW),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.BOUNCE,
+                LawKnob.FRICTION, LawKnob.CONTACT, LawKnob.SPACE),
             heroLabel = "New field",
             defaultPalette = "Aurora",
             typicalSeconds = 30f,

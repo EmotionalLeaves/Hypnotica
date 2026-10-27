@@ -17,7 +17,9 @@ fun SimCanvas(
     modifier: Modifier = Modifier,
     onTap: () -> Unit = {},
     onDoubleTap: () -> Unit = {},
-    onLongPress: () -> Unit = {}
+    onLongPress: () -> Unit = {},
+    /** True where gestures frame the shot rather than poke the sim. */
+    cameraMode: Boolean = false
 ) {
     AndroidView(
         modifier = modifier,
@@ -29,6 +31,7 @@ fun SimCanvas(
             it.onTap = onTap
             it.onDoubleTap = onDoubleTap
             it.onLongPress = onLongPress
+            it.cameraMode = cameraMode
         }
     )
 }

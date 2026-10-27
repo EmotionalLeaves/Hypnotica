@@ -30,6 +30,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.director.Clip
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,7 +57,26 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    suspend fun fill() {
+    /** The generation in flight, so leaving the screen can stop it. */
+    var generating by remember { mutableStateOf<Job?>(null) }
+
+    /**
+     * Make sure there is something to play, then top the queue up behind it.
+     *
+     * Entering the screen used to wait for two whole generations before showing
+     * anything, and each one is up to twelve headless payoff checks: measured at
+     * eleven and a half seconds for one sim on a desktop machine, so longer on a
+     * phone, with the caption reading "Finding something…" over the previous
+     * sim the whole time. One clip is enough to start.
+     */
+    suspend fun fillOne(): Boolean {
+        if (queue.isNotEmpty()) return true
+        val clip = withContext(Dispatchers.Default) { director.generate() } ?: return false
+        queue.addLast(clip)
+        return true
+    }
+
+    suspend fun prefetch() {
         while (queue.size < 2) {
             val clip = withContext(Dispatchers.Default) { director.generate() } ?: break
             queue.addLast(clip)
@@ -70,7 +90,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     }
 
     suspend fun advance() {
-        fill()
+        fillOne()
         val next = queue.removeFirstOrNull()
         if (next == null) {
             // The swipe used to look swallowed: the gesture landed, nothing
@@ -81,12 +101,14 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         notice = null
         play(next)
         watched++
-        fill()
+        // Behind the clip that is already playing, so the next swipe is instant
+        // and this one was not waiting on it.
+        prefetch()
     }
 
     LaunchedEffect(Unit) {
-        state.engine.onFinished = { scope.launch { advance() } }
-        advance()
+        state.engine.onFinished = { generating = scope.launch { advance() } }
+        generating = scope.launch { advance() }
     }
 
     // The optional time check, off unless the person turned it on.
@@ -102,6 +124,11 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     DisposableEffect(Unit) {
         onDispose {
             state.engine.onFinished = null
+            // Generation is a long CPU burn on the shared dispatcher, and
+            // leaving the screen used not to stop it: the work carried on
+            // stuttering whatever came next. withContext propagates the
+            // cancellation, and the director checks for it between tries.
+            generating?.cancel()
         }
     }
 
@@ -120,7 +147,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     onDragEnd = {
                         if (travelled <= -SWIPE_PIXELS) {
                             current?.let { state.skipClip(it) }
-                            scope.launch { advance() }
+                            generating = scope.launch { advance() }
                         } else if (travelled >= SWIPE_PIXELS) {
                             state.screen = Screen.SETTINGS
                         }

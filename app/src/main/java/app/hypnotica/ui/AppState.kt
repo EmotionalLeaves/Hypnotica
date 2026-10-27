@@ -336,10 +336,25 @@ class AppState(
         prefs?.paletteName = name
     }
 
+    /**
+     * Bumped whenever a sound value changes, so the Sound tab redraws.
+     *
+     * SoundMapping is plain fields read by the audio thread, not snapshot
+     * state; without this the sliders that write them never showed their own
+     * effect, and a preset tap silently replaced four of them.
+     */
+    var soundVersion by mutableIntStateOf(0)
+        private set
+
+    fun soundChanged() {
+        soundVersion++
+    }
+
     fun setSoundPreset(name: String) {
         soundPresetName = name
         engine.setSoundPreset(name)
         prefs?.soundPreset = name
+        soundChanged()
     }
 
     fun setSong(index: Int) {

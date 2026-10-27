@@ -5,6 +5,7 @@ import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.Parallel
 import app.hypnotica.core.sim.Shelf
@@ -194,7 +195,7 @@ class NBodySim : Sim {
             family = "Orbits, gravity & space",
             blurb = "Every mass pulling on every other one, until arms form.",
             formats = listOf(TrapFormat.GROW, TrapFormat.LOOP, TrapFormat.SNAP),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.PAIRWISE_FORCE),
             heroLabel = "New galaxy",
             defaultPalette = "Ember",
             typicalSeconds = 30f,
@@ -226,10 +227,13 @@ class GearsSim : Sim {
     private var payoffFrame = false
     private var clicks = 0L
     private var lastTooth = 0
+    /** True once the train has turned a full revolution: the payoff. */
+    private var cycled = false
 
     override fun setup(env: SimEnv) {
         val p = env.params
         gears.clear()
+        cycled = false
         val count = p.i("gears", 5).coerceIn(2, 9)
         speed = p.f("speed", 0.9f)
         val toothSize = 0.055f
@@ -269,7 +273,12 @@ class GearsSim : Sim {
             clicks++
             env.emit(EventKind.HIT, (gears.size - 1).toFloat() / max(1, gears.size), 0f, 0.4f)
         }
-        if (!payoffFrame && elapsed > 14f && elapsed < 14f + abs(dt) * 1.5f) {
+        // One full revolution of the slowest gear in the train: every tooth is
+         // back where it started, which is the moment a gear train is for.
+         // Timing it at fourteen seconds said nothing about the mechanism.
+        val slowest = gears.lastOrNull()
+        if (!cycled && slowest != null && abs(slowest.angle) >= 2f * PI.toFloat()) {
+            cycled = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.7f, 0f, 1f)
         }
@@ -319,7 +328,7 @@ class GearsSim : Sim {
             family = "Mechanics & machines",
             blurb = "Tooth counts decide the ratio, all the way down the line.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.CHAIN, TrapFormat.SONG),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.FRICTION),
             heroLabel = "New ratios",
             defaultPalette = "Mono glow",
             typicalSeconds = 20f,
@@ -356,9 +365,16 @@ class ClothSim : Sim {
     private var tears = 0
     private var lastTears = 0
     private var swayClock = 0f
+    private var settled = false
+    private var stillFor = 0f
+    private var peakMotion = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
+        settled = false
+        stillFor = 0f
+        peakMotion = 0f
+        elapsed = 0f
         cols = p.i("cols", 26).coerceIn(3, 200)
         rows = p.i("rows", 20).coerceIn(2, 200)
         val n = cols * rows
@@ -448,9 +464,35 @@ class ClothSim : Sim {
             }
         }
 
-        if (elapsed > 6f && !payoffFrame && elapsed < 6f + abs(dt) * 1.5f) {
-            payoffFrame = true
-            env.emit(EventKind.DONE, 0.6f, 0f, 0.9f)
+        // The payoff is the sheet arriving: it drops, swings, and then is just
+        // swaying in the wind. Measured against its own peak rather than
+        // against zero, because the wind never stops — waiting for stillness
+        // meant waiting for ever, and a clock at six seconds fired a quarter of
+        // the way into the run over a sheet that was still falling.
+        if (!settled) {
+            val vertices = cols * rows
+            var motion = 0f
+            var sampled = 0
+            var i = 0
+            while (i < vertices) {
+                if (!cut[i]) {
+                    motion += abs(x[i] - ox[i]) + abs(y[i] - oy[i])
+                    sampled++
+                }
+                i += maxOf(1, vertices / 64)
+            }
+            val perVertex = if (sampled == 0) 0f else motion / sampled
+            if (perVertex > peakMotion) peakMotion = perVertex
+            val calm = peakMotion > 0f && perVertex < peakMotion * CALM_SHARE
+            if (calm && elapsed > 3f) stillFor += abs(dt) else stillFor = 0f
+            // A tear is the louder moment when the sheet is set up to give way,
+            // so it wins over the settling.
+            val tore = tears > 0
+            if (tore || stillFor > STILL_SECONDS) {
+                settled = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.6f, 0f, 0.9f)
+            }
         }
     }
 
@@ -514,6 +556,12 @@ class ClothSim : Sim {
         listOf("points" to (cols * rows).toString())
 
     companion object {
+        /** Share of its own peak motion below which the sheet has arrived. */
+        const val CALM_SHARE = 0.22f
+
+        /** How long it has to stay calm before the cloth has settled. */
+        const val STILL_SECONDS = 0.8f
+
         fun def(): SimDef = SimDef(
             id = "physics/cloth",
             title = "Cloth",
@@ -521,7 +569,7 @@ class ClothSim : Sim {
             family = "Fluids & soft bodies",
             blurb = "A hanging sheet that swings, settles and can be dragged.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.CUT),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.FRICTION),
             heroLabel = "Shake it",
             defaultPalette = "Ocean",
             typicalSeconds = 24f,
@@ -553,6 +601,9 @@ class OpticsSim : Sim {
     private val rays = ArrayList<Ray>()
     private var elapsed = 0f
     private var payoffFrame = false
+    private var focused = false
+    private var tightest = Float.MAX_VALUE
+    private var tightenedFor = 0f
     private var sourceY = 0.35f
     private var angle = -0.35f
     private var shape = 0
@@ -570,6 +621,9 @@ class OpticsSim : Sim {
         angle = p.f("angle", -0.35f)
         elapsed = 0f
         payoffFrame = false
+        focused = false
+        tightest = Float.MAX_VALUE
+        tightenedFor = 0f
         trace(env)
     }
 
@@ -581,10 +635,54 @@ class OpticsSim : Sim {
         }
         trace(env)
         env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), 0f, 0.25f)
-        if (!payoffFrame && elapsed > 12f && elapsed < 12f + abs(dt) * 1.5f) {
+        // The focus: the moment the rays are at their tightest on the far
+         // side of the glass, which is what a lens does and what the sweep is
+         // hunting for. A clock at twelve seconds fired wherever the sweep
+         // happened to be.
+        val spread = tightestSpread()
+        if (spread < tightest) {
+            tightest = spread
+            tightenedFor = 0f
+        } else {
+            tightenedFor += abs(dt)
+        }
+        if (!focused && tightest < FOCUS_SPREAD && tightenedFor > 0.4f && elapsed > 2f) {
+            focused = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
+    }
+
+    /**
+     * The tightest the beam gets anywhere along its path.
+     *
+     * Every ray marches the same step length, so segment [i] is the same
+     * distance along for all of them: the narrowest spread across those
+     * samples is the focus. Measuring where the rays leave the picture instead
+     * misses it entirely — past the focus they have already spread out again,
+     * which is why the focus was never found.
+     */
+    private fun tightestSpread(): Float {
+        if (rays.size < 2) return Float.MAX_VALUE
+        var shortest = Int.MAX_VALUE
+        for (ray in rays) if (ray.count < shortest) shortest = ray.count
+        if (shortest < 3) return Float.MAX_VALUE
+        var best = Float.MAX_VALUE
+        // Only past the glass: before it the rays start out side by side.
+        var i = shortest / 3
+        while (i < shortest) {
+            var lowest = Float.MAX_VALUE
+            var highest = -Float.MAX_VALUE
+            for (ray in rays) {
+                val y = ray.ys[i]
+                if (y < lowest) lowest = y
+                if (y > highest) highest = y
+            }
+            val spread = highest - lowest
+            if (spread < best) best = spread
+            i++
+        }
+        return best
     }
 
     /** March each ray, refracting whenever it crosses into or out of the glass. */
@@ -705,6 +803,9 @@ class OpticsSim : Sim {
     )
 
     companion object {
+        /** How close the rays have to come together to count as a focus. */
+        const val FOCUS_SPREAD = 0.12f
+
         const val MAX_SEGMENTS = 320
 
         fun def(): SimDef = SimDef(
@@ -876,7 +977,7 @@ class ChargesSim : Sim {
             family = "Electricity & magnetism",
             blurb = "Tracers following the field, so its shape is visible.",
             formats = listOf(TrapFormat.REVEAL, TrapFormat.LOOP, TrapFormat.COLOR_BATTLE),
-            usesLaws = true,
+            lawKnobs = setOf(LawKnob.CHARGE),
             heroLabel = "New charges",
             defaultPalette = "Aurora",
             typicalSeconds = 24f,

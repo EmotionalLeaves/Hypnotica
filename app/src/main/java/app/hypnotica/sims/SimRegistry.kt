@@ -56,11 +56,40 @@ object SimRegistry {
             return cached
         }
 
+    /**
+     * Ids that have moved, so saved favourites and shared replay links keep
+     * working. The particle field was declared "scale/particle-field" while its
+     * shelf is Life, and "scale" is not one of the six shelves.
+     */
+    private val renamed = mapOf("scale/particle-field" to "life/particle-field")
+
+    /**
+     * The namespaces a sim id may start with.
+     *
+     * An id's prefix is a category a person can see in a shared link, so it has
+     * to mean something. Every shelf is one; "sorting" is the thirteen sorts,
+     * which share one file and one shelf; "recipe" is anything written in Lua.
+     * The particle field once used "scale", which matched nothing at all, and
+     * nothing noticed — hence the invariant test.
+     */
+    val idNamespaces: Set<String> =
+        Shelf.entries.map { it.name.lowercase() }.toSet() + setOf("sorting", "recipe")
+
     private fun rebuild() {
         val merged = builtIn + recipes
         cached = merged
-        cachedIndex = merged.associateBy { it.id }
+        // associateBy drops duplicates silently, which made the size check in
+        // the getters permanently false and rebuilt the whole index on every
+        // single lookup. Two recipes sharing an id is the only way to get here,
+        // and the first one declared wins.
+        val index = HashMap<String, SimDef>(merged.size * 2)
+        for (def in merged) index.putIfAbsent(def.id, def)
+        cachedIndex = index
+        indexedCount = merged.size
     }
+
+    @Volatile
+    private var indexedCount = 0
 
     /** Replace the recipe-backed sims. Called whenever the recipe store changes. */
     fun setRecipes(defs: List<SimDef>) {
@@ -74,7 +103,7 @@ object SimRegistry {
 
     val byId: Map<String, SimDef>
         get() {
-            if (cachedIndex.isEmpty() || cachedIndex.size != builtIn.size + recipes.size) rebuild()
+            if (cachedIndex.isEmpty() || indexedCount != builtIn.size + recipes.size) rebuild()
             return cachedIndex
         }
 
@@ -86,7 +115,7 @@ object SimRegistry {
 
     fun withFormat(format: TrapFormat): List<SimDef> = all.filter { format in it.formats }
 
-    fun find(id: String): SimDef? = byId[id]
+    fun find(id: String): SimDef? = byId[id] ?: renamed[id]?.let { byId[it] }
 
     fun search(query: String): List<SimDef> {
         val q = query.trim().lowercase()

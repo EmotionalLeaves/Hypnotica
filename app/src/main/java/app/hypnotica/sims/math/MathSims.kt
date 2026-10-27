@@ -117,7 +117,10 @@ class MandelbrotSim : Sim {
             lastSoundIter = centreIter
             env.emit(EventKind.STEP, (centreIter.toFloat() / mi).coerceIn(0f, 1f), 0f, 0.4f)
         }
-        if (!reached && elapsed > 18f && elapsed < 18f + abs(dt) * 1.5f) {
+        // Deep enough that the detail on screen is a thousand times finer than
+         // where it started. That is the zoom arriving, which is what the sim
+         // promises, rather than eighteen seconds having gone by.
+        if (!reached && zoom >= 0.6 * TARGET_DEPTH) {
             reached = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
@@ -160,6 +163,13 @@ class MandelbrotSim : Sim {
     )
 
     companion object {
+        /**
+         * How much finer the detail has to get before the zoom has arrived.
+         * A thousandfold is plainly deeper than where it started and is reached
+         * at the default zoom rate inside a normal run.
+         */
+        const val TARGET_DEPTH = 1000.0
+
         /** Full images a second. The zoom still reads as smooth below this. */
         const val REFRESH_HZ = 8f
 
