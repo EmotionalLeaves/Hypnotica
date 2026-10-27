@@ -16,7 +16,10 @@ fun SimCanvas(
     surface: SimSurfaceView,
     modifier: Modifier = Modifier,
     onTap: () -> Unit = {},
-    onDoubleTap: () -> Unit = {},
+    // Null, not an empty lambda: the surface holds a single tap back by a
+    // double-tap window only when a screen actually handles double-tap, and an
+    // empty lambda is indistinguishable from one that does.
+    onDoubleTap: (() -> Unit)? = null,
     onLongPress: () -> Unit = {},
     /** True where gestures frame the shot rather than poke the sim. */
     cameraMode: Boolean = false

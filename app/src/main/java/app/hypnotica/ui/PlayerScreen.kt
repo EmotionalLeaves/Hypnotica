@@ -80,7 +80,13 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
                 overlayVisible = !overlayVisible
                 if (!overlayVisible) state.controlsOpen = false
             },
-            onDoubleTap = { state.toggleFavourite(state.currentDef.id) },
+            // No double-tap here either. Holding the first tap back by a
+            // double-tap window to find out whether a second is coming puts a
+            // quarter of a second between touching the sim and the controls
+            // appearing — on the gesture this screen is mostly used through.
+            // The ★ in the top bar favourites the sim, and TickTock is the one
+            // screen where double-tap is worth that wait, because the tap there
+            // only shows and hides the chrome.
             onLongPress = {
                 overlayVisible = true
                 state.controlsOpen = true
