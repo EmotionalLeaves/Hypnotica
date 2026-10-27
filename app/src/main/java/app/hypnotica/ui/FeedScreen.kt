@@ -90,8 +90,13 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         SimCanvas(
             surface = surface,
             modifier = Modifier.fillMaxSize(),
-            onTap = { state.screen = Screen.PLAYER },
-            onDoubleTap = { state.toggleFavourite(order[index].id) }
+            // No double-tap here. A tap on the feed opens the player, and
+            // waiting a double-tap window before doing it puts a quarter of a
+            // second of lag on the screen's whole purpose — worse than the bug
+            // it would fix. The ★ in the row below already favourites this sim,
+            // and double-tap stays what it is in TickTock, where the tap only
+            // shows and hides the chrome.
+            onTap = { state.screen = Screen.PLAYER }
         )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {

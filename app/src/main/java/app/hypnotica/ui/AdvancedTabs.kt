@@ -116,7 +116,7 @@ private fun ParamsTab(state: AppState) {
     ) { state.trails = it }
     TimeControls(state)
     SectionLabel("Palette")
-    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName).coerceAtLeast(0)) {
+    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
         state.setPalette(Palette.NAMES[it])
     }
     Spacer(Modifier.height(6.dp))
@@ -478,7 +478,7 @@ private fun SoundTab(state: AppState) {
     val version = state.soundVersion
 
     SectionLabel("Preset")
-    ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
+    ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
     // A song supplies its own notes, so the scale, the base pitch and the range
@@ -492,7 +492,7 @@ private fun SoundTab(state: AppState) {
     SectionLabel("Scale")
     ChipRow(
         Scale.NAMES,
-        remember(version) { Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0) },
+        remember(version) { Scale.NAMES.indexOf(mapping.scale.name) },
         enabled = !songOn
     ) {
         mapping.scale = Scale.byIndex(it)

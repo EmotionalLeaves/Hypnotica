@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,17 +16,20 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.hypnotica.core.sim.TrapFormat
 import app.hypnotica.core.audio.SoundPreset
 import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.TrapFormat
 
 @Composable
 fun SettingsScreen(state: AppState, versionName: String) {
@@ -44,7 +48,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
         }
 
         SectionLabel("Sound")
-        ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
+        ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
             state.setSoundPreset(SoundPreset.NAMES[it])
         }
         ValueSlider(
@@ -55,12 +59,13 @@ fun SettingsScreen(state: AppState, versionName: String) {
             // Saved when the thumb is let go rather than on every pixel of the
             // drag: a hundred writes to disk for one gesture is not free.
             onCommit = { state.applySafety() }
-        ) { state.engine.synth.volume = it }
+        ) { state.volume = it }
 
         SectionLabel("Look")
-        ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName).coerceAtLeast(0)) {
+        ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
             state.setPalette(Palette.NAMES[it])
         }
+        PaletteStrip(state.paletteName)
 
         SectionLabel("Comfort and safety")
         ToggleRow("Reduce flashing", state.reduceFlashing) {
@@ -175,6 +180,37 @@ fun SettingsScreen(state: AppState, versionName: String) {
         Spacer(Modifier.height(36.dp))
     }
 }
+
+/**
+ * The colours of the chosen palette, drawn as they will appear.
+ *
+ * Settings is an opaque full-screen column — there is no sim behind it and the
+ * GL surface is detached while it is up — so tapping a palette name lit a pill
+ * and produced no visible change at all. Twice over, since the choice was then
+ * thrown away by the next sim change. A picker with nothing to look at is
+ * indistinguishable from a dead control.
+ */
+@Composable
+private fun PaletteStrip(name: String) {
+    val palette = remember(name) { Palette.byName(name) }
+    val colours = remember(name) {
+        List(STRIP_STEPS) { Color(palette.at(it / (STRIP_STEPS - 1f))) }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .padding(top = 6.dp)
+            .clip(RoundedCornerShape(6.dp))
+    ) {
+        colours.forEach { c ->
+            Box(Modifier.weight(1f).fillMaxHeight().background(c))
+        }
+    }
+}
+
+/** Enough bands to read as a gradient without drawing a bitmap. */
+private const val STRIP_STEPS = 24
 
 /** Almost invisible until you look for it. */
 @Composable

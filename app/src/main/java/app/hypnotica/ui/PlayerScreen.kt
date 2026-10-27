@@ -454,7 +454,7 @@ private fun MotionCard(state: AppState) {
 @Composable
 private fun LookCard(state: AppState) {
     SectionLabel("Palette")
-    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName).coerceAtLeast(0)) {
+    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
         state.setPalette(Palette.NAMES[it])
     }
     ValueSlider(
@@ -482,7 +482,7 @@ private fun SoundCard(state: AppState) {
     val version = state.soundVersion
 
     SectionLabel("Sound")
-    ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
+    ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
     Text(
@@ -495,7 +495,7 @@ private fun SoundCard(state: AppState) {
     // person is most likely to want to change about the sound: it was behind
     // Advanced, which left Simple mode with a preset and nothing else.
     ChipRow(Scale.NAMES, remember(version) {
-        Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0)
+        Scale.NAMES.indexOf(mapping.scale.name)
     }) {
         mapping.scale = Scale.byIndex(it)
         state.soundChanged()
