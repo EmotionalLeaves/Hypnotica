@@ -475,6 +475,8 @@ class LorenzSim : Sim {
     private var payoffFrame = false
     private var lobeSwaps = 0L
     private var lastLobe = 1
+    private var prevZ = 0.0
+    private var rising = false
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -493,6 +495,8 @@ class LorenzSim : Sim {
         payoffFrame = false
         lobeSwaps = 0
         lastLobe = 1
+        prevZ = z
+        rising = false
         settled = false
         settleClock = 0f
         lastX = x
@@ -525,6 +529,16 @@ class LorenzSim : Sim {
             trailY[head] = (z * 0.034 - 0.86).toFloat()
             head = (head + 1) % trailX.size
             if (filled < trailX.size) filled++
+
+            // A quiet note at the top of every loop, pitched by how high it
+            // went: the Lorenz map, heard. Crossings alone left the sim silent
+            // for five seconds at a time while it circled one wing.
+            if (z < prevZ && rising && z > LOOP_FLOOR) {
+                env.emit(EventKind.STEP, ((z - 5.0) / 40.0).toFloat().coerceIn(0f, 1f),
+                    (x * 0.03).toFloat().coerceIn(-0.6f, 0.6f), 0.3f)
+            }
+            rising = z > prevZ
+            prevZ = z
 
             val lobe = if (x > 0) 1 else -1
             if (lobe != lastLobe) {
@@ -576,6 +590,8 @@ class LorenzSim : Sim {
 
     companion object {
         private const val PAYOFF_SWAPS = 26L
+        /** Below this a z peak is the spiral into a fixed point, not a loop. */
+        private const val LOOP_FLOOR = 8.0
 
         fun def(): SimDef = SimDef(
             id = "math/lorenz",

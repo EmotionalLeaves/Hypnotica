@@ -690,16 +690,22 @@ class GradientDescentSim : Sim {
     private var convergedFor = 0f
     private var bumps = 3f
     private var momentum = 0.86f
-    private var rate = 0.05f
+    private var rate = 0.008f
     private var gridX = 0
     private var gridY = 0
+    private var settled = BooleanArray(0)
+    private var stillFor = FloatArray(0)
+    private var settledCount = 0
 
     override fun setup(env: SimEnv) {
         val p = env.params
         walkers = p.i("walkers", 24).coerceIn(1, 400)
+        settled = BooleanArray(walkers)
+        stillFor = FloatArray(walkers)
+        settledCount = 0
         bumps = p.f("bumps", 3f)
         momentum = p.f("momentum", 0.86f)
-        rate = p.f("rate", 0.022f)
+        rate = p.f("rate", 0.008f)
         wx = FloatArray(walkers); wy = FloatArray(walkers)
         vx = FloatArray(walkers); vy = FloatArray(walkers)
         for (i in 0 until walkers) {
@@ -733,7 +739,7 @@ class GradientDescentSim : Sim {
         // it only reads that way if the sliders change the walkers in flight
         // rather than restarting them.
         momentum = env.params.f("momentum", 0.86f)
-        rate = env.params.f("rate", 0.022f)
+        rate = env.params.f("rate", 0.008f)
         var lowest = Float.MAX_VALUE
         for (i in 0 until walkers) {
             vx[i] = vx[i] * momentum - gradX(wx[i], wy[i]) * rate
@@ -742,12 +748,33 @@ class GradientDescentSim : Sim {
             wy[i] = (wy[i] + vy[i] * dt * 6f).coerceIn(-1f, 1f)
             val l = loss(wx[i], wy[i])
             if (l < lowest) lowest = l
+            // Each walker lands with its own note, pitched by how deep its dip
+            // is. The sim used to sound only when the overall best improved,
+            // which stops within three seconds, and then held six seconds of
+            // silence while the rest of the walkers were still rolling in.
+            val speed = hypot(vx[i], vy[i]) * 6f
+            if (!settled[i]) {
+                stillFor[i] = if (speed < SETTLE_SPEED) stillFor[i] + abs(dt) else 0f
+                if (stillFor[i] > SETTLE_SECONDS) {
+                    settled[i] = true
+                    settledCount++
+                    env.emit(EventKind.HIT, (1f - (l + 0.3f) / 1.6f).coerceIn(0f, 1f),
+                        (wx[i] / env.halfWidth).coerceIn(-1f, 1f), 0.6f)
+                }
+            } else if (speed > SETTLE_SPEED * 4f) {
+                // A slider kicked it loose; it gets to land again.
+                settled[i] = false
+                stillFor[i] = 0f
+                settledCount--
+            }
         }
         if (lowest < best) {
             best = lowest
             env.emit(EventKind.STEP, (1f - (best + 0.3f) / 1.6f).coerceIn(0f, 1f), 0f, 0.35f)
         }
-        if (!converged && elapsed > 9f && best < 0.015f) {
+        // Done when every walker has come to rest, wherever it rests: the
+        // question the sim asks is which ones find the bottom.
+        if (!converged && elapsed > MIN_SECONDS && (settledCount == walkers || elapsed > BACKSTOP_SECONDS)) {
             converged = true
             payoffFrame = true
             env.emit(EventKind.DONE, 1f, 0f, 1f)
@@ -763,6 +790,10 @@ class GradientDescentSim : Sim {
      * as the app having stopped.
      */
     private val HOLD_SECONDS = 2f
+    private val SETTLE_SPEED = 0.02f
+    private val SETTLE_SECONDS = 0.4f
+    private val MIN_SECONDS = 4f
+    private val BACKSTOP_SECONDS = 30f
 
     override fun finished(): Boolean = converged && convergedFor > HOLD_SECONDS
 
@@ -790,7 +821,7 @@ class GradientDescentSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "best loss" to String.format(java.util.Locale.US, "%.4f", best),
-        "walkers" to walkers.toString()
+        "landed" to "$settledCount / $walkers"
     )
 
     companion object {
@@ -803,11 +834,11 @@ class GradientDescentSim : Sim {
             formats = listOf(TrapFormat.RACE, TrapFormat.GUESS, TrapFormat.LAST_STANDING),
             heroLabel = "Drop them again",
             defaultPalette = "Colour-safe",
-            typicalSeconds = 18f,
+            typicalSeconds = 11f,
             params = listOf(
                 Param.int("walkers", "Walkers", 1, 400, 24, card = Card.DATA, logScale = true),
                 Param.float("bumps", "Bumpiness", 0f, 10f, 3f, card = Card.DATA),
-                Param.float("rate", "Learning rate", 0.005f, 0.4f, 0.022f, card = Card.MOTION, logScale = true),
+                Param.float("rate", "Learning rate", 0.005f, 0.4f, 0.008f, card = Card.MOTION, logScale = true),
                 Param.float("momentum", "Momentum", 0f, 0.98f, 0.86f, card = Card.MOTION)
             ),
             create = { GradientDescentSim() }

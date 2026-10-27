@@ -406,7 +406,20 @@ class PathfindingSim : Sim {
                     trace()
                 }
             } else {
+                val before = revealed.toInt()
                 revealed += 0.7f
+                // The route sings as it is drawn, as the maze's does: the
+                // reveal was three and a half silent seconds at the end.
+                if (revealed.toInt() > before && pathLength > 0) {
+                    val at = revealed.toInt().coerceAtMost(pathLength - 1)
+                    val cell = pathCells[at]
+                    env.emit(
+                        EventKind.WRITE,
+                        at.toFloat() / pathLength,
+                        ((cell % w).toFloat() / w) * 2f - 1f,
+                        0.35f
+                    )
+                }
                 if (revealed >= pathLength) {
                     restSeconds = 1.6f
                     break

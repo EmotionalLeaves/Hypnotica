@@ -460,7 +460,7 @@ class PrimeSpiralSim : Sim {
             payoffFrame = true
             // The finished spiral is the thing worth looking at, so the run
             // holds on it instead of ending on the same step as its payoff.
-            restSeconds = 4f
+            restSeconds = 2.5f
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
