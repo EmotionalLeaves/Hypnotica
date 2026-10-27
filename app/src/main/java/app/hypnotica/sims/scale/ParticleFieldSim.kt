@@ -89,6 +89,14 @@ class ParticleFieldSim : Sim {
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
+        // Live rather than cached at setup, so the field reshapes under the
+        // finger instead of the four hundred thousand particles being thrown
+        // back to their starting places on every release. Three map lookups
+        // against a pass over the whole cloud is nothing. The attractor count
+        // stays a rebuild: it sizes an array.
+        flow = env.params.f("flow", 1f)
+        swirl = env.params.f("swirl", 1f)
+        drag = env.params.f("drag", 0.02f)
         val laws = env.laws
         val w = env.halfWidth
         val gx = laws.gravityDirX * laws.gravity * 0.01f

@@ -676,6 +676,12 @@ class GradientDescentSim : Sim {
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
+        // Live, not cached at setup. Watching a learning rate overshoot and a
+        // momentum escape a local minimum is the whole subject of this sim, and
+        // it only reads that way if the sliders change the walkers in flight
+        // rather than restarting them.
+        momentum = env.params.f("momentum", 0.86f)
+        rate = env.params.f("rate", 0.022f)
         var lowest = Float.MAX_VALUE
         for (i in 0 until walkers) {
             vx[i] = vx[i] * momentum - gradX(wx[i], wy[i]) * rate

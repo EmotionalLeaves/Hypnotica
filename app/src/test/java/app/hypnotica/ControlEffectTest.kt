@@ -95,6 +95,59 @@ class ControlEffectTest {
     }
 
     /**
+     * A value the sim reads live steers the run without restarting it.
+     *
+     * This is the other half of the contract, and the better half: a slider
+     * that rebuilds the run does apply, but it throws every bird, walker and
+     * particle back to its starting place, so the thing worth watching — the
+     * flock reorganising, the walkers overshooting — never happens. Boids' four
+     * weights, gradient descent's rate and momentum and the particle field's
+     * flow, swirl and drag were all cached at setup for that reason, and are
+     * read each step now.
+     *
+     * Two runs from the same seed, identical up to frame 60, then one of them
+     * gets the new value. Comparing a run against its own past would call a
+     * switch that freezes the picture "no effect" — freezing is precisely what
+     * makes the later frame match the earlier one — and two of these do exactly
+     * that.
+     */
+    @Test
+    fun everyLiveValueSteersTheRunWithoutRestartingIt() {
+        val inert = ArrayList<String>()
+        var checked = 0
+        for (def in SimRegistry.all) {
+            for (p in def.params) {
+                if (p.card == Card.DATA || p.type == ParamType.EXPR) continue
+                if (p.mutedBy != null || p.min >= p.max) continue
+
+                val changed = SimCore(def)
+                val control = SimCore(def)
+                changed.setAspect(0.56f)
+                control.setAspect(0.56f)
+                repeat(60) { changed.advance(1f / 60f) }
+                repeat(60) { control.advance(1f / 60f) }
+                if (!changed.params.readLive(p.key)) continue
+                checked++
+
+                val now = changed.params.f(p.key)
+                val other = if (now > (p.min + p.max) / 2f) p.min else p.max
+                changed.params.set(p.key, other)
+                repeat(60) { changed.advance(1f / 60f) }
+                repeat(60) { control.advance(1f / 60f) }
+                if (digest(changed) == digest(control)) {
+                    inert.add("${def.id}/${p.key} (${p.label})")
+                }
+            }
+        }
+        assertTrue("nothing was checked, so this test proves nothing", checked > 0)
+        assertTrue(
+            "these values are read live, so changing them should change the run " +
+                "with no rebuild, and did not: $inert",
+            inert.isEmpty()
+        )
+    }
+
+    /**
      * A control taken over by another setting has to say which one, so the
      * person can find the switch instead of concluding the slider is broken.
      */

@@ -59,13 +59,20 @@ class HypercubeSim : Sim {
         screenY = FloatArray(n)
         screenD = FloatArray(n)
         behind = BooleanArray(n) { verts[it * dims + (dims - 1)] < 0f }
-        // Wrapped rather than clamped. Both sliders offer 0..MAX_DIMS-1 while
-        // only 0..dims-1 exist, so at the default four dimensions the top third
-        // of each slider clamped to the same axis and did nothing visible.
-        // Wrapping makes every position name a real axis.
+        // Both sliders offer 0..MAX_DIMS-1 while only 0..dims-1 axes exist, so
+        // at the default four dimensions the top third of each used to clamp to
+        // the same axis and do nothing. Wrapping fixed that but put both ends
+        // of the second slider on the same axis, which the control test caught:
+        // the first position resolved to 0, hit the "planes must differ" rule
+        // and became 1, and the last position wrapped to 1 as well.
+        //
+        // So the second plane is an offset from the first, over the axes that
+        // are left. Every position names a real axis, none of them is ever the
+        // first plane, and the two ends of the slider are always different.
         planeA = Math.floorMod(p.i("planeA", 0), dims)
-        planeB = Math.floorMod(p.i("planeB", min(3, dims - 1)), dims)
-        if (planeA == planeB) planeB = (planeA + 1) % dims
+        val others = max(1, dims - 1)
+        val offset = 1 + Math.floorMod(p.i("planeB", min(3, dims - 1)), others)
+        planeB = (planeA + offset) % dims
         elapsed = 0f
         payoffFrame = false
         turns = 0L

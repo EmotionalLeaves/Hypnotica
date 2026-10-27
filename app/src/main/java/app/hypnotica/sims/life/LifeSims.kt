@@ -146,6 +146,17 @@ class BoidsSim : Sim {
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
+        // Read each step rather than cached at setup. These four are the whole
+        // Motion card of this sim, and caching them meant the only way to apply
+        // one was to rebuild the flock — which works, but resets every bird to
+        // its starting place on every release of the slider. Read live, the
+        // flock reorganises under your finger, which is the thing worth
+        // watching. Four map lookups a step against a neighbour walk over
+        // thousands of birds is not a cost worth naming.
+        separation = env.params.f("separation", 1f)
+        alignment = env.params.f("alignment", 1f)
+        cohesion = env.params.f("cohesion", 1f)
+        maxSpeed = env.params.f("speed", 0.55f)
         val halfW = env.halfWidth
         rebuildGrid(halfW)
 
