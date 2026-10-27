@@ -203,6 +203,76 @@ for f in sorted(glob.glob('app/src/main/java/app/hypnotica/sims/**/*.kt', recurs
             f"{f}:{line}: the payoff fires on the clock alone ({condition.strip()}); "
             f"it has to be a moment in the run")
 
+# 7. a law nothing honours
+#    DESIGN.md: "a law nothing honours is a lie in a menu, and gets deleted
+#    rather than documented". gravityDirX had no control for a year and
+#    electricStrength cancelled out algebraically; neither was noticed.
+laws_src = open('app/src/main/java/app/hypnotica/core/laws/Laws.kt').read()
+# Constructor fields only: a `val x get() = ...` is derived from them and has
+# nothing of its own to set.
+law_fields = [m.group(1) for m in re.finditer(r'^    val (\w+):[^\n]*', laws_src, re.M)
+              if 'get()' not in m.group(0)]
+# The body of Laws, where pairForce reads the force law by bare name.
+laws_body = laws_src.split('\n) {', 1)[-1]
+readers = ''
+for f in (glob.glob('app/src/main/java/app/hypnotica/sims/**/*.kt', recursive=True) +
+          glob.glob('app/src/main/java/app/hypnotica/engine/*.kt') +
+          glob.glob('app/src/main/java/app/hypnotica/core/laws/*.kt') +
+          glob.glob('app/src/main/java/app/hypnotica/core/sim/*.kt') +
+          glob.glob('app/src/main/java/app/hypnotica/export/*.kt')):
+    readers += open(f).read()
+writers = ''
+for f in glob.glob('app/src/main/java/app/hypnotica/ui/*.kt'):
+    writers += open(f).read()
+for field in law_fields:
+    # Either through a Laws reference, or by bare name inside Laws itself.
+    read = (re.search(r'\b(?:laws|env\.laws|it)\.' + field + r'\b', readers) or
+            re.search(r'(?<![.\w])' + field + r'\b', laws_body))
+    if not read:
+        problems.append(
+            f"core/laws/Laws.kt: nothing reads '{field}', so the control for it "
+            f"is a promise the sims do not keep")
+    elif not re.search(r'\b' + field + r'\s*=', writers):
+        problems.append(
+            f"core/laws/Laws.kt: '{field}' is read by a sim but nothing in the "
+            f"UI can set it")
+
+# 8. a sim's declared lawKnobs must match the laws it reads
+#    The Laws card offers exactly what the sim declares, so an annotation that
+#    drifts from the code puts back the dead control it was added to remove.
+KNOB_FIELDS = {
+    'GRAVITY': ['gravity'],
+    'GRAVITY_DIRECTION': ['gravityDirX', 'gravityDirY'],
+    'PAIRWISE_FORCE': ['pairForce', 'massSign', 'gravityConstant', 'falloff', 'forceExpr'],
+    'BOUNCE': ['bounce', 'restitution'],
+    'FRICTION': ['friction'],
+    'CONTACT': ['sticky', 'passThrough'],
+    'LIGHT_SPEED': ['lightSpeed'],
+    'CHARGE': ['chargeSign', 'electricStrength'],
+    'SPACE': ['space'],
+}
+for f in sorted(glob.glob('app/src/main/java/app/hypnotica/sims/**/*.kt', recursive=True)):
+    src = open(f).read()
+    declared = set(re.findall(r'LawKnob\.(\w+)', src))
+    if not declared:
+        continue
+    reads = set()
+    for field in set(sum(KNOB_FIELDS.values(), [])):
+        if re.search(r'\b(?:laws|env\.laws)\.' + field + r'\b', src):
+            reads.add(field)
+    for knob in sorted(declared):
+        fields = KNOB_FIELDS.get(knob)
+        if fields is None:
+            problems.append(f"{f}: declares LawKnob.{knob}, which this check does not know")
+        elif not (set(fields) & reads):
+            problems.append(
+                f"{f}: declares LawKnob.{knob} but reads none of {', '.join(fields)}")
+    for knob, fields in sorted(KNOB_FIELDS.items()):
+        if (set(fields) & reads) and knob not in declared:
+            problems.append(
+                f"{f}: reads {', '.join(sorted(set(fields) & reads))} but no sim here "
+                f"declares LawKnob.{knob}, so the control for it is hidden")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

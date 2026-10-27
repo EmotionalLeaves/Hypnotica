@@ -36,6 +36,7 @@ import app.hypnotica.core.laws.Space
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 
 /** The tabs Advanced mode offers, in order. */
@@ -193,6 +194,14 @@ private fun LawsTab(state: AppState) {
 @Composable
 fun LawsControls(state: AppState, advanced: Boolean) {
     val laws = state.laws
+    // Only what the sim in front of you actually reads. The card used to be
+    // identical everywhere, so on the pendulum wave six of these controls and
+    // the force-law box did nothing at all while each one renamed the universe
+    // to "Custom": a menu promising what the code does not do. Time is the
+    // exception — the engine applies it to every sim.
+    val knobs = state.currentDef.lawKnobs
+    fun has(knob: LawKnob) = knobs.contains(knob)
+
     SectionLabel("Universe")
     // Editing any law renames the universe "Custom"; without a chip for it the
     // row would simply show nothing selected.
@@ -204,17 +213,23 @@ fun LawsControls(state: AppState, advanced: Boolean) {
         if (it < presetNames.size) state.setLaws(presetNames[it])
     }
 
-    ValueSlider("Gravity", laws.gravity, 0f, 40f, valueText = gravityWord(laws.gravity)) { v ->
-        state.editLaws { it.copy(gravity = v) }
+    if (has(LawKnob.GRAVITY)) {
+        ValueSlider("Gravity", laws.gravity, 0f, 40f, valueText = gravityWord(laws.gravity)) { v ->
+            state.editLaws { it.copy(gravity = v) }
+        }
     }
-    ValueSlider(
-        "Bounciness", laws.restitution, 0f, 1.3f,
-        valueText = bounceWord(laws.restitution, laws.conserveEnergy)
-    ) { v ->
-        state.editLaws { it.copy(restitution = v) }
+    if (has(LawKnob.BOUNCE)) {
+        ValueSlider(
+            "Bounciness", laws.restitution, 0f, 1.3f,
+            valueText = bounceWord(laws.restitution, laws.conserveEnergy)
+        ) { v ->
+            state.editLaws { it.copy(restitution = v) }
+        }
     }
-    ValueSlider("Friction", laws.friction, 0f, 1f, valueText = frictionWord(laws.friction)) { v ->
-        state.editLaws { it.copy(friction = v) }
+    if (has(LawKnob.FRICTION)) {
+        ValueSlider("Friction", laws.friction, 0f, 1f, valueText = frictionWord(laws.friction)) { v ->
+            state.editLaws { it.copy(friction = v) }
+        }
     }
     ValueSlider("Time speed", laws.timeScale, 0.05f, 4f, logScale = true,
         valueText = String.format("%.2fx", laws.timeScale)) { v ->
@@ -226,75 +241,107 @@ fun LawsControls(state: AppState, advanced: Boolean) {
         Pill("Reverse time", selected = laws.timeDirection < 0f) {
             state.editLaws { it.copy(timeDirection = if (it.timeDirection < 0f) 1f else -1f) }
         }
-        Pill("No friction", selected = laws.friction <= 0.0001f) {
-            state.editLaws { it.copy(friction = if (it.friction <= 0.0001f) 0.02f else 0f) }
+        if (has(LawKnob.FRICTION)) {
+            Pill("No friction", selected = laws.friction <= 0.0001f) {
+                state.editLaws { it.copy(friction = if (it.friction <= 0.0001f) 0.02f else 0f) }
+            }
         }
-        Pill("Negative mass", selected = laws.massSign < 0f) {
-            state.editLaws { it.copy(massSign = -it.massSign) }
+        if (has(LawKnob.PAIRWISE_FORCE)) {
+            Pill("Negative mass", selected = laws.massSign < 0f) {
+                state.editLaws { it.copy(massSign = -it.massSign) }
+            }
         }
     }
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Pill("Wrap space", selected = laws.space == Space.TORUS) {
-            state.editLaws { it.copy(space = if (it.space == Space.TORUS) Space.BOX else Space.TORUS) }
+        if (has(LawKnob.SPACE)) {
+            Pill("Wrap space", selected = laws.space == Space.TORUS) {
+                state.editLaws {
+                    it.copy(space = if (it.space == Space.TORUS) Space.BOX else Space.TORUS)
+                }
+            }
         }
-        Pill("Repulsive gravity", selected = laws.gravityConstant < 0f) {
-            state.editLaws { it.copy(gravityConstant = -it.gravityConstant) }
+        if (has(LawKnob.PAIRWISE_FORCE)) {
+            Pill("Repulsive gravity", selected = laws.gravityConstant < 0f) {
+                state.editLaws { it.copy(gravityConstant = -it.gravityConstant) }
+            }
         }
-        Pill("Upside-down", selected = laws.gravityDirY < 0f) {
-            state.editLaws { it.copy(gravityDirY = -it.gravityDirY) }
+        if (has(LawKnob.GRAVITY_DIRECTION)) {
+            Pill("Upside-down", selected = laws.gravityDirY < 0f) {
+                state.editLaws { it.copy(gravityDirY = -it.gravityDirY) }
+            }
         }
     }
-    Spacer(Modifier.height(8.dp))
-    // Two sims read this and nothing could ever set it, so sideways gravity was
-    // a field in the table with no way in.
-    ValueSlider(
-        "Gravity tilt", laws.gravityDirX, -1f, 1f,
-        valueText = tiltWord(laws.gravityDirX)
-    ) { v ->
-        state.editLaws { it.copy(gravityDirX = v) }
+    if (has(LawKnob.GRAVITY_DIRECTION)) {
+        Spacer(Modifier.height(8.dp))
+        // Two sims read this and nothing could ever set it, so sideways gravity
+        // was a field in the table with no way in.
+        ValueSlider(
+            "Gravity tilt", laws.gravityDirX, -1f, 1f,
+            valueText = tiltWord(laws.gravityDirX)
+        ) { v ->
+            state.editLaws { it.copy(gravityDirX = v) }
+        }
     }
-    Spacer(Modifier.height(8.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Pill("Sticky", selected = laws.sticky) {
-            state.editLaws { it.copy(sticky = !it.sticky, passThrough = false) }
-        }
-        Pill("Pass through", selected = laws.passThrough) {
-            state.editLaws { it.copy(passThrough = !it.passThrough, sticky = false) }
-        }
-        Pill("Free energy", selected = !laws.conserveEnergy) {
-            state.editLaws { it.copy(conserveEnergy = !it.conserveEnergy) }
+    if (has(LawKnob.CONTACT) || has(LawKnob.BOUNCE)) {
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (has(LawKnob.CONTACT)) {
+                Pill("Sticky", selected = laws.sticky) {
+                    state.editLaws { it.copy(sticky = !it.sticky, passThrough = false) }
+                }
+                Pill("Pass through", selected = laws.passThrough) {
+                    state.editLaws { it.copy(passThrough = !it.passThrough, sticky = false) }
+                }
+            }
+            if (has(LawKnob.BOUNCE)) {
+                Pill("Free energy", selected = !laws.conserveEnergy) {
+                    state.editLaws { it.copy(conserveEnergy = !it.conserveEnergy) }
+                }
+            }
         }
     }
 
-    Spacer(Modifier.height(8.dp))
-    ValueSlider(
-        "Charge strength",
-        laws.electricStrength,
-        0.05f,
-        8f,
-        logScale = true,
-        valueText = String.format("%.2fx", laws.electricStrength)
-    ) { v -> state.editLaws { it.copy(electricStrength = v) } }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Pill("Like charges attract", selected = laws.chargeSign < 0f) {
-            state.editLaws { it.copy(chargeSign = -it.chargeSign) }
+    if (has(LawKnob.CHARGE)) {
+        Spacer(Modifier.height(8.dp))
+        ValueSlider(
+            "Charge strength",
+            laws.electricStrength,
+            0.05f,
+            8f,
+            logScale = true,
+            valueText = String.format("%.2fx", laws.electricStrength)
+        ) { v -> state.editLaws { it.copy(electricStrength = v) } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("Like charges attract", selected = laws.chargeSign < 0f) {
+                state.editLaws { it.copy(chargeSign = -it.chargeSign) }
+            }
         }
     }
 
-    if (!advanced) return
+    // The speed of light and the shape of the force law belong to the sims that
+    // read them, so Simple mode gets them there rather than not at all: the
+    // brief asked for a way to change the laws of physics, and dialling 1/r^1.5
+    // is that act.
+    if (has(LawKnob.LIGHT_SPEED)) {
+        ValueSlider("Speed of light", laws.lightSpeed, 0.5f, 1e6f, logScale = true,
+            valueText = if (laws.lightSpeed > 1e5f) "unlimited"
+            else String.format("%.1f", laws.lightSpeed)) { v ->
+            state.editLaws { it.copy(lightSpeed = v) }
+        }
+    }
+    if (has(LawKnob.PAIRWISE_FORCE)) {
+        ValueSlider("Force falloff", laws.falloff, 0.5f, 4f,
+            valueText = String.format("1/r^%.2f", laws.falloff)) { v ->
+            state.editLaws { it.copy(falloff = v) }
+        }
+        ValueSlider("Gravitational constant", laws.gravityConstant, -3f, 3f) { v ->
+            state.editLaws { it.copy(gravityConstant = v) }
+        }
+    }
 
-    ValueSlider("Speed of light", laws.lightSpeed, 0.5f, 1e6f, logScale = true,
-        valueText = if (laws.lightSpeed > 1e5f) "unlimited" else String.format("%.1f", laws.lightSpeed)) { v ->
-        state.editLaws { it.copy(lightSpeed = v) }
-    }
-    ValueSlider("Force falloff", laws.falloff, 0.5f, 4f,
-        valueText = String.format("1/r^%.2f", laws.falloff)) { v ->
-        state.editLaws { it.copy(falloff = v) }
-    }
-    ValueSlider("Gravitational constant", laws.gravityConstant, -3f, 3f) { v ->
-        state.editLaws { it.copy(gravityConstant = v) }
-    }
+    // A typed formula is the one thing that genuinely needs the exact controls.
+    if (!advanced || !has(LawKnob.PAIRWISE_FORCE)) return
 
     SectionLabel("Force law")
     var force by remember(laws.name) { mutableStateOf(laws.forceExpr ?: "") }

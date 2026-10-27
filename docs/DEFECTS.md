@@ -44,9 +44,6 @@ nothing is a bug, and the menu must not promise what the code does not do.*
   range and the note ceiling is exactly the shape of control the brief asked
   for and does not exist. A preset tap still overwrites four of them with no
   warning, in either mode.
-- **Laws: falloff, the gravitational constant, the speed of light and the force
-  law are Advanced-only,** and the Simple Laws card is hidden entirely on sims
-  with `usesLaws = false`.
 - **Palette, trails, speed, Evolve and Record have no Advanced control,** so the
   dual interface loses capability in both directions.
 - **The recipe editor is reachable only through Advanced → Code,** and Lua
