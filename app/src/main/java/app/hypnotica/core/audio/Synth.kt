@@ -89,6 +89,17 @@ class Synth(private val sampleRate: Int = 44100) {
 
     private val lock = Any()
 
+    /**
+     * False when this device would not give us an audio track.
+     *
+     * Failure was silent: the synth set running = false and returned, and
+     * nothing in the app ever said the sound was not running — the volume
+     * slider and all four sound sliders stayed bright and draggable.
+     */
+    @Volatile
+    var available: Boolean = true
+        private set
+
     /** Peak of the last written block, 0..1. Used by the loudness check. */
     @Volatile var lastPeak: Float = 0f
         private set
@@ -101,24 +112,41 @@ class Synth(private val sampleRate: Int = 44100) {
             AudioFormat.ENCODING_PCM_16BIT
         )
         val bufBytes = max(minBuf, 4096)
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_GAME)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                    .build()
-            )
-            .setBufferSizeInBytes(bufBytes)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-            .build()
+        // Guarded, because build() throws UnsupportedOperationException when a
+        // device or an audio route will not give the parameters asked for —
+        // and PERFORMANCE_MODE_LOW_LATENCY below is exactly the sort of request
+        // that gets refused. This is called from onResume, so an unguarded
+        // throw here was a crash on every resume on an affected phone.
+        val t = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                        .build()
+                )
+                .setBufferSizeInBytes(bufBytes)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .build()
+        } catch (e: Throwable) {
+            available = false
+            return
+        }
+        // A track can build and still be unusable.
+        if (t.state != AudioTrack.STATE_INITIALIZED) {
+            runCatching { t.release() }
+            available = false
+            return
+        }
+        available = true
         track = t
         running = true
         try {
@@ -126,6 +154,7 @@ class Synth(private val sampleRate: Int = 44100) {
         } catch (e: IllegalStateException) {
             running = false
             track = null
+            available = false
             return
         }
         val frames = 256

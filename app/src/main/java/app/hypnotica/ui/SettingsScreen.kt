@@ -52,6 +52,16 @@ fun SettingsScreen(state: AppState, versionName: String) {
         }
 
         SectionLabel("Sound")
+        if (!state.engine.synth.available) {
+            Text(
+                "No sound on this device right now — the simulations still run. " +
+                    "Unplugging and replugging a headset, or restarting the app, " +
+                    "gives it another try.",
+                color = Tokens.Warning,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
         ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
             state.setSoundPreset(SoundPreset.NAMES[it])
         }

@@ -735,6 +735,51 @@ for f in files:
         problems.append(
             f"{f}:{line}: {v}.dp is off the 4 dp grid")
 
+# 19. A scope-sensitive Compose function called without its scope.
+#
+#     AnimatedVisibility has a plain overload and ColumnScope/RowScope
+#     extensions in the same package. Inside a Box there is no such receiver, and
+#     Kotlin reports it as "cannot be called in this context with an implicit
+#     receiver" followed by two unrelated-looking "@Composable invocations can
+#     only happen from the context of a @Composable function" errors several
+#     lines away. A build went on reading those. Using it directly inside a Box
+#     is the case that bites; in a Column or Row it is what you want.
+for f in files:
+    src = strip(open(f).read())
+    for m in re.finditer(r'(?<![\w.])Box\s*\(', src):
+        # The Box's own body, brace-balanced from its opening brace.
+        close = src.find('{', m.end())
+        if close < 0:
+            continue
+        depth, i = 0, close
+        while i < len(src):
+            if src[i] == '{':
+                depth += 1
+            elif src[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = src[close:i]
+        # Only the Box's own level: a Column nested inside it is fine, and
+        # that is where the player's AnimatedVisibility calls live. Stripping
+        # innermost braces ONCE leaves anything two levels down still visible,
+        # which flagged those as broken when they compile. Repeat to a fixed
+        # point so every nested block goes.
+        shallow = body
+        while True:
+            stripped = re.sub(r'\{[^{}]*\}', '', shallow)
+            if stripped == shallow:
+                break
+            shallow = stripped
+        hit = re.search(r'(?<![\w.])AnimatedVisibility\s*\(', shallow)
+        if hit:
+            line = src[:m.start()].count('\n') + 1
+            problems.append(
+                f"{f}:{line}: AnimatedVisibility directly inside a Box — it "
+                f"resolves to the ColumnScope overload and will not compile; "
+                f"animate an alpha, or put it in a Column")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

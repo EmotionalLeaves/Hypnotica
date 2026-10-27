@@ -1,11 +1,8 @@
 package app.hypnotica.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -278,14 +275,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         NoticeLine(state.notice)
 
         Box(Modifier.fillMaxWidth().height(20.dp)) {
-            AnimatedVisibility(
-                visible = catchingUp,
-                enter = fadeIn(tween(Tokens.Fast)),
-                exit = fadeOut(tween(Tokens.Fast))
-            ) {
+            val fade by animateFloatAsState(
+                if (catchingUp) 1f else 0f,
+                tween(Tokens.Fast),
+                label = "catchingUp"
+            )
+            if (fade > 0.01f) {
                 Text(
                     "catching up…",
-                    color = Tokens.TextSecondary,
+                    color = Tokens.TextSecondary.copy(alpha = fade),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp)
                 )

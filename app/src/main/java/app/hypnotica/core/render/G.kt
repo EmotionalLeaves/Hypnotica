@@ -25,6 +25,16 @@ class G {
 
         private const val INITIAL_INSTANCES = 2048
         private const val INITIAL_POINTS = 8192
+
+        /**
+         * Ceilings on one frame's draw list.
+         *
+         * Well past anything the shipped sims produce — the biggest is 400,000
+         * particles — and chosen so the direct buffers the renderer uploads
+         * stay bounded: 1.5 M points is about 24 MB of position and colour.
+         */
+        const val MAX_POINTS = 1_500_000
+        const val MAX_INSTANCES = 400_000
     }
 
     /** cx, cy, hw, hh, rot, shape, e0, e1, r, g, b, a */
@@ -48,6 +58,19 @@ class G {
         private set
 
     /** Requested full-screen flash this frame, 0..1. The safety limiter may reduce it. */
+    /**
+     * True when a draw asked for more than the renderer will hold.
+     *
+     * These buffers used to double without any ceiling, and the renderer then
+     * allocated a direct buffer from whatever count arrived — on the GL thread,
+     * outside every guard. A recipe whose draw loops a few million times
+     * returned from its own guarded call perfectly normally and then took the
+     * process down on the upload. Refusing to grow turns that into a line of
+     * text; what is already in the buffer still draws.
+     */
+    @JvmField
+    var overflowed = false
+
     var flashRequest = 0f
         private set
 
@@ -59,6 +82,7 @@ class G {
         glowCount = 0
         pointCount = 0
         flashRequest = 0f
+        overflowed = false
     }
 
     fun flash(strength: Float) {
@@ -70,8 +94,13 @@ class G {
     private fun ensureInstances(extra: Int) {
         val need = (instanceCount + extra) * STRIDE
         if (need <= instances.size) return
+        if (need > MAX_INSTANCES * STRIDE) {
+            overflowed = true
+            return
+        }
         var cap = instances.size
         while (cap < need) cap *= 2
+        if (cap > MAX_INSTANCES * STRIDE) cap = MAX_INSTANCES * STRIDE
         instances = instances.copyOf(cap)
     }
 
@@ -190,8 +219,13 @@ class G {
     private fun ensurePoints(extra: Int) {
         val need = pointCount + extra
         if (need * 3 <= pointPos.size) return
+        if (need > MAX_POINTS) {
+            overflowed = true
+            return
+        }
         var cap = pointPos.size / 3
         while (cap < need) cap *= 2
+        if (cap > MAX_POINTS) cap = MAX_POINTS
         pointPos = pointPos.copyOf(cap * 3)
         pointColor = pointColor.copyOf(cap * 4)
     }
