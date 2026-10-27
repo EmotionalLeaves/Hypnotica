@@ -413,8 +413,11 @@ private fun MotionCard(state: AppState) {
         min = 0.1f,
         max = 10f,
         logScale = true,
-        valueText = String.format("%.2fx", state.speed)
+        valueText = String.format(java.util.Locale.US, "%.2fx", state.speed)
     ) { state.speed = it }
+    // Simple mode's Laws card is gated on law knobs too, so these were
+    // unreachable here for the same forty-seven sims.
+    TimeControls(state)
     CardControls(state, Card.MOTION)
     Spacer(Modifier.height(4.dp))
     ToggleRow("Evolve", state.evolve) { state.evolve = it }

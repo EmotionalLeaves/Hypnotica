@@ -509,6 +509,36 @@ for f in files:
                     f" and {fn}() reads no snapshot state — the control will"
                     f" spring back instead of moving")
 
+# 13. A local function used before it is declared, or marked private.
+#
+#     Kotlin resolves local declarations in order, so a helper defined below its
+#     callers inside the same function body is simply not in scope — and
+#     `private` is not applicable to a local declaration at all. Both are
+#     compile errors, and a composable in this project is a long body full of
+#     local `fun`s, so both are easy to write. This cost a CI round trip, which
+#     is the only compiler available here for the UI.
+NESTED = re.compile(r'\n(\s{4,})((?:private\s+)?(?:suspend\s+)?)fun\s+(\w+)\s*\(')
+
+for f in files:
+    src = strip(open(f).read())
+    for fn, body, offset in bodies(src):
+        for m in NESTED.finditer(body):
+            modifiers, name = m.group(2), m.group(3)
+            at = m.start()
+            line = src[:offset + at].count('\n') + 2
+            if 'private' in modifiers:
+                problems.append(
+                    f"{f}:{line}: 'private fun {name}' is local to {fn}() — "
+                    f"'private' is not applicable to a local declaration")
+            # The first call to it anywhere in the enclosing body.
+            use = re.search(r'(?<![\w.])' + name + r'\s*\(', body)
+            if use and use.start() < at:
+                useline = src[:offset + use.start()].count('\n') + 2
+                problems.append(
+                    f"{f}:{useline}: {name}() is called here but declared "
+                    f"below, on line {line}, inside {fn}() — a local function "
+                    f"is only in scope after its declaration")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

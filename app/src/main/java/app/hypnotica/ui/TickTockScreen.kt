@@ -62,6 +62,20 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     var generating by remember { mutableStateOf<Job?>(null) }
 
     /**
+     * Generate one clip, and actually stop when the coroutine is cancelled.
+     *
+     * generate() is a dozen headless payoff checks with no suspension point in
+     * it — about eleven seconds of CPU — so cancelling the coroutine could not
+     * unwind it, and the director's own `isInterrupted` check never fired
+     * because cancelling a coroutine sets no interrupt flag. Swiping again, or
+     * leaving the screen, left the work saturating the dispatcher the GL thread
+     * shares, which is what the stutter on the way out was. runInterruptible is
+     * what connects the two.
+     */
+    suspend fun generateCancellably(): Clip? =
+        withContext(Dispatchers.Default) { runInterruptible { director.generate() } }
+
+    /**
      * Make sure there is something to play, then top the queue up behind it.
      *
      * Entering the screen used to wait for two whole generations before showing
@@ -84,19 +98,6 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         }
     }
 
-    /**
-     * Generate one clip, and actually stop when the coroutine is cancelled.
-     *
-     * generate() is a dozen headless payoff checks with no suspension point in
-     * it — about eleven seconds of CPU — so cancelling the coroutine could not
-     * unwind it, and the director's own `isInterrupted` check never fired
-     * because cancelling a coroutine sets no interrupt flag. Swiping again, or
-     * leaving the screen, left the work saturating the dispatcher the GL thread
-     * shares, which is what the stutter on the way out was. runInterruptible is
-     * what connects the two.
-     */
-    private suspend fun generateCancellably(): Clip? =
-        withContext(Dispatchers.Default) { runInterruptible { director.generate() } }
 
     fun play(clip: Clip) {
         current = clip

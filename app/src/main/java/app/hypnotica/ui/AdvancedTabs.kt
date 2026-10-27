@@ -114,6 +114,7 @@ private fun ParamsTab(state: AppState) {
         "Trails", state.trails, 0f, 0.96f,
         valueText = if (state.trails < 0.02f) "none" else String.format("%.0f%%", state.trails * 100f)
     ) { state.trails = it }
+    TimeControls(state)
     SectionLabel("Palette")
     ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName).coerceAtLeast(0)) {
         state.setPalette(Palette.NAMES[it])
@@ -128,6 +129,29 @@ private fun ParamsTab(state: AppState) {
         }
     }
     NoticeLine(state.notice)
+}
+
+/**
+ * Time speed and direction, which belong to every sim.
+ *
+ * These were on the Laws tab, and that tab is hidden for any sim with no law
+ * knobs — forty-seven of the fifty-eight. But SimCore applies both of these
+ * globally, to everything, so they were working controls that most of the app
+ * could not reach. The sim written specifically so that reversing time reverses
+ * the picture was one of the ones that could not reverse it.
+ */
+@Composable
+internal fun TimeControls(state: AppState) {
+    val laws = state.laws
+    ValueSlider(
+        "Time speed", laws.timeScale, 0.05f, 4f, logScale = true,
+        valueText = String.format(java.util.Locale.US, "%.2fx", laws.timeScale)
+    ) { v -> state.editLaws { it.copy(timeScale = v) } }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Pill("Reverse time", selected = laws.timeDirection < 0f) {
+            state.editLaws { it.copy(timeDirection = if (it.timeDirection < 0f) 1f else -1f) }
+        }
+    }
 }
 
 /** One parameter with its slider, its exact value and a formula box. */
@@ -246,7 +270,13 @@ fun LawsControls(state: AppState, advanced: Boolean) {
     SectionLabel("Universe")
     // Editing any law renames the universe "Custom"; without a chip for it the
     // row would simply show nothing selected.
-    val presetNames = remember { Laws.PRESETS.map { it.name } }
+    // Only presets this sim would actually show a difference for. Offering the
+    // other twelve was the last ungated control on this tab.
+    val knobs = state.currentDef.lawKnobs
+    val presetNames = remember(state.currentDef.id) {
+        val ours = Laws.PRESETS.first { it.name == Laws.OUR_UNIVERSE.name }
+        Laws.PRESETS.filter { it.name == ours.name || it.differsFor(ours, knobs) }.map { it.name }
+    }
     val names = remember(laws.name) {
         if (presetNames.contains(laws.name)) presetNames else presetNames + laws.name
     }
@@ -272,16 +302,8 @@ fun LawsControls(state: AppState, advanced: Boolean) {
             state.editLaws { it.copy(friction = v) }
         }
     }
-    ValueSlider("Time speed", laws.timeScale, 0.05f, 4f, logScale = true,
-        valueText = String.format("%.2fx", laws.timeScale)) { v ->
-        state.editLaws { it.copy(timeScale = v) }
-    }
-
     SectionLabel("Break a law")
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Pill("Reverse time", selected = laws.timeDirection < 0f) {
-            state.editLaws { it.copy(timeDirection = if (it.timeDirection < 0f) 1f else -1f) }
-        }
         if (has(LawKnob.FRICTION)) {
             Pill("No friction", selected = laws.friction <= 0.0001f) {
                 state.editLaws { it.copy(friction = if (it.friction <= 0.0001f) 0.02f else 0f) }

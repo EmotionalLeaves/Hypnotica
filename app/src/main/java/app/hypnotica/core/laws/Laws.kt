@@ -1,5 +1,6 @@
 package app.hypnotica.core.laws
 
+import app.hypnotica.core.sim.LawKnob
 import kotlin.math.abs
 import kotlin.math.pow
 
@@ -52,6 +53,45 @@ data class Laws(
     val space: Space = Space.BOX,
     val name: String = "Our universe"
 ) {
+
+    /**
+     * Whether this universe differs from [other] in anything a sim that reads
+     * [knobs] would notice.
+     *
+     * The Universe preset row was the one control on the Laws tab not gated by
+     * what the sim actually reads, so it offered all fifteen presets to every
+     * sim. On a sim that reads only the charge laws, twelve of the fifteen —
+     * Moon, Zero-G, Upside-down, Bouncy, Sticky, Ghosts, Syrup, Slow light,
+     * Repulsive gravity, Negative mass, Wrap-around space, Heavy & bouncy —
+     * draw an identical picture, which is exactly the menu-promising-what-the-
+     * code-does-not-do that gating the sliders was meant to end.
+     *
+     * Time is always included, because time applies to every sim whether or not
+     * it declares a knob.
+     */
+    fun differsFor(other: Laws, knobs: Set<LawKnob>): Boolean {
+        if (timeScale != other.timeScale || timeDirection != other.timeDirection) return true
+        for (knob in knobs) {
+            val same = when (knob) {
+                LawKnob.GRAVITY -> gravity == other.gravity
+                LawKnob.GRAVITY_DIRECTION ->
+                    gravityDirX == other.gravityDirX && gravityDirY == other.gravityDirY
+                LawKnob.PAIRWISE_FORCE ->
+                    massSign == other.massSign && gravityConstant == other.gravityConstant &&
+                        falloff == other.falloff && forceExpr == other.forceExpr
+                LawKnob.BOUNCE ->
+                    restitution == other.restitution && conserveEnergy == other.conserveEnergy
+                LawKnob.FRICTION -> friction == other.friction
+                LawKnob.CONTACT -> sticky == other.sticky && passThrough == other.passThrough
+                LawKnob.LIGHT_SPEED -> lightSpeed == other.lightSpeed
+                LawKnob.CHARGE ->
+                    chargeSign == other.chargeSign && electricStrength == other.electricStrength
+                LawKnob.SPACE -> space == other.space
+            }
+            if (!same) return true
+        }
+        return false
+    }
 
     private val compiledForce: Expr? by lazy {
         forceExpr?.let { compileCached(it) }
