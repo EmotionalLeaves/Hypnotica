@@ -9,7 +9,45 @@ bug, and the menu must not promise what the code does not do.*
 
 ## Open
 
-Nothing.
+Measured, not yet acted on. Each of these is a decision about how the app
+should feel rather than a thing that is simply wrong, which is why they are
+written down instead of changed.
+
+- **Nine of the ten sims that do loop are cut at the wrong point.** `LOOP`'s
+  claim is now true everywhere it is made (`LoopClaimTest`), but a sim's
+  `typicalSeconds` — the length a generated clip runs for — is not its loop
+  period: the hypercube closes at 49.8 s and declares 26, slicing at 14.2 and
+  declares 22, the pendulum wave at 31.0 and declares 38. Matching them would
+  roughly double some clips and halve others, which is a feel decision.
+- **The payoff lands in the first third on eleven sims.** The arc is meant to be
+  setup, build, payoff, resolve, with the payoff near 70% of the length.
+  Measured over eight seeds: `dimensions/nd-bounce` fires at 4% — slow motion,
+  a punch-in, a fourteen-note sweep and a heavy haptic, 1.1 seconds in, with
+  twenty-five seconds left and nothing to reach. At the other end
+  `sorting/bubble-sort` pays off on its final frame, so the sweep and the slow
+  motion have no run left to play over.
+- **Two sims refresh below the frame rate.** Mandelbrot recomputes at 8 Hz
+  while zooming continuously, so the scale steps 2.8% eight times a second;
+  Voronoi recolours at 12 Hz while its seed dots glide at the full rate. Both
+  are deliberate performance choices and both are frame-rate independent, so
+  they look the same on every phone — but they are visible.
+- **A Studio project lives only in memory.** Keyframes, freezes and captions
+  are a few kilobytes and there is no key for them in preferences and no
+  onSaveInstanceState, so process death takes a session's editing. Rotation is
+  safe; a phone call is not.
+- **The feed's swipe does not follow the finger.** You drag ninety pixels
+  against a picture that does not move, let go, and a different picture is
+  simply there. The sim cannot be animated into place — it is a GLSurfaceView,
+  and the system composites a surface a frame behind the view tree, so moving
+  one tears. Doing this properly means drawing the outgoing frame into a
+  bitmap, which is a round of its own.
+- **The size slider ignores the device benchmark.** `Bench` measures the phone
+  and classifies it, and only TickTock's generated clips use the result; the
+  player's slider offers 400,000 particles to a phone already measured as
+  modest. Nothing reports frame rate either — `SimEngine.fps` is computed for
+  a performance badge that was never built.
+
+## What the last two rounds found
 
 ### The control audit
 

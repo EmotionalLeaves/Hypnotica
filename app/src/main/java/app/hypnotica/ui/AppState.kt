@@ -6,18 +6,26 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.hypnotica.core.audio.Scale
 import app.hypnotica.core.audio.Song
 import app.hypnotica.core.director.Clip
 import app.hypnotica.core.director.ClipDirector
 import app.hypnotica.core.perf.Bench
 import app.hypnotica.core.sim.TrapFormat
 import app.hypnotica.core.laws.Laws
+import app.hypnotica.core.render.Palette
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Macros
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.RecipeStore
 import app.hypnotica.core.recipe.ParamType
+import app.hypnotica.core.recipe.RunParse
+import app.hypnotica.core.recipe.applyRunParams
+import app.hypnotica.core.recipe.lawsJson
+import app.hypnotica.core.recipe.runParamsJson
+import app.hypnotica.core.recipe.parseRun
+import app.hypnotica.core.recipe.runLaws
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.studio.MoveRecorder
 import app.hypnotica.core.studio.Project
@@ -740,31 +748,78 @@ class AppState(
         sb.append("  \"recipe\": \"").append(currentDef.id).append("\",\n")
         sb.append("  \"seed\": ").append(core.seed).append(",\n")
         sb.append("  \"params\": {")
-        val entries = currentDef.params
-        entries.forEachIndexed { i, p ->
-            if (i > 0) sb.append(",")
-            sb.append("\n    \"").append(p.key).append("\": ")
-            val expr = core.params.expressionSource(p.key)
-            if (expr != null) {
-                sb.append('"').append(expr.replace("\"", "'")).append('"')
-            } else if (p.type == ParamType.CHOICE) {
-                sb.append('"').append(core.params.choice(p.key)).append('"')
-            } else if (p.type == ParamType.INT) {
-                sb.append(core.params.i(p.key))
-            } else if (p.type == ParamType.BOOL) {
-                sb.append(core.params.b(p.key))
-            } else {
-                sb.append(String.format(java.util.Locale.US, "%.4f", core.params.f(p.key)))
-            }
-        }
+        sb.append(runParamsJson(currentDef.params, core.params))
         sb.append("\n  },\n")
-        sb.append("  \"laws\": \"").append(laws.name).append("\",\n")
+        // lawsJson, not the name: Laws.preset has no entry called "Custom", so
+        // a hand-edited universe written down as its name came back as our
+        // universe. The writer and the reader live in one file with a round-trip
+        // test over them (RunStateTest).
+        sb.append("  \"laws\": ").append(lawsJson(laws)).append(",\n")
         sb.append("  \"look\": { \"palette\": \"").append(paletteName)
             .append("\", \"trails\": ").append(String.format(java.util.Locale.US, "%.2f", trails)).append(" },\n")
         sb.append("  \"sound\": { \"preset\": \"").append(soundPresetName)
             .append("\", \"scale\": \"").append(engine.mapping.scale.name).append("\" }\n")
         sb.append("}")
         return sb.toString()
+    }
+
+    /**
+     * Apply a run printed by [stateJson]. Returns null when it worked, or a
+     * sentence saying why not.
+     *
+     * The panel has called that text "everything needed to replay it" since the
+     * day it was written, with nothing in the app able to read it back. This is
+     * the half that makes the sentence true, and the reason a run is worth
+     * copying at all: send one to someone and they get your exact picture, down
+     * to the seed.
+     *
+     * Everything is written straight into the core and the run restarted once
+     * at the end, rather than going through the per-control setters: those each
+     * restart when the value they changed needs it, so a run with a dozen setup
+     * values rebuilt the sim a dozen times on the way in.
+     */
+    fun applyRun(text: String): String? {
+        val run = when (val parsed = parseRun(text)) {
+            is RunParse.Bad -> return parsed.why
+            is RunParse.Ok -> parsed.run
+        }
+        val def = SimRegistry.find(run.recipe)
+            ?: return if (run.recipe.startsWith("recipe/")) {
+                "This phone does not have the recipe \"${run.recipe.removePrefix("recipe/")}\" " +
+                    "yet. Add it in the recipe editor first, then paste this again."
+            } else {
+                "There is no sim called \"${run.recipe}\" in this build."
+            }
+
+        val seed = run.seed ?: System.nanoTime()
+        load(def, seed)
+
+        val unknown = applyRunParams(run, def.params, engine.core.params)
+
+        runLaws(run)?.let {
+            laws = it
+            engine.setLaws(it)
+        }
+        // byName falls back to Spectrum rather than returning null, so an
+        // unknown palette has to be recognised before it is applied or it would
+        // quietly repaint the sim.
+        run.palette?.let { name -> if (Palette.ALL.any { it.name == name }) setPalette(name) }
+        run.trails?.let { trails = it }
+        run.soundPreset?.let { setSoundPreset(it) }
+        // After the preset, which rebuilds the mapping and would overwrite it.
+        run.scale?.let { engine.mapping.scale = Scale.byName(it) }
+        soundChanged()
+
+        // One restart, with the run's own seed, so the picture is the one that
+        // was written down rather than the same recipe from somewhere else.
+        engine.restart(seed)
+        paramVersion++
+        exprEpoch++
+        if (unknown.isEmpty()) return null
+        val named = unknown.take(3).joinToString(", ") { "\"$it\"" }
+        val rest = if (unknown.size > 3) " and ${unknown.size - 3} more" else ""
+        return "Loaded. This build has no " +
+            (if (unknown.size == 1) "setting called " else "settings called ") + named + rest + "."
     }
 
     fun toggleFavourite(id: String) {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -603,8 +606,14 @@ private fun CodeTab(state: AppState) {
         version, state.currentDef.id, state.laws, state.paletteName,
         state.trails, state.soundPresetName, state.soundVersion
     ) { state.stateJson() }
+    val clipboard = LocalClipboardManager.current
+    var notice by remember { mutableStateOf<String?>(null) }
+    // A notice is about the run it was written for. Leaving it up after the run
+    // changed meant "Loaded Polyrhythm" sitting under a Boids recipe.
+    LaunchedEffect(text) { notice = null }
     Text(
-        "This run, exactly. Everything needed to replay it.",
+        "This run, exactly. Copy it to keep it or to send it to someone, and " +
+            "paste one in to watch theirs — same sim, same seed, same picture.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -622,6 +631,21 @@ private fun CodeTab(state: AppState) {
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
         )
     }
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        BigButton("Copy this run", Modifier.weight(1f)) {
+            clipboard.setText(AnnotatedString(text))
+            notice = "Copied. It is a few lines of text — paste it anywhere."
+        }
+        BigButton("Paste a run", Modifier.weight(1f)) {
+            val pasted = clipboard.getText()?.text
+            notice = when {
+                pasted.isNullOrBlank() -> "There is nothing on the clipboard to paste."
+                else -> state.applyRun(pasted) ?: "Loaded ${state.currentDef.title}."
+            }
+        }
+    }
+    NoticeLine(notice)
     Spacer(Modifier.height(8.dp))
     BigButton("Open the recipe editor", primary = true) { state.screen = Screen.RECIPES }
     Spacer(Modifier.height(8.dp))
