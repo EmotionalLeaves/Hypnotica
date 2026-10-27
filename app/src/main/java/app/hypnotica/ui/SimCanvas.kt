@@ -31,6 +31,10 @@ fun SimCanvas(
             surface
         },
         update = {
+            // Rebinding the handlers means the screen has changed under the
+            // surface, so a tap still waiting on a possible second one belongs
+            // to a screen that is no longer there.
+            it.cancelPendingTap()
             it.onTap = onTap
             it.onDoubleTap = onDoubleTap
             it.onLongPress = onLongPress

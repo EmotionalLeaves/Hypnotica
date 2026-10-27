@@ -60,6 +60,19 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
      */
     private var pendingTap: Runnable? = null
 
+    /**
+     * Drop a tap that is still waiting to see whether a second one follows.
+     *
+     * The surface outlives every screen, and the handlers are rebound as the
+     * screens change. Without this, a tap on the way out of TickTock could land
+     * a quarter of a second later against whatever screen had replaced it.
+     */
+    fun cancelPendingTap() {
+        pendingTap?.let { removeCallbacks(it) }
+        pendingTap = null
+        lastTapAt = 0L
+    }
+
     private val longPressRunnable = Runnable {
         if (!moved && !pinching) {
             longPressFired = true
