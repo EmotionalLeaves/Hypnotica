@@ -515,7 +515,7 @@ private fun SoundTab(state: AppState) {
         enabled = !songOn,
         valueText = when {
             songOn -> songNote
-            mapping.octaves > fits + 0.05f -> String.format(java.util.Locale.US, 
+            mapping.octaves > fits + 0.05f -> String.format(
                 java.util.Locale.US,
                 "%.1f of %.1f octaves — the rest is above the pitch ceiling",
                 mapping.octaves, fits

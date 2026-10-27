@@ -610,14 +610,23 @@ for f in files:
 #     writes stops being parseable by anything expecting a dot.
 for f in sorted(glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=True)):
     src = strip(open(f).read())
-    for m in re.finditer(r'String\.format\s*\(\s*([^\n,)]*)', src):
-        first = m.group(1).strip()
-        if 'Locale' in first:
-            continue
+    for m in re.finditer(r'String\.format\s*\(((?:[^()]|\([^()]*\))*)\)', src, re.S):
+        args = m.group(1)
         line = src[:m.start()].count('\n') + 1
-        problems.append(
-            f"{f}:{line}: String.format without a locale — the phone's own "
-            f"locale decides the decimal separator, so pass java.util.Locale.US")
+        locales = args.count('Locale')
+        if locales == 0:
+            problems.append(
+                f"{f}:{line}: String.format without a locale — the phone's own "
+                f"locale decides the decimal separator, so pass "
+                f"java.util.Locale.US")
+        elif locales > 1:
+            # A sweep that added one to every call gave a second to the calls
+            # that already had theirs on the following line.
+            problems.append(
+                f"{f}:{line}: String.format with {locales} locale arguments")
+        elif not re.match(r'\s*(?:java\.util\.)?Locale\.', args):
+            problems.append(
+                f"{f}:{line}: String.format's locale is not its first argument")
 
 for p in problems:
     print(p)
