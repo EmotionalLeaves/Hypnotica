@@ -45,7 +45,9 @@ It should take about two minutes.
 - [ ] Palette and sound preset chips change the sim at once
 - [ ] On a physics sim, the Laws card swaps universes and every physics sim follows
 - [ ] A macro slider ("How much", "Energy", "Chaos") moves several values at once
+- [ ] Opening a card and touching a macro does not jump anything before you drag it
 - [ ] Sticky, Ghosts and Strong charges each visibly change the physics
+- [ ] Charge strength and "Like charges attract" change the charges sim
 - [ ] Evolve makes the sim drift on its own; switching it off leaves it where it was
 - [ ] A formula typed into an Advanced field is kept when a slider next to it moves
 
@@ -83,6 +85,14 @@ It should take about two minutes.
 - [ ] Game of Life at 512x512 is smooth
 - [ ] The phone does not get uncomfortably warm in five minutes
 
+## Juice
+
+- [ ] A still sim (pendulum wave at rest, a finished sort) still breathes — a
+      slow drift in and out, small enough that you notice it only if you look
+- [ ] The payoff frame shakes a few pixels and settles immediately
+- [ ] The camera ends up exactly where it was before the shake
+- [ ] Counters do not make the line around them twitch as they change
+
 ## Satisfaction
 
 - [ ] Each sim builds to something rather than just looping flatly
@@ -92,8 +102,8 @@ It should take about two minutes.
 
 ## Safety
 
-- [ ] Reduce flashing visibly softens the payoff flash
-- [ ] Reduce motion stops the punch-in and shake
+- [ ] Reduce flashing visibly softens the payoff flash, and fewer of them land
+- [ ] Reduce motion stops the punch-in, the shake and the camera breath
 - [ ] Sound never gets harsh or piercing at the top of a fast run
 - [ ] Collisions and crossings can be felt, not only heard
 
