@@ -102,6 +102,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** Extra zoom applied around the payoff, the "punch-in". */
     private var punch = 0f
     private var baseZoom = 1f
+    /** The sim the current fit was worked out for; a new one is framed at once. */
+    private var fitFor: Any? = null
 
     /** Slow idle zoom, so a sim that barely moves is not a still photograph. */
     private var breath = 0f
@@ -502,10 +504,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             }
         }
 
-        // The pull-back that keeps a fixed-size sim on screen, eased so that
-        // moving from one sim to the next is a short glide, not a jump.
+        // The pull-back that keeps a fixed-size sim on screen. A new sim
+        // arrives already framed — a swipe lands on it whole, rather than
+        // watching it zoom out — and a change within one sim, a slider that
+        // makes the drawing reach further, glides.
         val wantFit = core.fit()
-        scene.fit = if (scene.fit <= 0f || kotlin.math.abs(wantFit - scene.fit) < 0.002f) wantFit
+        val sameSim = fitFor === core.sim
+        fitFor = core.sim
+        scene.fit = if (!sameSim || kotlin.math.abs(wantFit - scene.fit) < 0.002f) wantFit
         else scene.fit + (wantFit - scene.fit) * kotlin.math.min(1f, dt * FIT_RATE)
 
         g.reset()
