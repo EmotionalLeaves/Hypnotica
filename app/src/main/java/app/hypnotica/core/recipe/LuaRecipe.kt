@@ -338,11 +338,16 @@ class LuaSim(private val source: String) : Sim {
     override fun onInput(env: SimEnv, e: TouchEvent) {
         if (globals == null || fnInput.isnil()) return
         try {
-            fnInput.call(
-                state,
-                LuaValue.valueOf(e.kind.name.lowercase()),
-                LuaValue.valueOf(e.x.toDouble()),
-                LuaValue.valueOf(e.y.toDouble())
+            // call() tops out at three arguments; four go through invoke().
+            fnInput.invoke(
+                LuaValue.varargsOf(
+                    arrayOf(
+                        state,
+                        LuaValue.valueOf(e.kind.name.lowercase()),
+                        LuaValue.valueOf(e.x.toDouble()),
+                        LuaValue.valueOf(e.y.toDouble())
+                    )
+                )
             )
         } catch (ex: Throwable) {
             if (error == null) error = LuaRecipe.cleanMessage(ex.message)

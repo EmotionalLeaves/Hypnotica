@@ -80,7 +80,7 @@ jobs:
             echo
             echo 'Compiler errors:'
             echo '```'
-            grep -E "^e: |^w: .*error|error:" build-output.txt | head -60 || echo '(none found)'
+            grep -A3 -E "^e: |error:" build-output.txt | head -120 || echo '(none found)'
             echo '```'
             echo 'Failing tests:'
             echo '```'
