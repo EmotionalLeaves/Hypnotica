@@ -65,6 +65,34 @@ never makes a sound, has no Simple-mode macro or draws nothing in the Library.
 
 ## What lives where
 
+## Checking work without a device
+
+There is no Android SDK here and the only real compiler is CI, which costs a
+few minutes a round trip. Four things close most of that gap, and all of them
+run in seconds:
+
+    tools/typecheck.sh                     the Android-free engine, for real
+    python3 tools/uicheck.py               everything the above cannot reach
+    node tools/glslcheck.js                the shaders, compiled in a browser
+    node tools/glslpixels.js               and what they actually draw
+    tools/harness.sh probe.kt ProbeKt      run a main() against the engine
+    tools/as-main.py Test.kt /tmp/R.kt T   turn a JUnit test into such a main()
+
+`uicheck.py` is eleven rules, each written after a real defect and each proven
+to fire against it: unresolved references, `by remember` without its imports, a
+property and a `setX()` that compile to one JVM method, a name declared twice
+in a package, a payoff fired by the clock alone, a law nothing reads or nothing
+can set, a declared `LawKnob` that does not match the file's own `laws.` reads,
+a named argument the constructor does not have, a Library mock-up naming a sim
+that does not exist, and a luaj call not known to compile.
+
+The rule the whole set exists to serve: **measure, do not argue.** A claim about
+the engine — that a ring draws at the thickness it asked for, that the walker
+pays off in three dimensions, that reversing time retraces the build — is worth
+nothing until a probe has printed the number. `tools/harness.sh` exists so that
+costs half a minute.
+
+
 ```
 app/src/main/java/app/hypnotica/
   core/sim/      the simulation core: loop, rng, events, sort array, parallel-for
