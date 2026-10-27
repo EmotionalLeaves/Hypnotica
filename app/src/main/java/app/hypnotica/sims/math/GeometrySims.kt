@@ -178,7 +178,14 @@ class VoronoiSim : Sim {
         /** How long the closest pair has to hold before it is the one. */
         const val PINCH_HELD = 0.7f
 
-        const val REFRESH_HZ = 12f
+        /**
+         * Cell recolours a second: the frame rate. At twelve the seed dots
+         * glided every frame and the borders between them caught up in steps,
+         * so the cells visibly lagged behind their own seeds. A recompute
+         * measures 0.9 ms at the shipped resolution and 3.6 ms at the
+         * slider's top on two cores, which a frame can carry.
+         */
+        const val REFRESH_HZ = 60f
 
         fun def(): SimDef = SimDef(
             id = "math/voronoi",
@@ -339,7 +346,7 @@ class RiemannSim : Sim {
                 Param.choice("curve", "Curve", listOf("x squared", "sine", "quarter circle"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.int("maxbars", "Finest division", 8, 200000, 400, card = Card.DATA, logScale = true),
-                Param.float("rate", "Speed", 0.5f, 60f, 2.6f, card = Card.MOTION, logScale = true)
+                Param.float("rate", "Speed", 0.5f, 20f, 2.6f, card = Card.MOTION, logScale = true)
             ),
             create = { RiemannSim() }
         )

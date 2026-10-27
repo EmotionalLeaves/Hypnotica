@@ -104,6 +104,13 @@ class AppState(
 
     fun tickLive() {
         liveTick++
+        // The core is the truth about whether the sim is running; this is the
+        // copy the Play / Pause label reads. Anything that swaps or rebuilds the
+        // core starts it running, and three of those paths — loading another
+        // sim, opening a TickTock clip, entering Studio — reset the core and
+        // not this, so the player said "Play" over a sim that was running, and
+        // one tap later paused it.
+        if (paused != engine.core.paused) paused = engine.core.paused
     }
 
     /** Where each Simple-mode macro slider sits, per sim. */
@@ -431,6 +438,8 @@ class AppState(
 
     fun load(def: SimDef, restartSeed: Long = System.nanoTime()) {
         currentDef = def
+        // A new sim starts running, and says so.
+        paused = false
         val palette = chosenPalette ?: def.defaultPalette
         val sound = chosenSound ?: def.defaultSound
         paletteName = palette
@@ -718,6 +727,7 @@ class AppState(
         // seconds, so clips resolved before the hook had been read. A pause
         // carried over too, which showed a still frame with no way to clear it.
         engine.core.paused = false
+        paused = false
         engine.core.speed = 1f
         speed = 1f
         trails = clip.trails

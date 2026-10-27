@@ -536,7 +536,7 @@ private fun MotionCard(state: AppState) {
         )
     }
     Text(
-        "Lets the settings drift slowly while it plays, so a loop never settles.",
+        "Settings drift slowly while it plays.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -552,7 +552,7 @@ private fun MotionCard(state: AppState) {
     NoticeLine(state.notice)
     Text(
         if (state.recording) {
-            "Pinch, drag and twist the sim. Stopping opens it in Studio as keyframes."
+            "Move the sim, then stop to edit it in Studio."
         } else {
             "Captures your pinches, drags and twists, then hands them to Studio."
         },
@@ -576,8 +576,7 @@ private fun LookCard(state: AppState) {
     ) { state.trails = it }
     ToggleRow("Drag pans the view", state.cameraDrag) { state.cameraDrag = it }
     Text(
-        "On, one finger moves the camera. Off, it reaches into the sim. Two " +
-            "fingers always pan, pinch zooms and a twist rotates.",
+        "One finger moves the camera instead of the sim.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -687,7 +686,7 @@ private fun SoundCard(state: AppState) {
 private fun LawsCard(state: AppState) {
     LawsControls(state, advanced = false)
     Text(
-        "Every physics sim reads these rules, so changing the universe changes them all.",
+        "These rules apply to every physics sim.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 8.dp)

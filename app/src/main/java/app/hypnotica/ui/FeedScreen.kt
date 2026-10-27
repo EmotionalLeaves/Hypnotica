@@ -43,6 +43,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.launch
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.input.pointer.PointerEventPass
 
 /**
  * Home: one sim, full screen, swipe up for the next.
@@ -100,6 +103,26 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     // out of the dark; let go short and it all springs back. It used to be a
     // dead ninety pixels and then a cut.
     val drag = remember { Animatable(0f) }
+
+    // Rule 1: the sim is the interface, and the chrome over it fades after
+    // 2.6 s with no touch. The player has always done this; the feed never
+    // did, so the home screen was a hook line, a title, three round buttons
+    // and two big ones sitting over the sim permanently. It stays up until the
+    // first swipe, so "swipe up or down" is there to be read, and any touch
+    // brings it back.
+    var touchedAt by remember { mutableLongStateOf(0L) }
+    var chromeShown by remember { mutableStateOf(true) }
+    LaunchedEffect(touchedAt, hint) {
+        chromeShown = true
+        if (hint) return@LaunchedEffect
+        delay(CHROME_IDLE_MS)
+        chromeShown = false
+    }
+    val chromeAlpha by animateFloatAsState(
+        if (chromeShown) 1f else 0f,
+        tween(if (chromeShown) Tokens.Fast else Tokens.Slow),
+        label = "feedChrome"
+    )
     var height by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
 
@@ -123,6 +146,14 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             .fillMaxSize()
             .background(Tokens.Bg)
             .onSizeChanged { height = it.height.coerceAtLeast(1) }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.pressed }) touchedAt = System.nanoTime()
+                    }
+                }
+            }
             .pointerInput(order.size) {
                 var travelled = 0f
                 detectVerticalDragGestures(
@@ -174,12 +205,14 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                 .background(Tokens.Bg)
         )
 
-        Column(
+        // Not composed at all once it has faded: an invisible button is still
+        // a button, and tapping the sim where one had been would press it.
+        if (chromeAlpha > 0f) Column(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     translationY = drag.value
-                    alpha = 1f - through * 0.7f
+                    alpha = (1f - through * 0.7f) * chromeAlpha
                 }
                 .safeDrawingPadding()
         ) {
@@ -265,6 +298,9 @@ private fun hookFor(state: AppState): String {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE = 90f
+
+/** Rule 1's figure: chrome fades after this long with no touch. */
+private const val CHROME_IDLE_MS = 2600L
 
 /** How far the chrome travels, as a share of the screen, before the swap. */
 private const val LEAVE = 0.32f

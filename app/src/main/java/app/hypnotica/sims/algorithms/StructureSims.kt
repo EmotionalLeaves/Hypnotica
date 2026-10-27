@@ -72,11 +72,15 @@ class HanoiSim : Sim {
             restSeconds -= abs(dt)
             return
         }
-        // 2^n - 1 moves: at eighteen discs that is a quarter of a million, and
-        // a fixed rate meant the tower was never finished. The slider sets the
-        // pace, but never slower than finishing inside a watchable run.
-        val minimumRate = moves.size / TARGET_SECONDS
-        val rate = max(env.params.f("rate", 6.5f), minimumRate)
+        // 2^n - 1 moves: at eighteen discs that is a quarter of a million, so
+        // the pace has to follow the tower. It used to be a floor under an
+        // absolute moves-a-second slider, and with the shipped seven discs the
+        // floor (6.7) sat above the slider's own default (6.5) — so the slider
+        // drew the same picture at every position from 0.5 up to the floor,
+        // including where it shipped. Speed is a multiplier over the pace that
+        // finishes the tower on the arc, so every position does something at
+        // every size.
+        val rate = moves.size / TARGET_SECONDS * env.params.f("rate", 1f).coerceIn(0.05f, 40f)
         val voiceEvery = max(1, (rate / MAX_NOTES_PER_SECOND).toInt())
         carry += abs(dt) * rate
         while (carry >= 1f && played < moves.size) {
@@ -155,7 +159,7 @@ class HanoiSim : Sim {
             typicalSeconds = 26f,
             params = listOf(
                 Param.int("discs", "Discs", 1, 18, 7, card = Card.DATA),
-                Param.float("rate", "Moves", 0.5f, 400f, 6.5f, card = Card.MOTION, unit = "/s", logScale = true)
+                Param.float("rate", "Speed", 0.1f, 20f, 1f, card = Card.MOTION, unit = "x", logScale = true)
             ),
             create = { HanoiSim() }
         )
@@ -370,6 +374,13 @@ class BinaryTreeSim : Sim {
     private var sorted = false
     private var restSeconds = -1f
 
+    /**
+     * Seconds a tree takes at 1x, whatever its size. The shipped 220 nodes at
+     * the old twenty-six a second took this long, so the shipped tree looks
+     * exactly as it did.
+     */
+    private val TREE_SECONDS = 8.5f
+
     override fun setup(env: SimEnv) {
         val p = env.params
         target = p.i("nodes", 220).coerceIn(1, 100_000)
@@ -398,7 +409,12 @@ class BinaryTreeSim : Sim {
             restSeconds -= abs(dt)
             return
         }
-        carry += abs(dt) * env.params.f("rate", 26f)
+        // A multiplier over the pace that finishes this many nodes on the arc.
+        // An absolute twenty-six a second meant the Nodes slider did nothing
+        // above about twelve hundred — a bigger tree was never built inside a
+        // run — and TickTock's generated clips, which pick up to four thousand
+        // nodes, needed two and a half minutes to pay off and were thrown away.
+        carry += abs(dt) * target / TREE_SECONDS * env.params.f("rate", 1f).coerceIn(0.05f, 40f)
         while (carry >= 1f && size < target) {
             carry -= 1f
             val key = if (sorted) size.toFloat() / target else env.rng.nextFloat()
@@ -507,14 +523,14 @@ class BinaryTreeSim : Sim {
             formats = listOf(TrapFormat.GROW, TrapFormat.GUESS),
             heroLabel = "Rebuild",
             defaultPalette = "Ocean",
-            typicalSeconds = 20f,
+            typicalSeconds = 12f,
             params = listOf(
                 Param.choice("order", "Keys arrive", listOf("Random", "Already sorted"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.int("nodes", "Nodes", 1, 100000, 220, card = Card.DATA, logScale = true),
                 // Reaches what the node slider offers: a hundred thousand nodes at
                 // twenty-six a second is an hour.
-                Param.float("rate", "Speed", 1f, 20000f, 26f, card = Card.MOTION, unit = "/s", logScale = true)
+                Param.float("rate", "Speed", 0.1f, 20f, 1f, card = Card.MOTION, unit = "x", logScale = true)
             ),
             create = { BinaryTreeSim() }
         )
@@ -644,7 +660,10 @@ class LogicGatesSim : Sim {
             typicalSeconds = 22f,
             params = listOf(
                 Param.int("bits", "Bits", 2, 16, 6, card = Card.DATA),
-                Param.int("addend", "Add each tick", 0, 255, 1, card = Card.DATA),
+                // To 63, what the shipped six-bit register can hold. It went to
+                // 255 and was clamped to the register in setup, so everything
+                // above 63 drew the same picture — three quarters of the slider.
+                Param.int("addend", "Add each tick", 0, 63, 1, card = Card.DATA),
                 Param.float("rate", "Ticks", 0.3f, 60f, 4.5f, card = Card.MOTION, unit = "/s", logScale = true)
             ),
             create = { LogicGatesSim() }

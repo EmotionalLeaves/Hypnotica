@@ -284,7 +284,7 @@ class MazeSim : Sim {
             params = listOf(
                 Param.int("width", "Columns", 5, 120, 24, card = Card.DATA),
                 Param.int("height", "Rows", 5, 160, 36, card = Card.DATA),
-                Param.float("rate", "Speed", 5f, 4000f, 140f, card = Card.MOTION, unit = "cells/s", logScale = true)
+                Param.float("rate", "Speed", 5f, 2000f, 140f, card = Card.MOTION, unit = "cells/s", logScale = true)
             ),
             create = { MazeSim() }
         )
@@ -526,7 +526,7 @@ class PathfindingSim : Sim {
                 Param.int("width", "Columns", 8, 160, 60, card = Card.DATA),
                 Param.int("height", "Rows", 8, 220, 90, card = Card.DATA),
                 Param.float("walls", "Wall density", 0f, 0.45f, 0.3f, card = Card.DATA),
-                Param.float("rate", "Speed", 10f, 20000f, 150f, card = Card.MOTION, unit = "cells/s", logScale = true)
+                Param.float("rate", "Speed", 10f, 1500f, 150f, card = Card.MOTION, unit = "cells/s", logScale = true)
             ),
             create = { PathfindingSim() }
         )

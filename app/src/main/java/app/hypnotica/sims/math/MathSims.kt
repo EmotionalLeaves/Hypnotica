@@ -46,6 +46,8 @@ class MandelbrotSim : Sim {
     private var zoomRate = 0.22f
     private var lastSoundIter = 0
     private var sinceRecompute = 999f
+    /** The zoom the current image was computed at. */
+    private var computedZoom = 0.6
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -55,6 +57,7 @@ class MandelbrotSim : Sim {
         iterations = IntArray(cols * rows)
         maxIter = p.i("detail", 220).coerceIn(40, 1200)
         zoom = 0.6
+        computedZoom = 0.6
         targetZoom = 0.6
         zoomRate = p.f("zoom", 0.22f)
         when (p.choiceIndex("target")) {
@@ -82,6 +85,7 @@ class MandelbrotSim : Sim {
         sinceRecompute += abs(dt)
         if (sinceRecompute < 1f / REFRESH_HZ) return
         sinceRecompute = 0f
+        computedZoom = zoom
 
         val scale = 1.4 / zoom
         val halfW = env.halfWidth
@@ -133,15 +137,22 @@ class MandelbrotSim : Sim {
         val halfW = env.halfWidth
         val dx = 2f * halfW / cols
         val dy = 2f / rows
-        val size = max(dx, dy) * 1.05f
+        // The image is recomputed eight times a second and the zoom is
+        // continuous, so in between the last image is drawn grown by however
+        // far the zoom has gone since — about the centre, which is where the
+        // zoom is aimed. It used to sit still for an eighth of a second and
+        // then jump 2.8%, eight times a second: a zoom that stuttered, on the
+        // one sim whose whole subject is a smooth dive.
+        val k = (zoom / computedZoom).toFloat().coerceIn(0.5f, 4f)
+        val size = max(dx, dy) * 1.05f * k
         for (row in 0 until rows) {
-            val y = -1f + (row + 0.5f) * dy
+            val y = (-1f + (row + 0.5f) * dy) * k
             val base = row * cols
             for (col in 0 until cols) {
                 val i = iterations[base + col]
                 if (i >= maxIter) continue
                 val t = (ln(1f + i.toFloat()) / ln(1f + maxIter.toFloat()))
-                g.point(-halfW + (col + 0.5f) * dx, y, size, palette.at((t * 3f) % 1f))
+                g.point((-halfW + (col + 0.5f) * dx) * k, y, size, palette.at((t * 3f) % 1f))
             }
         }
     }
@@ -476,7 +487,7 @@ class PrimeSpiralSim : Sim {
             params = listOf(
                 Param.choice("layout", "Layout", listOf("Ulam square", "Sacks"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("limit", "Numbers", 8000, 400000, 40000, card = Card.DATA, logScale = true),
-                Param.float("rate", "Speed", 200f, 200000f, 2600f, card = Card.MOTION, logScale = true)
+                Param.float("rate", "Speed", 200f, 50000f, 2600f, card = Card.MOTION, logScale = true)
             ),
             create = { PrimeSpiralSim() }
         )

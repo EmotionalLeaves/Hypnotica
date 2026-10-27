@@ -96,8 +96,7 @@ private fun DataTab(state: AppState) {
         return
     }
     Text(
-        "What the run is built from. These apply on the next run, so the sim is " +
-            "not rebuilt under your finger.",
+        "These apply on the next run.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -122,7 +121,7 @@ private fun ParamsTab(state: AppState) {
     val version = state.paramVersion
     val params = remember(version, state.currentDef.id) { state.params() }
     Text(
-        "Every value, exactly. A field also takes a formula such as 1 + sin(t).",
+        "Fields take formulas, like 1 + sin(t).",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -617,8 +616,7 @@ private fun CodeTab(state: AppState) {
     // changed meant "Loaded Polyrhythm" sitting under a Boids recipe.
     LaunchedEffect(text) { notice = null }
     Text(
-        "This run, exactly. Copy it to keep it or to send it to someone, and " +
-            "paste one in to watch theirs — same sim, same seed, same picture.",
+        "Copy this to share the exact run. Paste one to watch it.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
@@ -655,8 +653,7 @@ private fun CodeTab(state: AppState) {
     BigButton("Open the recipe editor", primary = true) { state.screen = Screen.RECIPES }
     Spacer(Modifier.height(8.dp))
     Text(
-        "Recipes are Lua. A few dozen lines make a sim the app treats exactly " +
-            "like a built-in one.",
+        "Write your own sim in Lua.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )

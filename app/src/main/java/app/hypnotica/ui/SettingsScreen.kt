@@ -55,9 +55,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
         SectionLabel("Sound")
         if (!state.engine.synth.available) {
             Text(
-                "No sound on this device right now — the simulations still run. " +
-                    "Unplugging and replugging a headset, or restarting the app, " +
-                    "gives it another try.",
+                "No sound right now. Replug headphones or restart the app.",
                 color = Tokens.Warning,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -124,8 +122,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
 
         SectionLabel("TickTock formats")
         Text(
-            "Switch off the kinds of clip you do not want to see. The feed learns " +
-                "from what you watch as well.",
+            "Hide the kinds of clip you don't want.",
             color = Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall
         )

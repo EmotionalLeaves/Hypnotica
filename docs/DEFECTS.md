@@ -9,50 +9,51 @@ bug, and the menu must not promise what the code does not do.*
 
 ## Open
 
-Measured, not yet acted on. Each is a decision about how the app should feel
-rather than a thing that is simply wrong, which is why it is written down
-instead of changed.
+Measured, not yet acted on.
 
-- **About thirty sliders are flat over the top of their travel.** Sampled at
-  nine positions across the range and run for fifteen seconds, the picture is
-  identical at several of them: `math/chaos-game`'s Dots draws the same frame at
-  189k, 275k and 400k; `physics/n-body`'s Trail is identical from 25k up; `life/boids`
-  Range does nothing above 0.0975, which is the bottom quarter of the slider;
-  `algorithms/logic-gates` Addend does nothing above 64 of 255. Two causes, and
-  they want different fixes. Most are accumulating counts — a trail of forty
-  thousand points on a sim that emits three hundred a second needs two minutes
-  to fill, so the slider's top half is real but unreachable in a run the sim
-  declares as typical. A few are hard caps inside the sim, where the top of the
-  range is simply ignored. The first wants a ceiling set from what the run can
-  reach; the second is a plain lie in the menu. The travel sweep that found them
-  is worth keeping as a tool.
-- **Nine of the ten sims that do loop are cut at the wrong point.** `LOOP`'s
-  claim is now true everywhere it is made (`LoopClaimTest`), but a sim's loop
-  period is not its declared length: the hypercube closes at 49.8 s and declares
-  26, slicing at 14.2 and declares 8, the pendulum wave at 31.0 and declares 38.
-  Nothing cuts a clip at that number any more, so this is no longer a visible
-  jump — but Studio's "Perfect loop" template sets its project length from it,
-  and that project does not loop.
-- **Two sims refresh below the frame rate.** Mandelbrot recomputes at 8 Hz while
-  zooming continuously, so the scale steps 2.8% eight times a second; Voronoi
-  recolours at 12 Hz while its seed dots glide at the full rate. Both are
-  deliberate performance choices and both are frame-rate independent, so they
-  look the same on every phone — but they are visible.
+- **Accumulating counts whose top is only reached on a long watch.** Trail,
+  dots, points and history sliders on lorenz, harmonograph, n-body, fourier,
+  random walk, chaos game and predator–prey draw the same picture over their
+  top few positions for the first minute, because a buffer of forty thousand
+  points at a few hundred a second takes minutes to fill. Now that sims run for
+  as long as you watch, those positions are reached — late. Lowering them would
+  take away the long-exposure picture from the person who stays; leaving them
+  means a slider whose top does nothing for a while. Kept, and written down.
+- **Nine of the ten sims that loop are declared at a length that is not their
+  loop period.** The hypercube closes at 49.8 s and declares 26, the pendulum
+  wave at 31.0 and declares 38. Nothing cuts a clip at that number, but Studio's
+  "Perfect loop" template sets its project length from it, and that project
+  does not loop.
 - **A Studio project lives only in memory.** Keyframes, freezes and captions are
-  a few kilobytes and there is no key for them in preferences and no
-  onSaveInstanceState, so process death takes a session's editing. Rotation is
-  safe; a phone call is not.
-- **The feed's swipe does not follow the finger.** You drag ninety pixels
-  against a picture that does not move, let go, and a different picture is
-  simply there. The sim cannot be animated into place — it is a GLSurfaceView,
-  and the system composites a surface a frame behind the view tree, so moving
-  one tears. Doing this properly means drawing the outgoing frame into a bitmap,
-  which is a round of its own.
+  a few kilobytes with no key in preferences and no onSaveInstanceState, so
+  process death takes a session's editing. Rotation is safe; a phone call is not.
 - **The size slider ignores the device benchmark.** `Bench` measures the phone
-  and classifies it, and only TickTock's generated clips use the result; the
-  player's slider offers 400,000 particles to a phone already measured as
-  modest. Nothing reports frame rate either — `SimEngine.fps` is computed for a
-  performance badge that was never built.
+  and only TickTock's clips use the result; the player's slider offers 400,000
+  particles to a phone already measured as modest.
+- **The other sound presets.** 8-bit is the default because it was the one that
+  sounded right. Every preset now keeps 8-bit's overlap of about fourteen notes
+  at once — the pile-up that turned Music box into a wash is gone — but none of
+  the others has been listened to since.
+
+## Fixed this round
+
+- The payoff flash and chime, live and in export; the bell at the end note.
+- The vignette, which drew a dark frame around every sim.
+- The feed reaching only three sims (a swipe handler holding a stale index),
+  and the swipe now following the finger.
+- Finished sims replaced the instant they finished; the feed holds the resolve
+  and goes again, and the chaos game and Monte Carlo pi never stop.
+- The whole drawer drawing on one line, in Simple and Advanced mode.
+- The first-run pop-up.
+- Hanoi's and n-queens' speed sliders dead below a floor; binary tree's Nodes
+  slider dead above twelve hundred; the tops of five speed sliders that
+  finished a run in under two seconds; logic gates' Addend above 63; circle
+  packing's Largest circle above 0.25; boids' Neighbour range above 0.1.
+- Mandelbrot holding still seven frames in eight and then jumping; Voronoi's
+  cells lagging their own seeds.
+- Pause shown as Play over a running sim after loading, a clip, or Studio.
+- Saved settings keeping old defaults on an existing install.
+- Binary tree opening every run on a black screen.
 
 ## What the last two rounds found
 

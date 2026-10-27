@@ -123,6 +123,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         // route Player -> Pause -> back -> Settings -> Studio left Play
         // flipping its label and counting up over a frozen still.
         state.engine.core.paused = false
+        state.paused = false
         state.engine.seek(0f)
         onDispose {
             // An export is a blocking job on another thread: cancelling the
@@ -634,8 +635,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             ChipRow(ExportSettings.NAMES, formatIndex) { formatIndex = it }
 
             Text(
-                "Rendered offline from the seed, so the file is smooth even if the " +
-                    "preview is not.",
+                "Rendered smooth, whatever the preview did.",
                 color = Tokens.TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)

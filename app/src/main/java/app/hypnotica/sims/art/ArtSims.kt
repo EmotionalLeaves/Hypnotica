@@ -298,7 +298,7 @@ class CirclePackingSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         target = p.i("circles", 900).coerceIn(10, 20000)
-        maxRadius = p.f("maxsize", 0.3f)
+        maxRadius = p.f("maxsize", 0.25f)
         cx = FloatArray(target); cy = FloatArray(target)
         cr = FloatArray(target); tint = FloatArray(target)
         growing = BooleanArray(target)
@@ -416,7 +416,13 @@ class CirclePackingSim : Sim {
             typicalSeconds = 26f,
             params = listOf(
                 Param.int("circles", "Circles", 10, 20000, 900, card = Card.DATA, logScale = true),
-                Param.float("maxsize", "Largest circle", 0.03f, 0.6f, 0.3f, card = Card.DATA),
+                // To 0.25, the largest any circle gets: new seeds keep landing
+                // in the gaps, so a circle meets a neighbour long before it
+                // meets this limit. Measured, every value above 0.25 drew the
+                // identical picture — the shipped 0.3 included, so 0.25 ships
+                // the same packing — which was the top three fifths of the
+                // slider doing nothing.
+                Param.float("maxsize", "Largest circle", 0.03f, 0.25f, 0.25f, card = Card.DATA),
                 Param.float("growth", "Growth rate", 0.05f, 2f, 0.45f, card = Card.MOTION),
                 Param.float("spawn", "New circles", 1f, 400f, 26f, card = Card.MOTION, unit = "/s", logScale = true)
             ),
@@ -554,7 +560,7 @@ class SpirographSim : Sim {
                 Param.float("dot", "Line weight", 0.001f, 0.01f, 0.0032f, card = Card.LOOK),
                 // Reaches what the ink slider offers: three hundred thousand
                 // points at nine hundred a second is five and a half minutes.
-                Param.float("rate", "Speed", 100f, 40000f, 900f, card = Card.MOTION, logScale = true)
+                Param.float("rate", "Speed", 100f, 20000f, 900f, card = Card.MOTION, logScale = true)
             ),
             create = { SpirographSim() }
         )
