@@ -125,7 +125,10 @@ fun LibraryScreen(state: AppState) {
             Text(
                 when {
                     shelfIndex == FAVOURITES_SHELF ->
-                        "Nothing starred yet — double-tap a sim, or use the ★ on the feed."
+                        // Not "double-tap a sim": double-tap left the player and
+                        // the feed, where waiting to see if a second tap was
+                        // coming put a quarter-second lag on every tap.
+                        "Nothing starred yet. Tap ★ on a sim to keep it here."
                     query.isNotBlank() ->
                         "Nothing matches \"$query\". Try a shorter word, or tap All " +
                             "to search every shelf."

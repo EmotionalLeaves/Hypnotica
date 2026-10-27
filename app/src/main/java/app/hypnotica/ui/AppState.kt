@@ -50,6 +50,12 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO, RECIPES }
  */
 internal const val RESOLVE_MS = 1800L
 
+/** Under this share of the phone's best frame rate counts as falling behind. */
+private const val SLOW_SHARE = 0.7f
+
+/** Quarter-second checks in a row: three seconds of it before saying so. */
+private const val SLOW_TICKS = 12
+
 class AppState(
     val engine: SimEngine,
     private val prefs: Prefs? = null,
@@ -113,7 +119,27 @@ class AppState(
         // not this, so the player said "Play" over a sim that was running, and
         // one tap later paused it.
         if (paused != engine.core.paused) paused = engine.core.paused
+
+        // Whether the phone is keeping up, measured rather than guessed. The
+        // engine has smoothed its frame rate since the first build and nothing
+        // read it, so a size slider could take a sim past what the phone draws
+        // smoothly with nothing saying so. Judged against the best this phone
+        // has managed this session, so a 30 Hz battery-saver cap or a 120 Hz
+        // screen are each their own normal.
+        val f = engine.fps
+        if (!paused && f > 1f) {
+            if (f > bestFps) bestFps = f
+            slowTicks = if (f < bestFps * SLOW_SHARE) slowTicks + 1 else 0
+        }
+        val now = slowTicks >= SLOW_TICKS
+        if (struggling != now) struggling = now
     }
+
+    /** True while the sim has been drawing well under this phone's best for a few seconds. */
+    var struggling by mutableStateOf(false)
+        private set
+    private var bestFps = 0f
+    private var slowTicks = 0
 
     /** Where each Simple-mode macro slider sits, per sim. */
     private val macroPositions = mutableStateMapOf<String, Float>()
@@ -461,6 +487,8 @@ class AppState(
         currentDef = def
         // A new sim starts running, and says so.
         paused = false
+        slowTicks = 0
+        struggling = false
         val palette = chosenPalette ?: def.defaultPalette
         val sound = chosenSound ?: def.defaultSound
         paletteName = palette

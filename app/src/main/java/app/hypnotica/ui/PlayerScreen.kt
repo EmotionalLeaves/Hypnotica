@@ -274,6 +274,9 @@ private fun ControlDrawer(state: AppState) {
             Pill("Simple", selected = !state.advanced, Modifier.weight(1f)) { state.advanced = false }
             Pill("Advanced", selected = state.advanced, Modifier.weight(1f)) { state.advanced = true }
         }
+        if (state.struggling) {
+            NoticeLine("More than this phone draws smoothly. A smaller size will help.")
+        }
         Spacer(Modifier.height(12.dp))
 
         if (state.advanced) {

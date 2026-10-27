@@ -19,9 +19,11 @@ Measured, not yet acted on.
   as long as you watch, those positions are reached — late. Lowering them would
   take away the long-exposure picture from the person who stays; leaving them
   means a slider whose top does nothing for a while. Kept, and written down.
-- **The size slider ignores the device benchmark.** `Bench` measures the phone
-  and only TickTock's clips use the result; the player's slider offers 400,000
-  particles to a phone already measured as modest.
+- **The size slider still offers more than a modest phone can draw.** It is
+  not capped, on purpose: tens of thousands is the point. The drawer now says so
+  when the frame rate has been under 70% of this phone's own best for three
+  seconds — measured on the phone, not predicted from the benchmark. `Bench`
+  still only steers TickTock.
 
 ## Fixed this round
 
