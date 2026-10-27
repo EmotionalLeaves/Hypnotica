@@ -15,7 +15,7 @@ only when its "done when" test actually passes on the phone.
 | 8. Feed and Library | done | Swipe feed, auto-advance, favourites that persist, live previews on every card | Opening the app plays a sim within 1 s |
 | 9. Export | done | MP4 with audio, offline render, 9:16/1:1/16:9, captions, cancel, saved to Movies | A 30 s vertical clip exports with synced sound |
 | 10. Builders and polish | done | Equation sim, expressions in any field, Evolve, Record moves, device benchmark, first-run card | Typing a formula draws it; recorded moves land in Studio |
-| 11. Laws and dimensions | done | 14 law presets, force-law expressions, N-dimensional engine, six Dimensions sims | Backwards time rebuilds a collapsed tower; a tesseract spins through XW |
+| 11. Laws and dimensions | done | 15 law presets, force-law expressions, N-dimensional engine, six Dimensions sims | Backwards time rebuilds a collapsed tower; a tesseract spins through XW |
 | 12. TickTock | done | Hidden settings button, clip director with payoff pre-check, 15 trap formats, on-device weighting that persists | 50 swipes with no repeat and no dull clip |
 | 13. Studio | done | Timeline, 9 tracks, keyframes, freezes, captions, templates, offline render | A 30 s clip with a camera orbit and a mid-clip gravity flip exports at 1080p60 |
 | 14. On the phone | open | Whatever `QA.md` finds on the device | The checklist passes end to end on real hardware |

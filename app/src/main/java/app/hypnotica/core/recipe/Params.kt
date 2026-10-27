@@ -92,9 +92,54 @@ data class Macro(
     val card: Card,
     /** parameter key -> value at macro 0 .. value at macro 1 */
     val targets: Map<String, ClosedFloatingPointRange<Float>>,
-    val default: Float = 0f
-)
+    val default: Float = 0f,
+    /**
+     * parameter key -> the value it holds at the middle of the slider.
+     *
+     * Without this a macro is a straight line from one end of each range to the
+     * other, and the single position that averages several targets does not
+     * reproduce any of them — so the first touch of the slider jumps values the
+     * person never asked to change. With it, the middle is exactly where the
+     * sim already is, and dragging goes down towards each minimum and up towards
+     * each maximum.
+     */
+    val mids: Map<String, Float> = emptyMap()
+) {
+    companion object {
+        /**
+         * One target's value at slider position [t]: a straight line when there
+         * is no midpoint, and two lines meeting at the midpoint when there is.
+         */
+        fun valueAt(range: ClosedFloatingPointRange<Float>, mid: Float?, t: Float): Float {
+            val lo = range.start
+            val hi = range.endInclusive
+            if (mid == null) return lo + (hi - lo) * t
+            val m = mid.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+            return if (t < 0.5f) lo + (m - lo) * (t / 0.5f)
+            else m + (hi - m) * ((t - 0.5f) / 0.5f)
+        }
 
+        /** The position that reproduces [value], the inverse of [valueAt]. */
+        fun positionOf(range: ClosedFloatingPointRange<Float>, mid: Float?, value: Float): Float {
+            val lo = range.start
+            val hi = range.endInclusive
+            if (mid == null) {
+                val span = hi - lo
+                return if (span == 0f) 0f else ((value - lo) / span).coerceIn(0f, 1f)
+            }
+            val m = mid.coerceIn(minOf(lo, hi), maxOf(lo, hi))
+            return if (value <= m) {
+                val span = m - lo
+                if (span == 0f) 0.5f else (0.5f * (value - lo) / span).coerceIn(0f, 0.5f)
+            } else {
+                val span = hi - m
+                if (span == 0f) 0.5f else (0.5f + 0.5f * (value - m) / span).coerceIn(0.5f, 1f)
+            }
+        }
+    }
+}
+
+/** Where a macro's targets sit at a given slider position. */
 /** Live values for one sim instance. */
 class ParamValues(val schema: List<Param>) {
 
@@ -224,7 +269,7 @@ class ParamValues(val schema: List<Param>) {
     fun applyMacro(macro: Macro, position: Float) {
         val t = position.coerceIn(0f, 1f)
         for ((key, range) in macro.targets) {
-            set(key, range.start + (range.endInclusive - range.start) * t)
+            set(key, Macro.valueAt(range, macro.mids[key], t))
         }
     }
 

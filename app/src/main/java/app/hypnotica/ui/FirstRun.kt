@@ -73,6 +73,7 @@ private val GESTURES = listOf(
     "Tap" to "show or hide the controls",
     "Long-press" to "open the full drawer",
     "Pinch" to "zoom",
+    "Two-finger twist" to "rotate the whole sim",
     "Two-finger drag" to "pan",
     "Double-tap" to "like, in TickTock",
     "Settings" to "two hidden buttons: TickTock and Studio"

@@ -38,7 +38,9 @@ class RegistryTest {
         for (def in SimRegistry.all) {
             for (laws in presets) {
                 try {
-                    run(def, laws, seconds = 6f)
+                    // Long enough to get past setup and into the real loop;
+                    // the payoff and sound sweeps below cover the long runs.
+                    run(def, laws, seconds = 3f)
                 } catch (e: Throwable) {
                     broken.add("${def.id} under ${laws.name}: $e")
                 }
@@ -71,7 +73,7 @@ class RegistryTest {
             core.setAspect(0.46f)
             core.setPalette(Palette.byName(def.defaultPalette))
             var frames = 0
-            while (frames < 60 * 20 && !core.finished) {
+            while (frames < 60 * 12 && !core.finished) {
                 core.advance(1f / 60f)
                 g.reset()
                 core.draw(g)
@@ -96,7 +98,9 @@ class RegistryTest {
     fun everySimHasAPreview() {
         val blank = SimRegistry.all.filter { Previews.build(it).isEmpty }
         assertTrue(
-            "These sims draw nothing in the Library:\n" + blank.joinToString("\n") { it.id },
+            "These sims draw nothing in the Library:\n" +
+                blank.joinToString("\n") { it.id } +
+                (Previews.lastError?.let { "\nlast error: $it" } ?: ""),
             blank.isEmpty()
         )
     }

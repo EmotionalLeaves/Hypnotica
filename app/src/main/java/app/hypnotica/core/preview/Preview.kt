@@ -34,8 +34,12 @@ class Preview(val data: FloatArray, val count: Int, val background: Int) {
     companion object {
         const val STRIDE = 11
 
-        /** Enough to be recognisable, few enough to paint on a scrolling list. */
-        const val MAX_SHAPES = 700
+        /**
+         * Enough to be recognisable, few enough to paint on a scrolling list:
+         * eight cards on screen at this many shapes is already two thousand
+         * draw calls a frame on the main thread.
+         */
+        const val MAX_SHAPES = 240
 
         val EMPTY = Preview(FloatArray(0), 0, Palette.BG)
     }
@@ -51,6 +55,11 @@ object Previews {
      * finished run. Anything that throws returns an empty preview rather than
      * taking the Library down with it.
      */
+    /** Why the last preview came back empty, for the test that checks them. */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     fun build(def: SimDef, seconds: Float = 1.6f, aspect: Float = 1.35f): Preview {
         return try {
             val core = SimCore(def, SEED)
@@ -75,6 +84,7 @@ object Previews {
             core.draw(g)
             flatten(g)
         } catch (e: Throwable) {
+            lastError = "${def.id}: $e"
             Preview.EMPTY
         }
     }
@@ -87,30 +97,35 @@ object Previews {
         var written = 0
 
         // Sample evenly, so a 200,000-bar sort still shows its whole shape.
-        val stride = maxOf(1, total / keep)
+        // Integer division would keep the leftmost run whenever total is just
+        // over the cap, so the step is fractional and carried along.
+        val step = total.toFloat() / keep
+        var cursor = 0f
         var index = 0
 
         var i = 0
         while (i < g.instanceCount && written < keep) {
-            if (index % stride == 0) {
+            if (index >= cursor) {
                 copyInstance(out, written, g.instances, i * G.STRIDE)
                 written++
+                cursor += step
             }
             index++
             i++
         }
         i = 0
         while (i < g.glowCount && written < keep) {
-            if (index % stride == 0) {
+            if (index >= cursor) {
                 copyInstance(out, written, g.glows, i * G.STRIDE)
                 written++
+                cursor += step
             }
             index++
             i++
         }
         i = 0
         while (i < g.pointCount && written < keep) {
-            if (index % stride == 0) {
+            if (index >= cursor) {
                 val p = i * 3
                 val c = i * 4
                 val base = written * Preview.STRIDE
@@ -127,6 +142,7 @@ object Previews {
                 out[base + 9] = (g.pointColor[c + 2].toInt() and 0xFF) / 255f
                 out[base + 10] = (g.pointColor[c + 3].toInt() and 0xFF) / 255f
                 written++
+                cursor += step
             }
             index++
             i++
@@ -153,6 +169,7 @@ object Previews {
     /** Preview-only ceilings for the parameters that set a sim's size. */
     private fun previewCap(key: String): Float? = when (key) {
         "n", "count", "beads", "trail", "walkers", "particles" -> 1200f
+        "dots", "points", "limit", "ink", "samples" -> 1200f
         "bodies" -> 150f
         "grid", "size" -> 96f
         "depth", "rings" -> 6f

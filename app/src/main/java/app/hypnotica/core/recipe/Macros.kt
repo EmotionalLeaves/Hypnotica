@@ -19,11 +19,30 @@ object Macros {
      * The macros to show for [def]: its own if it has any, otherwise derived.
      */
     fun forDef(def: SimDef): List<Macro> {
-        if (def.macros.isNotEmpty()) return def.macros
+        if (def.macros.isNotEmpty()) return def.macros.map { anchored(def, it) }
         val derived = ArrayList<Macro>(2)
         size(def)?.let { derived.add(it) }
         energy(def)?.let { derived.add(it) }
         return derived
+    }
+
+    /**
+     * Give a hand-written macro the same promise the derived ones make: the
+     * middle of the slider is where the sim already is, so touching it never
+     * jerks a value the person did not ask to change. The author's ranges are
+     * kept; only the shape of the sweep changes.
+     */
+    private fun anchored(def: SimDef, macro: Macro): Macro {
+        if (macro.mids.isNotEmpty()) return macro
+        val mids = HashMap<String, Float>(macro.targets.size)
+        for ((key, range) in macro.targets) {
+            val p = def.params.firstOrNull { it.key == key } ?: continue
+            val lo = minOf(range.start, range.endInclusive)
+            val hi = maxOf(range.start, range.endInclusive)
+            if (p.default in lo..hi) mids[key] = p.default
+        }
+        if (mids.isEmpty()) return macro
+        return macro.copy(default = 0.5f, mids = mids)
     }
 
     /**
@@ -42,7 +61,10 @@ object Macros {
             key = "derived-size",
             label = "How much",
             card = biggest.card,
-            targets = mapOf(biggest.key to biggest.min..biggest.max)
+            targets = mapOf(biggest.key to biggest.min..biggest.max),
+            default = 0.5f,
+            // The middle of the slider is what the sim was tuned to ship with.
+            mids = mapOf(biggest.key to biggest.default)
         )
     }
 
@@ -57,7 +79,16 @@ object Macros {
         // the advanced values; one macro should still reach them.
         val targets = if (plain.size >= 2) plain else motionFloats(def, includeAdvanced = true)
         if (targets.size < 2) return null
-        return Macro(key = "derived-energy", label = "Energy", card = Card.MOTION, targets = targets)
+        val mids = HashMap<String, Float>(targets.size)
+        for (p in def.params) if (targets.containsKey(p.key)) mids[p.key] = p.default
+        return Macro(
+            key = "derived-energy",
+            label = "Energy",
+            card = Card.MOTION,
+            targets = targets,
+            default = 0.5f,
+            mids = mids
+        )
     }
 
     private fun motionFloats(
@@ -83,10 +114,8 @@ object Macros {
         var total = 0f
         var counted = 0
         for ((key, range) in macro.targets) {
-            val span = range.endInclusive - range.start
-            if (span <= 0f) continue
-            val current = values.f(key, range.start)
-            total += ((current - range.start) / span).coerceIn(0f, 1f)
+            if (range.endInclusive - range.start <= 0f) continue
+            total += Macro.positionOf(range, macro.mids[key], values.f(key, range.start))
             counted++
         }
         if (counted == 0) return macro.default

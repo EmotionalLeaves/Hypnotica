@@ -149,8 +149,11 @@ class AppState(
         val result = Bench.run()
         director.sizeScale = result.tier.sizeScale
         benchNote = result.describe()
-        p?.deviceTier = result.tier.name
-        p?.benchNote = result.describe()
+        // A failed measurement is not remembered, so the next launch tries again.
+        if (result.measured) {
+            p?.deviceTier = result.tier.name
+            p?.benchNote = result.describe()
+        }
     }
 
     /** Remember what the person liked, so the feed is still theirs next launch. */
@@ -185,6 +188,15 @@ class AppState(
 
     /** The Studio project being edited, kept while the app is open. */
     var project by mutableStateOf<Project?>(null)
+
+    /** The project Studio edits, made on the spot the first time it is asked for. */
+    fun projectForStudio(): Project {
+        val existing = project
+        if (existing != null) return existing
+        val made = Project.template("Build-up to payoff", currentDef.id, engine.core.seed)
+        project = made
+        return made
+    }
 
     /** Record moves: capture the camera and the controls, then edit in Studio. */
     var recording by mutableStateOf(false)

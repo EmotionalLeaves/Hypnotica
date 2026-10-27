@@ -21,9 +21,14 @@ object Bench {
     }
 
     data class Result(val tier: Tier, val particles: Int, val msPerFrame: Float) {
+
+        /** False when the measurement did not happen, so nothing is invented. */
+        val measured: Boolean get() = msPerFrame > 0f
+
         /** What Settings shows. */
         fun describe(): String =
-            "${tier.label} — $particles particles at ${format(msPerFrame)} ms a frame"
+            if (!measured) "not measured"
+            else "${tier.label} — $particles particles at ${format(msPerFrame)} ms a frame"
 
         private fun format(v: Float): String {
             val tenths = Math.round(v * 10f)
@@ -65,7 +70,9 @@ object Bench {
             val ms = (System.nanoTime() - started) / 1e6f / frames
             Result(tierFor(ms), PARTICLES, ms)
         } catch (e: Throwable) {
-            Result(Tier.MID, PARTICLES, 0f)
+            // No measurement rather than a made-up one; the tier falls back to
+            // the middle and Settings says so.
+            Result(Tier.MID, PARTICLES, -1f)
         }
     }
 

@@ -68,9 +68,10 @@ A sim does not implement any of that; it says *now*, and the engine performs.
 - Trails for anything moving faster than about one screen-width a second.
 - Anticipation of 100–200 ms before a big event.
 - Slow motion at the payoff, ramped back in rather than snapped.
-- Camera breath under 1% zoom to keep static sims alive; a 2–5% punch-in on the
-  payoff, off when Reduce motion is on.
-- Screen shake only on heavy impacts, 2–4 px, under 150 ms, switchable off.
+- Camera breath of 0.8% zoom at 0.07 Hz keeps a static sim alive; a 4.5%
+  punch-in lands on the payoff. Both stop when Reduce motion is on.
+- Screen shake on the payoff frame only: a few pixels of world, decaying over
+  150 ms, and off entirely with Reduce motion.
 
 **Impact juice.** On the same frame as the sound event: a brightness flash on the
 object, a glow or spark burst at the contact point, a colour shift along the
@@ -182,8 +183,9 @@ them at once. Fifteen presets — Our universe, Moon, Zero-G, Upside-down, Bounc
 Sticky, Ghosts, Syrup, Slow light, Backwards time, Repulsive gravity, Negative
 mass, Wrap-around space, Strong charges, Heavy & bouncy — plus the sliders and
 switches behind them: gravity, bounciness, friction, time speed, time direction,
-space wrapping, mass sign, charge strength, the speed of light, force falloff,
-the gravitational constant, and a typed force law such as `g * m1 * m2 / r^2`.
+space wrapping, mass sign, charge strength, which way like charges push, the
+speed of light, force falloff, the gravitational constant, and a typed force law
+such as `g * m1 * m2 / r^2`.
 
 Editing any law renames the universe "Custom" and the chip row grows a Custom
 chip, so your edit is visible rather than deselecting everything.

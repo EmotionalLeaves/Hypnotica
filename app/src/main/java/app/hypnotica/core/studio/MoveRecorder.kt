@@ -16,17 +16,25 @@ class MoveRecorder(simId: String, seed: Long) {
 
     val project = Project(simId, seed).also { it.name = "Recorded" }
 
-    /** Seconds recorded so far. */
+    /** Seconds recorded so far. Read from the UI thread while it is written. */
+    @Volatile
     var seconds: Float = 0f
         private set
 
+    /** True once the recording has run its full length. */
+    @Volatile
     var full: Boolean = false
         private set
 
     private val samples = HashMap<TrackKind, ArrayList<Keyframe>>()
     private var sinceSample = INTERVAL
 
-    /** Call once per frame while recording. */
+    /**
+     * Call once per frame while recording, from the thread that owns the sim.
+     * The samples are guarded because the UI thread can call [finish] at any
+     * moment, in the middle of a frame.
+     */
+    @Synchronized
     fun feed(dt: Float, camera: Camera, speed: Float, trails: Float) {
         if (full) return
         seconds += dt
@@ -55,7 +63,9 @@ class MoveRecorder(simId: String, seed: Long) {
      * really moved is dropped, so a recording where only the zoom changed does
      * not leave five flat tracks in the way.
      */
+    @Synchronized
     fun finish(): Project {
+        full = true
         project.duration = maxOf(2f, kotlin.math.ceil(seconds.toDouble()).toFloat())
         for ((kind, list) in samples) {
             if (list.size < 2) continue

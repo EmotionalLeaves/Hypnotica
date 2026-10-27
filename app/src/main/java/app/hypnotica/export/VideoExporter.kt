@@ -266,8 +266,9 @@ class VideoExporter(
         var outFormat: MediaFormat? = null
         var totalFrames = 0L
         var blockIndex = 0
+        var blockOffset = 0
         var finished = false
-        var spins = blocks.size * 4 + 2000
+        var spins = blocks.size * 8 + 2000
 
         // A wall-clock deadline as well as a spin count: a codec that accepts no
         // input would otherwise sit in "Exporting..." for minutes with no way out.
@@ -291,10 +292,13 @@ class VideoExporter(
                         } else {
                             val block = blocks[blockIndex]
                             input.clear()
-                            val bytes = min(block.size * 2, input.capacity())
-                            val shorts = bytes / 2
-                            val bb = ByteBuffer.allocate(shorts * 2).order(java.nio.ByteOrder.nativeOrder())
-                            for (i in 0 until shorts) bb.putShort(block[i])
+                            // A device that ignores KEY_MAX_INPUT_SIZE gets the
+                            // block in pieces rather than losing its tail.
+                            val remaining = block.size - blockOffset
+                            val shorts = min(remaining, input.capacity() / 2)
+                            val bb = ByteBuffer.allocate(shorts * 2)
+                                .order(java.nio.ByteOrder.nativeOrder())
+                            for (i in 0 until shorts) bb.putShort(block[blockOffset + i])
                             bb.flip()
                             input.put(bb)
                             codec.queueInputBuffer(
@@ -302,7 +306,11 @@ class VideoExporter(
                                 totalFrames * 1_000_000L / SAMPLE_RATE, 0
                             )
                             totalFrames += shorts / 2
-                            blockIndex++
+                            blockOffset += shorts
+                            if (blockOffset >= block.size) {
+                                blockOffset = 0
+                                blockIndex++
+                            }
                         }
                     }
                 }

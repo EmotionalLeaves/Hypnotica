@@ -117,8 +117,11 @@ private fun TopBar(state: AppState, uiTick: Int) {
             )
             val counters = remember(uiTick) { state.engine.core.sim.counters() }
             val line = if (state.recording) {
-                val secs = remember(uiTick) { state.engine.recorder?.seconds ?: 0f }
-                "\u25CF  recording  ${secs.toInt()}s"
+                val rec = remember(uiTick) { state.engine.recorder }
+                // A recording that has run its length stops itself, rather than
+                // sitting at "60s" until somebody notices.
+                if (rec != null && rec.full) state.stopRecording()
+                "\u25CF  recording  ${(rec?.seconds ?: 0f).toInt()}s"
             } else if (state.showCounters && counters.isNotEmpty()) {
                 counters.joinToString("   ") { "${it.second} ${it.first}" }
             } else {
@@ -127,7 +130,9 @@ private fun TopBar(state: AppState, uiTick: Int) {
             Text(
                 line,
                 color = if (state.recording) Tokens.Danger else Tokens.TextSecondary,
-                style = MaterialTheme.typography.bodySmall
+                // Tabular figures: a counter that changes every frame must not
+                // make the line around it twitch.
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum")
             )
         }
         GlyphButton(if (state.isFavourite(state.currentDef.id)) "★" else "☆") {

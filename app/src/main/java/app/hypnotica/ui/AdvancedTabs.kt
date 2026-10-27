@@ -255,6 +255,21 @@ fun LawsControls(state: AppState, advanced: Boolean) {
         }
     }
 
+    Spacer(Modifier.height(8.dp))
+    ValueSlider(
+        "Charge strength",
+        laws.electricStrength,
+        0.05f,
+        8f,
+        logScale = true,
+        valueText = String.format("%.2fx", laws.electricStrength)
+    ) { v -> state.editLaws { it.copy(electricStrength = v) } }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Pill("Like charges attract", selected = laws.chargeSign < 0f) {
+            state.editLaws { it.copy(chargeSign = -it.chargeSign) }
+        }
+    }
+
     if (!advanced) return
 
     ValueSlider("Speed of light", laws.lightSpeed, 0.5f, 1e6f, logScale = true,

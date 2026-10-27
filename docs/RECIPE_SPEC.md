@@ -74,7 +74,7 @@ the engine decides what is heard and felt.
 g.rect(cx, cy, hw, hh, color, rot, alpha)
 g.bar(cx, baseY, halfWidth, height, color, alpha)
 g.disc(cx, cy, r, color, alpha)
-g.ring(cx, cy, r, thickness, color, alpha)
+g.ring(cx, cy, r, thickness, color, gap, gapAngle, alpha)
 g.glow(cx, cy, r, color, alpha)
 g.line(x1, y1, x2, y2, width, color, alpha)
 g.polyline(xs, ys, count, width, color, alpha)

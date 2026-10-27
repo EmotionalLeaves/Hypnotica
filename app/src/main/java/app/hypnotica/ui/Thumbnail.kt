@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
+import kotlin.math.min
 
 /**
  * Previews, built once per sim and kept for as long as the app is open.
@@ -87,7 +88,12 @@ private fun DrawScope.drawPreview(p: Preview) {
                 drawCircle(color.copy(alpha = color.alpha * 0.45f), hw * 1.3f, Offset(x, y))
 
             G.SHAPE_RING.toInt() -> {
-                val thickness = ((1f - p.ringInner(i)) * hw).coerceIn(0.6f, hw)
+                // A ring narrower than the minimum would make an empty range,
+                // and coerceIn throws on one — inside a draw pass, which takes
+                // the whole card down with it.
+                val thickness = ((1f - p.ringInner(i)) * hw)
+                    .coerceAtMost(hw)
+                    .coerceAtLeast(min(0.6f, hw))
                 drawCircle(
                     color = color,
                     radius = (hw - thickness * 0.5f).coerceAtLeast(0.5f),

@@ -91,6 +91,16 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     private var punch = 0f
     private var baseZoom = 1f
 
+    /** Slow idle zoom, so a sim that barely moves is not a still photograph. */
+    private var breath = 0f
+
+    /** Decaying offset applied after a heavy impact. */
+    private var shake = 0f
+    private var shakeSeed = 0
+    private var shakeWasOn = false
+    private var shakeBaseX = 0f
+    private var shakeBaseY = 0f
+
     // ------------------------------------------------------------- studio
 
     /** When set, the timeline drives the camera, speed, laws and look. */
@@ -302,6 +312,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (core.payoffFired && !payoffNotified) {
             payoffNotified = true
             punch = if (safety.reduceMotion) 0f else 1f
+            shake = if (safety.reduceMotion) 0f else 1f
             mapping.finalSweep()
             if (safety.haptics) haptics?.heavy()
             onPayoff?.invoke()
@@ -316,8 +327,39 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (punch > 0f) {
             punch = max(0f, punch - dt * 0.9f)
         }
+        if (shake > 0f) {
+            shake = max(0f, shake - dt / SHAKE_SECONDS)
+        }
+        breath += dt * BREATH_HZ * 6.2832f
+        if (breath > 6.2832f) breath -= 6.2832f
+
         if (proj == null) {
-            camera.zoom = baseZoom * (1f + 0.045f * punch)
+            // Camera breath: under one percent, slow enough to be felt rather
+            // than seen, and off entirely when Reduce motion is on.
+            val breathing =
+                if (safety.reduceMotion) 1f else 1f + BREATH_DEPTH * kotlin.math.sin(breath)
+            camera.zoom = baseZoom * breathing * (1f + 0.045f * punch)
+
+            // Screen shake: a few pixels for a moment, on the heaviest frames.
+            // Where the camera was is captured as the shake starts and put back
+            // when it ends, so the offset never accumulates.
+            if (shake > 0f) {
+                if (!shakeWasOn) {
+                    shakeBaseX = camera.x
+                    shakeBaseY = camera.y
+                    shakeWasOn = true
+                }
+                shakeSeed = shakeSeed * 1103515245 + 12345
+                val a = ((shakeSeed shr 16) and 0xFF) / 255f - 0.5f
+                val b = ((shakeSeed shr 8) and 0xFF) / 255f - 0.5f
+                val amount = SHAKE_WORLD * shake * shake
+                camera.x = shakeBaseX + a * amount
+                camera.y = shakeBaseY + b * amount
+            } else if (shakeWasOn) {
+                camera.x = shakeBaseX
+                camera.y = shakeBaseY
+                shakeWasOn = false
+            }
         }
 
         g.reset()
@@ -358,6 +400,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         payoffNotified = false
         finishNotified = false
         punch = 0f
+        shake = 0f
+        if (shakeWasOn) {
+            camera.x = shakeBaseX
+            camera.y = shakeBaseY
+            shakeWasOn = false
+        }
         flashLimiter.reset()
         synth.allOff()
     }
@@ -387,6 +435,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     companion object {
+        /** How deep the idle zoom breathes, and how slowly. Under one percent. */
+        const val BREATH_DEPTH = 0.008f
+        const val BREATH_HZ = 0.07f
+
+        /** Screen shake: a few pixels of world, gone inside 150 ms. */
+        const val SHAKE_SECONDS = 0.15f
+        const val SHAKE_WORLD = 0.012f
+
         /** A flick can produce a lot of moves; a frame need not apply all of them. */
         const val MAX_PENDING_TOUCHES = 64
 

@@ -30,6 +30,7 @@ import app.hypnotica.ui.SimSurfaceView
 import app.hypnotica.ui.StudioScreen
 import app.hypnotica.ui.TickTockScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -61,9 +62,11 @@ class MainActivity : ComponentActivity() {
                         made.onCameraDrag = { on -> surface.cameraMode = on }
                     }
                 }
-                // Measure the phone once, off the main thread, so the clip
-                // generator knows what it may ask of it.
+                // Measure the phone once, off the main thread — and not in the
+                // first seconds, which belong to the simulation that is already
+                // running. Rule 2: motion before anything else.
                 LaunchedEffect(Unit) {
+                    delay(BENCHMARK_DELAY_MS)
                     withContext(Dispatchers.Default) { state.benchmarkIfNeeded() }
                 }
                 BackHandler(enabled = true) {
@@ -115,4 +118,5 @@ private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: Strin
     }
 }
 
-
+/** Long enough for the first sim to be up and smooth before anything else runs. */
+private const val BENCHMARK_DELAY_MS = 6_000L

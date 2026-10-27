@@ -64,10 +64,9 @@ import java.io.File
  */
 @Composable
 fun StudioScreen(state: AppState, surface: SimSurfaceView) {
-    val project = state.project ?: remember {
-        Project.template("Build-up to payoff", state.currentDef.id, state.engine.core.seed)
-            .also { state.project = it }
-    }
+    // The project belongs to the state, not to this composition; making one
+    // inside a remember would write snapshot state during composition.
+    val project = state.projectForStudio()
     var selectedTrack by remember { mutableStateOf(TrackKind.ZOOM) }
     var easing by remember { mutableStateOf(Easing.EASE_IN_OUT) }
     var playhead by remember { mutableFloatStateOf(0f) }
@@ -91,6 +90,9 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         state.engine.studioPlaying = false
         state.engine.seek(0f)
         onDispose {
+            // An export is a blocking job on another thread: cancelling the
+            // composition does not touch it, so it is told to stop here.
+            runningExport?.cancel()
             // Hand the sim back as the player left it, laws and all.
             state.engine.detachProject(state.laws, state.trails, state.speed)
         }

@@ -21,7 +21,7 @@ tests, signs and publishes the APK.
 | Sound | A synth fed by sim events — every note has a visible cause |
 | Laws | Gravity, bounciness, friction, time direction and more, shared by every physics sim |
 | Controls | Simple mode (macros and big sliders) and Advanced mode (exact numbers, formulas, Lua) |
-| Scale | 200,000 sorting bars in 5 ms a frame; 400,000 particles in 47 ms, measured on a two-core CI runner |
+| Scale | 200,000 sorting bars in 3.5 ms a frame; 400,000 particles in 48.6 ms, measured on a two-core CI runner and printed by every build |
 | TickTock | An endless generated feed where every clip is simulated through before you see it |
 | Studio | Keyframed camera, laws and captions, rendered offline to MP4 with sound |
 

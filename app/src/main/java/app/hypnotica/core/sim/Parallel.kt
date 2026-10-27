@@ -64,24 +64,34 @@ object Parallel {
         // The calling thread takes the first slice instead of idling.
         body(0, minOf(per, count))
 
-        var retryFrom = -1
-        var retryTo = -1
+        var failed: ArrayList<Int>? = null
         for (i in futures.indices) {
             try {
                 futures[i].get(SLICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             } catch (e: Exception) {
                 // A slice that never ran would make the step quietly different
                 // from the same step elsewhere, and determinism is what the
-                // offline render and the payoff pre-check both rely on. Cancel
-                // the stragglers and run the rest on this thread instead.
-                if (retryFrom < 0) retryFrom = ranges[i * 2]
-                retryTo = ranges[i * 2 + 1]
+                // offline render and the payoff pre-check both rely on. Only
+                // the slices that actually failed are re-run: re-running a span
+                // that covers a slice which did finish would apply it twice.
                 futures[i].cancel(true)
+                val list = failed ?: ArrayList<Int>(4).also { failed = it }
+                list.add(i)
             }
         }
-        if (retryFrom >= 0) {
-            for (f in futures) if (!f.isDone) f.cancel(true)
-            body(retryFrom, retryTo)
+        val retries = failed
+        if (retries != null) {
+            // Nothing may still be writing into a span about to be redone.
+            for (f in futures) {
+                if (f.isDone) continue
+                f.cancel(true)
+                try {
+                    f.get(SLICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                } catch (e: Exception) {
+                    // Already cancelled; there is nothing further to wait for.
+                }
+            }
+            for (i in retries) body(ranges[i * 2], ranges[i * 2 + 1])
         }
     }
 }

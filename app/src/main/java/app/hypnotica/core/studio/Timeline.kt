@@ -46,8 +46,9 @@ enum class TrackKind(val title: String, val min: Float, val max: Float, val defa
     CAMERA_X("Camera x", -3f, 3f, 0f),
     CAMERA_Y("Camera y", -3f, 3f, 0f),
     ZOOM("Zoom", 0.25f, 8f, 1f),
-    ROTATION("Rotation", -6.3f, 6.3f, 0f),
-    SPEED("Speed", 0f, 6f, 1f),
+    // Three turns either way: a twist gesture accumulates without stopping.
+    ROTATION("Rotation", -18.9f, 18.9f, 0f),
+    SPEED("Speed", 0f, 10f, 1f),
     GRAVITY("Gravity", 0f, 40f, 9.81f),
     BOUNCINESS("Bounciness", 0f, 1.3f, 0.88f),
     TRAILS("Trails", 0f, 0.96f, 0f),
