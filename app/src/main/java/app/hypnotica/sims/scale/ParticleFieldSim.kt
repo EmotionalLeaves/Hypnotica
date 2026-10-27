@@ -187,12 +187,22 @@ class ParticleFieldSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reservePoints(n)
         val sizeScale = if (n > 120_000) 0.6f else 1f
-        for (i in 0 until n) {
+        // Past a few hundred thousand there are more particles than there are
+        // pixels to put them in, and filling the draw list is the one part of
+        // the frame that cannot be split across cores. A sample is drawn at a
+        // proportionally larger size, so the field is as dense and as bright as
+        // it was: all of them are still simulated, and the counter still says
+        // so. The same trade the Riemann sum makes with its bars.
+        val stride = if (n > DRAW_EVERY_ABOVE) 1 + n / DRAW_EVERY_ABOVE else 1
+        val spread = if (stride > 1) sqrt(stride.toFloat()) else 1f
+        g.reservePoints(n / stride + 1)
+        var i = 0
+        while (i < n) {
             val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 0.55f)
             val c = palette.at((tint[i] * 0.5f + speed * 0.5f) % 1f)
-            g.point(px[i], py[i], dotSize * sizeScale * (0.7f + speed * 0.8f), c)
+            g.point(px[i], py[i], dotSize * sizeScale * spread * (0.7f + speed * 0.8f), c)
+            i += stride
         }
         for (a in 0 until attractors) {
             g.glow(attractorX[a], attractorY[a], 0.16f, if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER, 0.22f)
@@ -216,6 +226,13 @@ class ParticleFieldSim : Sim {
         listOf("particles" to String.format("%,d", n))
 
     companion object {
+        /**
+         * Above this many particles the draw samples rather than drawing every
+         * one. Chosen so a 1080p screen still gets a point for every few
+         * pixels, which is the point at which more of them stop being visible.
+         */
+        const val DRAW_EVERY_ABOVE = 200_000
+
         private const val MAX_SPEED = 3.2f
         private const val MAX_SPEED2 = MAX_SPEED * MAX_SPEED
         private const val PAYOFF_AT = 18f

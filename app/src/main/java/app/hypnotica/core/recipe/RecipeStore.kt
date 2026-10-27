@@ -103,7 +103,10 @@ class RecipeStore(private val dir: File) {
                 -- One slider for the whole question: does it orbit or escape?
                 macros = {
                   { key = "launch", label = "Orbit or escape", card = "motion",
-                    targets = { speed = {0.3, 2.0}, distance = {0.2, 0.9} } }
+                    targets = {
+                      { key = "speed", from = 0.3, to = 2.0 },
+                      { key = "distance", from = 0.2, to = 0.9 }
+                    } }
                 }
 
                 function setup(s)

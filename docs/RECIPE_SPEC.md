@@ -109,18 +109,19 @@ macros = {
   { key = "launch",                  -- optional; one is made up if absent
     label = "Orbit or escape",       -- what the slider is called
     card = "motion",                 -- data, motion, look or sound
-    targets = {                      -- parameter key -> { at 0, at 1 }
-      speed = { 0.3, 2.0 },
-      distance = { 0.2, 0.9 }
+    targets = {
+      { key = "speed",    from = 0.3, to = 2.0 },
+      { key = "distance", from = 0.2, to = 0.9 }
     } }
 }
 ```
 
-At most eight macros, each with any number of targets. A target naming a
-parameter the recipe does not declare is dropped rather than failing the load.
-The middle of the slider is anchored to the values the recipe ships with, so
-touching it never jerks something nobody asked to change, and a target whose
-parameter is `log = true` is swept logarithmically.
+At most eight macros, each with up to sixteen targets. `from` and `to` default
+to the parameter's own minimum and maximum. A target naming a parameter the
+recipe does not declare is dropped rather than failing the load. The middle of
+the slider is anchored to the values the recipe ships with, so touching it
+never jerks something nobody asked to change, and a target whose parameter is
+`log = true` is swept logarithmically.
 
 ### Declaring a sim
 

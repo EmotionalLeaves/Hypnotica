@@ -350,6 +350,28 @@ if titles and glob.glob(mock):
                 f"{mock}: \"{node}\" is shown under \"{got}\", but its family "
                 f"is \"{want}\"")
 
+# 11. the Lua files may only use the luaj calls already proven to compile
+#     These two files need the luaj jar, which lives in the Gradle cache on the
+#     CI runner, so kcheck cannot compile them and a wrong method name costs a
+#     whole CI run to discover. Twice now. The allowed set was harvested from
+#     the file as it stood in a green build; adding to it is a deliberate act,
+#     and the next CI run is what confirms the addition.
+LUAJ_PROVEN = set(['abs', 'add', 'arg', 'at', 'bar', 'bool', 'call', 'choice', 'cleanMessage', 'cos', 'delete', 'disc', 'emit', 'endsWith', 'equals', 'exceptionOrNull', 'exists', 'f', 'failure', 'findAll', 'flash', 'float', 'floor', 'fromName', 'get', 'getOrNull', 'glow', 'hsv', 'install', 'int', 'invoke', 'isEmpty', 'isNaN', 'isNotEmpty', 'isnil', 'isnumber', 'istable', 'line', 'load', 'lowercase', 'mkdirs', 'nanoTime', 'nextFloat', 'optdouble', 'optint', 'optjstring', 'parse', 'point', 'range', 'readText', 'rect', 'removeSuffix', 'replace', 'ring', 'sandbox', 'set', 'setRecipes', 'sin', 'sqrt', 'startsWith', 'success', 'take', 'toByteArray', 'toDouble', 'toFloat', 'toInt', 'toSet', 'toSimDef', 'toboolean', 'todouble', 'tojstring', 'trim', 'trimIndent', 'valueOf', 'varargsOf', 'writeText'])
+for f in ['app/src/main/java/app/hypnotica/core/recipe/LuaRecipe.kt',
+          'app/src/main/java/app/hypnotica/core/recipe/RecipeStore.kt']:
+    if not glob.glob(f):
+        continue
+    src = strip(open(f).read())
+    for m in re.finditer(r'\.([a-z][a-zA-Z0-9]*)\(', src):
+        name = m.group(1)
+        if name in LUAJ_PROVEN:
+            continue
+        line = src[:m.start()].count('\n') + 1
+        problems.append(
+            f"{f}:{line}: '.{name}(...)' is not in the set of calls known to "
+            f"compile here — CI is the only compiler for this file, so add it "
+            f"to LUAJ_PROVEN in tools/uicheck.py only once a build has passed")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

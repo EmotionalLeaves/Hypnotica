@@ -228,8 +228,21 @@ class LuaRecipe private constructor(
         }
 
         /**
-         * `macros = { { label = "Pull", card = "motion",
-         *               targets = { speed = {0.2, 3}, mass = {0.5, 4} } } }`
+         * ```lua
+         * macros = {
+         *   { label = "Orbit or escape", card = "motion",
+         *     targets = {
+         *       { key = "speed", from = 0.3, to = 2.0 },
+         *       { key = "distance", from = 0.2, to = 0.9 }
+         *     } }
+         * }
+         * ```
+         *
+         * Targets are a list of triples rather than a keyed table on purpose:
+         * every Lua value here is read with `get(i)`, `optString`, `optNumber`
+         * and `istable`, which is the same handful `readParams` below uses.
+         * Walking a Lua table's keys needs an API this file does not otherwise
+         * touch, and the only compiler that can check this file is CI.
          *
          * A target naming a parameter the recipe does not declare is dropped
          * rather than failing the load: a half-written recipe should still run.
@@ -244,27 +257,29 @@ class LuaRecipe private constructor(
                 if (m.isnil()) break
                 i++
                 if (!m.istable()) continue
-                val targetTable = m.get("targets")
-                if (!targetTable.istable()) continue
+                val targetList = m.get("targets")
+                if (!targetList.istable()) continue
                 val targets = LinkedHashMap<String, ClosedFloatingPointRange<Float>>()
                 val logs = HashSet<String>()
-                for (key in targetTable.keys()) {
-                    val name = key.tojstring()
+                var k = 1
+                while (k <= 16) {
+                    val t = targetList.get(k)
+                    if (t.isnil()) break
+                    k++
+                    if (!t.istable()) continue
+                    val name = optString(t, "key", "")
                     val param = known[name] ?: continue
-                    val pair = targetTable.get(key)
-                    if (!pair.istable()) continue
-                    val lo = pair.get(1)
-                    val hi = pair.get(2)
-                    if (lo.isnil() || hi.isnil()) continue
-                    targets[name] = lo.tofloat()..hi.tofloat()
+                    val from = optNumber(t, "from", param.min.toDouble()).toFloat()
+                    val to = optNumber(t, "to", param.max.toDouble()).toFloat()
+                    if (from == to) continue
+                    targets[name] = from..to
                     if (param.logScale) logs.add(name)
                 }
                 if (targets.isEmpty()) continue
-                val label = optString(m, "label", "How much")
                 out.add(
                     Macro(
                         key = optString(m, "key", "recipe-" + out.size),
-                        label = label,
+                        label = optString(m, "label", "How much"),
                         card = cardFrom(optString(m, "card", "motion")),
                         targets = targets,
                         logs = logs
