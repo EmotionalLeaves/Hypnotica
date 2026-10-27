@@ -144,7 +144,6 @@ class MandelbrotSim : Sim {
                 g.point(-halfW + (col + 0.5f) * dx, y, size, palette.at((t * 3f) % 1f))
             }
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -213,8 +212,11 @@ class ChaosGameSim : Sim {
     private var py = 0f
     private var points = FloatArray(0)
     private var tints = FloatArray(0)
-    private var count = 0
+    /** Every point ever plotted. The buffer holds the newest [capacity]. */
+    private var count = 0L
     private var capacity = 0
+    /** Slow phase for the breathing that starts once the shape has formed. */
+    private var breath = 0f
     private var carry = 0f
     private var payoffFrame = false
     private val cornerX = FloatArray(12)
@@ -227,7 +229,8 @@ class ChaosGameSim : Sim {
         capacity = p.i("dots", 120000).coerceIn(1000, 400000)
         points = FloatArray(capacity * 2)
         tints = FloatArray(capacity)
-        count = 0
+        count = 0L
+        breath = 0f
         carry = 0f
         payoffFrame = false
         for (i in 0 until corners) {
@@ -245,20 +248,32 @@ class ChaosGameSim : Sim {
         carry += abs(dt) * env.params.f("rate", 6000f)
         var budget = min(carry.toInt(), 60000)
         carry -= budget
-        while (budget-- > 0 && count < capacity) {
+        // Once the shape has formed it does not stop: the jump ratio breathes a
+        // few per cent either side of the slider, and because the newest points
+        // overwrite the oldest, the fractal's gaps slowly open and close while
+        // the dots keep landing. It used to report finished the moment the
+        // buffer was full, which in the feed and in TickTock meant the sim was
+        // thrown away the instant it had finished becoming worth looking at.
+        if (formed) breath += abs(dt) * BREATH_HZ * 2f * PI.toFloat()
+        val r = ratio * (1f + BREATH_DEPTH * sin(breath))
+        while (budget-- > 0) {
             val c = env.rng.int(0, corners)
-            px += (cornerX[c] - px) * ratio
-            py += (cornerY[c] - py) * ratio
-            points[count * 2] = px
-            points[count * 2 + 1] = py
-            tints[count] = c.toFloat() / corners
+            px += (cornerX[c] - px) * r
+            py += (cornerY[c] - py) * r
+            val slot = (count % capacity).toInt()
+            points[slot * 2] = px
+            points[slot * 2 + 1] = py
+            tints[slot] = c.toFloat() / corners
             count++
         }
         if (count % 2048 < 32 && count > 0) {
-            env.emit(EventKind.WRITE, (count.toFloat() / capacity).coerceIn(0f, 1f), 0f, 0.35f)
+            val level = if (formed) 0.5f + 0.5f * sin(breath)
+            else (count.toFloat() / capacity).coerceIn(0f, 1f)
+            env.emit(EventKind.WRITE, level, 0f, 0.35f)
         }
         // The payoff is the moment the shape is unmistakable.
-        if (!formed && count >= capacity * 6 / 10 && count - (capacity * 6 / 10) < 2000) {
+        val formAt = capacity * 6L / 10L
+        if (!formed && count >= formAt && count - formAt < 2000) {
             formed = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
@@ -267,25 +282,31 @@ class ChaosGameSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reservePoints(count)
+        val shown = min(count, capacity.toLong()).toInt()
+        g.reservePoints(shown)
         val size = env.params.f("dot", 0.0035f)
-        for (i in 0 until count) {
+        for (i in 0 until shown) {
             g.point(points[i * 2], points[i * 2 + 1], size, palette.at(tints[i]))
         }
         for (i in 0 until corners) {
             g.glow(cornerX[i], cornerY[i], 0.07f, Palette.ACCENT, 0.4f)
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = count >= capacity
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> =
         listOf("dots" to String.format(java.util.Locale.US, "%,d", count))
 
     companion object {
+        /** One slow breath every twenty-five seconds. */
+        private const val BREATH_HZ = 0.04f
+
+        /** How far the jump ratio breathes either side of the slider's value. */
+        private const val BREATH_DEPTH = 0.06f
+
         fun def(): SimDef = SimDef(
             id = "math/chaos-game",
             title = "Chaos game",
@@ -430,7 +451,6 @@ class PrimeSpiralSim : Sim {
             if (!isPrime[n]) continue
             g.point(xs[n] * scale, ys[n] * scale, size, palette.at((n.toFloat() / limit) % 1f))
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -469,8 +489,10 @@ class PrimeSpiralSim : Sim {
  */
 class MonteCarloPiSim : Sim {
 
-    private var total = 0
-    private var inside = 0
+    // Longs: this runs for as long as anyone watches, and at five thousand
+    // darts a second an Int count wraps in under five days.
+    private var total = 0L
+    private var inside = 0L
     private var capacity = 60000
     private var xs = FloatArray(0)
     private var ys = FloatArray(0)
@@ -485,33 +507,38 @@ class MonteCarloPiSim : Sim {
         xs = FloatArray(capacity)
         ys = FloatArray(capacity)
         hit = BooleanArray(capacity)
-        total = 0
-        inside = 0
+        total = 0L
+        inside = 0L
         stored = 0
         carry = 0f
         payoffFrame = false
         converged = false
     }
 
-    private fun estimate(): Float = if (total == 0) 0f else 4f * inside / total
+    private fun estimate(): Float = if (total == 0L) 0f else (4.0 * inside / total).toFloat()
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         carry += abs(dt) * env.params.f("rate", 5000f)
         var budget = min(carry.toInt(), 50000)
         carry -= budget
-        while (budget-- > 0 && total < capacity) {
+        // It never stops. The estimate is the whole of every dart ever thrown,
+        // so it goes on tightening as 1/sqrt(n) for as long as anyone watches;
+        // the picture keeps the newest [capacity] of them, overwriting the
+        // oldest, so the square keeps glittering instead of freezing full.
+        // It used to report finished the moment the buffer filled, and the
+        // feed and TickTock threw it away at that instant — mid-convergence.
+        while (budget-- > 0) {
             val x = env.rng.range(-1f, 1f)
             val y = env.rng.range(-1f, 1f)
             val isIn = x * x + y * y <= 1f
             if (isIn) inside++
+            val slot = (total % capacity).toInt()
             total++
-            if (stored < capacity) {
-                xs[stored] = x
-                ys[stored] = y
-                hit[stored] = isIn
-                stored++
-            }
+            xs[slot] = x
+            ys[slot] = y
+            hit[slot] = isIn
+            if (stored < capacity) stored++
         }
         if (total % 512 < 24) {
             env.emit(EventKind.STEP, (estimate() / 4f).coerceIn(0f, 1f), 0f, 0.3f)
@@ -520,8 +547,8 @@ class MonteCarloPiSim : Sim {
         // falls off as 1/sqrt(n) — so the tolerance follows the count instead
         // of being a fixed 0.006 that a five-hundred-dart run can never meet
         // and that four seeds in twenty-four never met even at full size.
-        val tolerance = max(0.006f, 2.4f / sqrt(max(1, total).toFloat()))
-        if (!converged && total > (capacity * 0.6f).toInt() &&
+        val tolerance = max(0.006f, 2.4f / sqrt(max(1L, total).toFloat()))
+        if (!converged && total > (capacity * 0.6f).toLong() &&
             abs(estimate() - PI.toFloat()) < tolerance
         ) {
             converged = true
@@ -541,12 +568,11 @@ class MonteCarloPiSim : Sim {
         g.ring(0f, 0f, r, 0.006f, Palette.ACCENT, alpha = 0.9f)
         g.rect(0f, 0f, r, 0.004f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
         g.rect(0f, 0f, 0.004f, r, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
-        if (payoffFrame) g.flash(0.35f)
     }
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = total >= capacity
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "pi" to String.format(java.util.Locale.US, "%.5f", estimate()),
@@ -669,7 +695,6 @@ class FourierSim : Sim {
                 Palette.withAlpha(Palette.SUCCESS, (1f - age) * 0.9f + 0.1f))
         }
         g.glow(x * 0.55f, y * 0.55f, 0.06f, Palette.SUCCESS, 0.8f)
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -794,7 +819,6 @@ class CollatzSim : Sim {
         if (n >= length) {
             g.glow(halfW, -0.85f, 0.14f, Palette.SUCCESS, 0.8f)
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame

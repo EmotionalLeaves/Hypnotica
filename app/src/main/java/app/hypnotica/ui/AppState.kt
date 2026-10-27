@@ -40,6 +40,14 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO, RECIPES }
  * Parameter values live in the engine, not here; [paramVersion] is bumped on every
  * change so Compose knows to read them again.
  */
+/**
+ * How long a finished run is left on screen before the next one starts: the
+ * design doc's resolve beat — settle, breathe, and the last frame is worth a
+ * screenshot. Every screen that hosts a sim waits this long, so a finished sort
+ * is something you see rather than something that was already gone.
+ */
+internal const val RESOLVE_MS = 1800L
+
 class AppState(
     val engine: SimEngine,
     private val prefs: Prefs? = null,

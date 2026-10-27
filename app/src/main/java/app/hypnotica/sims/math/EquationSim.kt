@@ -196,7 +196,6 @@ class EquationSim : Sim {
         val halfW = env.halfWidth
         g.line(-halfW, 0f, halfW, 0f, 0.0015f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
         g.line(0f, -1f, 0f, 1f, 0.0015f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame

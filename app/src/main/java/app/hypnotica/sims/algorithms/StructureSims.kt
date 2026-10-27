@@ -131,7 +131,6 @@ class HanoiSim : Sim {
                 if (justMoved) g.glow(x, y, w * 1.4f, c, 0.5f * (1f - liftProgress))
             }
         }
-        if (payoffFrame) g.flash(0.4f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -313,7 +312,6 @@ class NQueensSim : Sim {
                 Palette.withAlpha(Palette.ACCENT, 0.12f)
             )
         }
-        if (payoffFrame) g.flash(0.4f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -381,7 +379,12 @@ class BinaryTreeSim : Sim {
         depth = IntArray(target)
         xs = FloatArray(target)
         size = 0
-        carry = 0f
+        // A whole node owed from the start, so the root is planted on the very
+        // first step. At twenty-six a second from an empty tree the first
+        // frames drew nothing at all, and every new run — including the one
+        // that starts after each finished tree — opened on a black screen
+        // reading "0 nodes".
+        carry = 1f
         maxDepth = 0
         comparisons = 0
         payoffFrame = false
@@ -474,7 +477,6 @@ class BinaryTreeSim : Sim {
         for (i in 0 until size) {
             g.disc(xs[i], 0.88f - depth[i] * rowH, dotSize, palette.at(depth[i].toFloat() / levels))
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -620,7 +622,6 @@ class LogicGatesSim : Sim {
             if (bit) g.glow(x, rows[3], colW * 0.7f, on, 0.45f)
             g.rect(x, rows[3], colW * 0.35f, 0.07f, if (bit) on else off)
         }
-        if (payoffFrame) g.flash(0.35f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -750,7 +751,6 @@ class GradientDescentSim : Sim {
             g.glow(wx[i], wy[i], 0.045f, Palette.SUCCESS, 0.5f)
             g.disc(wx[i], wy[i], 0.013f, Palette.brighten(Palette.SUCCESS, 0.25f))
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -897,7 +897,6 @@ class GraphLayoutSim : Sim {
         for (i in 0 until n) {
             g.disc(px[i], py[i], r, palette.at(i.toFloat() / n))
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame

@@ -58,9 +58,17 @@ one of them is a bug — say which.
 | Resolve | ~20% | Settle and breathe; the last frame is worth a screenshot |
 
 `Sim.payoff()` returns true on the payoff frame. The engine answers with slow
-motion (time drops to 0.25x and eases back over a second), a small camera
-punch-in, a rising sweep from the synth, a rate-limited flash and a heavy haptic.
-A sim does not implement any of that; it says *now*, and the engine performs.
+motion — time drops to 0.25x and eases back over a second — a small camera
+punch-in and a few pixels of shake. A sim does not implement any of that; it
+says *now*, and the engine performs.
+
+It does not flash the screen and it does not play a chime. Both were here and
+both are gone: on a sim with one clear ending — a sort completing, a tower
+falling — a flash and a rising sweep read as the event landing, and on the rest,
+which is most of them, they arrive over a picture that has not visibly done
+anything and announce something that did not happen. The payoff is a change in
+*time*, which is felt on every sim because every sim is moving. Anything louder
+has to be earned by the picture, not added by the engine.
 
 The share is measured against the sim's own `typicalSeconds`, and both halves of
 that have to be true: a payoff condition that fires on a real event, and a
@@ -93,9 +101,12 @@ pays off; if the backstop is firing often, the condition is wrong.
 object, a glow or spark burst at the contact point, a colour shift along the
 palette, and a haptic tick sized to the impact.
 
-**Completion pleasure.** The final sweep runs a success-coloured highlight the
-length of a finished sort with rising notes; sorted data becomes a smooth
-gradient or a clean spiral; alignment moments get a glow pulse and a chord.
+**Completion pleasure.** This belongs to the picture, not to the engine. A
+finished sort sweeps a success-coloured highlight along its own length; sorted
+data becomes a smooth gradient or a clean spiral; alignment moments get a glow
+pulse. A sim that has genuinely arrived somewhere shows it. A sim that has not
+is left alone — there is nothing the engine can add that will make a run feel
+finished when it is not.
 
 ## The screens
 
@@ -375,7 +386,8 @@ Every sim, before its round is done:
 
 - [ ] Clear setup, build, payoff and resolve
 - [ ] Every event has a matched visual, sound and haptic on the same frame
-- [ ] Payoff uses at least two of: slow motion, punch-in, final sweep, chord, glow pulse
+- [ ] Payoff is a real event, not the clock, and lands inside the sim's own
+      window (`ArcTest`) — or the sim is endless and declares it
 - [ ] No stutter at 60 fps on the reference phone
 - [ ] Trails or blur on anything moving faster than a screen-width a second
 - [ ] The final state is worth a screenshot

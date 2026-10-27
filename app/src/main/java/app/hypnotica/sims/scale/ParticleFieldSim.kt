@@ -215,7 +215,6 @@ class ParticleFieldSim : Sim {
         for (a in 0 until attractors) {
             g.glow(attractorX[a], attractorY[a], 0.16f, if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER, 0.22f)
         }
-        if (payoffFrame) g.flash(0.4f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -411,7 +410,6 @@ class GameOfLifeSim : Sim {
                 g.point(cx, cy, size, palette.at((x + y).toFloat() / (w + h)))
             }
         }
-        if (payoffFrame) g.flash(0.2f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -569,7 +567,6 @@ class LorenzSim : Sim {
             val c = Palette.withAlpha(palette.at(0.15f + age * 0.7f), (1f - age) * 0.9f + 0.1f)
             g.point(trailX[idx], trailY[idx], size * (1.1f - age * 0.6f), c)
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame

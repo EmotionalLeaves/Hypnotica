@@ -259,7 +259,6 @@ class MazeSim : Sim {
                 )
             }
         }
-        if (payoffFrame) g.flash(0.4f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -496,7 +495,6 @@ class PathfindingSim : Sim {
         }
         g.disc(originX + (start % w + 0.5f) * size, originY + (start / w + 0.5f) * size, size * 0.6f, Palette.SUCCESS)
         g.glow(originX + (goal % w + 0.5f) * size, originY + (goal / w + 0.5f) * size, size * 3f, Palette.WARNING, 0.8f)
-        if (payoffFrame) g.flash(0.4f)
     }
 
     override fun payoff(): Boolean = payoffFrame

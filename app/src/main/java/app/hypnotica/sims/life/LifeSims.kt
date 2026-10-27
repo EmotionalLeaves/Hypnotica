@@ -377,7 +377,6 @@ class BoidsSim : Sim {
                 g.rect(px[i], py[i], 0.016f, 0.005f, palette.at(tint[i]), a)
             }
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -566,7 +565,6 @@ class LangtonsAntSim : Sim {
         }
         g.glow(originX + (ax + 0.5f) * size, originY + (ay + 0.5f) * size, size * 6f, Palette.SUCCESS, 0.8f)
         g.disc(originX + (ax + 0.5f) * size, originY + (ay + 0.5f) * size, size * 1.4f, Palette.SUCCESS)
-        if (payoffFrame) g.flash(0.35f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -699,7 +697,6 @@ class FallingSandSim : Sim {
                 palette.at(colour[i])
             )
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -857,7 +854,6 @@ class PredatorPreySim : Sim {
         // Live populations as two bars.
         g.bar(-halfW * 0.78f, -0.95f, 0.05f, (prey.toFloat() / 4f).coerceIn(0f, 1.6f), palette.at(0.25f))
         g.bar(-halfW * 0.6f, -0.95f, 0.05f, (predators.toFloat() / 3f).coerceIn(0f, 1.6f), palette.at(0.8f))
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -1009,7 +1005,6 @@ class ReactionDiffusionSim : Sim {
                 palette.at((v * 2.2f).coerceIn(0f, 1f))
             )
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame

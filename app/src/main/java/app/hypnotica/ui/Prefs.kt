@@ -15,6 +15,31 @@ class Prefs(context: Context) {
     private val sp: SharedPreferences =
         context.getSharedPreferences("hypnotica", Context.MODE_PRIVATE)
 
+    init {
+        migrate()
+    }
+
+    /**
+     * Settings written under an old default, brought up to the new one once.
+     *
+     * A default only reaches a fresh install: everything here is written back
+     * on every launch, so a phone that has run the app before keeps whatever
+     * was in force then. Haptics going off by default and 8-bit becoming the
+     * default sound both came from the person using the app saying so — and
+     * neither would have reached the phone they said it on.
+     */
+    private fun migrate() {
+        val from = sp.getInt(KEY_SCHEMA, 1)
+        if (from >= SCHEMA) return
+        val edit = sp.edit()
+        if (from < 2) {
+            edit.putBoolean(KEY_HAPTICS, false)
+            // Cleared rather than set, so the sim's own default — 8-bit — applies.
+            edit.remove(KEY_SOUND)
+        }
+        edit.putInt(KEY_SCHEMA, SCHEMA).apply()
+    }
+
     var favourites: Set<String>
         get() = sp.getStringSet(KEY_FAVOURITES, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_FAVOURITES, value).apply()
@@ -116,5 +141,9 @@ class Prefs(context: Context) {
         const val KEY_BENCH = "bench_note"
         const val KEY_TASTE = "taste"
         const val KEY_MUTED = "muted_formats"
+        const val KEY_SCHEMA = "schema"
+
+        /** Bump with a step in [migrate] whenever a default changes for people already using the app. */
+        const val SCHEMA = 2
     }
 }

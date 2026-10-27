@@ -60,7 +60,7 @@ class VideoExporter(
     private val settings: ExportSettings = ExportSettings.VERTICAL,
     /** The look the player had, used wherever a track has nothing to say. */
     private val trails: Float = 0f,
-    private val vignette: Float = 0.35f,
+    private val vignette: Float = 0f,
     /** The accessibility settings the preview was running under. */
     private val safety: SafetySettings = SafetySettings()
 ) {
@@ -142,7 +142,6 @@ class VideoExporter(
             val flash = FlashLimiter().also { it.reduceFlashing = safety.reduceFlashing }
             core.env.reduceMotion = safety.reduceMotion
             val frameSeconds = 1f / settings.fps
-            var sweptAt = false
             // Carried, not divided: 44100 does not divide evenly by every frame
             // rate, and the leftover is a sixth of a second of drift a minute.
             val exactAudioPerFrame = SAMPLE_RATE.toDouble() / settings.fps
@@ -200,10 +199,8 @@ class VideoExporter(
                 }
 
                 if (audioPcm != null) {
-                    if (core.payoffFired && !sweptAt) {
-                        sweptAt = true
-                        mapping.finalSweep()
-                    }
+                    // No chime at the payoff: the live app dropped it, and an
+                    // exported clip has to sound like what was on screen.
                     mapping.pump(core.events, frameSeconds)
                     audioCarry += exactAudioPerFrame
                     val audioFrames = audioCarry.toInt().coerceIn(0, maxAudioFrames)

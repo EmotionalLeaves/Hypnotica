@@ -180,7 +180,6 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             SortView.DISPARITY -> drawDisparity(g, palette, sweepIndex, usePoints)
         }
 
-        if (payoffFrame) g.flash(0.5f)
     }
 
     private fun highlight(index: Int): Boolean = index == array.lastA || index == array.lastB

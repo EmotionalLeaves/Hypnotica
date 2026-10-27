@@ -837,6 +837,46 @@ for f in files:
                 f"this slot emits more than one thing — open it with a Column or "
                 f"Row, or everything inside draws on top of everything else")
 
+# 21. A gesture handler holding a value from the composition it started in.
+#
+# pointerInput's block is a coroutine that lives until its keys change. A
+# plain `val` read from state above it is captured once, when the block first
+# runs, and never seen again. The feed did exactly this: `val index =
+# state.feedIndex`, then a swipe handler keyed on the list size computing
+# `index + 1` — so every swipe after the first computed "next" from the sim
+# the feed opened on, the second swipe landed on the sim already showing, and
+# the infinite feed reached three sims. Read the state inside the handler, or
+# key the block on the value.
+for f in files:
+    src = strip(open(f).read())
+    for m in re.finditer(r'\.pointerInput\(([^)]*)\)\s*\{', src):
+        keys = set(re.findall(r'\w+', m.group(1)))
+        # The enclosing composable: from its `fun` to this point.
+        start = src.rfind('\nfun ', 0, m.start())
+        start = max(start, src.rfind('\n    fun ', 0, m.start()), src.rfind('@Composable', 0, m.start()))
+        prefix = src[start:m.start()]
+        captured = re.findall(r'(?m)^\s*val (\w+)\s*=\s*state\.\w+\s*$', prefix)
+        if not captured:
+            continue
+        depth, i = 0, m.end() - 1
+        while i < len(src):
+            if src[i] == '{': depth += 1
+            elif src[i] == '}':
+                depth -= 1
+                if depth == 0: break
+            i += 1
+        body = src[m.end():i]
+        for name in captured:
+            if name in keys:
+                continue
+            if re.search(r'(?<![\w.])' + name + r'(?!\w)', body):
+                line = src[:m.start()].count('\n') + 1
+                problems.append(
+                    f"{f}:{line}: pointerInput reads `{name}`, a value taken from "
+                    f"state when the composable ran — the handler keeps the first "
+                    f"one forever. Read the state inside the handler, or add "
+                    f"`{name}` to the keys")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

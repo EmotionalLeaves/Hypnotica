@@ -175,7 +175,6 @@ class NBodySim : Sim {
             g.glow(0f, 0f, 0.2f, Palette.WARNING, 0.5f)
             g.disc(0f, 0f, 0.035f, Palette.brighten(Palette.WARNING, 0.3f))
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -309,7 +308,6 @@ class GearsSim : Sim {
                 gear.radius * 0.06f, Palette.brighten(c, 0.3f)
             )
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -535,7 +533,6 @@ class ClothSim : Sim {
                 if (pinned[i]) g.disc(x[i], y[i], 0.012f, Palette.WARNING)
             }
         }
-        if (payoffFrame) g.flash(0.2f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -837,7 +834,6 @@ class OpticsSim : Sim {
                 g.line(ray.xs[i], ray.ys[i], ray.xs[i + 1], ray.ys[i + 1], 0.0026f, c, 0.85f)
             }
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -1016,7 +1012,6 @@ class ChargesSim : Sim {
             g.rect(cx[k], cy[k], 0.016f, 0.004f, Palette.TEXT_PRIMARY)
             if (positive) g.rect(cx[k], cy[k], 0.004f, 0.016f, Palette.TEXT_PRIMARY)
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {

@@ -97,7 +97,6 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     private var payoffNotified = false
 
     /** The engine's own flash for the payoff frame, before the limiter sees it. */
-    private var payoffFlash = 0f
     private var finishNotified = false
 
     /** Extra zoom applied around the payoff, the "punch-in". */
@@ -425,16 +424,16 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             payoffNotified = true
             punch = if (safety.reduceMotion) 0f else 1f
             shake = if (safety.reduceMotion) 0f else 1f
-            // The engine performs the payoff — DESIGN says so, and so does rule
-            // 10: slow motion, a punch-in, a sweep, a flash and a heavy haptic,
-            // none of which a sim implements. Four of those five were here; the
-            // flash was left entirely to each sim's own request, and measured,
-            // 31 of the 58 never make one. So more than half the payoffs in the
-            // app were missing a fifth of what they promise. The limiter and
-            // Reduce flashing still decide what reaches the screen, and a sim
-            // that asks for its own is max()'d with this rather than replaced.
-            payoffFlash = PAYOFF_FLASH
-            mapping.finalSweep()
+            // The payoff is time, not fanfare.
+            //
+            // It used to be slow motion, a punch-in, a shake, a white flash
+            // over the whole screen and a rising sweep from the synth. On a
+            // sim with one clear ending — a sort completing, a tower falling —
+            // that reads as an event. On the rest, which is most of them, a
+            // screen flash and a chime arrive over a picture that has not
+            // visibly done anything, and announce something that did not
+            // happen. Keeping the quiet half and dropping the loud half leaves
+            // a moment you notice without being told about.
             if (safety.haptics) haptics?.heavy()
             onPayoff?.invoke()
         }
@@ -501,9 +500,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         mapping.pump(core.events, dt)
 
         val allowed =
-            flashLimiter.allow(max(max(g.flashRequest, timelineFlash), payoffFlash), dt)
+            flashLimiter.allow(max(g.flashRequest, timelineFlash), dt)
         // Asked for on the payoff frame only; the limiter owns the fade.
-        payoffFlash = 0f
         if (shakeOffsetX != 0f || shakeOffsetY != 0f) {
             shaken.copyFrom(camera)
             shaken.x += shakeOffsetX
@@ -633,15 +631,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     companion object {
         /**
-         * How hard the engine flashes at a payoff, before the limiter and the
-         * person's Reduce flashing setting have their say. Well above the 0.08
-         * that counts as a glow rather than a flash, and below full white.
-         */
-        const val PAYOFF_FLASH = 0.55f
-
-        /**
          * How long the punch-in takes to come back, squared on the way. Chosen
-         * to finish with the synth sweep rather than after it.
+         * to settle as the slow motion eases out rather than after it.
          */
         const val PUNCH_SECONDS = 0.8f
 

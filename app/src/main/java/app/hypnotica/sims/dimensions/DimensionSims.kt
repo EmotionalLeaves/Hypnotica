@@ -171,7 +171,6 @@ class HypercubeSim : Sim {
             g.glow(screenX[i], screenY[i], 0.03f + 0.045f * near, c, 0.25f + 0.25f * near)
             g.disc(screenX[i], screenY[i], 0.008f + 0.011f * near, Palette.brighten(c, 0.2f))
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -355,7 +354,6 @@ class SlicingSim : Sim {
             // What the slice would look like one dimension up.
             g.ring(0f, 0.52f, r * 0.42f, 0.006f, c, alpha = 0.35f + 0.6f * content)
         }
-        if (payoffFrame) g.flash(0.35f)
     }
 
     private fun drawWireframe(g: G, centreY: Float, colour: Int) {
@@ -638,7 +636,6 @@ class RandomWalkSim : Sim {
         }
         // Home, at the same scale as everything else.
         g.ring(0f, 0f, (0.035f * viewScale).coerceIn(0.012f, 0.1f), 0.004f, Palette.SUCCESS, alpha = 0.8f)
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -853,7 +850,6 @@ class NdBounceSim : Sim {
             g.glow(proj[0] * 0.72f, proj[1] * 0.72f, 0.06f * d, c, 0.35f)
             g.disc(proj[0] * 0.72f, proj[1] * 0.72f, 0.022f * d, c)
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -953,7 +949,6 @@ class BallVolumeSim : Sim {
             if (isPeak) g.glow(x, -0.85f + h, barW * 2.4f, Palette.SUCCESS, 0.5f)
         }
         g.line(-halfW, -0.85f, halfW, -0.85f, 0.004f, Palette.TEXT_SECONDARY, 0.5f)
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame

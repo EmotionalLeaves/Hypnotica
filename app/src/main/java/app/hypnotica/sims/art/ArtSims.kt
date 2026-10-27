@@ -124,7 +124,6 @@ class PolyrhythmSim : Sim {
                 g.disc(x, y, 0.015f, Palette.brighten(c, flash * 0.5f))
             }
         }
-        if (payoffFrame) g.flash(0.4f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -242,7 +241,6 @@ class HarmonographSim : Sim {
                 Palette.withAlpha(palette.at((1f - age) * 0.8f), (1f - age * 0.75f))
             )
         }
-        if (payoffFrame) g.flash(0.2f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -394,7 +392,6 @@ class CirclePackingSim : Sim {
             if (growing[i]) g.glow(cx[i], cy[i], cr[i] * 2.2f, c, 0.4f)
             g.ring(cx[i], cy[i], cr[i], max(cr[i] * 0.22f, 0.0022f), c, alpha = 0.95f)
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -529,7 +526,6 @@ class SpirographSim : Sim {
         if (count > 0) {
             g.glow(trailX[count - 1], trailY[count - 1], 0.055f, Palette.SUCCESS, 0.7f)
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun payoff(): Boolean = payoffFrame

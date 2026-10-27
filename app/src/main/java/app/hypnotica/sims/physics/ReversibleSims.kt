@@ -160,7 +160,6 @@ class TowerSim : Sim {
             g.rect(x, y, brickW * 0.5f, brickH * 0.42f, c)
         }
 
-        if (payoffFrame) g.flash(0.3f)
     }
 
     private fun slotX(col: Int, halfWidth: Float): Float =

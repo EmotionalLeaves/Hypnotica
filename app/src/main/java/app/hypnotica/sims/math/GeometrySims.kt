@@ -156,7 +156,6 @@ class VoronoiSim : Sim {
         for (i in 0 until seeds) {
             g.disc(sx[i], sy[i], 0.009f, Palette.TEXT_PRIMARY)
         }
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -313,7 +312,6 @@ class RiemannSim : Sim {
             prevY = y
         }
         g.line(-halfW, baseY, halfW, baseY, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
-        if (payoffFrame) g.flash(0.35f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -499,7 +497,6 @@ class CurvedSpaceSim : Sim {
         g.glow(massX, massY, 0.2f * massAmount, Palette.WARNING, 0.55f)
         g.disc(massX, massY, 0.035f, Palette.BG)
         g.ring(massX, massY, 0.04f, 0.005f, Palette.WARNING)
-        if (payoffFrame) g.flash(0.25f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {

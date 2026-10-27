@@ -233,7 +233,6 @@ class BallEscapeSim : Sim {
             g.glow(b.x, b.y, b.r * 3.2f, c, 0.55f)
             g.disc(b.x, b.y, b.r, Palette.brighten(c, 0.15f))
         }
-        if (payoffFrame) g.flash(0.65f)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
@@ -462,7 +461,6 @@ class PendulumWaveSim : Sim {
                     palette.at(t)
                 )
             }
-            if (payoffFrame) g.flash(0.35f)
             return
         }
 
@@ -477,7 +475,6 @@ class PendulumWaveSim : Sim {
             g.glow(bx, by, 0.09f, c, 0.5f)
             g.disc(bx, by, 0.028f, c)
         }
-        if (payoffFrame) g.flash(0.35f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -645,7 +642,6 @@ class NewtonsCradleSim : Sim {
             g.glow(bx, by, radius * 2.6f, c, 0.4f)
             g.disc(bx, by, radius, c)
         }
-        if (payoffFrame) g.flash(0.28f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -845,7 +841,6 @@ class GaltonBoardSim : Sim {
             val h = (bins[i].toFloat() / max(1, peak)) * 0.5f
             g.bar(x, -0.95f, spacing * 0.42f, h, Palette.withAlpha(palette.at(i.toFloat() / rows), 0.45f))
         }
-        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame

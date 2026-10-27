@@ -129,7 +129,12 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         // launch a third advance alongside whatever was already running.
         state.engine.onFinished = {
             generating?.cancel()
-            generating = scope.launch { advance() }
+            // After the resolve beat, not on the finishing frame: moving on
+            // the instant a clip finished meant its ending was never seen.
+            generating = scope.launch {
+                delay(RESOLVE_MS)
+                advance()
+            }
         }
         generating = scope.launch { advance() }
     }

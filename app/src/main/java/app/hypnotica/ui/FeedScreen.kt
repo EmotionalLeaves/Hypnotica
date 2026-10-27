@@ -33,6 +33,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.hypnotica.sims.SimRegistry
+import kotlinx.coroutines.delay
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.launch
 
 /**
  * Home: one sim, full screen, swipe up for the next.
@@ -54,12 +64,24 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     val index = state.feedIndex
     var hint by remember { mutableStateOf(true) }
 
+    // A sim you are watching runs for as long as you watch it.
+    //
+    // A run that finished used to swap in the next sim on the same frame, so a
+    // sort was gone the instant it was sorted and the chaos game the instant
+    // its shape had formed — the feed moved on at exactly the moment there was
+    // something to look at, and nothing ran for longer than its first run. It
+    // holds the finished picture for the resolve beat and goes again, the same
+    // as the player; the swipe is how you leave.
+    var finishedAt by remember { mutableStateOf(0L) }
     DisposableEffect(Unit) {
-        // Endless mode: when a run resolves, move on by itself.
-        state.engine.onFinished = {
-            state.feedIndex = (state.feedIndex + 1) % order.size
-        }
+        state.engine.onFinished = { finishedAt = System.nanoTime() }
         onDispose { state.engine.onFinished = null }
+    }
+    LaunchedEffect(finishedAt) {
+        if (finishedAt == 0L) return@LaunchedEffect
+        delay(RESOLVE_MS)
+        finishedAt = 0L
+        state.restart(newSeed = true)
     }
 
     // Keyed on the sim rather than Unit: re-entering the feed used to reload,
@@ -69,28 +91,66 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         onDispose { }
     }
 
+    // The swipe follows the finger.
+    //
+    // The sim itself cannot move — it is a GLSurfaceView, and the system draws
+    // a surface a frame behind the views over it, so sliding one tears — but
+    // everything over it can. Drag and the title and buttons travel with you
+    // while the picture dims; let go past the line and the next sim comes up
+    // out of the dark; let go short and it all springs back. It used to be a
+    // dead ninety pixels and then a cut.
+    val drag = remember { Animatable(0f) }
+    var height by remember { mutableIntStateOf(1) }
+    val scope = rememberCoroutineScope()
+
+    fun go(step: Int) {
+        hint = false
+        scope.launch {
+            val out = if (step > 0) -height * LEAVE else height * LEAVE
+            drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
+            // Read now, not when the gesture began: the handler used to hold
+            // the index from the first time it ran, so every swipe after the
+            // first computed "next" from the sim the feed opened on — and the
+            // second swipe landed on the sim already showing.
+            state.feedIndex = (state.feedIndex + step + order.size) % order.size
+            drag.snapTo(-out * ARRIVE)
+            drag.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
             .background(Tokens.Bg)
+            .onSizeChanged { height = it.height.coerceAtLeast(1) }
             .pointerInput(order.size) {
-                // One flick moves one sim. Acting on each drag delta instead
-                // would run through several on a single swipe.
                 var travelled = 0f
                 detectVerticalDragGestures(
                     onDragStart = { travelled = 0f },
-                    onDragCancel = { travelled = 0f },
+                    onDragCancel = {
+                        travelled = 0f
+                        scope.launch { drag.animateTo(0f, spring()) }
+                    },
                     onDragEnd = {
-                        if (travelled <= -SWIPE) {
-                            hint = false
-                            state.feedIndex = (index + 1) % order.size
-                        } else if (travelled >= SWIPE) {
-                            hint = false
-                            state.feedIndex = (index - 1 + order.size) % order.size
+                        // One flick moves one sim, however far it went.
+                        when {
+                            travelled <= -SWIPE -> go(+1)
+                            travelled >= SWIPE -> go(-1)
+                            else -> scope.launch {
+                                drag.animateTo(0f, spring(dampingRatio = 0.7f))
+                            }
                         }
                         travelled = 0f
                     }
-                ) { _, dragAmount -> travelled += dragAmount }
+                ) { change, dragAmount ->
+                    change.consume()
+                    travelled += dragAmount
+                    // Followed one to one at first and with growing resistance
+                    // after, so a long drag does not throw the chrome off screen.
+                    val limit = height * LEAVE
+                    val follow = limit * kotlin.math.tanh(travelled / limit)
+                    scope.launch { drag.snapTo(follow) }
+                }
             }
     ) {
         SimCanvas(
@@ -105,7 +165,24 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             onTap = { state.screen = Screen.PLAYER }
         )
 
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        // How far through the move, 0 at rest and 1 at the swap.
+        val through = (kotlin.math.abs(drag.value) / (height * LEAVE)).coerceIn(0f, 1f)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = through * DIM }
+                .background(Tokens.Bg)
+        )
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationY = drag.value
+                    alpha = 1f - through * 0.7f
+                }
+                .safeDrawingPadding()
+        ) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 AnimatedContent(
                     targetState = state.currentDef.id,
@@ -188,3 +265,12 @@ private fun hookFor(state: AppState): String {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE = 90f
+
+/** How far the chrome travels, as a share of the screen, before the swap. */
+private const val LEAVE = 0.32f
+
+/** Where the next sim's chrome comes in from, as a share of that. */
+private const val ARRIVE = 0.45f
+
+/** How dark the picture gets at the swap, so the cut happens unseen. */
+private const val DIM = 0.92f

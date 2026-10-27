@@ -58,7 +58,6 @@ import kotlinx.coroutines.delay
  * way until asked for.
  */
 /** How long a finished run holds its last frame before going again. */
-private const val RESOLVE_MS = 1800L
 
 @Composable
 fun PlayerScreen(state: AppState, surface: SimSurfaceView) {

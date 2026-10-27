@@ -57,7 +57,14 @@ class SceneRenderer {
     /** 0 = no trails, 0.95 = long smeary trails. */
     var trails = 0f
 
-    var vignette = 0.35f
+    /**
+     * Edge darkening, off. At 0.35 it darkened every sim toward the edges of
+     * the screen, and on a near-black background that does not read as a
+     * vignette — it reads as a tall lighter arch with a dark frame around it,
+     * a border on every sim in the app. Kept as a setting for the exporter,
+     * which is where a film-like edge is a choice someone makes.
+     */
+    var vignette = 0f
 
     var ready = false
         private set
