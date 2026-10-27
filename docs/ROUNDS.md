@@ -68,10 +68,27 @@ sizes are run and their per-frame cost is printed. Sorting correctness, RNG
 determinism, the expression compiler, the laws table, parameter clamping and the
 flash limiter are covered too.
 
+Since the control audit it also checks that the controls do something, which
+nothing had ever checked. `ControlEffectTest` draws frames rather than trusting
+any bookkeeping: for every value a sim reads only while being built, a run at
+the bottom of the range and a run at the top must draw different frames; for
+every value it reads live, changing it mid-run with no restart must change the
+frame against a parallel run that was left alone. `DriftHoldTest` checks that
+Evolve stands off a value a hand has just moved.
+
 ## Known gaps
 
-- Nothing in this repo has been run on a phone. Every number here was measured
-  on a CI runner, headlessly.
+- Nothing in this repo has been run on a phone by its author. Every number here
+  was measured on a CI runner, headlessly — and the one round of feedback that
+  did come from a phone ("not all buttons and sliders work") found a class of
+  defect that no headless check was looking for, which is why there are now
+  checks looking for it.
+- The UI cannot be compiled here at all: there is no Android SDK and no network
+  route to one, so CI is the only compiler for anything under `ui/`. Five builds
+  in the control round were spent on scope and import mistakes that a compiler
+  would have caught in a second, which is what rules 12 to 16 of
+  `tools/uicheck.py` exist to replace. They are not a type checker, and a wrong
+  argument type still costs a round trip.
 - N-body is O(n²) and stops at 4,000 bodies; the other big sims reach five
   figures. Barnes-Hut would fix it.
 - The in-app browser of recipes has no sharing; a recipe moves by copy and paste.
