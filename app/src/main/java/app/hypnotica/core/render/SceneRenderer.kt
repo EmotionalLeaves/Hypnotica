@@ -274,6 +274,19 @@ class SceneRenderer {
 
     fun release() {
         releaseTargets()
+        for (p in intArrayOf(shapeProgram, pointProgram, fadeProgram, presentProgram)) {
+            if (p != 0) GLES30.glDeleteProgram(p)
+        }
+        shapeProgram = 0
+        pointProgram = 0
+        fadeProgram = 0
+        presentProgram = 0
+        val buffers = intArrayOf(quadVbo, instanceVbo, pointPosVbo, pointColVbo)
+        GLES30.glDeleteBuffers(buffers.size, buffers, 0)
+        quadVbo = 0
+        instanceVbo = 0
+        pointPosVbo = 0
+        pointColVbo = 0
     }
 
     companion object {

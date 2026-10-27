@@ -221,8 +221,9 @@ class NQueensSim : Sim {
                 backtracks++
                 if (row < 0) {
                     // No solution for this size; start again rather than stall.
+                    // Refilled in place: allocating here would happen inside step.
                     row = 0
-                    cols = IntArray(n) { -1 }
+                    java.util.Arrays.fill(cols, -1)
                 }
                 env.emit(EventKind.DEATH, 0.3f, 0f, 0.5f)
             }
@@ -279,7 +280,7 @@ class NQueensSim : Sim {
             shelf = Shelf.ALGORITHMS,
             family = "Puzzles & backtracking",
             blurb = "Place, test, take it back. The retreat is half the algorithm.",
-            formats = listOf(TrapFormat.PERFECT_FIT, TrapFormat.GUESS),
+            formats = listOf(TrapFormat.PERFECT_FIT, TrapFormat.GUESS, TrapFormat.LAST_STANDING),
             heroLabel = "Solve again",
             defaultPalette = "Ember",
             typicalSeconds = 20f,
@@ -316,7 +317,7 @@ class BinaryTreeSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        target = p.i("nodes", 220).coerceIn(1, 4000)
+        target = p.i("nodes", 220).coerceIn(1, 100_000)
         keys = FloatArray(target)
         left = IntArray(target) { -1 }
         right = IntArray(target) { -1 }
@@ -386,6 +387,7 @@ class BinaryTreeSim : Sim {
         val levels = max(1, maxDepth)
         val rowH = 1.75f / (levels + 1)
         // Place by key so the in-order layout is the sorted order.
+        val edgeStride = maxOf(1, size / Draw.MAX_EDGES)
         for (i in 0 until size) xs[i] = -halfW + keys[i] * 2f * halfW
         for (i in 0 until size) {
             val x = xs[i]
@@ -393,10 +395,25 @@ class BinaryTreeSim : Sim {
             val l = left[i]
             val r = right[i]
             val c = palette.at(depth[i].toFloat() / levels)
-            if (l in 0 until size) g.line(x, y, xs[l], 0.88f - depth[l] * rowH, 0.0022f, c, 0.6f)
-            if (r in 0 until size) g.line(x, y, xs[r], 0.88f - depth[r] * rowH, 0.0022f, c, 0.6f)
+            if (edgeStride == 1 || i % edgeStride == 0) {
+                if (l in 0 until size) g.line(x, y, xs[l], 0.88f - depth[l] * rowH, 0.0022f, c, 0.6f)
+                if (r in 0 until size) g.line(x, y, xs[r], 0.88f - depth[r] * rowH, 0.0022f, c, 0.6f)
+            }
         }
         val dotSize = max(0.004f, min(0.016f, 2.4f / size))
+        // A hundred thousand nodes are a texture, not a diagram: past the
+        // threshold the nodes go through the point path and the edges thin out.
+        if (size > Draw.AS_POINTS) {
+            g.reservePoints(size)
+            for (i in 0 until size) {
+                g.point(
+                    xs[i],
+                    0.88f - depth[i] * rowH,
+                    1.6f,
+                    palette.at(depth[i].toFloat() / levels)
+                )
+            }
+        } else
         for (i in 0 until size) {
             g.disc(xs[i], 0.88f - depth[i] * rowH, dotSize, palette.at(depth[i].toFloat() / levels))
         }
@@ -413,6 +430,14 @@ class BinaryTreeSim : Sim {
         "ideal" to (Math.log(max(1, size).toDouble()) / Math.log(2.0)).toInt().toString()
     )
 
+    private object Draw {
+        /** Above this many nodes, the tree is painted as points. */
+        const val AS_POINTS = 2_000
+
+        /** Edges are sampled so a huge tree does not become a solid block. */
+        const val MAX_EDGES = 3_000
+    }
+
     companion object {
         fun def(): SimDef = SimDef(
             id = "algorithms/binary-tree",
@@ -427,7 +452,7 @@ class BinaryTreeSim : Sim {
             params = listOf(
                 Param.choice("order", "Keys arrive", listOf("Random", "Already sorted"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
-                Param.int("nodes", "Nodes", 1, 4000, 220, card = Card.DATA, logScale = true),
+                Param.int("nodes", "Nodes", 1, 100000, 220, card = Card.DATA, logScale = true),
                 Param.float("rate", "Speed", 1f, 2000f, 26f, card = Card.MOTION, unit = "/s", logScale = true)
             ),
             create = { BinaryTreeSim() }

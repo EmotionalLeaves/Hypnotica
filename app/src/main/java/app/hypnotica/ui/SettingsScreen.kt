@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import app.hypnotica.core.sim.TrapFormat
 import app.hypnotica.core.audio.SoundPreset
 import app.hypnotica.core.render.Palette
 
@@ -97,6 +98,20 @@ fun SettingsScreen(state: AppState, versionName: String) {
             }
         }
 
+        SectionLabel("TickTock formats")
+        Text(
+            "Switch off the kinds of clip you do not want to see. The feed learns " +
+                "from what you watch as well.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.height(8.dp))
+        FormatMutes(state)
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("Reset what it learned") { state.resetTaste() }
+        }
+
         Spacer(Modifier.height(28.dp))
         Row(
             Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -106,6 +121,15 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 "Hypnotica $versionName",
                 color = Tokens.TextSecondary.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        state.benchNote?.let { note ->
+            Text(
+                "This phone: $note",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 2.dp)
             )
         }
 
@@ -137,5 +161,33 @@ private fun QuietGlyph(glyph: String, onClick: () -> Unit) {
             color = Tokens.TextSecondary.copy(alpha = 0.22f),
             style = MaterialTheme.typography.titleMedium
         )
+    }
+}
+
+/**
+ * One pill per trap format. Selected means "show me these"; a tap mutes it,
+ * which the clip generator reads before it picks anything.
+ */
+@Composable
+private fun FormatMutes(state: AppState) {
+    val muted = state.mutedFormats
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TrapFormat.entries.chunked(2).forEach { pair ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                pair.forEach { format ->
+                    Pill(
+                        format.title,
+                        selected = format !in muted,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        state.setFormatMuted(format, format !in muted)
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
     }
 }

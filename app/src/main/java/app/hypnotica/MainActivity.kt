@@ -5,8 +5,12 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import app.hypnotica.core.recipe.RecipeStore
 import app.hypnotica.engine.Haptics
@@ -14,6 +18,7 @@ import app.hypnotica.engine.SimEngine
 import app.hypnotica.sims.SimRegistry
 import app.hypnotica.ui.AppState
 import app.hypnotica.ui.FeedScreen
+import app.hypnotica.ui.FirstRunCard
 import app.hypnotica.ui.HypnoticaTheme
 import app.hypnotica.ui.LibraryScreen
 import app.hypnotica.ui.PlayerScreen
@@ -24,6 +29,8 @@ import app.hypnotica.ui.SettingsScreen
 import app.hypnotica.ui.SimSurfaceView
 import app.hypnotica.ui.StudioScreen
 import app.hypnotica.ui.TickTockScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -49,14 +56,31 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HypnoticaTheme {
-                val state = remember { AppState(engine, prefs, recipeStore) }
+                val state = remember {
+                    AppState(engine, prefs, recipeStore).also { made ->
+                        made.onCameraDrag = { on -> surface.cameraMode = on }
+                    }
+                }
+                // Measure the phone once, off the main thread, so the clip
+                // generator knows what it may ask of it.
+                LaunchedEffect(Unit) {
+                    withContext(Dispatchers.Default) { state.benchmarkIfNeeded() }
+                }
                 BackHandler(enabled = true) {
                     if (!state.goBack()) finish()
                 }
-                AppRoot(state, surface)
+                Box(Modifier.fillMaxSize()) {
+                    AppRoot(state, surface, versionName())
+                    if (state.showFirstRun) FirstRunCard(state)
+                }
             }
         }
     }
+
+    /** The installed version, so Settings shows the build that is actually running. */
+    private fun versionName(): String =
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }
+            .getOrNull() ?: "dev"
 
     override fun onResume() {
         super.onResume()
@@ -79,19 +103,16 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppRoot(state: AppState, surface: SimSurfaceView) {
+private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: String) {
     when (state.screen) {
         Screen.FEED -> FeedScreen(state, surface)
         Screen.PLAYER -> PlayerScreen(state, surface)
         Screen.LIBRARY -> LibraryScreen(state)
-        Screen.SETTINGS -> SettingsScreen(state, BuildConfigName.VERSION)
+        Screen.SETTINGS -> SettingsScreen(state, versionName)
         Screen.TICKTOCK -> TickTockScreen(state, surface)
         Screen.STUDIO -> StudioScreen(state, surface)
         Screen.RECIPES -> RecipeScreen(state)
     }
 }
 
-/** Version string, without turning on BuildConfig generation for one field. */
-object BuildConfigName {
-    const val VERSION = "0.2"
-}
+

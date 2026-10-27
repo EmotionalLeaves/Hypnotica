@@ -136,16 +136,34 @@ class Project(var simId: String, var seed: Long) {
     }
 
     /** Push the camera tracks into a camera for the given moment. */
+    /**
+     * Drive the camera from the timeline. A track with no keyframes is left to
+     * whatever the person set by hand, rather than snapped back to its default.
+     */
     fun applyCamera(time: Float, camera: Camera) {
-        camera.x = track(TrackKind.CAMERA_X).valueAt(time)
-        camera.y = track(TrackKind.CAMERA_Y).valueAt(time)
-        camera.zoom = track(TrackKind.ZOOM).valueAt(time).coerceIn(0.2f, 40f)
-        camera.rotation = track(TrackKind.ROTATION).valueAt(time)
+        track(TrackKind.CAMERA_X).let { if (!it.isEmpty()) camera.x = it.valueAt(time) }
+        track(TrackKind.CAMERA_Y).let { if (!it.isEmpty()) camera.y = it.valueAt(time) }
+        track(TrackKind.ZOOM).let {
+            if (!it.isEmpty()) camera.zoom = it.valueAt(time).coerceIn(0.2f, 40f)
+        }
+        track(TrackKind.ROTATION).let { if (!it.isEmpty()) camera.rotation = it.valueAt(time) }
     }
 
     fun hasAnyKeyframes(): Boolean = tracks.values.any { !it.isEmpty() }
 
     fun textAt(time: Float): TextClip? = texts.firstOrNull { time >= it.start && time < it.end }
+
+    /**
+     * Drop a caption at [start]. Captions do not overlap: one already running at
+     * that moment is replaced, so tapping twice corrects rather than stacks.
+     */
+    fun addText(text: String, start: Float, big: Boolean = true, length: Float = 3.5f) {
+        val from = start.coerceIn(0f, maxOf(0f, duration - 0.5f))
+        val to = minOf(duration, from + length)
+        texts.removeAll { from < it.end && to > it.start }
+        texts.add(TextClip(text, from, to, big))
+        texts.sortBy { it.start }
+    }
 
     /** Ready-made starting points so a project is never a blank timeline. */
     companion object {

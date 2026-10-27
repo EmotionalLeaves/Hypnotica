@@ -95,7 +95,7 @@ class ParticleFieldSim : Sim {
         val dragF = 1f - (drag + laws.friction).coerceIn(0f, 0.6f) * dt * 8f
         val t = elapsed * 0.35f
         val wrap = laws.space != app.hypnotica.core.laws.Space.BOX
-        val restitution = laws.restitution
+        val restitution = if (laws.sticky) 0f else laws.bounce
 
         wallHits.set(0)
         Parallel.forRange(n) { from, to -> integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution) }
@@ -507,6 +507,7 @@ class LorenzSim : Sim {
             val c = Palette.withAlpha(palette.at(0.15f + age * 0.7f), (1f - age) * 0.9f + 0.1f)
             g.point(trailX[idx], trailY[idx], size * (1.1f - age * 0.6f), c)
         }
+        if (payoffFrame) g.flash(0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame

@@ -44,6 +44,12 @@ class ClipDirector(seed: Long = System.nanoTime()) {
     /** Formats the person has switched off. */
     val mutedFormats = HashSet<TrapFormat>()
 
+    /**
+     * How much of each size ceiling this phone may use, from the benchmark. A
+     * modest phone gets smaller clips rather than stuttering ones.
+     */
+    var sizeScale = 1f
+
     var minPayoffSeconds = 4f
     var maxPayoffSeconds = 40f
 
@@ -63,6 +69,36 @@ class ClipDirector(seed: Long = System.nanoTime()) {
     }
 
     fun resetTaste() = weights.clear()
+
+    /**
+     * Taste as one short string, so it can live in preferences and survive a
+     * restart. Format: `key=value` pairs separated by `;`.
+     */
+    fun exportTaste(): String = buildString {
+        for ((k, v) in weights) {
+            if (kotlin.math.abs(v) < 0.05f) continue
+            if (isNotEmpty()) append(';')
+            append(k).append('=').append(Math.round(v * 100f) / 100f)
+        }
+    }
+
+    fun importTaste(text: String) {
+        weights.clear()
+        if (text.isBlank()) return
+        for (part in text.split(';')) {
+            val at = part.indexOf('=')
+            if (at <= 0) continue
+            val value = part.substring(at + 1).toFloatOrNull() ?: continue
+            weights[part.substring(0, at)] = value.coerceIn(-2f, 3f)
+        }
+    }
+
+    fun exportMuted(): Set<String> = mutedFormats.map { it.name }.toSet()
+
+    fun importMuted(names: Set<String>) {
+        mutedFormats.clear()
+        for (n in names) TrapFormat.entries.firstOrNull { it.name == n }?.let { mutedFormats.add(it) }
+    }
 
     private fun bump(key: String, by: Float) {
         weights[key] = ((weights[key] ?: 0f) + by).coerceIn(-2f, 3f)
@@ -155,11 +191,14 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         val out = HashMap<String, Float>()
         for (p in def.params) {
             if (p.advancedOnly) continue
+            // A typed formula is the person's, not something to randomise.
+            if (p.type == ParamType.EXPR) continue
             val value = when (p.type) {
+                ParamType.EXPR -> p.default
                 ParamType.BOOL -> if (rng.bool(0.3f)) 1f else 0f
                 ParamType.CHOICE -> rng.int(0, max(1, p.choices.size)).toFloat()
                 ParamType.INT -> {
-                    val cap = min(p.max, sizeCap(p.key))
+                    val cap = min(p.max, sizeCap(p.key) * sizeScale)
                     val lo = p.min
                     if (cap <= lo) lo else rng.range(lo, cap)
                 }

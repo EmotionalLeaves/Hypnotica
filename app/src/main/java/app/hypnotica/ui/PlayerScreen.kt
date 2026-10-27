@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import app.hypnotica.core.audio.Song
 import app.hypnotica.core.audio.SoundPreset
 import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
@@ -74,6 +75,7 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
                 overlayVisible = !overlayVisible
                 if (!overlayVisible) state.controlsOpen = false
             },
+            onDoubleTap = { state.toggleFavourite(state.currentDef.id) },
             onLongPress = {
                 overlayVisible = true
                 state.controlsOpen = true
@@ -114,12 +116,19 @@ private fun TopBar(state: AppState, uiTick: Int) {
                 style = MaterialTheme.typography.titleLarge
             )
             val counters = remember(uiTick) { state.engine.core.sim.counters() }
-            val line = if (state.showCounters && counters.isNotEmpty()) {
+            val line = if (state.recording) {
+                val secs = remember(uiTick) { state.engine.recorder?.seconds ?: 0f }
+                "\u25CF  recording  ${secs.toInt()}s"
+            } else if (state.showCounters && counters.isNotEmpty()) {
                 counters.joinToString("   ") { "${it.second} ${it.first}" }
             } else {
                 state.currentDef.family
             }
-            Text(line, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(
+                line,
+                color = if (state.recording) Tokens.Danger else Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
         GlyphButton(if (state.isFavourite(state.currentDef.id)) "★" else "☆") {
             state.toggleFavourite(state.currentDef.id)
@@ -217,20 +226,66 @@ private fun CardControls(state: AppState, card: Card) {
     val params = remember(version, state.currentDef.id, state.advanced, card) {
         state.params().filter { it.card == card && (state.advanced || !it.advancedOnly) }
     }
+    val macros = remember(state.currentDef.id, card) { state.macros(card) }
+    if (macros.isNotEmpty() && !state.advanced) {
+        macros.forEach { macro -> MacroControl(state, macro) }
+        if (params.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            SectionLabel("Or set them one at a time")
+        }
+    }
     if (params.isEmpty()) {
-        Text(
-            "Nothing to set here for this sim.",
-            color = Tokens.TextSecondary,
-            style = MaterialTheme.typography.bodySmall
-        )
+        if (macros.isEmpty()) {
+            Text(
+                "Nothing to set here for this sim.",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         return
     }
+    if (card == Card.DATA && state.currentDef.id == "math/equation") EquationPresets(state)
     params.forEach { p -> ParamControl(state, p) }
+}
+
+/**
+ * One Simple-mode macro: a single slider that moves everything it points at.
+ * The values it writes are the same ones Advanced mode shows exactly.
+ */
+@Composable
+private fun MacroControl(state: AppState, macro: Macro) {
+    val position = state.macroPosition(macro)
+    ValueSlider(
+        label = macro.label,
+        value = position,
+        min = 0f,
+        max = 1f,
+        valueText = describeMacro(position),
+        onCommit = { state.commitMacro(macro) }
+    ) { state.setMacro(macro, it) }
+    Text(
+        "Moves " + macro.targets.size + if (macro.targets.size == 1) " setting" else " settings",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(bottom = 6.dp)
+    )
+}
+
+/** Plain words, because a macro has no unit of its own. */
+private fun describeMacro(position: Float): String = when {
+    position < 0.12f -> "barely"
+    position < 0.3f -> "a little"
+    position < 0.55f -> "some"
+    position < 0.78f -> "a lot"
+    position < 0.94f -> "heaps"
+    else -> "everything"
 }
 
 @Composable
 private fun ParamControl(state: AppState, p: Param) {
     when (p.type) {
+        ParamType.EXPR -> ExprParamField(state, p)
+
         ParamType.BOOL -> ToggleRow(p.label, state.paramValue(p.key) >= 0.5f) {
             state.setParamBool(p, it)
         }
@@ -274,6 +329,31 @@ private fun MotionCard(state: AppState) {
         valueText = String.format("%.2fx", state.speed)
     ) { state.speed = it }
     CardControls(state, Card.MOTION)
+    Spacer(Modifier.height(4.dp))
+    ToggleRow("Evolve", state.evolve) { state.setEvolve(it) }
+    Text(
+        "Lets the settings drift slowly while it plays, so a loop never settles.",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall
+    )
+    Spacer(Modifier.height(10.dp))
+    SectionLabel("Record moves")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (state.recording) {
+            Pill("Stop and edit", selected = true) { state.stopRecording() }
+        } else {
+            Pill("Start recording") { state.startRecording() }
+        }
+    }
+    Text(
+        if (state.recording) {
+            "Pinch, drag and twist the sim. Stopping opens it in Studio as keyframes."
+        } else {
+            "Captures your pinches, drags and twists, then hands them to Studio."
+        },
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall
+    )
 }
 
 @Composable
@@ -289,6 +369,13 @@ private fun LookCard(state: AppState) {
         max = 0.96f,
         valueText = if (state.trails < 0.02f) "off" else formatValue(state.trails)
     ) { state.trails = it }
+    ToggleRow("Drag pans the view", state.cameraDrag) { state.setCameraDrag(it) }
+    Text(
+        "On, one finger moves the camera. Off, it reaches into the sim. Two " +
+            "fingers always pan, pinch zooms and a twist rotates.",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall
+    )
     CardControls(state, Card.LOOK)
 }
 

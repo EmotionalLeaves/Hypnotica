@@ -118,6 +118,9 @@ class MazeSim : Sim {
         }
     }
 
+    /** Reused by [carveStep]; a four-int array per step adds up at 120 Hz. */
+    private val candidateScratch = IntArray(4)
+
     /** Recursive backtracker, with the recursion written out as a stack. */
     private fun carveStep(env: SimEnv): Boolean {
         if (sp == 0) return false
@@ -125,7 +128,7 @@ class MazeSim : Sim {
         val cx = current % w
         val cy = current / w
         var options = 0
-        val candidates = IntArray(4)
+        val candidates = candidateScratch
         for (d in 0 until 4) {
             val nx = cx + DX[d]
             val ny = cy + DY[d]
@@ -275,7 +278,7 @@ class MazeSim : Sim {
             shelf = Shelf.ALGORITHMS,
             family = "Maze generation & solving",
             blurb = "A backtracker carves it, a flood finds the way out.",
-            formats = listOf(TrapFormat.GROW, TrapFormat.PERFECT_FIT, TrapFormat.REVEAL),
+            formats = listOf(TrapFormat.GROW, TrapFormat.PERFECT_FIT, TrapFormat.REVEAL, TrapFormat.ESCAPE),
             heroLabel = "New maze",
             defaultPalette = "Ocean",
             typicalSeconds = 28f,
@@ -498,7 +501,7 @@ class PathfindingSim : Sim {
             shelf = Shelf.ALGORITHMS,
             family = "Pathfinding & search",
             blurb = "Breadth-first spreads, A* goes straight for it.",
-            formats = listOf(TrapFormat.GUESS, TrapFormat.REVEAL, TrapFormat.RACE),
+            formats = listOf(TrapFormat.GUESS, TrapFormat.REVEAL, TrapFormat.RACE, TrapFormat.ESCAPE),
             heroLabel = "New map",
             defaultPalette = "Aurora",
             typicalSeconds = 24f,

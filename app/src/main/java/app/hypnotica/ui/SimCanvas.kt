@@ -16,6 +16,7 @@ fun SimCanvas(
     surface: SimSurfaceView,
     modifier: Modifier = Modifier,
     onTap: () -> Unit = {},
+    onDoubleTap: () -> Unit = {},
     onLongPress: () -> Unit = {}
 ) {
     AndroidView(
@@ -26,6 +27,7 @@ fun SimCanvas(
         },
         update = {
             it.onTap = onTap
+            it.onDoubleTap = onDoubleTap
             it.onLongPress = onLongPress
         }
     )

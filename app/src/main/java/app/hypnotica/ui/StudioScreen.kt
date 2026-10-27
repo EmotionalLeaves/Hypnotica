@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +13,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -34,13 +38,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.hypnotica.core.studio.Easing
 import app.hypnotica.core.studio.Project
 import app.hypnotica.core.studio.TrackKind
 import app.hypnotica.export.ExportSettings
+import app.hypnotica.export.Publish
 import app.hypnotica.export.VideoExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -66,7 +74,13 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     var playing by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
+    var exported by remember { mutableStateOf<File?>(null) }
+    var captionText by remember { mutableStateOf("") }
+    var captionBig by remember { mutableStateOf(true) }
+    // Flash has nothing live to read, so Studio holds the value to be keyed.
+    var flashValue by remember { mutableFloatStateOf(0.6f) }
     var exportProgress by remember { mutableFloatStateOf(0f) }
+    var runningExport by remember { mutableStateOf<VideoExporter?>(null) }
     var formatIndex by remember { mutableIntStateOf(0) }
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -77,8 +91,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         state.engine.studioPlaying = false
         state.engine.seek(0f)
         onDispose {
-            state.engine.project = null
-            state.engine.studioPlaying = false
+            // Hand the sim back as the player left it, laws and all.
+            state.engine.detachProject(state.laws, state.trails, state.speed)
         }
     }
 
@@ -119,6 +133,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             params = state.engine.core.params.snapshot(),
                             settings = settings
                         )
+                        runningExport = exporter
                         val progressJob = launch {
                             while (exporting) {
                                 exportProgress = exporter.progress
@@ -127,11 +142,17 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                         }
                         exportMessage = try {
                             withContext(Dispatchers.Default) { exporter.export(out) }
-                            "Saved to ${out.name}"
+                            val outcome = withContext(Dispatchers.IO) { Publish.publish(context, out) }
+                            exported = outcome.shareable
+                            outcome.message
+                        } catch (e: InterruptedException) {
+                            runCatching { out.delete() }
+                            "Cancelled."
                         } catch (e: Throwable) {
                             "Export failed: ${e.message}"
                         }
                         progressJob.cancel()
+                        runningExport = null
                         exporting = false
                         exportProgress = 0f
                     }
@@ -161,6 +182,16 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
         if (exporting) {
             Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    String.format("%.0f%%", exportProgress * 100f),
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                Pill("Cancel") { runningExport?.cancel() }
+            }
+            Spacer(Modifier.height(6.dp))
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -177,7 +208,18 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         }
         exportMessage?.let {
             Spacer(Modifier.height(6.dp))
-            Text(it, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    it,
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                exported?.let { file ->
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Share") { Publish.share(context, file) }
+                }
+            }
         }
 
         // Transport
@@ -192,7 +234,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 revision++
             }
             BigButton("Key ◆", primary = true) {
-                val current = currentValueFor(state, selectedTrack, playhead)
+                val current = if (selectedTrack == TrackKind.FLASH) flashValue
+                else currentValueFor(state, selectedTrack, playhead)
                 project.track(selectedTrack).set(playhead, current, easing)
                 revision++
             }
@@ -249,6 +292,16 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 easing = Easing.entries[it]
             }
 
+            if (selectedTrack == TrackKind.FLASH) {
+                ValueSlider(
+                    "Flash to key",
+                    flashValue,
+                    0f,
+                    1f,
+                    valueText = String.format("%.0f%%", flashValue * 100f)
+                ) { flashValue = it }
+            }
+
             val version = revision
             SectionLabel("Keyframes")
             TrackStrip(project, selectedTrack, playhead, version)
@@ -280,6 +333,42 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 state.engine.seek(0f)
                 playhead = 0f
                 revision++
+            }
+
+            SectionLabel("Captions")
+            CaptionEditor(
+                text = captionText,
+                big = captionBig,
+                onText = { captionText = it },
+                onBig = { captionBig = it },
+                onAdd = {
+                    val trimmed = captionText.trim()
+                    if (trimmed.isNotEmpty()) {
+                        project.addText(trimmed, playhead, captionBig)
+                        captionText = ""
+                        revision++
+                    }
+                }
+            )
+            val captionVersion = revision
+            remember(captionVersion) { project.texts.toList() }.forEach { clip ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        String.format("%.1fs  %s", clip.start, clip.text),
+                        color = Tokens.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Remove") {
+                        project.texts.remove(clip)
+                        revision++
+                    }
+                }
             }
 
             SectionLabel("Export format")
@@ -314,24 +403,29 @@ private fun TrackStrip(project: Project, kind: TrackKind, playhead: Float, versi
                 modifier = Modifier.align(Alignment.Center)
             )
         }
-        keys.forEach { k ->
-            val fraction = (k.time / project.duration.coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+        // Laid out by offset rather than by nested full-width boxes: a key at
+        // t=0 used to have width zero, which made it invisible.
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val span = maxWidth - MARKER
+            keys.forEach { k ->
+                val fraction = (k.time / project.duration.coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+                Text(
+                    "◆",
+                    color = Tokens.Accent,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .offset(x = span * fraction)
+                        .align(Alignment.CenterStart)
+                )
+            }
+            val head = (playhead / project.duration.coerceAtLeast(0.001f)).coerceIn(0f, 1f)
             Box(
                 Modifier
-                    .fillMaxWidth(fraction)
-                    .height(40.dp),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Text("◆", color = Tokens.Accent, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxWidth((playhead / project.duration.coerceAtLeast(0.001f)).coerceIn(0f, 1f))
-                .height(40.dp),
-            contentAlignment = Alignment.CenterEnd
-        ) {
-            Box(Modifier.width(2.dp).height(40.dp).background(Tokens.Success))
+                    .offset(x = span * head + MARKER / 2)
+                    .width(2.dp)
+                    .height(40.dp)
+                    .background(Tokens.Success)
+            )
         }
     }
 }
@@ -346,5 +440,54 @@ private fun currentValueFor(state: AppState, kind: TrackKind, time: Float): Floa
     TrackKind.GRAVITY -> state.laws.gravity
     TrackKind.BOUNCINESS -> state.laws.restitution
     TrackKind.TRAILS -> state.trails
+    // Flash is keyed from Studio's own slider, not from here.
     TrackKind.FLASH -> state.project?.track(TrackKind.FLASH)?.valueAt(time) ?: 0f
 }
+
+/** Type a caption, choose its size, drop it at the playhead. */
+@Composable
+private fun CaptionEditor(
+    text: String,
+    big: Boolean,
+    onText: (String) -> Unit,
+    onBig: (Boolean) -> Unit,
+    onAdd: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 44.dp)
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (text.isEmpty()) {
+                Text(
+                    "Caption at the playhead",
+                    color = Tokens.TextSecondary.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            BasicTextField(
+                value = text,
+                onValueChange = onText,
+                singleLine = true,
+                textStyle = TextStyle(color = Tokens.TextPrimary, fontSize = 15.sp),
+                cursorBrush = SolidColor(Tokens.Accent),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("Big", selected = big) { onBig(true) }
+            Pill("Small", selected = !big) { onBig(false) }
+            Spacer(Modifier.weight(1f))
+            Pill("Add here", selected = true) { onAdd() }
+        }
+    }
+}
+
+/** Width of a keyframe marker, kept out of the strip's usable span. */
+private val MARKER = 14.dp

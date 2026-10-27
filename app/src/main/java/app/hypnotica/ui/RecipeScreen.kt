@@ -89,7 +89,12 @@ fun RecipeScreen(state: AppState) {
                     style = MaterialTheme.typography.bodySmall
                 )
             } else {
-                ChipRow(entries.map { it.name }, entries.indexOfFirst { it.name == name }) { i ->
+                // A recipe that does not parse is still kept, but it is marked,
+                // so it cannot quietly vanish from the Library.
+                ChipRow(
+                    entries.map { if (it.error != null) "\u26A0 " + it.name else it.name },
+                    entries.indexOfFirst { it.name == name }
+                ) { i ->
                     name = entries[i].name
                     source = entries[i].source
                     message = entries[i].error

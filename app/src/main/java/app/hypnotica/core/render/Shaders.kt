@@ -152,6 +152,31 @@ object Shaders {
         }
     """.trimIndent()
 
+    /** Places a texture on a rectangle given in clip space; used for captions. */
+    val OVERLAY_VERT = """
+        #version 300 es
+        layout(location = 0) in vec2 aCorner;
+        uniform vec4 uRect;
+        out vec2 vUv;
+        void main() {
+            vUv = vec2(aCorner.x * 0.5 + 0.5, 0.5 - aCorner.y * 0.5);
+            gl_Position = vec4(uRect.xy + aCorner * uRect.zw, 0.0, 1.0);
+        }
+    """.trimIndent()
+
+    val OVERLAY_FRAG = """
+        #version 300 es
+        precision mediump float;
+        in vec2 vUv;
+        uniform sampler2D uTex;
+        uniform float uAlpha;
+        out vec4 fragColor;
+        void main() {
+            vec4 c = texture(uTex, vUv);
+            fragColor = vec4(c.rgb, c.a * uAlpha);
+        }
+    """.trimIndent()
+
     fun compile(type: Int, source: String): Int {
         val id = GLES30.glCreateShader(type)
         GLES30.glShaderSource(id, source)

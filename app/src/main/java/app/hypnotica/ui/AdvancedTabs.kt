@@ -71,6 +71,7 @@ private fun DataTab(state: AppState) {
         style = MaterialTheme.typography.bodySmall
     )
     Spacer(Modifier.height(8.dp))
+    if (state.currentDef.id == "math/equation") EquationPresets(state)
     params.forEach { ExactParamRow(state, it) }
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -103,6 +104,7 @@ private fun ParamsTab(state: AppState) {
 private fun ExactParamRow(state: AppState, p: Param) {
     val value = state.paramValue(p.key)
     when (p.type) {
+        ParamType.EXPR -> ExprParamField(state, p)
         ParamType.BOOL -> ToggleRow(p.label, value >= 0.5f) { state.setParamBool(p, it) }
         ParamType.CHOICE -> {
             SectionLabel(p.label)
@@ -192,8 +194,15 @@ private fun LawsTab(state: AppState) {
 fun LawsControls(state: AppState, advanced: Boolean) {
     val laws = state.laws
     SectionLabel("Universe")
-    val names = remember { Laws.PRESETS.map { it.name } }
-    ChipRow(names, names.indexOf(laws.name)) { state.setLaws(names[it]) }
+    // Editing any law renames the universe "Custom"; without a chip for it the
+    // row would simply show nothing selected.
+    val presetNames = remember { Laws.PRESETS.map { it.name } }
+    val names = remember(laws.name) {
+        if (presetNames.contains(laws.name)) presetNames else presetNames + laws.name
+    }
+    ChipRow(names, names.indexOf(laws.name)) {
+        if (it < presetNames.size) state.setLaws(presetNames[it])
+    }
 
     ValueSlider("Gravity", laws.gravity, 0f, 40f, valueText = gravityWord(laws.gravity)) { v ->
         state.editLaws { it.copy(gravity = v) }
@@ -233,13 +242,20 @@ fun LawsControls(state: AppState, advanced: Boolean) {
             state.editLaws { it.copy(gravityDirY = -it.gravityDirY) }
         }
     }
+    Spacer(Modifier.height(8.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Pill("Sticky", selected = laws.sticky) {
+            state.editLaws { it.copy(sticky = !it.sticky, passThrough = false) }
+        }
+        Pill("Pass through", selected = laws.passThrough) {
+            state.editLaws { it.copy(passThrough = !it.passThrough, sticky = false) }
+        }
+        Pill("Free energy", selected = !laws.conserveEnergy) {
+            state.editLaws { it.copy(conserveEnergy = !it.conserveEnergy) }
+        }
+    }
 
     if (!advanced) return
-
-    SectionLabel("Dimensions")
-    ChipRow((1..app.hypnotica.core.nd.Nd.MAX_DIMS).map { "${it}D" }, laws.dims - 1) {
-        state.editLaws { l -> l.copy(dims = it + 1) }
-    }
 
     ValueSlider("Speed of light", laws.lightSpeed, 0.5f, 1e6f, logScale = true,
         valueText = if (laws.lightSpeed > 1e5f) "unlimited" else String.format("%.1f", laws.lightSpeed)) { v ->

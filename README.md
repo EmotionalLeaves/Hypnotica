@@ -17,11 +17,13 @@ tests, signs and publishes the APK.
 
 | | |
 | --- | --- |
-| Sims | 20 so far, across Algorithms, Physics, Math and Life & nature |
+| Sims | 57, across Algorithms, Physics, Math, Dimensions, Life & nature and Art & pattern |
 | Sound | A synth fed by sim events — every note has a visible cause |
 | Laws | Gravity, bounciness, friction, time direction and more, shared by every physics sim |
-| Controls | Simple mode (big cards) and Advanced mode (exact numbers, formulas) |
-| Scale | 150,000 particles or 200,000 sorting bars inside a 16 ms frame |
+| Controls | Simple mode (macros and big sliders) and Advanced mode (exact numbers, formulas, Lua) |
+| Scale | 200,000 sorting bars in 5 ms a frame; 400,000 particles in 47 ms, measured on a two-core CI runner |
+| TickTock | An endless generated feed where every clip is simulated through before you see it |
+| Studio | Keyframed camera, laws and captions, rendered offline to MP4 with sound |
 
 ## Building
 
@@ -29,7 +31,7 @@ CI does it for you. If you ever do have a machine:
 
 ```
 ./gradlew :app:assembleRelease      # signed APK in app/build/outputs/apk/release
-./gradlew :app:testDebugUnitTest    # determinism, sorting, laws, safety
+./gradlew :app:testDebugUnitTest    # every sim under every law, plus determinism, sorting, safety
 ```
 
 Requires JDK 17 and the Android SDK (compileSdk 35).

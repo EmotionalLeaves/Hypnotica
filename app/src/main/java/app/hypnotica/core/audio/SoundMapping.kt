@@ -22,19 +22,36 @@ class SoundMapping(private val synth: Synth) {
             synth.muted = value.silent
         }
 
+    // The sound tab writes these from the UI thread while pump() reads them on
+    // the sim thread. They are independent scalars, so volatile is enough.
+    @Volatile
     var scale: Scale = Scale.byName(SoundPreset.MUSIC_BOX.scaleName)
 
+    @Volatile
     var baseHz: Float = SoundPreset.MUSIC_BOX.baseHz
+
+    @Volatile
     var octaves: Float = SoundPreset.MUSIC_BOX.octaves
+
+    @Volatile
     var decay: Float = SoundPreset.MUSIC_BOX.decay
 
     /** Notes per second ceiling. Above this, events merge instead of stacking. */
+    @Volatile
     var maxNotesPerSecond: Float = 120f
 
     /** Per-kind mute switches, matching the Advanced sound tab. */
-    private val enabled = BooleanArray(EventKind.entries.size) { true }
+    private val enabled =
+        java.util.concurrent.atomic.AtomicIntegerArray(IntArray(EventKind.entries.size) { 1 })
 
     var safety: SafetySettings = SafetySettings()
+
+    /**
+     * Called for events worth feeling, with a strength of 0..1. The engine turns
+     * that into a motor tick, rate-limited there rather than here.
+     */
+    @Volatile
+    var onHaptic: ((Float) -> Unit)? = null
 
     /** Optional melody: when set, each event plays the next note of the tune. */
     var song: Song? = null
@@ -54,10 +71,10 @@ class SoundMapping(private val synth: Synth) {
     private var rateWindow = 0f
 
     fun setEnabled(kind: EventKind, on: Boolean) {
-        enabled[kind.ordinal] = on
+        enabled.set(kind.ordinal, if (on) 1 else 0)
     }
 
-    fun isEnabled(kind: EventKind): Boolean = enabled[kind.ordinal]
+    fun isEnabled(kind: EventKind): Boolean = enabled.get(kind.ordinal) != 0
 
     fun applyPreset(p: SoundPreset) {
         preset = p
@@ -80,11 +97,12 @@ class SoundMapping(private val synth: Synth) {
         var seen = 0
         queue.drain(512) { kind, value, pan, strength ->
             seen++
-            if (enabled[kind.ordinal]) {
+            if (enabled.get(kind.ordinal) != 0) {
                 if (budget >= 1f) {
                     flushMerged()
                     budget -= 1f
                     play(kind, value, pan, strength)
+                    if (kind in FELT) onHaptic?.invoke(strength)
                 } else {
                     // Out of budget: fold this event into one louder note.
                     mergedCount++
@@ -108,6 +126,12 @@ class SoundMapping(private val synth: Synth) {
             flushMerged()
         }
     }
+
+    /**
+     * The kinds that get a tick. A comparison in a sort does not: a thousand a
+     * second would be a buzz, not a feeling.
+     */
+    private val FELT = setOf(EventKind.HIT, EventKind.CROSS, EventKind.DEATH, EventKind.DONE)
 
     private fun flushMerged() {
         if (mergedCount == 0) return

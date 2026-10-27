@@ -45,6 +45,7 @@ class BoidsSim : Sim {
     private var gridH = 0
     private var cellStart = IntArray(0)
     private var cellCount = IntArray(0)
+    private var cellCursor = IntArray(0)
     private var order = IntArray(0)
     private var cellOf = IntArray(0)
 
@@ -84,6 +85,7 @@ class BoidsSim : Sim {
         gridH = max(1, (2f / cellSize).toInt() + 1)
         cellStart = IntArray(gridW * gridH + 1)
         cellCount = IntArray(gridW * gridH)
+        cellCursor = IntArray(gridW * gridH)
         elapsed = 0f
         payoffFrame = false
         flockiness = 0f
@@ -104,7 +106,10 @@ class BoidsSim : Sim {
             running += cellCount[c]
         }
         cellStart[gridW * gridH] = running
-        val cursor = IntArray(gridW * gridH)
+        // Preallocated: this runs 120 times a second, and a fresh array each
+        // time would hand the collector a megabyte a second to clean up.
+        val cursor = cellCursor
+        java.util.Arrays.fill(cursor, 0, gridW * gridH, 0)
         for (i in 0 until n) {
             val c = cellOf[i]
             order[cellStart[c] + cursor[c]] = i
@@ -656,7 +661,7 @@ class PredatorPreySim : Sim {
             shelf = Shelf.LIFE,
             family = "Biology & ecology",
             blurb = "Two populations chasing each other round a closed loop.",
-            formats = listOf(TrapFormat.LOOP, TrapFormat.SONG),
+            formats = listOf(TrapFormat.LOOP, TrapFormat.SONG, TrapFormat.LAST_STANDING),
             heroLabel = "New balance",
             defaultPalette = "Candy",
             typicalSeconds = 26f,

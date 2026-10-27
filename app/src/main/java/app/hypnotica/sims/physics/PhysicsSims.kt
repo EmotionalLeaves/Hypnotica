@@ -7,6 +7,7 @@ import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.Shelf
+import app.hypnotica.core.sim.Parallel
 import app.hypnotica.core.sim.Sim
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.sim.SimEnv
@@ -160,11 +161,20 @@ class BallEscapeSim : Sim {
     }
 
     private fun bounce(env: SimEnv, b: Ball, rr: Float, d: Float) {
+        // Ghosts: the rings are there to be looked at, not to stop anything.
+        if (env.laws.passThrough) return
         val nx = if (d > 1e-6f) b.x / d else 1f
         val ny = if (d > 1e-6f) b.y / d else 0f
         val dot = b.vx * nx + b.vy * ny
         if (dot > 0f) {
-            val e = env.laws.restitution
+            // Sticky: the ball gives up rather than bouncing.
+            if (env.laws.sticky) {
+                b.vx *= 0.12f
+                b.vy *= 0.12f
+                env.emit(EventKind.HIT, b.colorT, b.x, 0.5f)
+                return
+            }
+            val e = env.laws.bounce
             b.vx -= (1f + e) * dot * nx
             b.vy -= (1f + e) * dot * ny
             // Push out so it cannot stick to the wall.
@@ -282,7 +292,7 @@ class PendulumWaveSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        count = p.i("count", 15).coerceIn(3, 64)
+        count = p.i("count", 15).coerceIn(3, MAX_PENDULUMS)
         cyclePeriod = p.f("period", 30f).coerceIn(6f, 120f)
         val baseOscillations = p.f("oscillations", 13f)
         val amplitude = p.f("amplitude", 0.6f)
@@ -314,21 +324,31 @@ class PendulumWaveSim : Sim {
         val g = GRAVITY_SIM * (env.laws.gravity / 9.81f)
         val damping = 1f - (env.laws.friction * dt * 0.4f).coerceIn(0f, 0.05f)
 
-        for (i in 0 until count) {
-            val l = lengths[i]
-            // Exact pendulum, not the small-angle approximation.
-            val acc = -(g / l) * sin(angles[i])
-            omegas[i] = (omegas[i] + acc * dt) * damping
-            angles[i] += omegas[i] * dt
+        // Each pendulum is independent, so twenty thousand of them split cleanly
+        // across cores. Only a sample of them is allowed to make a sound: ten
+        // thousand crossings a second is a hiss, not a wave.
+        val voiceEvery = maxOf(1, count / VOICES)
+        var crossed = 0
+        Parallel.forRange(count) { from, to ->
+            for (i in from until to) {
+                val l = lengths[i]
+                // Exact pendulum, not the small-angle approximation.
+                val acc = -(g / l) * sin(angles[i])
+                omegas[i] = (omegas[i] + acc * dt) * damping
+                angles[i] += omegas[i] * dt
 
-            val side = angles[i] >= 0f
-            if (side != lastSide[i]) {
-                lastSide[i] = side
-                crossings++
-                val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
-                env.emit(EventKind.CROSS, t, (t * 2f - 1f) * 0.85f, 0.75f)
+                val side = angles[i] >= 0f
+                if (side != lastSide[i]) {
+                    lastSide[i] = side
+                    synchronized(this) { crossed++ }
+                    if (i % voiceEvery == 0) {
+                        val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
+                        env.emit(EventKind.CROSS, t, (t * 2f - 1f) * 0.85f, 0.75f)
+                    }
+                }
             }
         }
+        crossings += crossed
 
         // Realignment: every pendulum back near its start at the same moment.
         val phase = elapsed % cyclePeriod
@@ -342,6 +362,27 @@ class PendulumWaveSim : Sim {
         val spread = env.halfWidth * 0.86f
         val pivotY = 0.92f
         g.line(-spread, pivotY, spread, pivotY, 0.008f, Palette.TEXT_SECONDARY, 0.45f)
+
+        // Past a few hundred, a bob and its string would be thinner than a pixel,
+        // so the whole curtain goes through the point path instead.
+        if (count > DRAWN_AS_POINTS) {
+            g.reservePoints(count)
+            val size = (2.6f - count / 12000f).coerceIn(1.2f, 2.6f)
+            for (i in 0 until count) {
+                val t = i.toFloat() / (count - 1)
+                val px = -spread + t * spread * 2f
+                val l = lengths[i]
+                g.point(
+                    px + sin(angles[i]) * l,
+                    pivotY - cos(angles[i]) * l,
+                    size,
+                    palette.at(t)
+                )
+            }
+            if (payoffFrame) g.flash(0.35f)
+            return
+        }
+
         for (i in 0 until count) {
             val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
             val px = -spread + t * spread * 2f
@@ -366,6 +407,15 @@ class PendulumWaveSim : Sim {
     companion object {
         private const val GRAVITY_SIM = 9.81f
 
+        /** The curtain can be twenty thousand strings wide. */
+        const val MAX_PENDULUMS = 20_000
+
+        /** Above this, bobs and strings become points. */
+        const val DRAWN_AS_POINTS = 400
+
+        /** How many of them are allowed to make a sound. */
+        const val VOICES = 48
+
         fun def(): SimDef = SimDef(
             id = "physics/pendulum-wave",
             title = "Pendulum wave",
@@ -377,7 +427,7 @@ class PendulumWaveSim : Sim {
             heroLabel = "Drop again",
             typicalSeconds = 32f,
             params = listOf(
-                Param.int("count", "Pendulums", 3, 64, 15, card = Card.DATA),
+                Param.int("count", "Pendulums", 3, 20000, 15, card = Card.DATA, logScale = true),
                 Param.float("period", "Cycle length", 6f, 120f, 30f, card = Card.MOTION, unit = "s"),
                 Param.float("oscillations", "Base swings per cycle", 6f, 40f, 13f, card = Card.MOTION, advancedOnly = true),
                 Param.float("amplitude", "Swing", 0.1f, 1.2f, 0.6f, card = Card.MOTION, unit = "rad")
@@ -439,11 +489,18 @@ class NewtonsCradleSim : Sim {
             val xj = pos[i + 1] * l
             val gap = (xj + (i + 1) * spacing) - (xi + i * spacing)
             if (gap < spacing * 0.999f && vel[i] > vel[i + 1]) {
-                val e = env.laws.restitution.coerceIn(0f, 1.05f)
+                val e = env.laws.bounce.coerceIn(0f, 1.05f)
                 val vi = vel[i]
                 val vj = vel[i + 1]
-                vel[i] = vj * e
-                vel[i + 1] = vi * e
+                if (env.laws.sticky) {
+                    // Sticky cradle: the balls clump and travel together.
+                    val shared = (vi + vj) * 0.5f
+                    vel[i] = shared
+                    vel[i + 1] = shared
+                } else {
+                    vel[i] = vj * e
+                    vel[i + 1] = vi * e
+                }
                 clicks++
                 env.emit(EventKind.HIT, i.toFloat() / max(1, n - 1), 0f, 0.8f)
                 // A handful of clean transfers first, so the payoff is the rhythm
@@ -472,6 +529,7 @@ class NewtonsCradleSim : Sim {
             g.glow(bx, by, radius * 2.6f, c, 0.4f)
             g.disc(bx, by, radius, c)
         }
+        if (payoffFrame) g.flash(0.28f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -493,6 +551,12 @@ class NewtonsCradleSim : Sim {
                 Param.int("count", "Balls", 3, 9, 5, card = Card.DATA),
                 Param.int("lift", "Lifted", 1, 4, 1, card = Card.DATA),
                 Param.float("swing", "Swing", 0.1f, 1f, 0.55f, card = Card.MOTION, unit = "rad")
+            ),
+            macros = listOf(
+                Macro(
+                    "cradle", "How many", Card.DATA,
+                    mapOf("count" to 3f..9f, "lift" to 1f..4f), 0.25f
+                )
             ),
             create = { NewtonsCradleSim() }
         )

@@ -58,21 +58,30 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             .fillMaxSize()
             .background(Tokens.Bg)
             .pointerInput(order.size) {
-                detectVerticalDragGestures { _, dragAmount ->
-                    if (dragAmount < -28f) {
-                        hint = false
-                        index = (index + 1) % order.size
-                    } else if (dragAmount > 28f) {
-                        hint = false
-                        index = (index - 1 + order.size) % order.size
+                // One flick moves one sim. Acting on each drag delta instead
+                // would run through several on a single swipe.
+                var travelled = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { travelled = 0f },
+                    onDragCancel = { travelled = 0f },
+                    onDragEnd = {
+                        if (travelled <= -SWIPE) {
+                            hint = false
+                            index = (index + 1) % order.size
+                        } else if (travelled >= SWIPE) {
+                            hint = false
+                            index = (index - 1 + order.size) % order.size
+                        }
+                        travelled = 0f
                     }
-                }
+                ) { _, dragAmount -> travelled += dragAmount }
             }
     ) {
         SimCanvas(
             surface = surface,
             modifier = Modifier.fillMaxSize(),
-            onTap = { state.screen = Screen.PLAYER }
+            onTap = { state.screen = Screen.PLAYER },
+            onDoubleTap = { state.toggleFavourite(order[index].id) }
         )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -132,3 +141,6 @@ private fun hookFor(state: AppState): String {
     val format = state.currentDef.formats.firstOrNull()
     return format?.hook ?: state.currentDef.blurb
 }
+
+/** Pixels of travel that count as a deliberate swipe. */
+private const val SWIPE = 90f

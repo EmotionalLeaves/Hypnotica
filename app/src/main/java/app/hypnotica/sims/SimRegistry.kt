@@ -8,6 +8,7 @@ import app.hypnotica.sims.algorithms.StructureSims
 import app.hypnotica.sims.art.ArtSims
 import app.hypnotica.sims.dimensions.DimensionSims
 import app.hypnotica.sims.life.LifeSims
+import app.hypnotica.sims.math.EquationSim
 import app.hypnotica.sims.math.GeometrySims
 import app.hypnotica.sims.math.MathSims
 import app.hypnotica.sims.physics.PhysicsExtras
@@ -32,6 +33,7 @@ object SimRegistry {
             addAll(PhysicsExtras.defs())
             addAll(MathSims.defs())
             addAll(GeometrySims.defs())
+            add(EquationSim.def())
             addAll(LifeSims.defs())
             addAll(ArtSims.defs())
             addAll(DimensionSims.defs())

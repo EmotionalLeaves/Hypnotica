@@ -352,11 +352,14 @@ class ClothSim : Sim {
     private var payoffFrame = false
     private var elapsed = 0f
     private var tearing = false
+    private var tears = 0
+    private var lastTears = 0
+    private var swayClock = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        cols = p.i("cols", 26).coerceIn(3, 90)
-        rows = p.i("rows", 20).coerceIn(2, 90)
+        cols = p.i("cols", 26).coerceIn(3, 200)
+        rows = p.i("rows", 20).coerceIn(2, 200)
         val n = cols * rows
         x = FloatArray(n); y = FloatArray(n)
         ox = FloatArray(n); oy = FloatArray(n)
@@ -380,6 +383,9 @@ class ClothSim : Sim {
             pinned[c] = true
         }
         tearing = p.b("tear", false)
+        tears = 0
+        lastTears = 0
+        swayClock = 0f
         payoffFrame = false
         elapsed = 0f
     }
@@ -415,6 +421,32 @@ class ClothSim : Sim {
                 }
             }
         }
+        // Each thread that snaps is a note, and the sway itself is a slow pulse,
+        // so the cloth is never silent while it is moving.
+        if (tears > lastTears) {
+            val fresh = (tears - lastTears).coerceAtMost(12)
+            lastTears = tears
+            env.emit(EventKind.DEATH, 0.25f + 0.5f * (tears % 7) / 7f, 0f, min(1f, 0.4f + fresh * 0.08f))
+        }
+        swayClock += abs(dt)
+        if (swayClock > 0.22f) {
+            swayClock = 0f
+            var motion = 0f
+            var sampled = 0
+            var i = 0
+            while (i < n) {
+                if (!cut[i] && !pinned[i]) {
+                    motion += abs(x[i] - ox[i]) + abs(y[i] - oy[i])
+                    sampled++
+                }
+                i += maxOf(1, n / 64)
+            }
+            if (sampled > 0) {
+                val amount = (motion / sampled * 60f).coerceIn(0f, 1f)
+                if (amount > 0.04f) env.emit(EventKind.STEP, amount, 0f, 0.2f + amount * 0.5f)
+            }
+        }
+
         if (elapsed > 6f && !payoffFrame && elapsed < 6f + abs(dt) * 1.5f) {
             payoffFrame = true
             env.emit(EventKind.DONE, 0.6f, 0f, 0.9f)
@@ -429,6 +461,7 @@ class ClothSim : Sim {
         if (d < 1e-6f) return
         if (tearing && d > rest * 4.5f) {
             cut[b] = true
+            tears++
             return
         }
         val diff = (d - rest) / d * 0.5f
@@ -492,8 +525,8 @@ class ClothSim : Sim {
             defaultPalette = "Ocean",
             typicalSeconds = 24f,
             params = listOf(
-                Param.int("cols", "Columns", 3, 90, 26, card = Card.DATA),
-                Param.int("rows", "Rows", 2, 90, 20, card = Card.DATA),
+                Param.int("cols", "Columns", 3, 200, 26, card = Card.DATA, logScale = true),
+                Param.int("rows", "Rows", 2, 200, 20, card = Card.DATA, logScale = true),
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
                 Param.float("wind", "Wind", 0f, 1.5f, 0.2f, card = Card.MOTION),
@@ -745,7 +778,10 @@ class ChargesSim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val sign = env.laws.chargeSign
-        val strength = env.params.f("strength", 1f) * 0.0025f
+        // The law scales what the slider asks for, so "Strong charges" is felt
+        // here rather than being a name with nothing behind it.
+        val strength = env.params.f("strength", 1f) * 0.0025f *
+            env.laws.electricStrength.coerceIn(0.05f, 20f)
         var captured = 0
         Parallel.forRange(particles) { from, to ->
             for (i in from until to) {

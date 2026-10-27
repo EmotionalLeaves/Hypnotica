@@ -408,7 +408,10 @@ class LuaSim(private val source: String) : Sim {
                 "friction" -> l.friction
                 "time_dir" -> l.timeDirection
                 "time_scale" -> l.timeScale
-                "dims" -> l.dims.toFloat()
+                "sticky" -> if (l.sticky) 1f else 0f
+                "pass_through" -> if (l.passThrough) 1f else 0f
+                "electric" -> l.electricStrength
+                "wrap" -> if (l.space != app.hypnotica.core.laws.Space.BOX) 1f else 0f
                 "mass_sign" -> l.massSign
                 "g_constant" -> l.gravityConstant
                 "falloff" -> l.falloff

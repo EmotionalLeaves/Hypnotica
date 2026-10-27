@@ -126,7 +126,10 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         val dt = 1f / stepHz
         accumulator += min(frameSeconds, MAX_FRAME_SECONDS) * scale
 
-        var budget = MAX_STEPS_PER_FRAME
+        // The budget follows what was asked for: a fixed 16 steps capped the
+        // speed slider at about 8x however far it was dragged.
+        val wanted = (kotlin.math.abs(accumulator) * stepHz).toInt() + 2
+        var budget = wanted.coerceIn(MAX_STEPS_PER_FRAME, MAX_STEPS_BURST)
         while (kotlin.math.abs(accumulator) >= dt && budget > 0) {
             val signedDt = if (accumulator > 0f) dt else -dt
             params.tick(env.time)
@@ -150,9 +153,15 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         if (budget == 0) accumulator = 0f
     }
 
-    /** Run n steps with no rendering. Used by the payoff pre-check and offline render. */
+    /**
+     * Run n steps with no rendering. Used by the payoff pre-check and the offline
+     * render, so it has to obey the same laws the live loop does — otherwise a
+     * backwards or slowed universe would export forwards at 1x.
+     */
     fun advanceSteps(n: Int) {
-        val dt = 1f / stepHz
+        val laws = env.laws
+        val dt = (1f / stepHz) * laws.timeDirection *
+            (if (laws.timeScale > 0f) laws.timeScale else 1f)
         var i = 0
         while (i < n && !finished) {
             params.tick(env.time)
@@ -181,5 +190,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         const val SLOWMO_FACTOR = 0.25f
         const val MAX_FRAME_SECONDS = 0.05f
         const val MAX_STEPS_PER_FRAME = 16
+
+        /** Ceiling for one frame, so a stall cannot cascade into a freeze. */
+        const val MAX_STEPS_BURST = 48
     }
 }

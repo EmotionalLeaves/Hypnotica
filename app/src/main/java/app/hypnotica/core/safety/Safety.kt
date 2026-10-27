@@ -24,7 +24,9 @@ class FlashLimiter {
      * Strengths under [SMALL] are not counted as flashes at all.
      */
     fun allow(request: Float, frameSeconds: Float): Float {
-        budget = (budget + frameSeconds * maxPerSecond).coerceAtMost(maxPerSecond)
+        // Reduce flashing both softens each flash and allows fewer of them.
+        val cap = if (reduceFlashing) REDUCED_PER_SECOND else maxPerSecond
+        budget = (budget + frameSeconds * cap).coerceAtMost(cap)
         var want = request.coerceIn(0f, 1f)
         if (reduceFlashing) want *= 0.25f
         if (want <= SMALL) {
@@ -48,6 +50,8 @@ class FlashLimiter {
     }
 
     companion object {
+        /** The cap when "Reduce flashing" is on: one large flash a second. */
+        const val REDUCED_PER_SECOND = 1f
         const val SMALL = 0.08f
     }
 }

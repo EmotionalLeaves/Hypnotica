@@ -31,7 +31,6 @@ enum class TrapFormat(val title: String, val hook: String) {
     FILL("Fill to the line", "Stop at the line"),
     GROW("Grow and build", "Watch it grow"),
     SONG("Song mode", "The bounces play the tune"),
-    SPLIT("Split screen", "Top or bottom?"),
     LAST_STANDING("Last one standing", "Last one standing"),
     LOOP("Perfect loop", "It never restarts"),
     GUESS("Guess the winner", "Guess before it ends"),

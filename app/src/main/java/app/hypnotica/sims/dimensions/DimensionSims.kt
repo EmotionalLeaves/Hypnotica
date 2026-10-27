@@ -44,6 +44,9 @@ class HypercubeSim : Sim {
     private var planeB = 3
     private var manualSpin = 0f
 
+    /** Which corners are currently on the far side of the extra axis. */
+    private var behind = BooleanArray(0)
+
     override fun setup(env: SimEnv) {
         val p = env.params
         dims = p.i("dims", 4).coerceIn(2, Nd.MAX_DIMS)
@@ -53,6 +56,7 @@ class HypercubeSim : Sim {
         screenX = FloatArray(n)
         screenY = FloatArray(n)
         screenD = FloatArray(n)
+        behind = BooleanArray(n) { verts[it * dims + (dims - 1)] < 0f }
         planeA = p.i("planeA", 0).coerceIn(0, dims - 1)
         planeB = p.i("planeB", min(3, dims - 1)).coerceIn(0, dims - 1)
         if (planeA == planeB) planeB = (planeA + 1) % dims
@@ -73,6 +77,23 @@ class HypercubeSim : Sim {
         if (dims >= 3) Nd.rotatePlane(verts, n, dims, 0, 1, tilt * dt)
         if (dims >= 5) Nd.rotatePlane(verts, n, dims, 2, 4, tilt * 0.6f * dt)
         manualSpin *= (1f - 2f * dt).coerceIn(0f, 1f)
+
+        // Every corner that crosses the far side of the extra axis is a note, so
+        // the sound follows the shape rather than waiting for a whole turn.
+        if (dims >= 3) {
+            val axis = dims - 1
+            for (i in 0 until n) {
+                val w = verts[i * dims + axis]
+                val wasBehind = behind[i]
+                val isBehind = w < 0f
+                if (isBehind != wasBehind) {
+                    behind[i] = isBehind
+                    if (isBehind) {
+                        env.emit(EventKind.CROSS, 0.25f + 0.6f * (i.toFloat() / n), 0f, 0.55f)
+                    }
+                }
+            }
+        }
 
         // One full turn through the chosen plane is the beat of this sim.
         val period = if (speed > 0.001f) (2f * PI.toFloat() / speed) else 1e9f
@@ -140,7 +161,7 @@ class HypercubeSim : Sim {
                 Param.int("dims", "Dimensions", 2, Nd.MAX_DIMS, 4, card = Card.DATA),
                 Param.int("planeA", "Spin plane, first axis", 0, Nd.MAX_DIMS - 1, 0, card = Card.MOTION, advancedOnly = true),
                 Param.int("planeB", "Spin plane, second axis", 0, Nd.MAX_DIMS - 1, 3, card = Card.MOTION, advancedOnly = true),
-                Param.float("spin", "Spin", 0f, 2f, 0.55f, card = Card.MOTION),
+                Param.float("spin", "Spin", 0.05f, 2f, 0.55f, card = Card.MOTION),
                 Param.float("tilt", "Tilt", 0f, 1.5f, 0.22f, card = Card.MOTION),
                 Param.float("viewer", "Viewer distance", 1.6f, 8f, 3f, card = Card.LOOK, advancedOnly = true)
             ),
@@ -238,7 +259,7 @@ class SlicingSim : Sim {
             shelf = Shelf.DIMENSIONS,
             family = "Slicing & Flatland",
             blurb = "A whole sphere arrives as a circle that grows and vanishes.",
-            formats = listOf(TrapFormat.LOOP, TrapFormat.REVEAL),
+            formats = listOf(TrapFormat.LOOP, TrapFormat.REVEAL, TrapFormat.CUT),
             heroLabel = "Send it through",
             defaultPalette = "Ocean",
             typicalSeconds = 22f,
@@ -247,8 +268,14 @@ class SlicingSim : Sim {
                     "shape", "Object", listOf("Hypersphere", "Hypercube", "Cone"), 0,
                     card = Card.DATA, input = ParamInput.TILES
                 ),
-                Param.int("dims", "Dimensions", 2, 5, 3, card = Card.DATA),
+                Param.int("dims", "Dimensions", 2, Nd.MAX_DIMS, 3, card = Card.DATA),
                 Param.float("speed", "Speed", 0.05f, 2f, 0.42f, card = Card.MOTION)
+            ),
+            macros = listOf(
+                Macro(
+                    "how-many-dims", "How many dimensions", Card.DATA,
+                    mapOf("dims" to 2f..Nd.MAX_DIMS.toFloat()), 0.25f
+                )
             ),
             create = { SlicingSim() }
         )
@@ -291,8 +318,15 @@ class RandomWalkSim : Sim {
         steps = 0
         returned = 0
         payoffFrame = false
+        paid = false
         carry = 0f
     }
+
+    /** True once the payoff has fired, so it fires once. */
+    private var paid = false
+
+    /** Share of walkers home before the payoff: above 3D, not all can return. */
+    private val RETURN_SHARE = 0.45f
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -311,8 +345,15 @@ class RandomWalkSim : Sim {
                 if (Nd.length(pos, base, dims) < stepSize * 0.75f) {
                     home[w] = true
                     returned++
-                    env.emit(EventKind.DONE, 0.8f, 0f, 0.7f)
-                    if (returned == walkers) payoffFrame = true
+                    env.emit(EventKind.CROSS, 0.35f + 0.5f * (returned.toFloat() / walkers), 0f, 0.7f)
+                    // Above three dimensions a random walk is not recurrent, so
+                    // waiting for every walker would wait forever. The payoff is
+                    // the moment most of those that can come back have.
+                    if (!paid && returned >= (walkers * RETURN_SHARE).toInt().coerceAtLeast(1)) {
+                        paid = true
+                        payoffFrame = true
+                        env.emit(EventKind.DONE, 1f, 0f, 1f)
+                    }
                 }
             }
             // Record the first walker's path as the visible trail.
@@ -364,7 +405,7 @@ class RandomWalkSim : Sim {
             shelf = Shelf.DIMENSIONS,
             family = "Physics in N dimensions",
             blurb = "Always on a line or a grid. In three dimensions, maybe never.",
-            formats = listOf(TrapFormat.GUESS, TrapFormat.NUMBER_UP),
+            formats = listOf(TrapFormat.GUESS, TrapFormat.NUMBER_UP, TrapFormat.ESCAPE),
             heroLabel = "Send them out",
             defaultPalette = "Candy",
             typicalSeconds = 30f,
@@ -424,7 +465,7 @@ class NdBounceSim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val laws = env.laws
-        val e = laws.restitution
+        val e = if (laws.sticky) 0f else laws.bounce
         val wall = 0.85f
         var hitsThisStep = 0
         for (i in 0 until count) {
@@ -487,7 +528,7 @@ class NdBounceSim : Sim {
             shelf = Shelf.DIMENSIONS,
             family = "Physics in N dimensions",
             blurb = "More dimensions, more walls, a busier rhythm.",
-            formats = listOf(TrapFormat.SONG, TrapFormat.LOOP),
+            formats = listOf(TrapFormat.SONG, TrapFormat.LOOP, TrapFormat.ESCAPE),
             usesLaws = true,
             heroLabel = "Shake the box",
             defaultPalette = "Ember",

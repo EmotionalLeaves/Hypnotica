@@ -30,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.director.Clip
-import app.hypnotica.core.director.ClipDirector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -46,7 +45,8 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
-    val director = remember { ClipDirector() }
+    // The director lives in the state, so taste survives leaving TickTock.
+    val director = state.director
     val queue = remember { ArrayDeque<Clip>() }
     var current by remember { mutableStateOf<Clip?>(null) }
     var showChrome by remember { mutableStateOf(true) }
@@ -103,21 +103,28 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             .fillMaxSize()
             .background(Tokens.Bg)
             .pointerInput(Unit) {
+                // The whole flick is one decision: acting per drag delta used to
+                // throw away several generated clips, and teach the feed that the
+                // person disliked all of them.
+                var travelled = 0f
                 detectVerticalDragGestures(
-                    onDragEnd = { }
-                ) { _, drag ->
-                    if (drag < -30f) {
-                        current?.let { director.skip(it) }
-                        scope.launch { advance() }
-                    } else if (drag > 30f) {
-                        state.screen = Screen.SETTINGS
+                    onDragStart = { travelled = 0f },
+                    onDragCancel = { travelled = 0f },
+                    onDragEnd = {
+                        if (travelled <= -SWIPE_PIXELS) {
+                            current?.let { state.skipClip(it) }
+                            scope.launch { advance() }
+                        } else if (travelled >= SWIPE_PIXELS) {
+                            state.screen = Screen.SETTINGS
+                        }
+                        travelled = 0f
                     }
-                }
+                ) { _, drag -> travelled += drag }
             }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
-                        current?.let { director.like(it); liked = true }
+                        current?.let { state.likeClip(it); liked = true }
                     },
                     onLongPress = {
                         current?.let { state.openClipInPlayer(it) }
@@ -190,3 +197,6 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         }
     }
 }
+
+/** Pixels of travel that count as a deliberate swipe. */
+private const val SWIPE_PIXELS = 90f

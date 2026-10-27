@@ -3,8 +3,11 @@ package app.hypnotica.core.laws
 import kotlin.math.abs
 import kotlin.math.pow
 
-/** How space wraps at the edges of the world. */
-enum class Space { BOX, TORUS, MOBIUS, SPHERE, ENDLESS }
+/**
+ * How space behaves at the edges of the world. Only these two are honoured by
+ * the sims, so only these two exist: a mode nothing reads is a lie in a menu.
+ */
+enum class Space { BOX, TORUS }
 
 /**
  * The rules of the universe a physics sim runs in.
@@ -34,8 +37,8 @@ data class Laws(
     val sticky: Boolean = false,
     /** Objects pass through each other. */
     val passThrough: Boolean = false,
+    /** When true, a bounce can never return more energy than it received. */
     val conserveEnergy: Boolean = true,
-    val conserveMomentum: Boolean = true,
     /** Speed limit in sim units per second. Low values make relativity visible. */
     val lightSpeed: Float = 1e9f,
     /** +1 forward, -1 backwards. */
@@ -44,10 +47,9 @@ data class Laws(
     val timeScale: Float = 1f,
     /** +1 = like charges repel (our universe), -1 = like charges attract. */
     val chargeSign: Float = 1f,
-    val electricStrength: Float = 0f,
+    /** Multiplier on the electrostatic force. 1 = as the sim intends. */
+    val electricStrength: Float = 1f,
     val space: Space = Space.BOX,
-    /** Spatial dimensions, 1..6. */
-    val dims: Int = 2,
     val name: String = "Our universe"
 ) {
 
@@ -77,6 +79,12 @@ data class Laws(
 
     val isReversed: Boolean get() = timeDirection < 0f
 
+    /**
+     * The restitution a collision may actually use. With [conserveEnergy] on, a
+     * bounce cannot hand back more than it was given, however high the slider.
+     */
+    val bounce: Float get() = if (conserveEnergy) restitution.coerceAtMost(1f) else restitution
+
     companion object {
         const val MIN_R = 0.004f
 
@@ -89,13 +97,14 @@ data class Laws(
             Laws(gravityDirY = -1f, name = "Upside-down"),
             Laws(restitution = 1.06f, friction = 0f, conserveEnergy = false, name = "Bouncy"),
             Laws(restitution = 0.05f, sticky = true, name = "Sticky"),
+            Laws(passThrough = true, name = "Ghosts"),
             Laws(friction = 0.5f, restitution = 0.2f, name = "Syrup"),
             Laws(lightSpeed = 2.2f, name = "Slow light"),
             Laws(timeDirection = -1f, name = "Backwards time"),
             Laws(gravityConstant = -1f, name = "Repulsive gravity"),
             Laws(massSign = -1f, name = "Negative mass"),
             Laws(space = Space.TORUS, name = "Wrap-around space"),
-            Laws(dims = 4, name = "Four dimensions"),
+            Laws(electricStrength = 4f, name = "Strong charges"),
             Laws(gravity = 24.5f, restitution = 0.98f, name = "Heavy & bouncy")
         )
 

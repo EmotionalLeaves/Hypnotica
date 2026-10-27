@@ -96,6 +96,11 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.all {
+            // The smoke test runs 400,000 particles and a 1024-square grid.
+            it.maxHeapSize = "2g"
+            it.testLogging { showStandardStreams = true }
+        }
     }
 
     lint {

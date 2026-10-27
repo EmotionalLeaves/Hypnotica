@@ -1,7 +1,7 @@
 # Rounds
 
-Each round ends in an installable APK that passes `QA.md`. Tick a round only
-when its "done when" test actually passes on the phone.
+Each round ends in an installable APK that passes `QA.md`. A round is ticked
+only when its "done when" test actually passes on the phone.
 
 | Round | Status | Ships | Done when |
 | --- | --- | --- | --- |
@@ -10,14 +10,18 @@ when its "done when" test actually passes on the phone.
 | 3. Sound | done | Synth, sound events, scales, rate limiter, presets | Quicksort on 1,000 bars sounds musical, not static |
 | 4. Sorting pack | done | Simple-mode cards, 12 sorts, 5 views, counters | Every sort finishes and does the final sweep |
 | 5. Physics pack | done | Shared Laws table, ball escape, pendulum wave, Newton's cradle, Galton board | Pendulum wave realigns on schedule; the ball escapes |
-| 6. Recipes | next | Lua sandbox, Advanced tabs (Data, Params, Laws, Sound, Code), recipe editor | A recipe written by an AI runs first try |
-| 7. Shelf packs | planned | Fractals, maze and pathfinding, number theory, probability, visual proofs, graphs | 60+ sims across the shelves |
-| 8. Feed and Endless | partly done | Swipe feed, auto-advance, favourites; thumbnails still placeholders | Opening the app plays a sim within 1 s |
-| 9. Export | planned | MP4 with audio, offline render, 9:16/1:1/16:9, overlays | A 30 s vertical clip exports with synced sound |
-| 10. Builders and polish | planned | Equation, grid and particle builders, expressions in fields, Evolve, Record moves | Typing `z = z^2 + c` produces a zoomable fractal |
-| 11. Laws and dimensions | partly done | Laws presets and card done; N-dimensional engine and the Dimensions shelf still to come | Backwards time rebuilds a collapsed tower; a tesseract spins through XW |
-| 12. TickTock | planned | Hidden settings button, clip director with payoff pre-check, trap formats, on-device weighting | 50 swipes with no repeat and no dull clip |
-| 13. Studio | planned | Timeline, keyframes, camera track, templates, background render | A 30 s clip with a camera orbit and a mid-clip gravity flip exports at 1080p60 |
+| 6. Recipes | done | Lua sandbox, Advanced tabs (Data, Params, Laws, Sound, Code), recipe editor, three shipped samples | A recipe written by an AI runs first try |
+| 7. Shelf packs | done | Fractals, maze and pathfinding, number theory, probability, visual proofs, graphs, art | 57 sims across six shelves |
+| 8. Feed and Library | done | Swipe feed, auto-advance, favourites that persist, live previews on every card | Opening the app plays a sim within 1 s |
+| 9. Export | done | MP4 with audio, offline render, 9:16/1:1/16:9, captions, cancel, saved to Movies | A 30 s vertical clip exports with synced sound |
+| 10. Builders and polish | done | Equation sim, expressions in any field, Evolve, Record moves, device benchmark, first-run card | Typing a formula draws it; recorded moves land in Studio |
+| 11. Laws and dimensions | done | 14 law presets, force-law expressions, N-dimensional engine, six Dimensions sims | Backwards time rebuilds a collapsed tower; a tesseract spins through XW |
+| 12. TickTock | done | Hidden settings button, clip director with payoff pre-check, 15 trap formats, on-device weighting that persists | 50 swipes with no repeat and no dull clip |
+| 13. Studio | done | Timeline, 9 tracks, keyframes, freezes, captions, templates, offline render | A 30 s clip with a camera orbit and a mid-clip gravity flip exports at 1080p60 |
+| 14. On the phone | open | Whatever `QA.md` finds on the device | The checklist passes end to end on real hardware |
+
+Rounds 1–13 are built and verified headlessly. Round 14 is the one that needs a
+phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
@@ -28,30 +32,47 @@ when its "done when" test actually passes on the phone.
 - Instanced OpenGL ES 3 renderer: one shader covers bars, discs, rings with a
   gap, lines and glows; a separate point-sprite path carries the huge counts.
   Trails use a ping-pong framebuffer; the present pass adds vignette and flash.
-- Polyphonic synth on its own thread fed by a lock-free event queue, with seven
-  voices, nine scales, seven presets and a rate limiter that merges bursts.
-- Flash limiter enforcing three large flashes a second.
+- Polyphonic synth on its own thread fed by an event queue, with seven voices,
+  nine scales, seven presets and a rate limiter that merges bursts.
+- Flash limiter enforcing three large flashes a second, one when Reduce flashing
+  is on.
 - 12 sorting algorithms written as resumable state machines, so one
   implementation covers 200 bars and 200,000 bars at any speed.
 - Laws table shared by every physics sim, with an expression compiler so a force
   law can be typed in.
-- 20 sims registered across four shelves.
 
-Measured on a two-core CI runner, per 60 Hz frame, step plus draw-list build:
+### Rounds 6–13 — recipes, shelves, feed, export, laws, TickTock, Studio
 
-| Sim | Size | Time |
-| --- | --- | --- |
-| Particle field | 150,000 | 15.8 ms |
-| Particle field | 400,000 | 41.2 ms |
-| Sorting bars | 200,000 | 3.8 ms |
-| Game of Life | 1024 x 1024 | 9.1 ms |
+- Lua recipe sandbox with a per-step time budget; recipes are plain text files
+  that register as sims. `docs/RECIPE_SPEC.md` is the contract.
+- 57 sims across six shelves: Algorithms, Physics, Math, Dimensions, Life &
+  nature, Art & pattern.
+- Live Library previews: each card runs the sim headlessly for a moment and
+  paints its real draw list.
+- Offline MP4 export with the synth's audio, captions composited in, cancellable,
+  published to `Movies/Hypnotica`.
+- Equation sim: parametric curves, vector fields and iterated maps typed in as
+  formulas, with nine ready-made starting points.
+- Macros: one Simple-mode slider moving several values, on every sim.
+- TickTock: generated clips, each verified to pay off before it is shown; taste
+  and muted formats persist on the phone.
+- Studio: nine keyframed tracks, freezes, captions, templates, offline render.
+- Device benchmark on first launch, which sizes the generated clips.
 
-A phone has more cores than the runner, so the particle numbers should improve
-there; the figure to trust is the one `QA.md` records on the actual device.
+### What the test suite checks on every build
+
+`:app:testDebugUnitTest` runs the registry smoke test: every sim is stepped
+headlessly under seven law presets looking for crashes, then checked for a
+payoff, for sound, for a Simple-mode macro and for a Library preview. The big
+sizes are run and their per-frame cost is printed. Sorting correctness, RNG
+determinism, the expression compiler, the laws table, parameter clamping and the
+flash limiter are covered too.
 
 ## Known gaps
 
-- Thumbnails in the Library are generated glyphs, not live previews.
-- Favourites are in memory only; they do not survive a restart yet.
-- The Dimensions shelf, TickTock and Studio are not built yet.
-- Sims are Kotlin classes; the Lua recipe layer arrives in round 6.
+- Nothing in this repo has been run on a phone. Every number here was measured
+  on a CI runner, headlessly.
+- N-body is O(n²) and stops at 4,000 bodies; the other big sims reach five
+  figures. Barnes-Hut would fix it.
+- The in-app browser of recipes has no sharing; a recipe moves by copy and paste.
+- Studio renders to MP4 only — no GIF, no PNG sequence.

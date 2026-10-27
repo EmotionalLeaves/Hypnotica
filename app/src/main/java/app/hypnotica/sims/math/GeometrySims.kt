@@ -188,7 +188,7 @@ class RiemannSim : Sim {
         val p = env.params
         curve = p.choiceIndex("curve")
         bars = 2
-        maxBars = p.i("maxbars", 400).coerceIn(8, 4000)
+        maxBars = p.i("maxbars", 400).coerceIn(8, 200_000)
         carry = 0f
         payoffFrame = false
         converged = false
@@ -305,7 +305,7 @@ class RiemannSim : Sim {
             params = listOf(
                 Param.choice("curve", "Curve", listOf("x squared", "sine", "quarter circle"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
-                Param.int("maxbars", "Finest division", 8, 4000, 400, card = Card.DATA, logScale = true),
+                Param.int("maxbars", "Finest division", 8, 200000, 400, card = Card.DATA, logScale = true),
                 Param.float("rate", "Speed", 0.5f, 60f, 2.6f, card = Card.MOTION, logScale = true)
             ),
             create = { RiemannSim() }

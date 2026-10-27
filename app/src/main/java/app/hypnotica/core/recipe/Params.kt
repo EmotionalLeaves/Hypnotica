@@ -7,7 +7,7 @@ enum class Card(val title: String) {
     DATA("Data"), MOTION("Motion"), LOOK("Look"), SOUND("Sound"), LAWS("Laws")
 }
 
-enum class ParamType { INT, FLOAT, BOOL, CHOICE }
+enum class ParamType { INT, FLOAT, BOOL, CHOICE, EXPR }
 
 /** How Advanced mode renders the control. Simple mode always picks the big version. */
 enum class ParamInput { SLIDER, KNOB, TILES, CHIPS, TOGGLE, FIELD }
@@ -30,7 +30,9 @@ data class Param(
     val unit: String = "",
     val input: ParamInput = ParamInput.SLIDER,
     /** Slider response. Counts that span decades read far better on a log slider. */
-    val logScale: Boolean = false
+    val logScale: Boolean = false,
+    /** Starting text for an EXPR parameter. */
+    val defaultText: String = ""
 ) {
     companion object {
         fun int(
@@ -57,6 +59,16 @@ data class Param(
         ) = Param(
             key, label, ParamType.BOOL, 0f, 1f, if (default) 1f else 0f,
             card = card, advancedOnly = advancedOnly, input = ParamInput.TOGGLE
+        )
+
+        /** A formula the person types, such as an ODE or a parametric curve. */
+        fun expr(
+            key: String, label: String, default: String,
+            card: Card = Card.DATA, advancedOnly: Boolean = false, unit: String = ""
+        ) = Param(
+            key, label, ParamType.EXPR, 0f, 1f, 0f,
+            card = card, advancedOnly = advancedOnly, unit = unit,
+            input = ParamInput.FIELD, defaultText = default
         )
 
         fun choice(
@@ -86,9 +98,13 @@ data class Macro(
 /** Live values for one sim instance. */
 class ParamValues(val schema: List<Param>) {
 
-    private val values = HashMap<String, Float>(schema.size * 2)
-    private val exprs = HashMap<String, Expr>()
-    private val exprSources = HashMap<String, String>()
+    // Read and written from both the UI thread and the sim thread: the person
+    // drags a slider while the sim is mid-step. Concurrent maps rather than locks,
+    // because the sim reads these thousands of times a frame.
+    private val values = java.util.concurrent.ConcurrentHashMap<String, Float>(schema.size * 2)
+    private val texts = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val exprs = java.util.concurrent.ConcurrentHashMap<String, Expr>()
+    private val exprSources = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val byKey = schema.associateBy { it.key }
 
     /** Bumped whenever something changes, so the renderer/UI can notice cheaply. */
@@ -103,7 +119,11 @@ class ParamValues(val schema: List<Param>) {
         values.clear()
         exprs.clear()
         exprSources.clear()
-        for (p in schema) values[p.key] = p.default
+        texts.clear()
+        for (p in schema) {
+            values[p.key] = p.default
+            if (p.type == ParamType.EXPR) texts[p.key] = p.defaultText
+        }
         revision++
     }
 
@@ -130,6 +150,12 @@ class ParamValues(val schema: List<Param>) {
         return i(key).coerceIn(0, maxOf(0, p.choices.size - 1))
     }
 
+    /**
+     * Set a value. A formula attached to the same key is left alone: it used to
+     * be dropped here, which meant a slider nudge — or one tick of Evolve —
+     * silently deleted something the person had typed. Use [clearExpression] to
+     * remove a formula on purpose.
+     */
     fun set(key: String, value: Float) {
         val p = byKey[key]
         val v = if (p != null) value.coerceIn(p.min, p.max) else value
@@ -137,8 +163,21 @@ class ParamValues(val schema: List<Param>) {
             values[key] = v
             revision++
         }
-        exprs.remove(key)
-        exprSources.remove(key)
+    }
+
+    fun hasExpression(key: String): Boolean = exprs.containsKey(key)
+
+    /** The text of an EXPR parameter. */
+    fun text(key: String, fallback: String = ""): String = texts[key] ?: fallback
+
+    /** Returns false (and changes nothing) if the formula does not parse. */
+    fun setText(key: String, value: String): Boolean {
+        if (Expr.compileOrNull(value) == null) return false
+        if (texts[key] != value) {
+            texts[key] = value
+            revision++
+        }
+        return true
     }
 
     fun set(key: String, value: Int) = set(key, value.toFloat())
@@ -187,6 +226,13 @@ class ParamValues(val schema: List<Param>) {
         for ((key, range) in macro.targets) {
             set(key, range.start + (range.endInclusive - range.start) * t)
         }
+    }
+
+    fun textSnapshot(): Map<String, String> = HashMap(texts)
+
+    fun restoreTexts(map: Map<String, String>) {
+        for ((k, v) in map) texts[k] = v
+        revision++
     }
 
     fun snapshot(): Map<String, Float> = HashMap(values)

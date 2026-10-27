@@ -66,6 +66,12 @@ class VideoExporter(
 
     @Volatile
     var cancelled: Boolean = false
+        private set
+
+    /** Asks a running export to stop at the next frame. */
+    fun cancel() {
+        cancelled = true
+    }
 
     private class Sample(val data: ByteArray, val info: MediaCodec.BufferInfo)
 
@@ -77,7 +83,16 @@ class VideoExporter(
         val durationSeconds = project.duration.coerceIn(1f, MAX_SECONDS)
         val totalFrames = (durationSeconds * settings.fps).toInt().coerceAtLeast(1)
 
-        val encoder = EncoderSurface(settings.width, settings.height, settings.bitRate, settings.fps)
+        // Samples are held in memory until the muxer runs, so a long clip has
+        // its bitrate trimmed to fit rather than filling the heap.
+        val budgetBytes = MAX_BUFFER_MB * 1024 * 1024
+        val wantedBytes = (settings.bitRate / 8.0 * durationSeconds).toLong()
+        val bitRate = if (wantedBytes > budgetBytes) {
+            (settings.bitRate * (budgetBytes.toDouble() / wantedBytes)).toInt().coerceAtLeast(2_000_000)
+        } else {
+            settings.bitRate
+        }
+        val encoder = EncoderSurface(settings.width, settings.height, bitRate, settings.fps)
         val videoSamples = ArrayList<Sample>(totalFrames + 8)
         var videoFormat: MediaFormat? = null
 
@@ -103,6 +118,7 @@ class VideoExporter(
             mapping.applyPreset(SoundPreset.byName(soundPresetName))
 
             val camera = Camera()
+            val overlay = TextOverlay().also { it.prepare() }
             val g = G()
             val flash = FlashLimiter()
             val frameSeconds = 1f / settings.fps
@@ -115,15 +131,23 @@ class VideoExporter(
 
                 // Tracks drive the run rather than the other way round.
                 project.applyCamera(time, camera)
-                val speed = project.track(TrackKind.SPEED).valueAt(time)
+                val speedTrack = project.track(TrackKind.SPEED)
+                val speed = if (speedTrack.isEmpty()) 1f else speedTrack.valueAt(time)
                 val frozen = project.isFrozenAt(time)
+                // An empty track must not overwrite the laws the person chose:
+                // exporting a Zero-G run used to render it back on Earth.
+                val gravityTrack = project.track(TrackKind.GRAVITY)
+                val bounceTrack = project.track(TrackKind.BOUNCINESS)
                 core.setLaws(
                     laws.copy(
-                        gravity = project.track(TrackKind.GRAVITY).valueAt(time),
-                        restitution = project.track(TrackKind.BOUNCINESS).valueAt(time)
+                        gravity = if (gravityTrack.isEmpty()) laws.gravity
+                        else gravityTrack.valueAt(time),
+                        restitution = if (bounceTrack.isEmpty()) laws.restitution
+                        else bounceTrack.valueAt(time)
                     )
                 )
-                scene.trails = project.track(TrackKind.TRAILS).valueAt(time)
+                val trailsTrack = project.track(TrackKind.TRAILS)
+                if (!trailsTrack.isEmpty()) scene.trails = trailsTrack.valueAt(time)
 
                 if (!frozen) {
                     val steps = max(0, (core.stepHz * frameSeconds * max(0f, speed)).toInt())
@@ -139,6 +163,11 @@ class VideoExporter(
 
                 GLES30.glViewport(0, 0, settings.width, settings.height)
                 scene.render(g, camera, allowed)
+
+                // Captions go on last, over the finished frame.
+                for (clip in project.texts) {
+                    overlay.draw(clip, time, settings.width, settings.height)
+                }
 
                 if (audioPcm != null) {
                     mapping.pump(core.events, frameSeconds)
@@ -160,6 +189,7 @@ class VideoExporter(
 
             encoder.signalEndOfStream()
             videoFormat = drain(encoder.codec, videoSamples, videoFormat, endOfStream = true)
+            overlay.release()
             scene.release()
         } finally {
             encoder.release()
@@ -190,7 +220,10 @@ class VideoExporter(
     ): MediaFormat? {
         var format = knownFormat
         val info = MediaCodec.BufferInfo()
-        val timeout = if (endOfStream) 10_000L else 0L
+        // A zero timeout meant that a codec which had not quite finished a frame
+        // was never drained, and the next present() then blocked waiting for an
+        // input buffer — the classic surface-encoder stall.
+        val timeout = if (endOfStream) 10_000L else 2_000L
         // Bounded so a stalled encoder ends the export instead of hanging it.
         var spins = if (endOfStream) 600 else 64
         while (spins-- > 0) {
@@ -236,8 +269,12 @@ class VideoExporter(
         var finished = false
         var spins = blocks.size * 4 + 2000
 
+        // A wall-clock deadline as well as a spin count: a codec that accepts no
+        // input would otherwise sit in "Exporting..." for minutes with no way out.
+        val deadline = System.nanoTime() + (AUDIO_SECONDS_LIMIT * 1_000_000_000L)
         try {
-            while (!finished && spins-- > 0) {
+            while (!finished && spins-- > 0 && System.nanoTime() < deadline) {
+                if (cancelled) throw InterruptedException("Export cancelled")
                 if (blockIndex <= blocks.size) {
                     val inIndex = codec.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
@@ -344,5 +381,11 @@ class VideoExporter(
         const val AUDIO_MIME = "audio/mp4a-latm"
         /** Buffered in memory, so the length is capped rather than unbounded. */
         const val MAX_SECONDS = 60f
+
+        /** How much encoded video the exporter may hold before muxing. */
+        const val MAX_BUFFER_MB = 80
+
+        /** Longest the audio encoder may take before the clip goes out silent. */
+        const val AUDIO_SECONDS_LIMIT = 40L
     }
 }

@@ -29,6 +29,13 @@ It should take about two minutes.
 - [ ] Long-press opens the control drawer
 - [ ] Pinch zooms, two-finger drag pans, and the sim keeps running
 
+## Gestures
+
+- [ ] Double-tap on the player favourites the sim (the star fills)
+- [ ] A two-finger twist rotates the whole simulation and it keeps running
+- [ ] "Drag pans the view" in Look switches one-finger drag from the sim to the camera
+- [ ] The first launch shows the gesture card once, and never again
+
 ## Controls
 
 - [ ] Simple mode shows a handful of big controls, grouped on cards
@@ -37,10 +44,40 @@ It should take about two minutes.
 - [ ] A Motion or Look slider applies live
 - [ ] Palette and sound preset chips change the sim at once
 - [ ] On a physics sim, the Laws card swaps universes and every physics sim follows
+- [ ] A macro slider ("How much", "Energy", "Chaos") moves several values at once
+- [ ] Sticky, Ghosts and Strong charges each visibly change the physics
+- [ ] Evolve makes the sim drift on its own; switching it off leaves it where it was
+- [ ] A formula typed into an Advanced field is kept when a slider next to it moves
+
+## Library
+
+- [ ] Every card shows the sim itself, not a placeholder
+- [ ] Scrolling the Library stays smooth while the previews appear
+- [ ] Favourites survive force-quitting and reopening the app
+
+## TickTock
+
+- [ ] The hidden clock under the version number opens it
+- [ ] One flick moves one clip, not three
+- [ ] Every clip reaches a payoff; none is dull or empty
+- [ ] Double-tap likes, long-press opens it in the player
+- [ ] Muting a format in Settings stops that kind of clip appearing
+- [ ] Taste and muted formats survive a restart
+
+## Studio
+
+- [ ] Record moves in the player lands in Studio as draggable keyframes
+- [ ] Scrubbing is responsive; a long scrub catches up rather than freezing
+- [ ] Keyframe markers sit where their time is, including one at zero
+- [ ] A caption added at the playhead shows in the preview
+- [ ] Export runs with a progress bar and can be cancelled
+- [ ] The finished clip is in the gallery under Movies/Hypnotica, with sound and captions
+- [ ] Leaving Studio hands the sim back with the laws and speed you had before
 
 ## Performance
 
-- [ ] Pendulum wave is smooth
+- [ ] Settings shows what the benchmark measured for this phone
+- [ ] Pendulum wave is smooth, including at a few thousand pendulums
 - [ ] Sorting with 100,000 bars is smooth
 - [ ] Particle field at 150,000 is smooth; note where it starts to drop frames
 - [ ] Game of Life at 512x512 is smooth
@@ -58,6 +95,7 @@ It should take about two minutes.
 - [ ] Reduce flashing visibly softens the payoff flash
 - [ ] Reduce motion stops the punch-in and shake
 - [ ] Sound never gets harsh or piercing at the top of a fast run
+- [ ] Collisions and crossings can be felt, not only heard
 
 ## Notes
 

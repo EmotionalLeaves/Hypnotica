@@ -56,6 +56,24 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_LAST_SIM, null)
         set(value) = sp.edit().putString(KEY_LAST_SIM, value).apply()
 
+    /** What the benchmark measured, so it runs once rather than every launch. */
+    var deviceTier: String?
+        get() = sp.getString(KEY_TIER, null)
+        set(value) = sp.edit().putString(KEY_TIER, value).apply()
+
+    var benchNote: String?
+        get() = sp.getString(KEY_BENCH, null)
+        set(value) = sp.edit().putString(KEY_BENCH, value).apply()
+
+    /** TickTock's learned weighting, as the director exports it. */
+    var taste: String
+        get() = sp.getString(KEY_TASTE, "") ?: ""
+        set(value) = sp.edit().putString(KEY_TASTE, value).apply()
+
+    var mutedFormats: Set<String>
+        get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
+        set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
+
     var seenFirstLaunch: Boolean
         get() = sp.getBoolean(KEY_FIRST_LAUNCH, false)
         set(value) = sp.edit().putBoolean(KEY_FIRST_LAUNCH, value).apply()
@@ -72,5 +90,9 @@ class Prefs(context: Context) {
         const val KEY_TIME_CHECK = "time_check"
         const val KEY_LAST_SIM = "last_sim"
         const val KEY_FIRST_LAUNCH = "first_launch"
+        const val KEY_TIER = "device_tier"
+        const val KEY_BENCH = "bench_note"
+        const val KEY_TASTE = "taste"
+        const val KEY_MUTED = "muted_formats"
     }
 }

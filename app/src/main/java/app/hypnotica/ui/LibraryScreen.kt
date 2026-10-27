@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -29,12 +28,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.sims.SimRegistry
@@ -132,8 +131,8 @@ private fun SimTile(def: SimDef, favourite: Boolean, onClick: () -> Unit) {
                 .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            // A cheap, recognisable stand-in until live thumbnails land.
-            ThumbnailGlyph(def)
+            // The sim's own first second, simulated and painted on the card.
+            SimThumbnail(def, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
             if (favourite) {
                 Text(
                     "★",
@@ -161,20 +160,3 @@ private fun SimTile(def: SimDef, favourite: Boolean, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun ThumbnailGlyph(def: SimDef) {
-    val palette = Palette.byName(def.defaultPalette)
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
-        val seed = def.id.hashCode()
-        for (i in 0 until 9) {
-            val h = ((seed shr i) and 7) / 7f * 0.7f + 0.2f
-            val c = palette.at(i / 8f)
-            Box(
-                Modifier
-                    .width(7.dp)
-                    .height((56 * h).dp)
-                    .background(Color(c), RoundedCornerShape(2.dp))
-            )
-        }
-    }
-}

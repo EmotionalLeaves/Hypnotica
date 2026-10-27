@@ -20,6 +20,9 @@ object Parallel {
 
     const val MIN_ITEMS = 20_000
 
+    /** Long enough for any real slice, short enough not to freeze a frame. */
+    const val SLICE_TIMEOUT_SECONDS = 2L
+
     private val workers: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
 
     private val pool by lazy {
@@ -30,8 +33,6 @@ object Parallel {
             }
         }
     }
-
-    private val futures = ArrayList<Future<Unit>>(8)
 
     /** True when a range of this size is worth splitting up. */
     fun worthwhile(count: Int): Boolean = workers > 1 && count >= MIN_ITEMS
@@ -47,24 +48,40 @@ object Parallel {
         }
         val slices = workers
         val per = (count + slices - 1) / slices
-        futures.clear()
+        // Local, not shared: an offline export steps a second sim on another
+        // thread while the live one is mid-frame.
+        val futures = ArrayList<Future<Unit>>(slices)
+        val ranges = ArrayList<Int>(slices * 2)
         var start = per
         while (start < count) {
             val from = start
             val to = minOf(count, start + per)
             futures.add(pool.submit(Callable { body(from, to) }))
+            ranges.add(from)
+            ranges.add(to)
             start += per
         }
         // The calling thread takes the first slice instead of idling.
         body(0, minOf(per, count))
-        for (f in futures) {
+
+        var retryFrom = -1
+        var retryTo = -1
+        for (i in futures.indices) {
             try {
-                f.get(2, TimeUnit.SECONDS)
+                futures[i].get(SLICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             } catch (e: Exception) {
-                // A worker that fails must not take the frame down; the slice it
-                // owned simply does not advance this step.
+                // A slice that never ran would make the step quietly different
+                // from the same step elsewhere, and determinism is what the
+                // offline render and the payoff pre-check both rely on. Cancel
+                // the stragglers and run the rest on this thread instead.
+                if (retryFrom < 0) retryFrom = ranges[i * 2]
+                retryTo = ranges[i * 2 + 1]
+                futures[i].cancel(true)
             }
         }
-        futures.clear()
+        if (retryFrom >= 0) {
+            for (f in futures) if (!f.isDone) f.cancel(true)
+            body(retryFrom, retryTo)
+        }
     }
 }

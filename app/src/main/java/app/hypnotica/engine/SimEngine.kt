@@ -29,7 +29,7 @@ import kotlin.math.min
  *
  * The sim steps on the GL thread, immediately before the frame that draws it, so
  * there is no copy and no race between stepping and drawing. The synth keeps its
- * own thread, fed through the lock-free event queue.
+ * own thread, fed through the event queue.
  */
 class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
@@ -44,6 +44,18 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** Set by the activity; null in tests and in the offline exporter. */
     @Volatile
     var haptics: Haptics? = null
+
+    /** Drift the sim's own parameters slowly while it plays. */
+    @Volatile
+    var evolve: Boolean = false
+
+    private var evolveClock = 0f
+
+    /** Set while the person is recording their moves in the player. */
+    @Volatile
+    var recorder: app.hypnotica.core.studio.MoveRecorder? = null
+
+    private val pendingTouches = java.util.concurrent.ConcurrentLinkedQueue<TouchEvent>()
 
     private val g = G()
     private var lastFrameNanos = 0L
@@ -94,6 +106,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     @Volatile
     private var pendingSeek: Float? = null
 
+    /** Steps still owed to the seek in progress, spread over several frames. */
+    private var seekRemaining = 0
+
+    /** True while a scrub is still catching up, so the UI can say so. */
+    @Volatile
+    var seeking: Boolean = false
+        private set
+
     /**
      * Move the playhead. The run is deterministic, so the state at any moment is
      * found by starting again from the seed and stepping forward; there is no
@@ -103,7 +123,25 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         pendingSeek = seconds.coerceAtLeast(0f)
     }
 
+    /** Called when Studio closes, to undo anything the timeline was driving. */
+    fun detachProject(laws: Laws, trails: Float, speed: Float) {
+        project = null
+        studioPlaying = false
+        seekRemaining = 0
+        seeking = false
+        core.setLaws(laws)
+        scene.trails = trails
+        core.speed = speed
+    }
+
     init {
+        // Every event that is heard is also felt, as far as the motor allows.
+        mapping.onHaptic = { strength ->
+            if (safety.haptics) {
+                val h = haptics
+                if (strength >= 0.65f) h?.medium() else h?.light()
+            }
+        }
         mapping.safety = safety
         mapping.applyPreset(SoundPreset.byName(initial.defaultSound))
         core.setPalette(Palette.byName(initial.defaultPalette))
@@ -145,7 +183,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     fun stopAudio() = synth.stop()
 
-    fun onTouch(e: TouchEvent) = core.onInput(e)
+    /**
+     * Queue a touch. It is handed to the sim at the top of the next frame rather
+     * than straight away: this is called from the UI thread, and a sim that grew
+     * its arrays mid-step would be writing underneath the step that is running.
+     */
+    fun onTouch(e: TouchEvent) {
+        if (pendingTouches.size < MAX_PENDING_TOUCHES) pendingTouches.add(e)
+    }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         scene.surfaceCreated()
@@ -186,6 +231,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             resetRunState()
         }
 
+        // Touches arrive on the UI thread and are applied here, between frames.
+        while (true) {
+            val touch = pendingTouches.poll() ?: break
+            core.onInput(touch)
+        }
+
         core.env.reduceMotion = safety.reduceMotion
         flashLimiter.reduceFlashing = safety.reduceFlashing
 
@@ -198,12 +249,21 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
                 pendingSeek = null
                 core.restart(core.seed)
                 resetRunState()
-                val steps = (target * core.stepHz).toInt().coerceAtMost(MAX_SEEK_STEPS)
-                core.advanceSteps(steps)
-                core.events.clear()
+                seekRemaining = (target * core.stepHz).toInt().coerceIn(0, MAX_SEEK_STEPS)
                 studioTime = target
             }
-            if (studioPlaying) {
+            // A seek re-simulates from the seed. Five minutes of sim is 36,000
+            // steps, which cannot happen inside one frame without freezing the
+            // screen, so it is paid off a slice at a time.
+            if (seekRemaining > 0) {
+                val chunk = min(seekRemaining, SEEK_STEPS_PER_FRAME)
+                core.advanceSteps(chunk)
+                core.events.clear()
+                seekRemaining -= chunk
+            }
+            seeking = seekRemaining > 0
+
+            if (studioPlaying && !seeking) {
                 studioTime += dt
                 if (studioTime >= proj.duration) {
                     studioTime = 0f
@@ -212,18 +272,32 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             }
             frozen = proj.isFrozenAt(studioTime)
             proj.applyCamera(studioTime, camera)
-            core.speed = proj.track(TrackKind.SPEED).valueAt(studioTime)
-            scene.trails = proj.track(TrackKind.TRAILS).valueAt(studioTime)
-            core.setLaws(
-                core.env.laws.copy(
-                    gravity = proj.track(TrackKind.GRAVITY).valueAt(studioTime),
-                    restitution = proj.track(TrackKind.BOUNCINESS).valueAt(studioTime)
+            // An empty track means "leave this alone": its default would
+            // otherwise overwrite the speed, trails or laws the person chose.
+            proj.track(TrackKind.SPEED).let { if (!it.isEmpty()) core.speed = it.valueAt(studioTime) }
+            proj.track(TrackKind.TRAILS).let { if (!it.isEmpty()) scene.trails = it.valueAt(studioTime) }
+            val gravity = proj.track(TrackKind.GRAVITY)
+            val bounce = proj.track(TrackKind.BOUNCINESS)
+            if (!gravity.isEmpty() || !bounce.isEmpty()) {
+                core.setLaws(
+                    core.env.laws.copy(
+                        gravity = if (gravity.isEmpty()) core.env.laws.gravity
+                        else gravity.valueAt(studioTime),
+                        restitution = if (bounce.isEmpty()) core.env.laws.restitution
+                        else bounce.valueAt(studioTime)
+                    )
                 )
-            )
+            }
             timelineFlash = proj.track(TrackKind.FLASH).valueAt(studioTime)
         }
 
-        if (running && !frozen && (proj == null || studioPlaying)) core.advance(dt)
+        if (evolve && proj == null) drift(dt)
+
+        if (proj == null) {
+            recorder?.feed(dt, camera, core.speed, scene.trails)
+        }
+
+        if (running && !frozen && !seeking && (proj == null || studioPlaying)) core.advance(dt)
 
         if (core.payoffFired && !payoffNotified) {
             payoffNotified = true
@@ -252,14 +326,32 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
         mapping.pump(core.events, dt)
 
-        // A sim can emit thousands of events a second; the motor gets a tick only
-        // when the frame was genuinely eventful, and never more than its own cap.
-        if (safety.haptics && mapping.eventRate > 2f && g.flashRequest > 0.05f) {
-            haptics?.medium()
-        }
-
         val allowed = flashLimiter.allow(max(g.flashRequest, timelineFlash), dt)
         scene.render(g, camera, allowed)
+    }
+
+    /**
+     * Nudge the live parameters along a slow sine, each on its own phase.
+     * Data-card values are left alone: changing those mid-run would mean
+     * rebuilding the sim underneath itself.
+     */
+    private fun drift(dt: Float) {
+        evolveClock += dt
+        if (evolveClock < 0.25f) return
+        evolveClock = 0f
+        val schedule = core.def.params
+        for ((index, p) in schedule.withIndex()) {
+            if (p.card == app.hypnotica.core.recipe.Card.DATA) continue
+            if (p.type != app.hypnotica.core.recipe.ParamType.FLOAT) continue
+            // A formula the person typed outranks the drift.
+            if (core.params.hasExpression(p.key)) continue
+            val phase = index * 1.37f
+            val wave = kotlin.math.sin(core.env.time * 0.08f + phase) * 0.5f + 0.5f
+            val span = p.max - p.min
+            val target = p.min + span * (0.25f + 0.5f * wave)
+            val current = core.params.f(p.key, p.default)
+            core.params.set(p.key, current + (target - current) * 0.06f)
+        }
     }
 
     private fun resetRunState() {
@@ -295,8 +387,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     companion object {
+        /** A flick can produce a lot of moves; a frame need not apply all of them. */
+        const val MAX_PENDING_TOUCHES = 64
+
         /** A seek re-simulates from the seed, so very long ones are capped. */
         const val MAX_SEEK_STEPS = 60 * 120 * 5
+
+        /** Steps a single frame will spend catching a seek up. */
+        const val SEEK_STEPS_PER_FRAME = 900
 
         fun clampSpeed(v: Float): Float = min(10f, max(0.1f, v))
     }

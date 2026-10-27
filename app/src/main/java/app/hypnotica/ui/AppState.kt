@@ -3,16 +3,23 @@ package app.hypnotica.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.hypnotica.core.audio.Song
 import app.hypnotica.core.director.Clip
+import app.hypnotica.core.director.ClipDirector
+import app.hypnotica.core.perf.Bench
+import app.hypnotica.core.sim.TrapFormat
 import app.hypnotica.core.laws.Laws
 import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Macro
+import app.hypnotica.core.recipe.Macros
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.RecipeStore
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.sim.SimDef
+import app.hypnotica.core.studio.MoveRecorder
 import app.hypnotica.core.studio.Project
 import app.hypnotica.engine.SimEngine
 import app.hypnotica.sims.SimRegistry
@@ -40,6 +47,15 @@ class AppState(
     var card by mutableStateOf(Card.DATA)
     var advancedTab by mutableStateOf(AdvancedTab.DATA)
     var paramVersion by mutableIntStateOf(0)
+
+    /** Where each Simple-mode macro slider sits, per sim. */
+    private val macroPositions = mutableStateMapOf<String, Float>()
+
+    /**
+     * Bumped only when a formula changes from outside the keyboard, so a text
+     * field knows to reload without being yanked out from under the typist.
+     */
+    var exprEpoch by mutableIntStateOf(0)
         private set
 
     private var speedState by mutableFloatStateOf(1f)
@@ -70,8 +86,121 @@ class AppState(
     /** 0 = off. Minutes between TickTock's "you have been scrolling" card. */
     var timeCheckMinutes by mutableIntStateOf(0)
 
+    /**
+     * Evolve: the sim's own settings drift slowly while it plays, so a loop
+     * never settles into exactly the same thing twice.
+     */
+    var evolve by mutableStateOf(false)
+        private set
+
+    /** When on, one finger pans the view instead of reaching into the sim. */
+    var cameraDrag by mutableStateOf(false)
+        private set
+
+    fun setCameraDrag(on: Boolean) {
+        cameraDrag = on
+        onCameraDrag?.invoke(on)
+    }
+
+    /** Set by the activity, which owns the surface the gesture lives on. */
+    var onCameraDrag: ((Boolean) -> Unit)? = null
+
+    fun setEvolve(on: Boolean) {
+        evolve = on
+        engine.evolve = on
+    }
+
+    /**
+     * TickTock's generator. It lives here rather than in the screen so the
+     * learned weighting survives leaving TickTock and coming back.
+     */
+    val director = ClipDirector()
+
+    /** What the benchmark found, shown in Settings. */
+    var benchNote by mutableStateOf<String?>(null)
+        private set
+
+    /** The gesture card, shown once on the first launch. */
+    var showFirstRun by mutableStateOf(false)
+        private set
+
+    fun dismissFirstRun() {
+        showFirstRun = false
+        prefs?.seenFirstLaunch = true
+    }
+
+    /**
+     * Measure what this phone can carry, once, and tell the clip generator. Call
+     * from a background thread: it runs the heaviest sim for about a second.
+     */
+    fun benchmarkIfNeeded() {
+        val p = prefs
+        val remembered = Bench.tierByName(p?.deviceTier)
+        if (remembered != null) {
+            director.sizeScale = remembered.sizeScale
+            benchNote = p?.benchNote
+            return
+        }
+        val result = Bench.run()
+        director.sizeScale = result.tier.sizeScale
+        benchNote = result.describe()
+        p?.deviceTier = result.tier.name
+        p?.benchNote = result.describe()
+    }
+
+    /** Remember what the person liked, so the feed is still theirs next launch. */
+    fun likeClip(clip: Clip) {
+        director.like(clip)
+        prefs?.taste = director.exportTaste()
+    }
+
+    fun skipClip(clip: Clip) {
+        director.skip(clip)
+        prefs?.taste = director.exportTaste()
+    }
+
+    /** Mirrors the director's muted set so Compose can see it change. */
+    var mutedFormats by mutableStateOf<Set<TrapFormat>>(emptySet())
+        private set
+
+    fun setFormatMuted(format: TrapFormat, muted: Boolean) {
+        if (muted) director.mutedFormats.add(format) else director.mutedFormats.remove(format)
+        // Muting everything would leave the feed with nothing to show.
+        if (director.mutedFormats.size >= TrapFormat.entries.size) {
+            director.mutedFormats.remove(format)
+        }
+        mutedFormats = director.mutedFormats.toSet()
+        prefs?.mutedFormats = director.exportMuted()
+    }
+
+    fun resetTaste() {
+        director.resetTaste()
+        prefs?.taste = ""
+    }
+
     /** The Studio project being edited, kept while the app is open. */
     var project by mutableStateOf<Project?>(null)
+
+    /** Record moves: capture the camera and the controls, then edit in Studio. */
+    var recording by mutableStateOf(false)
+        private set
+
+    fun startRecording() {
+        val rec = MoveRecorder(currentDef.id, engine.core.seed)
+        engine.recorder = rec
+        recording = true
+    }
+
+    /** Stop and open the recording in Studio, where it can be trimmed. */
+    fun stopRecording() {
+        val rec = engine.recorder ?: run { recording = false; return }
+        engine.recorder = null
+        recording = false
+        if (rec.seconds < 1.5f) return
+        val built = rec.finish()
+        project = built
+        screen = Screen.STUDIO
+    }
 
     /** The live rules of the universe. Every physics sim reads these. */
     var laws by mutableStateOf(Laws.OUR_UNIVERSE)
@@ -95,6 +224,10 @@ class AppState(
             timeCheckMinutes = p.timeCheckMinutes
             engine.synth.volume = p.volume
             applySafety()
+            showFirstRun = !p.seenFirstLaunch
+            director.importTaste(p.taste)
+            director.importMuted(p.mutedFormats)
+            mutedFormats = director.mutedFormats.toSet()
         }
         val remembered = prefs?.lastSimId?.let { SimRegistry.find(it) }
         load(remembered ?: currentDef, restartSeed = 1L)
@@ -105,7 +238,9 @@ class AppState(
         paletteName = def.defaultPalette
         soundPresetName = def.defaultSound
         engine.loadSim(def, restartSeed)
+        macroPositions.clear()
         paramVersion++
+        exprEpoch++
         prefs?.lastSimId = def.id
     }
 
@@ -184,11 +319,63 @@ class AppState(
 
     fun params(): List<Param> = currentDef.params
 
+    /**
+     * Simple mode's big controls for one card. A macro moves several exact
+     * values at once, which is what keeps Simple mode powerful rather than
+     * merely shorter than Advanced.
+     */
+    fun macros(card: Card): List<Macro> = Macros.forDef(currentDef).filter { it.card == card }
+
+    fun macroPosition(macro: Macro): Float =
+        macroPositions[macro.key] ?: Macros.positionFor(macro, engine.core.params).also {
+            macroPositions[macro.key] = it
+        }
+
+    fun setMacro(macro: Macro, position: Float) {
+        macroPositions[macro.key] = position.coerceIn(0f, 1f)
+        engine.core.params.applyMacro(macro, position)
+        paramVersion++
+    }
+
+    /** A macro that touches the Data card rebuilds the run, like its sliders do. */
+    fun commitMacro(macro: Macro) {
+        if (macro.card == Card.DATA) restart(newSeed = false)
+    }
+
     fun paramValue(key: String): Float = engine.core.params.f(key)
 
     fun setParam(p: Param, value: Float) {
+        // Dragging a slider by hand replaces a formula on the same value — but
+        // only when a person does it, never when Evolve or a macro moves it.
+        engine.core.params.clearExpression(p.key)
         engine.core.params.set(p.key, if (p.type == ParamType.INT) Math.round(value).toFloat() else value)
         paramVersion++
+    }
+
+    /**
+     * Store a typed formula. Nothing restarts yet: a restart on every keystroke
+     * would mean the sim rebuilding itself while the person is still mid-word.
+     */
+    fun setParamText(p: Param, value: String): Boolean =
+        engine.core.params.setText(p.key, value)
+
+    /** Apply a typed formula, once the person is done typing it. */
+    fun commitParamText(p: Param) {
+        paramVersion++
+        if (needsRestart(p)) restart(newSeed = false)
+    }
+
+    /**
+     * Set a formula from somewhere other than the keyboard — a preset, a clip, a
+     * saved state. [exprEpoch] tells the text fields to pick the new value up.
+     */
+    fun applyParamText(key: String, value: String) {
+        val p = currentDef.params.firstOrNull { it.key == key } ?: return
+        if (engine.core.params.setText(key, value)) {
+            exprEpoch++
+            paramVersion++
+            if (needsRestart(p)) restart(newSeed = false)
+        }
     }
 
     fun setParamChoice(p: Param, index: Int) {
@@ -225,6 +412,7 @@ class AppState(
         engine.setSoundPreset(clip.soundPreset)
         engine.applyParams(clip.params, clip.seed)
         paramVersion++
+        exprEpoch++
     }
 
     /** Hand the clip on screen to the normal player, controls and all. */
