@@ -195,7 +195,7 @@ meta = {
   id = "orbit", title = "Two-body orbit", shelf = "physics",
   family = "Orbits, gravity & space",
   blurb = "A planet falling around a star, written in twenty lines.",
-  hero = "New orbit", palette = "Ember", sound = "Music box",
+  hero = "New orbit", palette = "Ember", sound = "8-bit",
   seconds = 26, laws = true,
   formats = { "loop", "song" }
 }

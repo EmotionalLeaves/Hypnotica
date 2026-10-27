@@ -164,7 +164,7 @@ class LuaRecipe private constructor(
                     blurb = optString(metaTable, "blurb", ""),
                     hero = optString(metaTable, "hero", "Restart"),
                     palette = optString(metaTable, "palette", "Aurora"),
-                    sound = optString(metaTable, "sound", "Music box"),
+                    sound = optString(metaTable, "sound", "8-bit"),
                     seconds = optNumber(metaTable, "seconds", 24.0).toFloat(),
                     usesLaws = optBool(metaTable, "laws", false),
                     formats = formatsFrom(metaTable)

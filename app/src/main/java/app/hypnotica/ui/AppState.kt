@@ -215,7 +215,7 @@ class AppState(
      * from the GL thread and cannot touch snapshot state itself.
      */
     var halted by mutableStateOf<String?>(null)
-    var soundPresetName by mutableStateOf("Music box")
+    var soundPresetName by mutableStateOf("8-bit")
     var songIndex by mutableIntStateOf(0)
     // These three write themselves through. Three screens changed them without
     // calling applySafety(), which is the only thing that saved them, so they
