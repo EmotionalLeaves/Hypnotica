@@ -62,20 +62,13 @@ import java.io.File
  * The shape of the slot the preview sits in. The picture is letterboxed inside
  * it, so switching export format never reflows the screen under your thumb.
  */
-private const val PREVIEW_SLOT = 0.62f
+private const val PREVIEW_SLOT = 1f
 
 /**
- * How tall the preview is allowed to get.
- *
- * Without this the slot was fillMaxWidth().aspectRatio(0.62f), which on any
- * phone is about 1.6 times the screen width — some 620 dp of a roughly 860 dp
- * screen. The editor below it had no weight, so it was measured against what
- * was left: on a large phone about fifteen, on a small one none. Everything
- * from the Track chips down to the export format — fifteen of this screen's
- * twenty-two controls — was a grey sliver or simply absent. The preview is
- * capped and the editor given the slack, so the controls exist on every phone.
+ * How tall the preview is allowed to get, for a screen that is not a phone held
+ * upright. In portrait the square slot above is already shorter than this.
  */
-private val PREVIEW_MAX_HEIGHT = 300.dp
+private val PREVIEW_MAX_HEIGHT = 360.dp
 
 /**
  * Studio: the sim as footage.
@@ -221,13 +214,22 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         val format = ExportSettings.ALL[formatIndex]
         val previewAspect = format.width.toFloat() / format.height.toFloat()
         val tallerThanSlot = previewAspect <= PREVIEW_SLOT
+        // A full-width square, which is what docs/images/studio.svg has always
+        // specified: 358 by 360 of a 390 by 844 screen, with the editor below
+        // it. The code had 0.62 — taller than wide, about 1.6 times the screen
+        // width, some 620 dp of an 860 dp phone — and the editor below had no
+        // weight, so it was measured against what was left: fifteen dp on a
+        // large phone, none on a small one. Fifteen of this screen's
+        // twenty-two controls were a grey sliver or absent.
+        //
+        // Square also letterboxes every export shape without reflowing, which
+        // is what the slot is for: a 9:16 fits as 201 wide, a 16:9 as 201 tall.
+        // The height cap only binds on a screen wider than it is tall.
         Box(
             Modifier
-                .align(Alignment.CenterHorizontally)
+                .fillMaxWidth()
                 .heightIn(max = PREVIEW_MAX_HEIGHT)
-                // Sized from the height rather than the width, so the cap above
-                // is the one that binds.
-                .aspectRatio(PREVIEW_SLOT, matchHeightConstraintsFirst = true),
+                .aspectRatio(PREVIEW_SLOT),
             contentAlignment = Alignment.Center
         ) {
             Box(
