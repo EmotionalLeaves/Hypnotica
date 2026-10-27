@@ -198,7 +198,7 @@ class SoundMapping(private val synth: Synth) {
             EventKind.DEATH -> VoiceType.CLICK
             else -> preset.voice
         }
-        val amp = 0.10f + 0.28f * strength.coerceIn(0f, 1f)
+        val amp = (0.10f + 0.28f * strength.coerceIn(0f, 1f)) * preset.gain
         val dec = decay
         synth.note(hz, amp.coerceAtMost(0.75f), pan, type, dec)
     }

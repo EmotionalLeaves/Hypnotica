@@ -54,15 +54,23 @@ data class SoundPreset(
     val octaves: Float,
     val decay: Float,
     val reverb: Float = 0.18f,
-    val silent: Boolean = false
+    val silent: Boolean = false,
+    /**
+     * Level relative to the voice's raw output, so that every preset plays at
+     * about the loudness 8-bit does. Measured over four sims through the real
+     * synth, Music box played 2.3 times louder than 8-bit and Ambient pad 2.9
+     * times — switching preset was a jump in volume, and the louder ones were
+     * the ones that read as grating. Equal loudness lets the timbre be judged.
+     */
+    val gain: Float = 1f
 ) {
     companion object {
-        val CLASSIC = SoundPreset("Classic beeps", VoiceType.SQUARE, "Raw frequency", 120f, 4f, 0.09f, 0.05f)
-        val MUSIC_BOX = SoundPreset("Music box", VoiceType.BELL, "Minor pentatonic", 261.6f, 3f, 0.55f, 0.3f)
-        val MARIMBA = SoundPreset("Marimba", VoiceType.PLUCK, "Major pentatonic", 196f, 3f, 0.4f, 0.2f)
-        val AMBIENT = SoundPreset("Ambient pad", VoiceType.SINE, "Dorian", 130.8f, 3f, 1.4f, 0.5f)
+        val CLASSIC = SoundPreset("Classic beeps", VoiceType.SQUARE, "Raw frequency", 120f, 4f, 0.09f, 0.05f, gain = 1.18f)
+        val MUSIC_BOX = SoundPreset("Music box", VoiceType.BELL, "Minor pentatonic", 261.6f, 3f, 0.55f, 0.3f, gain = 0.43f)
+        val MARIMBA = SoundPreset("Marimba", VoiceType.PLUCK, "Major pentatonic", 196f, 3f, 0.4f, 0.2f, gain = 0.97f)
+        val AMBIENT = SoundPreset("Ambient pad", VoiceType.SINE, "Dorian", 130.8f, 3f, 1.4f, 0.5f, gain = 0.34f)
         val EIGHT_BIT = SoundPreset("8-bit", VoiceType.SQUARE, "Major pentatonic", 220f, 3f, 0.12f, 0.0f)
-        val TICKS = SoundPreset("Ticks", VoiceType.CLICK, "Chromatic", 440f, 2f, 0.05f, 0.0f)
+        val TICKS = SoundPreset("Ticks", VoiceType.CLICK, "Chromatic", 440f, 2f, 0.05f, 0.0f, gain = 3f)
         val SILENT = SoundPreset("Silent + haptics", VoiceType.SINE, "Minor pentatonic", 220f, 2f, 0.1f, 0f, silent = true)
 
         val ALL = listOf(MUSIC_BOX, CLASSIC, MARIMBA, AMBIENT, EIGHT_BIT, TICKS, SILENT)

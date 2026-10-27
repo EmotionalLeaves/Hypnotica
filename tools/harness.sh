@@ -24,7 +24,13 @@ BASE=app/src/main/java/app/hypnotica
 FILES=$(find "$BASE/core/sim" "$BASE/core/laws" "$BASE/core/recipe" "$BASE/core/safety" \
              "$BASE/core/nd" "$BASE/core/studio" "$BASE/core/director" "$BASE/core/preview" \
              "$BASE/core/perf" "$BASE/sims" -name '*.kt' | grep -vE 'LuaRecipe.kt|RecipeStore.kt')
-FILES="$FILES $BASE/core/render/G.kt $BASE/core/render/Camera.kt $BASE/core/render/Palette.kt $BASE/core/audio/Scales.kt"
+FILES="$FILES $BASE/core/render/G.kt $BASE/core/render/Camera.kt $BASE/core/render/Palette.kt"
+# The whole of core/audio, against stand-ins for the four android.media classes
+# the synth opens its output stream with. The sound itself is arithmetic, so
+# this compiles everything that decides what is heard, and lets a probe render
+# a sim's audio offline and measure it. SoundMapping used to be compiled only
+# by CI, which is how a removed sweep could leave a dangling reference behind.
+FILES="$FILES $(find "$BASE/core/audio" -name '*.kt') $(find tools/stubs -name '*.kt')"
 
 mkdir -p "$OUT"
 STALE=no

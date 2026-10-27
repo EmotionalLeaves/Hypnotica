@@ -22,10 +22,6 @@ Measured, not yet acted on.
 - **The size slider ignores the device benchmark.** `Bench` measures the phone
   and only TickTock's clips use the result; the player's slider offers 400,000
   particles to a phone already measured as modest.
-- **The other sound presets.** 8-bit is the default because it was the one that
-  sounded right. Every preset now keeps 8-bit's overlap of about fourteen notes
-  at once — the pile-up that turned Music box into a wash is gone — but none of
-  the others has been listened to since.
 
 ## Fixed this round
 
@@ -53,6 +49,11 @@ Measured, not yet acted on.
 - Three more false "Perfect loop" claims — Mandelbrot, the particle field and
   charges — let through because LoopClaimTest compared only the shape buffer,
   and a sim drawn in points was judged on its point count alone.
+- The sound presets other than 8-bit, rendered and measured: Music box 2.3x
+  and Ambient pad 2.9x 8-bit's loudness, Marimba three times as bright from a
+  white-noise pluck, Ticks a burst of raw hiss. All within a few per cent of
+  8-bit's level now, the pluck struck with a soft mallet, the tick filtered.
+- TickTock stalling on any clip whose sim never finishes — 31 of 58.
 - Studio's "Perfect loop" template set its length from the typical length,
   which is no sim's loop period; it lays out whole measured cycles now, and is
   only offered on a sim that loops.

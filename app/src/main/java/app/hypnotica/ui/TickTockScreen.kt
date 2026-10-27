@@ -124,6 +124,34 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         prefetch()
     }
 
+    // Every clip has a length: its payoff at 70% of it, as the arc puts it, and
+    // the resolve after. TickTock used to move on only when a sim reported
+    // itself finished, and thirty-one of the fifty-eight never do — so for more
+    // than half the clips it generated, auto-play simply stopped and the feed
+    // sat on one sim until it was swiped. The payoff time is known before the
+    // clip is ever shown; that is what the pre-check is for.
+    LaunchedEffect(current) {
+        val clip = current ?: return@LaunchedEffect
+        if (clip.payoffSeconds <= 0f) return@LaunchedEffect
+        val end = maxOf(clip.payoffSeconds / 0.7f, clip.payoffSeconds + MIN_RESOLVE_SECONDS)
+        // Simulated time, not the wall clock, so slow motion at the payoff and
+        // a pause both stretch the clip as they should. The run's own clock is
+        // reused across clips and resets when the new one is applied, which
+        // happens on the render thread a frame after this starts — so nothing
+        // is timed until a run near its start has been seen, or the previous
+        // clip's forty seconds would end this one before it began.
+        var started = false
+        while (true) {
+            val elapsed = kotlin.math.abs(state.engine.core.env.time)
+            if (!started && elapsed < 1f) started = true
+            if (started && elapsed >= end) break
+            delay(250)
+        }
+        if (current !== clip) return@LaunchedEffect
+        generating?.cancel()
+        generating = scope.launch { advance() }
+    }
+
     LaunchedEffect(Unit) {
         // Same reason as the swipe: this fires from the GL thread and used to
         // launch a third advance alongside whatever was already running.
@@ -282,3 +310,6 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE_PIXELS = 90f
+
+/** The least a clip lingers after its payoff, however early that came. */
+private const val MIN_RESOLVE_SECONDS = 3f

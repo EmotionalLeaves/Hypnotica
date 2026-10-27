@@ -22,6 +22,15 @@ class Synth(private val sampleRate: Int = 44100) {
     /** A click is this many samples of noise and then silence. */
     private val CLICK_SAMPLES = 220
 
+    /** Smoothing passes over a pluck's excitation: how soft the mallet is. */
+    private val PLUCK_SOFTEN = 7
+
+    /** The click's one-pole low-pass, per sample, at 44.1 kHz about 2.5 kHz. */
+    private val CLICK_LP = 0.3f
+
+    /** Filtering takes level with it; this puts the click back where it was. */
+    private val CLICK_GAIN = 2.2f
+
     companion object {
         const val MAX_VOICES = 64
 
@@ -53,6 +62,8 @@ class Synth(private val sampleRate: Int = 44100) {
         var ksIndex = 0
         var ksLen = 0
         var noiseState = 1
+        /** Low-pass state for the click, which is filtered noise rather than raw. */
+        var clickLp = 0f
 
         /**
          * Samples left of the attack ramp.
@@ -248,7 +259,27 @@ class Synth(private val sampleRate: Int = 44100) {
                     seed = seed * 1103515245 + 12345
                     buf[i] = ((seed shr 16) and 0x7FFF) / 16384f - 1f
                 }
+                // A soft mallet, not a hard one. Raw white noise excites every
+                // harmonic equally, and measured against the other voices it put
+                // the pluck's energy near 3 kHz — three times as bright as the
+                // 8-bit preset that was the one that sounded right. Smoothing
+                // the excitation is what a felt mallet does to a bar.
+                for (pass in 0 until PLUCK_SOFTEN) {
+                    var prev = buf[len - 1]
+                    val first = buf[0]
+                    for (i in 0 until len) {
+                        val next = if (i + 1 < len) buf[i + 1] else first
+                        val here = buf[i]
+                        buf[i] = (prev + 2f * here + next) * 0.25f
+                        prev = here
+                    }
+                }
+                // Smoothing takes level with it; put the peak back at one.
+                var peak = 1e-6f
+                for (i in 0 until len) peak = max(peak, abs(buf[i]))
+                for (i in 0 until len) buf[i] /= peak
             }
+            v.clickLp = 0f
         }
     }
 
@@ -389,7 +420,10 @@ class Synth(private val sampleRate: Int = 44100) {
                 VoiceType.CLICK -> {
                     seed = seed * 1103515245 + 12345
                     val n = ((seed shr 16) and 0x7FFF) / 16384f - 1f
-                    n * (if (v.age < CLICK_SAMPLES) 1f else 0f)
+                    // Filtered, so a tick is a tap on wood rather than a burst
+                    // of hiss: raw noise measured at 7.4 kHz of brightness.
+                    v.clickLp += (n - v.clickLp) * CLICK_LP
+                    v.clickLp * CLICK_GAIN * (if (v.age < CLICK_SAMPLES) 1f else 0f)
                 }
                 VoiceType.NOISE -> {
                     seed = seed * 1103515245 + 12345
