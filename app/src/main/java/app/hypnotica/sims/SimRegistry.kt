@@ -3,7 +3,11 @@ package app.hypnotica.sims
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.sim.TrapFormat
+import app.hypnotica.sims.algorithms.MazeSims
+import app.hypnotica.sims.art.ArtSims
 import app.hypnotica.sims.dimensions.DimensionSims
+import app.hypnotica.sims.life.LifeSims
+import app.hypnotica.sims.math.MathSims
 import app.hypnotica.sims.physics.PhysicsSims
 import app.hypnotica.sims.scale.ScaleSims
 import app.hypnotica.sims.sorting.SortingSim
@@ -14,8 +18,12 @@ object SimRegistry {
     val all: List<SimDef> by lazy {
         buildList {
             addAll(SortingSim.defs())
+            addAll(MazeSims.defs())
             addAll(PhysicsSims.defs())
+            addAll(MathSims.defs())
+            addAll(LifeSims.defs())
             addAll(DimensionSims.defs())
+            addAll(ArtSims.defs())
             addAll(ScaleSims.defs())
         }
     }

@@ -41,6 +41,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     val camera = Camera()
     val safety = SafetySettings()
 
+    /** Set by the activity; null in tests and in the offline exporter. */
+    @Volatile
+    var haptics: Haptics? = null
+
     private val g = G()
     private var lastFrameNanos = 0L
 
@@ -225,6 +229,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             payoffNotified = true
             punch = if (safety.reduceMotion) 0f else 1f
             mapping.finalSweep()
+            if (safety.haptics) haptics?.heavy()
             onPayoff?.invoke()
         }
         if (core.finished && !finishNotified) {
@@ -246,6 +251,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         core.draw(g)
 
         mapping.pump(core.events, dt)
+
+        // A sim can emit thousands of events a second; the motor gets a tick only
+        // when the frame was genuinely eventful, and never more than its own cap.
+        if (safety.haptics && mapping.eventRate > 2f && g.flashRequest > 0.05f) {
+            haptics?.medium()
+        }
 
         val allowed = flashLimiter.allow(max(g.flashRequest, timelineFlash), dt)
         scene.render(g, camera, allowed)

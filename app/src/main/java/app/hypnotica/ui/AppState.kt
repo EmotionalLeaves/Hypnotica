@@ -24,7 +24,7 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO }
  * Parameter values live in the engine, not here; [paramVersion] is bumped on every
  * change so Compose knows to read them again.
  */
-class AppState(val engine: SimEngine) {
+class AppState(val engine: SimEngine, private val prefs: Prefs? = null) {
 
     var screen by mutableStateOf(Screen.FEED)
     var currentDef by mutableStateOf(SimRegistry.defaultSim())
@@ -81,7 +81,18 @@ class AppState(val engine: SimEngine) {
     val favourites = mutableStateOf(setOf<String>())
 
     init {
-        load(currentDef, restartSeed = 1L)
+        prefs?.let { p ->
+            favourites.value = p.favourites
+            reduceFlashing = p.reduceFlashing
+            reduceMotion = p.reduceMotion
+            haptics = p.haptics
+            showCounters = p.showCounters
+            timeCheckMinutes = p.timeCheckMinutes
+            engine.synth.volume = p.volume
+            applySafety()
+        }
+        val remembered = prefs?.lastSimId?.let { SimRegistry.find(it) }
+        load(remembered ?: currentDef, restartSeed = 1L)
     }
 
     fun load(def: SimDef, restartSeed: Long = System.nanoTime()) {
@@ -90,6 +101,7 @@ class AppState(val engine: SimEngine) {
         soundPresetName = def.defaultSound
         engine.loadSim(def, restartSeed)
         paramVersion++
+        prefs?.lastSimId = def.id
     }
 
     fun restart(newSeed: Boolean = true) {
@@ -105,11 +117,13 @@ class AppState(val engine: SimEngine) {
     fun setPalette(name: String) {
         paletteName = name
         engine.setPalette(name)
+        prefs?.paletteName = name
     }
 
     fun setSoundPreset(name: String) {
         soundPresetName = name
         engine.setSoundPreset(name)
+        prefs?.soundPreset = name
     }
 
     fun setSong(index: Int) {
@@ -133,6 +147,32 @@ class AppState(val engine: SimEngine) {
         engine.safety.reduceFlashing = reduceFlashing
         engine.safety.reduceMotion = reduceMotion
         engine.safety.haptics = haptics
+        engine.haptics?.enabled = haptics
+        prefs?.let {
+            it.reduceFlashing = reduceFlashing
+            it.reduceMotion = reduceMotion
+            it.haptics = haptics
+            it.showCounters = showCounters
+            it.timeCheckMinutes = timeCheckMinutes
+            it.volume = engine.synth.volume
+        }
+    }
+
+    /** Go back one level; returns false when there is nowhere left to go. */
+    fun goBack(): Boolean = when {
+        controlsOpen -> {
+            controlsOpen = false
+            true
+        }
+        screen == Screen.FEED -> false
+        screen == Screen.PLAYER -> {
+            screen = Screen.FEED
+            true
+        }
+        else -> {
+            screen = Screen.FEED
+            true
+        }
     }
 
     // ------------------------------------------------------------- params
@@ -230,7 +270,9 @@ class AppState(val engine: SimEngine) {
 
     fun toggleFavourite(id: String) {
         val cur = favourites.value
-        favourites.value = if (id in cur) cur - id else cur + id
+        val next = if (id in cur) cur - id else cur + id
+        favourites.value = next
+        prefs?.favourites = next
     }
 
     fun isFavourite(id: String): Boolean = id in favourites.value
