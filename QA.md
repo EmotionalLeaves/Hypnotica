@@ -43,13 +43,27 @@ It should take about two minutes.
 - [ ] A Data-card slider applies when released, not mid-drag
 - [ ] A Motion or Look slider applies live
 - [ ] Palette and sound preset chips change the sim at once
-- [ ] On a physics sim, the Laws card swaps universes and every physics sim follows
+- [ ] On a physics sim, the Laws card swaps universes and every sim that reads
+      that law follows
+- [ ] The Laws card offers only controls the sim in front of you responds to —
+      no Laws card at all on a sim that reads none
+- [ ] Every control on it does something: drag each one and watch
 - [ ] A macro slider ("How much", "Energy", "Chaos") moves several values at once
+      and names which ones underneath
 - [ ] Opening a card and touching a macro does not jump anything before you drag it
+- [ ] Changing a value in Advanced and coming back: the macro slider has moved
+      to match, and nudging it does not snap the value back
 - [ ] Sticky, Ghosts and Strong charges each visibly change the physics
-- [ ] Charge strength and "Like charges attract" change the charges sim
+- [ ] Charge strength and "Like charges attract" change the charges sim: the
+      tracers plainly move faster at 8x than at 0.05x
+- [ ] Bounciness above 1.0 reads "capped" until Free energy is on
+- [ ] Zero-G on the pendulum wave says there is no gravity and the run ends,
+      rather than holding a still picture
 - [ ] Evolve makes the sim drift on its own; switching it off leaves it where it was
-- [ ] A formula typed into an Advanced field is kept when a slider next to it moves
+- [ ] A formula typed into an Advanced field survives a slider next to it moving,
+      and a macro drag replaces it rather than being ignored
+- [ ] Simple mode's Brightness and Busyness change the sound
+- [ ] Advanced's Params tab ends with speed, trails, palette, Evolve and Record
 
 ## Library
 
@@ -106,6 +120,44 @@ It should take about two minutes.
 - [ ] Reduce motion stops the punch-in, the shake and the camera breath
 - [ ] Sound never gets harsh or piercing at the top of a fast run
 - [ ] Collisions and crossings can be felt, not only heard
+
+## Dimensions
+
+- [ ] Raising "Dimensions" on the hypercube adds corners *and* a new plane that
+      visibly turns; six does not look the same as five
+- [ ] Corners stay the same size and keep their near/far colouring at every
+      dimension
+- [ ] Choosing the spin plane changes which way it turns
+- [ ] "Sphere through Flatland": raising the dimension makes the arrival sharper
+      — nothing, then a sudden bloom — and the counter reports what the flat
+      world sees
+- [ ] The walker sim pays off at every dimension, and the dots stay on screen:
+      most get home on a line, hardly any in three
+- [ ] N-dimensional bouncing pays off when every wall has been hit, and the
+      counter counts them
+
+## Laws by hand
+
+- [ ] On N-body gravity: typing `g * m1 * m2 / r^3` into the force law changes
+      the orbits, and a bad formula turns the box red without crashing
+- [ ] Force falloff at 1/r^1.5 is visibly different from 1/r^2
+- [ ] The Gravity slider changes N-body gravity, and the Moon and Zero-G presets
+      do too
+- [ ] Gravity tilt sends a sim sideways
+
+## Recipes
+
+- [ ] The recipe editor opens, and a parse error is shown inline rather than
+      crashing
+- [ ] A saved recipe appears in the Library with a working preview
+- [ ] A recipe that reads laws gets only those laws on its Laws card
+
+## Settings
+
+- [ ] Reduce flashing, reduce motion, haptics, counters, the volume and the time
+      check all survive a force quit
+- [ ] Simple or Advanced is remembered too
+- [ ] The two hidden buttons under the version number open TickTock and Studio
 
 ## Notes
 

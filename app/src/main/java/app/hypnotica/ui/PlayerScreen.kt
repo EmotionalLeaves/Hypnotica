@@ -32,10 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import app.hypnotica.core.audio.Scale
 import app.hypnotica.core.audio.Song
 import app.hypnotica.core.audio.SoundPreset
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Macro
+import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
@@ -249,16 +251,23 @@ private fun CardControls(state: AppState, card: Card) {
     val params = remember(version, state.currentDef.id, state.advanced, card) {
         state.params().filter { it.card == card && (state.advanced || !it.advancedOnly) }
     }
-    val macros = remember(state.currentDef.id, card) { state.macros(card) }
-    if (macros.isNotEmpty() && !state.advanced) {
-        macros.forEach { macro -> MacroControl(state, macro) }
+    // A macro earns its place by reaching more than the sliders under it. One
+    // that moves a single value which is already shown below, exactly, is the
+    // same control stated vaguely — "How much: a lot" above a slider reading
+    // "Trail 8,000" is strictly worse than the slider.
+    val shown = remember(version, state.currentDef.id, card) {
+        val exact = params.map { it.key }.toSet()
+        state.macros(card).filter { it.targets.size > 1 || !exact.containsAll(it.targets.keys) }
+    }
+    if (shown.isNotEmpty() && !state.advanced) {
+        shown.forEach { macro -> MacroControl(state, macro) }
         if (params.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             SectionLabel("Or set them one at a time")
         }
     }
     if (params.isEmpty()) {
-        if (macros.isEmpty()) {
+        if (shown.isEmpty()) {
             Text(
                 "Nothing to set here for this sim.",
                 color = Tokens.TextSecondary,
@@ -431,8 +440,49 @@ private fun SoundCard(state: AppState) {
     ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
+    Text(
+        "A preset sets the scale, the pitch, the range and the decay together.",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall
+    )
+    SectionLabel("Scale")
+    // A chip row is as simple as a control gets, and the scale is the thing a
+    // person is most likely to want to change about the sound: it was behind
+    // Advanced, which left Simple mode with a preset and nothing else.
+    ChipRow(Scale.NAMES, remember(version) {
+        Scale.NAMES.indexOf(mapping.scale.name).coerceAtLeast(0)
+    }) {
+        mapping.scale = Scale.byIndex(it)
+        state.soundChanged()
+    }
     SectionLabel("Song mode")
     ChipRow(Song.NAMES, state.songIndex) { state.setSong(it) }
+
+    SectionLabel("What makes a sound")
+    // Pills rather than nine toggle rows: tapping one silences that kind of
+    // event, which is a thing people want on a long run and was Advanced-only.
+    val kinds = remember { EventKind.entries.toList() }
+    Column {
+        kinds.chunked(3).forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { kind ->
+                    val on = remember(version, kind) { mapping.isEnabled(kind) }
+                    Pill(
+                        kind.name.lowercase().replaceFirstChar { it.uppercase() },
+                        selected = on,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        mapping.setEnabled(kind, !on)
+                        state.soundChanged()
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
 
     // Two sliders over five values. The scale, the base pitch, the range, the
     // decay and the note ceiling were Advanced-only, which left Simple mode

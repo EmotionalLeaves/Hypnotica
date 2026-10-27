@@ -38,7 +38,17 @@ import org.luaj.vm2.lib.jse.JseMathLib
 class LuaRecipe private constructor(
     val source: String,
     val meta: RecipeMeta,
-    val params: List<Param>
+    val params: List<Param>,
+    /**
+     * The recipe's own Simple-mode controls.
+     *
+     * Without these a recipe only ever got the derived "How much" and "Energy",
+     * so the orbit recipe's one simple slider moved its trail buffer rather
+     * than the launch speed that decides whether the thing orbits at all — the
+     * promise that Simple mode is never a cut-down Advanced mode was
+     * unachievable for every user-written sim.
+     */
+    val macros: List<Macro> = emptyList()
 ) {
 
     data class RecipeMeta(
@@ -67,6 +77,7 @@ class LuaRecipe private constructor(
         defaultPalette = meta.palette,
         defaultSound = meta.sound,
         typicalSeconds = meta.seconds,
+        macros = macros,
         lawKnobs = if (meta.usesLaws) knobsIn(source) else emptySet(),
         create = { LuaSim(source) }
     )
@@ -162,7 +173,7 @@ class LuaRecipe private constructor(
                 if (g.get("step").isnil() && g.get("draw").isnil()) {
                     return Result.failure(IllegalArgumentException("A recipe needs a step or a draw function"))
                 }
-                Result.success(LuaRecipe(source, meta, params))
+                Result.success(LuaRecipe(source, meta, params, readMacros(g.get("macros"), params)))
             } catch (e: LuaError) {
                 Result.failure(IllegalArgumentException(cleanMessage(e.message)))
             } catch (e: Throwable) {
@@ -214,6 +225,53 @@ class LuaRecipe private constructor(
             if (!t.istable()) return fallback
             val v = t.get(key)
             return if (v.isnil()) fallback else v.toboolean()
+        }
+
+        /**
+         * `macros = { { label = "Pull", card = "motion",
+         *               targets = { speed = {0.2, 3}, mass = {0.5, 4} } } }`
+         *
+         * A target naming a parameter the recipe does not declare is dropped
+         * rather than failing the load: a half-written recipe should still run.
+         */
+        private fun readMacros(list: LuaValue, params: List<Param>): List<Macro> {
+            if (!list.istable()) return emptyList()
+            val known = params.associateBy { it.key }
+            val out = ArrayList<Macro>()
+            var i = 1
+            while (i <= 8) {
+                val m = list.get(i)
+                if (m.isnil()) break
+                i++
+                if (!m.istable()) continue
+                val targetTable = m.get("targets")
+                if (!targetTable.istable()) continue
+                val targets = LinkedHashMap<String, ClosedFloatingPointRange<Float>>()
+                val logs = HashSet<String>()
+                for (key in targetTable.keys()) {
+                    val name = key.tojstring()
+                    val param = known[name] ?: continue
+                    val pair = targetTable.get(key)
+                    if (!pair.istable()) continue
+                    val lo = pair.get(1)
+                    val hi = pair.get(2)
+                    if (lo.isnil() || hi.isnil()) continue
+                    targets[name] = lo.tofloat()..hi.tofloat()
+                    if (param.logScale) logs.add(name)
+                }
+                if (targets.isEmpty()) continue
+                val label = optString(m, "label", "How much")
+                out.add(
+                    Macro(
+                        key = optString(m, "key", "recipe-" + out.size),
+                        label = label,
+                        card = cardFrom(optString(m, "card", "motion")),
+                        targets = targets,
+                        logs = logs
+                    )
+                )
+            }
+            return out
         }
 
         private fun readParams(list: LuaValue): List<Param> {

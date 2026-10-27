@@ -97,7 +97,7 @@ class ParticleFieldSim : Sim {
         // then multiplying by dt left this above 1 whenever time ran backwards,
         // which turned drag into gain and drove every one of up to four hundred
         // thousand particles to the speed limit within a few seconds.
-        val dragF = 1f - ((drag + laws.friction) * dt * 8f).coerceIn(0f, 0.6f)
+        val dragF = 1f - ((drag + laws.friction) * abs(dt) * 8f).coerceIn(0f, 0.6f)
         val t = elapsed * 0.35f
         val wrap = laws.space != app.hypnotica.core.laws.Space.BOX
         val restitution = if (laws.sticky) 0f else laws.bounce

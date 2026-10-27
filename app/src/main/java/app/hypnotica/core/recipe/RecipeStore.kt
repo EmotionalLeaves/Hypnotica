@@ -100,6 +100,12 @@ class RecipeStore(private val dir: File) {
                     min = 50, max = 4000, default = 900, card = "look" }
                 }
 
+                -- One slider for the whole question: does it orbit or escape?
+                macros = {
+                  { key = "launch", label = "Orbit or escape", card = "motion",
+                    targets = { speed = {0.3, 2.0}, distance = {0.2, 0.9} } }
+                }
+
                 function setup(s)
                   s.x = param("distance"); s.y = 0
                   s.vx = 0; s.vy = param("speed")

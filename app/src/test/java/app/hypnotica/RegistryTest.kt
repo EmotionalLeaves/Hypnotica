@@ -23,6 +23,68 @@ class RegistryTest {
 
     private val g = G()
 
+    /**
+     * "Backwards time rebuilds a collapsed tower" was in ROUNDS.md for a round
+     * with nothing behind it. The tower is written as a function of the clock
+     * rather than by accumulating state, so this checks the picture retraces
+     * itself when the clock turns round — and that a run which starts reversed
+     * is not simply frozen, which is the trap a one-way ramp falls into.
+     */
+    @Test
+    fun theTowerRunsBothWays() {
+        val def = SimRegistry.find("physics/tower")
+        assertTrue("the reversible sim is not registered", def != null)
+        val core = SimCore(def!!, 7L)
+        core.setAspect(0.46f)
+        core.restart(7L)
+
+        fun bricks(): Int = core.sim.counters()
+            .first { it.first == "bricks" }.second.substringBefore('/').toInt()
+
+        fun halfSecond() {
+            repeat(30) { core.advance(1f / 60f) }
+            g.reset()
+            core.draw(g)
+            core.events.drain(1_000_000) { _, _, _, _ -> }
+        }
+
+        val forward = ArrayList<Int>()
+        repeat(12) { halfSecond(); forward.add(bricks()) }
+        assertTrue("the tower did not build: $forward", forward.last() > forward.first())
+
+        core.setLaws(Laws.OUR_UNIVERSE.copy(timeDirection = -1f, name = "Backwards time"))
+        val back = ArrayList<Int>()
+        repeat(12) { halfSecond(); back.add(bricks()) }
+        assertTrue("the tower did not come apart: $back", back.last() < back.first())
+
+        val expected = forward.dropLast(1).reversed()
+        for (i in expected.indices) {
+            assertTrue(
+                "reversing did not retrace the build at step $i: " +
+                    "${back[i]} against ${expected[i]}",
+                kotlin.math.abs(back[i] - expected[i]) <= 2
+            )
+        }
+
+        // A run that starts reversed has to be going somewhere.
+        val fresh = SimCore(def, 99L)
+        fresh.setAspect(0.46f)
+        fresh.setLaws(Laws.OUR_UNIVERSE.copy(timeDirection = -1f, name = "Backwards time"))
+        fresh.restart(99L)
+        val seen = HashSet<Int>()
+        repeat(600) {
+            fresh.advance(1f / 60f)
+            g.reset()
+            fresh.draw(g)
+            fresh.events.drain(1_000_000) { _, _, _, _ -> }
+            seen.add(
+                fresh.sim.counters().first { it.first == "bricks" }
+                    .second.substringBefore('/').toInt()
+            )
+        }
+        assertTrue("a reversed start sits still: ${seen.size} states", seen.size >= 10)
+    }
+
     @Test
     fun everyIdIsUniqueAndNamesItsShelf() {
         val byId = HashMap<String, String>()

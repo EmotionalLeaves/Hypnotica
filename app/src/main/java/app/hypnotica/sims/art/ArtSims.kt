@@ -547,7 +547,9 @@ class SpirographSim : Sim {
                 Param.float("pen", "Pen offset", 0.02f, 0.5f, 0.2f, card = Card.DATA),
                 Param.int("points", "Ink", 500, 300000, 30000, card = Card.LOOK, logScale = true),
                 Param.float("dot", "Line weight", 0.001f, 0.01f, 0.0032f, card = Card.LOOK),
-                Param.float("rate", "Speed", 100f, 8000f, 900f, card = Card.MOTION, logScale = true)
+                // Reaches what the ink slider offers: three hundred thousand
+                // points at nine hundred a second is five and a half minutes.
+                Param.float("rate", "Speed", 100f, 40000f, 900f, card = Card.MOTION, logScale = true)
             ),
             create = { SpirographSim() }
         )

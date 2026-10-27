@@ -12,6 +12,7 @@ import app.hypnotica.sims.math.EquationSim
 import app.hypnotica.sims.math.GeometrySims
 import app.hypnotica.sims.math.MathSims
 import app.hypnotica.sims.physics.PhysicsExtras
+import app.hypnotica.sims.physics.ReversibleSims
 import app.hypnotica.sims.physics.PhysicsSims
 import app.hypnotica.sims.scale.ScaleSims
 import app.hypnotica.sims.sorting.SortingSim
@@ -31,6 +32,7 @@ object SimRegistry {
             addAll(StructureSims.defs())
             addAll(PhysicsSims.defs())
             addAll(PhysicsExtras.defs())
+            addAll(ReversibleSims.defs())
             addAll(MathSims.defs())
             addAll(GeometrySims.defs())
             add(EquationSim.def())

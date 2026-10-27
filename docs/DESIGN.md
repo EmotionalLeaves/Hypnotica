@@ -122,7 +122,7 @@ Simple and Advanced are two views of one state. Nothing is reset by switching.
 
 <img src="images/library.svg" width="320" alt="The Library">
 
-Fifty-seven sims across six shelves, filtered by shelf, with favourites first.
+Fifty-eight sims across six shelves, filtered by shelf, with favourites first.
 Every card is a real preview: the sim is run headlessly for about a second and
 its own draw list is painted onto the card. No stock art, nothing invented.
 
@@ -178,25 +178,62 @@ A formula you typed outranks the drift; Evolve leaves it alone.
 
 ## Changing the laws
 
-One `Laws` table is shared by every physics sim, so changing it changes all of
-them at once. Fifteen presets — Our universe, Moon, Zero-G, Upside-down, Bouncy,
-Sticky, Ghosts, Syrup, Slow light, Backwards time, Repulsive gravity, Negative
-mass, Wrap-around space, Strong charges, Heavy & bouncy — plus the sliders and
-switches behind them: gravity, bounciness, friction, time speed, time direction,
-space wrapping, mass sign, charge strength, which way like charges push, the
-speed of light, force falloff, the gravitational constant, and a typed force law
-such as `g * m1 * m2 / r^2`.
+One `Laws` table is shared by every physics sim, so a change to it reaches every
+sim that reads that part of it. Fifteen presets — Our universe, Moon, Zero-G,
+Upside-down, Bouncy, Sticky, Ghosts, Syrup, Slow light, Backwards time,
+Repulsive gravity, Negative mass, Wrap-around space, Strong charges, Heavy &
+bouncy — plus the controls behind them: gravity, which way down is (upside-down,
+and a sideways tilt), bounciness, free energy, friction, what happens on contact
+(sticky, pass-through), time speed, time direction, the shape of space, mass
+sign, charge strength, which way like charges push, the speed of light, force
+falloff, the gravitational constant, and a typed force law such as
+`g * m1 * m2 / r^2`.
+
+**A sim is only offered the laws it reads.** Each `SimDef` declares a set of
+`LawKnob`, and the Laws card and tab show those and nothing else; time speed and
+direction are the exception, because the engine applies them to every sim. This
+is not cosmetic. The card used to be identical everywhere, so on the pendulum
+wave six of its controls and the force-law box did nothing while each one
+renamed the universe "Custom" — a menu promising what the code does not do. It
+also means the one genuinely expert control, the typed force law, appears on the
+sim that reads it rather than behind a mode switch.
 
 Editing any law renames the universe "Custom" and the chip row grows a Custom
 chip, so your edit is visible rather than deselecting everything.
 
-Every field in the table is read by something. A law nothing honours is a lie in
-a menu, and gets deleted rather than documented.
+Every field in the table is read by something, every field a sim reads can be
+set from the UI, and every declared `LawKnob` matches the laws its own file
+reads. All three are checked by `tools/uicheck.py`, because all three had
+drifted: `gravityDirX` had no control at all, and `electricStrength` was
+scaled into the field and then divided out again, so the slider, the law and the
+"Strong charges" preset were exactly equivalent to doing nothing.
 
-**Dimensions** are a separate shelf, not a law: hypercube rotation by plane,
-slicing a 4D solid with a 3D knife, N-dimensional bouncing, random walks in up to
-six dimensions, and the volume of an n-ball (which peaks at five dimensions and
-then falls — the payoff is watching it fall).
+**Backwards time** reverses the physics sims and leaves the rest alone, which
+is right: a maze does not unsolve and a sort does not unsort, so 67 places
+advance their own clocks with `abs(dt)` on purpose. One sim is built the other
+way round. In `physics/tower` each brick's position is a function of the clock
+and nothing is accumulated, so reversing time reverses the picture exactly,
+brick for brick, with no bookkeeping — and the clock folds at the top, so the
+run is worth watching whichever way it is going rather than sitting still at
+one end. A test checks the reverse retraces the build.
+
+Breaking a law is allowed to break a sim, but not to make it look broken. With
+no gravity a pendulum cannot swing, so the pendulum wave, the Galton board and
+Newton's cradle each say so in their counters and end the run, rather than
+holding a still picture for ever — and a wave that has not swung does not claim
+to have realigned.
+
+**Dimensions** are a separate shelf, not a law. Six sims: hypercube rotation by
+plane, a hypersphere passing through a flatter world (where the slice's radius
+does not depend on the dimension but its content does, as radius to the power of
+n-1, so two dimensions arrive gently and six are nothing until the last moment
+and then bloom), N-dimensional bouncing (the payoff is every one of the 2n walls
+struck), random walks in up to six dimensions (where the payoff is the verdict:
+all of them home on a line, hardly any in three), the volume of an n-ball (which
+peaks at five dimensions and then falls — the payoff is watching it fall), and
+curved space. Two of those six — the n-ball volume and curved space — are about
+dimension rather than simulated in N dimensions, and `curved-space` lives in
+`sims/math/` because it shares its file with the other geometry sims.
 
 ## TickTock
 

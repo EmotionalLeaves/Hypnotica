@@ -77,7 +77,7 @@ g.disc(cx, cy, r, color, alpha)
 g.ring(cx, cy, r, thickness, color, gap, gapAngle, alpha)
 g.glow(cx, cy, r, color, alpha)
 g.line(x1, y1, x2, y2, width, color, alpha)
-g.polyline(xs, ys, count, width, color, alpha)
+g.polyline(xs, ys, count, width, color, alpha)   // Kotlin only, see below
 g.point(x, y, sizePixels, color)      // the huge-count path
 g.reserveInstances(n) / g.reservePoints(n)
 g.flash(strength)                      // the safety limiter may reduce it
@@ -90,11 +90,52 @@ Above a few thousand objects, use `g.point`: discs and rects are instanced
 quads, points are one vertex each. Every sim that reaches five figures does
 this.
 
+`g.polyline` is not installed in the Lua sandbox — a recipe draws a path with
+`g.line` in a loop, or with `g.point` if the path is long. This file's opening
+promise is that everything not in it is unavailable, so the omission is noted
+here rather than left to be discovered.
+
+### Simple-mode controls
+
+A recipe can declare its own macros — one slider that moves several of its
+parameters at once — which is what keeps Simple mode from being Advanced mode
+with things taken away. Without one a recipe gets only the derived "How much"
+and "Energy", and "How much" picks a parameter by name, which on an orbit
+recipe was the trail buffer rather than the launch speed that decides whether
+the thing orbits at all.
+
+```lua
+macros = {
+  { key = "launch",                  -- optional; one is made up if absent
+    label = "Orbit or escape",       -- what the slider is called
+    card = "motion",                 -- data, motion, look or sound
+    targets = {                      -- parameter key -> { at 0, at 1 }
+      speed = { 0.3, 2.0 },
+      distance = { 0.2, 0.9 }
+    } }
+}
+```
+
+At most eight macros, each with any number of targets. A target naming a
+parameter the recipe does not declare is dropped rather than failing the load.
+The middle of the slider is anchored to the values the recipe ships with, so
+touching it never jerks something nobody asked to change, and a target whose
+parameter is `log = true` is swept logarithmically.
+
 ### Declaring a sim
 
 ```kotlin
 SimDef(
     id = "shelf/name",            // stable; it is what a replay link stores
+                                  // The prefix is a namespace, not free text:
+                                  // SimRegistry.idNamespaces lists the allowed
+                                  // ones (every shelf, plus "sorting" and
+                                  // "recipe"), and an invariant test rejects
+                                  // anything else. A recipe's id is rewritten
+                                  // with a "recipe/" prefix when it loads, so
+                                  // meta.id = "orbit" becomes "recipe/orbit".
+                                  // Ids must be unique: two recipes sharing one
+                                  // leaves the second unreachable by id.
     title = "What it is called",
     shelf = Shelf.PHYSICS,
     family = "Pendulums & oscillators",

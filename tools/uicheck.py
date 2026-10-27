@@ -323,6 +323,33 @@ for f in sorted(glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=T
                     problems.append(
                         f"{f}:{line}: {name}(...) has no parameter named '{arg}'")
 
+# 10. the Library mock-up must name real sims
+#     docs/images/library.svg is a picture of a screen that renders def.title
+#     and def.family verbatim, so a title or family it invents is a mock-up of
+#     a screen the code cannot produce. Five of its six rows had drifted.
+import html as _html
+titles = {}
+for f in glob.glob('app/src/main/java/app/hypnotica/sims/**/*.kt', recursive=True):
+    src = open(f).read()
+    for m in re.finditer(r'title = "([^"]+)",\s*\n\s*shelf = [^\n]*\n\s*family = "([^"]+)"', src):
+        titles[m.group(1)] = m.group(2)
+    # The thirteen sorts declare their titles in Algorithms.kt and share one
+    # family, declared in SortingSim.kt.
+    for m in re.finditer(r'override val title = "([^"]+)"', src):
+        titles.setdefault(m.group(1), 'Sorting algorithms')
+mock = 'docs/images/library.svg'
+if titles and glob.glob(mock):
+    nodes = [_html.unescape(t) for t in re.findall(r'>([^<>]*)</text>', open(mock).read())]
+    for i, node in enumerate(nodes):
+        want = titles.get(node)
+        if want is None:
+            continue
+        got = nodes[i + 1] if i + 1 < len(nodes) else ''
+        if got != want:
+            problems.append(
+                f"{mock}: \"{node}\" is shown under \"{got}\", but its family "
+                f"is \"{want}\"")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

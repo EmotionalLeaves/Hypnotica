@@ -11,11 +11,11 @@ only when its "done when" test actually passes on the phone.
 | 4. Sorting pack | done | Simple-mode cards, 12 sorts, 5 views, counters | Every sort finishes and does the final sweep |
 | 5. Physics pack | done | Shared Laws table, ball escape, pendulum wave, Newton's cradle, Galton board | Pendulum wave realigns on schedule; the ball escapes |
 | 6. Recipes | done | Lua sandbox, Advanced tabs (Data, Params, Laws, Sound, Code), recipe editor, three shipped samples | A recipe written by an AI runs first try |
-| 7. Shelf packs | done | Fractals, maze and pathfinding, number theory, probability, visual proofs, graphs, art | 57 sims across six shelves |
+| 7. Shelf packs | done | Fractals, maze and pathfinding, number theory, probability, visual proofs, graphs, art | 58 sims across six shelves |
 | 8. Feed and Library | done | Swipe feed, auto-advance, favourites that persist, live previews on every card | Opening the app plays a sim within 1 s |
 | 9. Export | done | MP4 with audio, offline render, 9:16/1:1/16:9, captions, cancel, saved to Movies | A 30 s vertical clip exports with synced sound |
 | 10. Builders and polish | done | Equation sim, expressions in any field, Evolve, Record moves, device benchmark, first-run card | Typing a formula draws it; recorded moves land in Studio |
-| 11. Laws and dimensions | done | 15 law presets, force-law expressions, N-dimensional engine, six Dimensions sims | Backwards time rebuilds a collapsed tower; a tesseract spins through XW |
+| 11. Laws and dimensions | done | 15 law presets, force-law expressions, N-dimensional engine, six Dimensions sims, each sim declaring the laws it reads | A tesseract spins through XW; raising the dimension count adds a plane to watch it turn in |
 | 12. TickTock | done | Hidden settings button, clip director with payoff pre-check, 15 trap formats, on-device weighting that persists | 50 swipes with no repeat and no dull clip |
 | 13. Studio | done | Timeline, 9 tracks, keyframes, freezes, captions, templates, offline render | A 30 s clip with a camera orbit and a mid-clip gravity flip exports at 1080p60 |
 | 14. On the phone | open | Whatever `QA.md` finds on the device | The checklist passes end to end on real hardware |
@@ -32,7 +32,7 @@ phone, and nothing here can tick it from a build server.
 - Instanced OpenGL ES 3 renderer: one shader covers bars, discs, rings with a
   gap, lines and glows; a separate point-sprite path carries the huge counts.
   Trails use a ping-pong framebuffer; the present pass adds vignette and flash.
-- Polyphonic synth on its own thread fed by an event queue, with seven voices,
+- Polyphonic synth on its own thread fed by an event queue, with 64 voices,
   nine scales, seven presets and a rate limiter that merges bursts.
 - Flash limiter enforcing three large flashes a second, one when Reduce flashing
   is on.
@@ -45,7 +45,7 @@ phone, and nothing here can tick it from a build server.
 
 - Lua recipe sandbox with a per-step time budget; recipes are plain text files
   that register as sims. `docs/RECIPE_SPEC.md` is the contract.
-- 57 sims across six shelves: Algorithms, Physics, Math, Dimensions, Life &
+- 58 sims across six shelves: Algorithms, Physics, Math, Dimensions, Life &
   nature, Art & music.
 - Live Library previews: each card runs the sim headlessly for a moment and
   paints its real draw list.

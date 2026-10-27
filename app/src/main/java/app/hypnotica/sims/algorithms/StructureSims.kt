@@ -480,7 +480,9 @@ class BinaryTreeSim : Sim {
                 Param.choice("order", "Keys arrive", listOf("Random", "Already sorted"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.int("nodes", "Nodes", 1, 100000, 220, card = Card.DATA, logScale = true),
-                Param.float("rate", "Speed", 1f, 2000f, 26f, card = Card.MOTION, unit = "/s", logScale = true)
+                // Reaches what the node slider offers: a hundred thousand nodes at
+                // twenty-six a second is an hour.
+                Param.float("rate", "Speed", 1f, 20000f, 26f, card = Card.MOTION, unit = "/s", logScale = true)
             ),
             create = { BinaryTreeSim() }
         )

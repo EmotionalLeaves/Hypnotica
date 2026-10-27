@@ -127,6 +127,19 @@ fun SettingsScreen(state: AppState, versionName: String) {
             )
         }
 
+        // The recipe editor is the largest thing in the app — a sim written in
+        // Lua becomes a sim like any other — and its only door was Advanced,
+        // the fifth tab, below a JSON blob. Somebody handed a recipe in a chat
+        // message had no way to paste it in.
+        SectionLabel("Your own sims")
+        BigButton("Write a sim") { state.screen = Screen.RECIPES }
+        Text(
+            "A few lines of Lua becomes a sim on your shelf, with its own sliders.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+        )
+
         state.benchNote?.let { note ->
             Text(
                 "This phone: $note",

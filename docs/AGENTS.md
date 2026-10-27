@@ -78,7 +78,11 @@ app/src/main/java/app/hypnotica/
   core/render/   draw list, shaders, GL renderer, palettes
   core/audio/    synth, scales, event-to-note mapping
   core/safety/   flash limiter and accessibility settings
-  sims/          the sims themselves, grouped by shelf
+  sims/          the sims themselves, grouped by shelf, with four exceptions:
+                 the particle field, Game of Life and Lorenz share
+                 sims/scale/ParticleFieldSim.kt, and curved-space shares
+                 sims/math/GeometrySims.kt. An id's prefix is the namespace,
+                 and SimRegistry.idNamespaces is the list of allowed ones
   engine/        SimEngine: binds core, renderer, audio, camera and haptics
   export/        EGL + MediaCodec offline renderer, captions, publishing
   ui/            Compose screens

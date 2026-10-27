@@ -116,7 +116,10 @@ class BallEscapeSim : Sim {
             if (!b.alive) continue
             b.vx += gx * dt
             b.vy += gy * dt
-            val drag = 1f - (laws.friction * dt).coerceIn(0f, 0.2f)
+            // abs: a negative dt made the product negative, which the clamp
+            // turned into no friction at all — so the slider and the "No
+            // friction" pill did nothing whenever time ran backwards.
+            val drag = 1f - (laws.friction * abs(dt)).coerceIn(0f, 0.2f)
             b.vx *= drag
             b.vy *= drag
 
@@ -362,7 +365,7 @@ class PendulumWaveSim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val g = GRAVITY_SIM * gravityScale * (env.laws.gravity / 9.81f)
-        val damping = 1f - (env.laws.friction * dt * 0.4f).coerceIn(0f, 0.05f)
+        val damping = 1f - (env.laws.friction * abs(dt) * 0.4f).coerceIn(0f, 0.05f)
 
         // Each pendulum is independent, so twenty thousand of them split cleanly
         // across cores. Only a sample of them is allowed to make a sound: ten
@@ -588,7 +591,7 @@ class NewtonsCradleSim : Sim {
         }
         stillSeconds = 0f
         val l = 1.1f
-        val damping = 1f - (env.laws.friction * dt * 0.1f).coerceIn(0f, 0.02f)
+        val damping = 1f - (env.laws.friction * abs(dt) * 0.1f).coerceIn(0f, 0.02f)
 
         for (i in 0 until n) {
             val acc = -(g / l) * sin(pos[i])
@@ -874,7 +877,9 @@ class GaltonBoardSim : Sim {
             params = listOf(
                 Param.int("rows", "Peg rows", 4, 20, 10, card = Card.DATA),
                 Param.int("beads", "Beads", 10, 20000, 400, card = Card.DATA, logScale = true),
-                Param.float("rate", "Drop rate", 1f, 400f, 30f, card = Card.MOTION, unit = "/s", logScale = true)
+                // Reaches what the bead slider offers: twenty thousand beads at the
+                // shipped thirty a second is eleven minutes of waiting.
+                Param.float("rate", "Drop rate", 1f, 4000f, 30f, card = Card.MOTION, unit = "/s", logScale = true)
             ),
             create = { GaltonBoardSim() }
         )

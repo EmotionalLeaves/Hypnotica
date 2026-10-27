@@ -1,42 +1,39 @@
-# Open defects
+# Defects
 
-Everything found by audit that is not yet fixed, worst first. Each line names
-the file to start from and what the user sees, so the work can be picked up
-cold. Fixed items are deleted, not ticked: the git history is the record.
+What audit found and what is left. An item is deleted when it is fixed, not
+ticked: the git history is the record, and this file is the baseline the next
+audit starts from.
 
-The rule this list exists to serve, from AGENTS.md: *a control that does
-nothing is a bug, and the menu must not promise what the code does not do.*
+The rule it exists to serve, from AGENTS.md: *a control that does nothing is a
+bug, and the menu must not promise what the code does not do.*
 
-## Laws that do not do what the menu says
+## Open
 
-- **Backwards time is a no-op for most of the library.** 67 sites advance their
-  own clocks with `abs(dt)`, which is right for a state machine — a maze does
-  not unsolve — but `ROUNDS.md:18` claims "backwards time rebuilds a collapsed
-  tower", which nothing implements. Either build one sim that genuinely runs in
-  reverse, or stop claiming it. The Friction slider and the "No friction" pill
-  also have no effect under reversed time in ball-escape, pendulum-wave and
-  newtons-cradle, because those clamp `friction * dt` to a positive range.
-- **`dimensions/ball-volume` and `dimensions/curved-space` are not dimension
-  simulations** — one is a bar chart of a formula, the other is flat 2-D with no
-  dimension parameter. The shelf holds six sims; `DimensionSims.defs()` returns
-  five, and `curved-space` lives in `sims/math/`.
+Nothing. Three audits — one on the hidden TickTock and Studio modes, one on the
+dual interface, one on the laws, the dimension sims and the guide — raised
+about fifty findings between them, and all of them are closed.
 
-## Payoffs and sizes
+The last two to go were the ones that needed something built rather than
+repaired:
 
-- **Three size sliders cannot deliver their own maximum** at the shipped pace:
-  `algorithms/binary-tree` nodes (3,119 of 100,000 in a minute),
-  `physics/galton-board` beads (1,866 of 20,000), `art/spirograph` points
-  (9,212 of 300,000). Simple mode now carries the pace with the size, but the
-  advanced sliders still disagree with each other.
-- **A derived "How much" on 31 sims duplicates a slider rendered right beneath
-  it,** so Simple mode is a worse subset rather than a superset. It now moves
-  the subject rather than a drawing detail, carries both grid axes and the
-  pace, and sweeps logarithmic counts logarithmically — but on a sim with one
-  size parameter it is still one slider over one value.
-- **The scale and the per-event mutes are still Advanced-only,** and a preset
-  tap overwrites the pitch, range, decay and scale with no warning, in either
-  mode. Simple mode now has Brightness and Busyness over the other five
-  values.
-- **The recipe editor is reachable only through Advanced → Code,** and Lua
-  recipes cannot declare macros at all, so every user-written sim is stuck with
-  a single derived slider.
+- **A sim that genuinely runs in reverse.** Every other sim integrates
+  forwards, so "Backwards time" reverses the physics and leaves a maze or a
+  sort alone — correctly, since neither unsolves. `physics/tower` is written
+  the other way round: each brick's position is a function of the clock, so
+  reversing time reverses the picture exactly, and the clock folds at the top
+  so neither direction ever runs out of tower. `RegistryTest.theTowerRunsBothWays`
+  checks the reverse retraces the build within two bricks and that a run which
+  starts reversed is not simply frozen.
+- **The per-event sound mutes**, now a row of pills on the Simple Sound card
+  beside the preset, the scale, Brightness and Busyness.
+
+The checks that keep the findings closed, all of which reproduce the defect
+they were written for: `tools/uicheck.py` rules 5 to 10 (redeclarations, a
+payoff fired by the clock alone, a law nothing reads or nothing can set, a
+declared `LawKnob` that does not match the code, a named argument the
+constructor does not have, and a Library mock-up naming a sim that does not
+exist), `tools/glslcheck.js` and `tools/glslpixels.js` (the shaders compiled
+and their pixels measured in a real rasteriser), `MacroTest` (Simple mode's
+contract across every sim), `SafetyTest` (the flash cap against the worst case
+the app can produce) and `RegistryTest` (every sim run under every law preset,
+paying off, making a sound, previewable, and at its largest size).
