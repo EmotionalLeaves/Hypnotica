@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
@@ -68,6 +69,13 @@ fun Pill(
     selected: Boolean = false,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /**
+     * Marks an action that throws work away. Tokens.Danger existed for exactly
+     * this — "destructive actions, errors, recording" — and was used for errors
+     * and recording and for no destructive action anywhere, so Delete and Clear
+     * track were pixel-identical to the harmless pills beside them.
+     */
+    danger: Boolean = false,
     onClick: () -> Unit
 ) {
     // Selection fades rather than snapping. This is the app's whole selection
@@ -76,18 +84,31 @@ fun Pill(
     // single frame, so tapping a palette made two chips jump four properties
     // each. The border width is now constant, because changing it moved the
     // pill's geometry by half a dp as well.
+    val accent = if (danger) Tokens.Danger else Tokens.Accent
     val background by animateColorAsState(
-        if (selected) Tokens.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f),
+        when {
+            selected -> accent.copy(alpha = 0.18f)
+            danger -> Tokens.Danger.copy(alpha = 0.08f)
+            else -> Color.White.copy(alpha = 0.05f)
+        },
         tween(Tokens.Fast),
         label = "pillBackground"
     )
     val outline by animateColorAsState(
-        if (selected) Tokens.Accent else Color.White.copy(alpha = 0.12f),
+        when {
+            selected -> accent
+            danger -> Tokens.Danger.copy(alpha = 0.55f)
+            else -> Color.White.copy(alpha = 0.12f)
+        },
         tween(Tokens.Fast),
         label = "pillOutline"
     )
     val ink by animateColorAsState(
-        if (selected) Tokens.TextPrimary else Tokens.TextSecondary,
+        when {
+            selected -> Tokens.TextPrimary
+            danger -> Tokens.Danger
+            else -> Tokens.TextSecondary
+        },
         tween(Tokens.Fast),
         label = "pillInk"
     )
@@ -100,7 +121,7 @@ fun Pill(
             // than a rectangle drawn over one.
             .clip(CircleShape)
             .clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
             .alpha(if (enabled) 1f else 0.4f),
         contentAlignment = Alignment.Center
     ) {
@@ -127,16 +148,16 @@ fun BigButton(
             .heightIn(min = 52.dp)
             .background(
                 if (primary) Tokens.Accent.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.06f),
-                RoundedCornerShape(14.dp)
+                RoundedCornerShape(12.dp)
             )
             .border(
                 if (primary) 2.dp else 1.dp,
                 if (primary) Tokens.Accent else Color.White.copy(alpha = 0.12f),
-                RoundedCornerShape(14.dp)
+                RoundedCornerShape(12.dp)
             )
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -250,7 +271,10 @@ fun ValueSlider(
             Text(
                 label,
                 color = Tokens.TextPrimary.copy(alpha = dim),
-                style = MaterialTheme.typography.titleMedium,
+                // bodyMedium, matching ToggleRow: at titleMedium a slider label
+                // was 4sp and a weight above the SectionLabel that groups it,
+                // so the hierarchy ran backwards.
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
@@ -305,7 +329,7 @@ fun ToggleRow(
                 role = Role.Switch,
                 onValueChange = onChange
             )
-            .padding(vertical = 10.dp),
+            .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -352,11 +376,16 @@ fun GlyphButton(
 
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    // A heading has to outrank what it heads. This was 12sp secondary sitting
+    // above 13sp secondary body — one point SMALLER than its own paragraph and
+    // exactly the same colour, so it read as a third hint line rather than a
+    // divider. Primary ink and a little tracking make it a heading at the same
+    // size, which keeps it quieter than a title and clearly above body.
     Text(
-        text,
-        modifier = modifier.padding(top = 10.dp, bottom = 4.dp),
-        color = Tokens.TextSecondary,
-        style = MaterialTheme.typography.labelMedium
+        text.uppercase(),
+        modifier = modifier.padding(top = 16.dp, bottom = 4.dp),
+        color = Tokens.TextPrimary,
+        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.8.sp)
     )
 }
 

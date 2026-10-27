@@ -48,6 +48,9 @@ fun RecipeScreen(state: AppState) {
     var listVersion by remember { mutableIntStateOf(0) }
     val entries = remember(listVersion) { store?.list() ?: emptyList() }
     var name by remember { mutableStateOf(entries.firstOrNull()?.name ?: "my-recipe") }
+    /** Both destructive pills take two taps; neither can be undone. */
+    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmNew by remember { mutableStateOf(false) }
     var source by remember { mutableStateOf(entries.firstOrNull()?.source ?: STARTER) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
@@ -57,14 +60,14 @@ fun RecipeScreen(state: AppState) {
             .fillMaxSize()
             .background(Tokens.Bg)
             .safeDrawingPadding()
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             // Back to where you came from: both routes into this screen are
             // from Settings ("Write a sim", and the Code tab's button), and the
             // Library has no route here at all.
             GlyphButton("‹") { state.screen = Screen.SETTINGS }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
             Text("Recipes", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
             Text(
@@ -110,9 +113,9 @@ fun RecipeScreen(state: AppState) {
                 Modifier
                     .fillMaxWidth()
                     .height(40.dp)
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp),
+                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 BasicTextField(
@@ -130,9 +133,9 @@ fun RecipeScreen(state: AppState) {
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = 200.dp, max = 260.dp)
-                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                    .padding(10.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                    .padding(8.dp)
             ) {
                 BasicTextField(
                     value = source,
@@ -194,11 +197,33 @@ fun RecipeScreen(state: AppState) {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Pill("New") {
+                    // Only warns when there is something to lose: the editor
+                    // holding edits that were never saved.
+                    val unsaved = source != (store?.sourceFor(name) ?: STARTER)
+                    if (unsaved && !confirmNew) {
+                        confirmNew = true
+                        message = "Tap New again — the edits in the box have not been saved."
+                        messageIsError = false
+                        return@Pill
+                    }
+                    confirmNew = false
                     name = "my-recipe"
                     source = STARTER
                     message = null
                 }
-                Pill("Delete") {
+                Pill(
+                    if (confirmDelete) "Delete — sure?" else "Delete",
+                    selected = confirmDelete,
+                    danger = true
+                ) {
+                    if (!confirmDelete) {
+                        confirmDelete = true
+                        message = "Tap Delete again to remove \"$name\" for good. " +
+                            "There is no undo."
+                        messageIsError = false
+                        return@Pill
+                    }
+                    confirmDelete = false
                     val gone = store.delete(name)
                     listVersion++
                     if (gone) {
@@ -221,7 +246,7 @@ fun RecipeScreen(state: AppState) {
                 color = Tokens.TextSecondary,
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
             )
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(32.dp))
         }
     }
 }

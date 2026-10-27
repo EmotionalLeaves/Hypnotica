@@ -80,7 +80,7 @@ private fun DataTab(state: AppState) {
         Pill("Re-run same seed") { state.restart(newSeed = false) }
         Pill("New seed") { state.restart(newSeed = true) }
     }
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(8.dp))
     Text(
         "seed ${state.engine.core.seed}",
         color = Tokens.TextSecondary,
@@ -104,7 +104,7 @@ private fun ParamsTab(state: AppState) {
     // lived only on the Simple cards, so the dual interface lost capability in
     // both directions: an advanced user had to switch to Simple to change the
     // palette and switch back again.
-    Spacer(Modifier.height(14.dp))
+    Spacer(Modifier.height(16.dp))
     SectionLabel("The run")
     ValueSlider(
         "Speed", state.speed, 0.1f, 10f, logScale = true,
@@ -119,7 +119,7 @@ private fun ParamsTab(state: AppState) {
     ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
         state.setPalette(Palette.NAMES[it])
     }
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(8.dp))
     ToggleRow("Evolve", state.evolve, enabled = state.canEvolve) { state.evolve = it }
     if (!state.canEvolve) {
         Text(
@@ -128,7 +128,7 @@ private fun ParamsTab(state: AppState) {
             style = MaterialTheme.typography.bodySmall
         )
     }
-    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state.recording) {
             Pill("Stop and edit", selected = true) { state.stopRecording() }
         } else {
@@ -216,13 +216,13 @@ private fun FormulaField(state: AppState, p: Param) {
             Modifier
                 .weight(1f)
                 .height(36.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .border(
                     1.dp,
                     if (ok) Color.White.copy(alpha = 0.1f) else Tokens.Danger,
-                    RoundedCornerShape(8.dp)
+                    RoundedCornerShape(12.dp)
                 )
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = 8.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             if (text.isEmpty()) {
@@ -428,9 +428,9 @@ fun LawsControls(state: AppState, advanced: Boolean) {
         Modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-            .border(1.dp, if (forceOk) Color.White.copy(alpha = 0.1f) else Tokens.Danger, RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp),
+            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+            .border(1.dp, if (forceOk) Color.White.copy(alpha = 0.1f) else Tokens.Danger, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         if (force.isEmpty()) {
@@ -591,8 +591,8 @@ private fun CodeTab(state: AppState) {
     Box(
         Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+            .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
             .padding(12.dp)
     ) {
         Text(
@@ -601,9 +601,9 @@ private fun CodeTab(state: AppState) {
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
         )
     }
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(8.dp))
     BigButton("Open the recipe editor", primary = true) { state.screen = Screen.RECIPES }
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(8.dp))
     Text(
         "Recipes are Lua. A few dozen lines make a sim the app treats exactly " +
             "like a built-in one.",

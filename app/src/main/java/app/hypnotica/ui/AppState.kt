@@ -153,6 +153,12 @@ class AppState(
      * overwritten one frame after launch — permanently, on disk.
      */
     var feedIndex by mutableIntStateOf(0)
+
+    /**
+     * Why the sim stopped, or null. Mirrored from the engine, which sets it
+     * from the GL thread and cannot touch snapshot state itself.
+     */
+    var halted by mutableStateOf<String?>(null)
     var soundPresetName by mutableStateOf("Music box")
     var songIndex by mutableIntStateOf(0)
     // These three write themselves through. Three screens changed them without
@@ -395,8 +401,22 @@ class AppState(
             director.importMuted(p.mutedFormats)
             mutedFormats = director.mutedFormats.toSet()
         }
+        engine.onHalt = { why ->
+            halted = why
+            // So the next launch does not open straight back onto the sim that
+            // stopped. Without this a sim that throws on its own default values
+            // could not be escaped except by clearing the app's data.
+            prefs?.lastSimId = null
+        }
         val remembered = prefs?.lastSimId?.let { SimRegistry.find(it) }
         load(remembered ?: currentDef, restartSeed = 1L)
+    }
+
+    /** Pick up after a halt: load something else, or try the same thing again. */
+    fun recoverFrom(def: SimDef?) {
+        halted = null
+        engine.clearHalt()
+        if (def != null) load(def) else restart(newSeed = true)
     }
 
     fun load(def: SimDef, restartSeed: Long = System.nanoTime()) {

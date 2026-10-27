@@ -21,7 +21,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,7 +90,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 "at three a second; Reduce flashing softens them further.",
             color = Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 6.dp)
+            modifier = Modifier.padding(top = 8.dp)
         )
 
         SectionLabel("Time check")
@@ -117,9 +120,25 @@ fun SettingsScreen(state: AppState, versionName: String) {
         )
         Spacer(Modifier.height(8.dp))
         FormatMutes(state)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill("Reset what it learned") { state.resetTaste() }
+            var confirmReset by remember { mutableStateOf(false) }
+        Pill(
+            if (confirmReset) "Forget it all — sure?" else "Reset what it learned",
+            selected = confirmReset,
+            danger = true
+        ) {
+            if (!confirmReset) {
+                confirmReset = true
+                state.notice = "Tap again to forget everything TickTock learned " +
+                    "from what you watched. There is no undo."
+            } else {
+                confirmReset = false
+                state.resetTaste()
+                state.notice = "Forgotten. TickTock starts fresh."
+            }
+        }
+        NoticeLine(state.notice)
         }
 
         Spacer(Modifier.height(28.dp))
@@ -144,7 +163,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
             "A few lines of Lua becomes a sim on your shelf, with its own sliders.",
             color = Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
         )
 
         state.benchNote?.let { note ->
@@ -159,11 +178,11 @@ fun SettingsScreen(state: AppState, versionName: String) {
         // Below the version number, unlabelled, exactly as designed: a clock for
         // TickTock and a film strip for Studio.
         Row(
-            Modifier.fillMaxWidth().padding(top = 6.dp),
+            Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.Center
         ) {
             QuietGlyph("◷") { state.screen = Screen.TICKTOCK }
-            Spacer(Modifier.width(26.dp))
+            Spacer(Modifier.width(24.dp))
             QuietGlyph("✇") { state.screen = Screen.STUDIO }
         }
         // The glyphs are meant to be found rather than advertised, but they
@@ -176,7 +195,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
             color = Tokens.TextSecondary.copy(alpha = 0.33f),
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
         Spacer(Modifier.height(36.dp))
     }
@@ -200,9 +219,9 @@ private fun PaletteStrip(name: String) {
     Row(
         Modifier
             .fillMaxWidth()
-            .height(22.dp)
-            .padding(top = 6.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .height(24.dp)
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
     ) {
         colours.forEach { c ->
             Box(Modifier.weight(1f).fillMaxHeight().background(c))

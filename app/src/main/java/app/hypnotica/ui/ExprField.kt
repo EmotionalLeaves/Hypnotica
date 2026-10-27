@@ -61,13 +61,13 @@ fun ExprParamField(state: AppState, p: Param) {
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .border(
                     1.dp,
                     if (ok.value) Color.White.copy(alpha = 0.12f) else Tokens.Danger,
-                    RoundedCornerShape(10.dp)
+                    RoundedCornerShape(12.dp)
                 )
-                .padding(horizontal = 12.dp, vertical = 11.dp),
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             BasicTextField(
@@ -132,7 +132,7 @@ fun EquationPresets(state: AppState) {
         state.applyParamText("fy", preset.fy)
         state.restart(newSeed = false)
     }
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(8.dp))
     Text(
         "Variables: t (time), x and y (the current point). Functions: sin cos tan " +
             "sqrt abs exp log min max clamp pow atan2 floor sign.",

@@ -282,6 +282,29 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         dt = dt.coerceIn(1f / 480f, 0.1f)
         fps = if (fps <= 0f) 1f / dt else fps * 0.9f + (1f / dt) * 0.1f
 
+        // One guard over the whole frame.
+        //
+        // This runs on the GLSurfaceView's own thread, and an uncaught throw
+        // there goes to the default handler and takes the process with it.
+        // Worse, the last sim loaded is written to preferences and restored on
+        // launch, so the sim that killed the app was the sim the next launch
+        // opened on: one bad frame and the app could not be started again
+        // except by clearing its data, which takes the favourites, the saved
+        // recipes and everything else with it. A recipe is user-written Lua,
+        // so that was reachable without touching this repo.
+        //
+        // Now the sim is halted and said so, and the run is not restored.
+        if (halted != null) return
+        try {
+            drawFrame(dt)
+        } catch (t: Throwable) {
+            halted = cleanHaltMessage(t)
+            onHalt?.invoke(halted ?: "")
+        }
+    }
+
+    /** The frame's work. Called only from onDrawFrame, inside its guard. */
+    private fun drawFrame(dt: Float) {
         pendingLoad?.let {
             pendingLoad = null
             val keepLook = keepLookOnLoad
@@ -480,6 +503,42 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
      * Data-card values are left alone: changing those mid-run would mean
      * rebuilding the sim underneath itself.
      */
+    /**
+     * Why the sim stopped, or null while it is running.
+     *
+     * Set once, from the frame guard. Nothing retries on its own: a throw that
+     * reproduces every frame would be a stream of identical failures, so the
+     * engine stands still and the screen offers a way out.
+     */
+    @Volatile
+    var halted: String? = null
+        private set
+
+    /** Told when a sim halts, so the run is not restored on the next launch. */
+    var onHalt: ((String) -> Unit)? = null
+
+    /** Start drawing again, after the caller has loaded something else. */
+    fun clearHalt() {
+        halted = null
+    }
+
+    /**
+     * A throw, in words a person can use.
+     *
+     * Java class names are noise to someone who wrote a recipe in Lua, and the
+     * message is the part that says what happened.
+     */
+    private fun cleanHaltMessage(t: Throwable): String {
+        val message = t.message?.takeIf { it.isNotBlank() }
+        val kind = t::class.java.simpleName
+            .replace(Regex("Exception$|Error$"), "")
+            .replace(Regex("(?<=.)([A-Z])"), " $1")
+            .lowercase()
+        val text = if (message != null) message else "an $kind"
+        return text.replace(Regex("java\\.lang\\.|java\\.util\\.|kotlin\\."), "")
+            .take(200)
+    }
+
     /** Called when a person moves a value by hand: Evolve stands off it. */
     fun holdFromDrift(key: String) {
         driftHold.touch(key, System.nanoTime())

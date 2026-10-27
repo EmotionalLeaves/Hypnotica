@@ -215,8 +215,8 @@ private fun TopBar(state: AppState, uiTick: Int) {
 @Composable
 private fun ActionBar(state: AppState, surface: SimSurfaceView) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         BigButton(if (state.paused) "Play" else "Pause", Modifier.weight(1f)) { state.togglePause() }
@@ -340,7 +340,7 @@ private fun CardControls(state: AppState, card: Card, showEmpty: Boolean = true)
     if (shown.isNotEmpty() && !state.advanced) {
         shown.forEach { macro -> MacroControl(state, macro) }
         if (params.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             SectionLabel("Or set them one at a time")
         }
     }
@@ -389,7 +389,7 @@ private fun MacroControl(state: AppState, macro: Macro) {
             moves,
             color = Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(bottom = 6.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
     }
 }
@@ -494,7 +494,7 @@ private fun MotionCard(state: AppState) {
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(8.dp))
     SectionLabel("Record moves")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state.recording) {
@@ -580,7 +580,7 @@ private fun SoundCard(state: AppState) {
     Column {
         kinds.chunked(3).forEach { row ->
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 row.forEach { kind ->

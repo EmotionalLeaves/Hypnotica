@@ -216,7 +216,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                                 color = Tokens.TextPrimary,
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Pill("Keep going") { showTimeCheck = false }
                                 Pill("Leave TickTock") {

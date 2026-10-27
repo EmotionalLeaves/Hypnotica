@@ -45,7 +45,7 @@ fun FirstRunCard(state: AppState) {
                 .safeDrawingPadding()
                 .padding(16.dp)
                 .fillMaxWidth()
-                .background(Tokens.Surface.copy(alpha = 0.97f), RoundedCornerShape(20.dp))
+                .background(Tokens.Surface.copy(alpha = 0.97f), RoundedCornerShape(24.dp))
                 // The card swallows its own taps. The scrim behind it dismisses,
                 // and the card had no handler of its own, so a tap anywhere on
                 // it fell through and closed the only explanation the app ever
@@ -62,9 +62,9 @@ fun FirstRunCard(state: AppState) {
                 color = Tokens.TextPrimary,
                 style = MaterialTheme.typography.titleLarge
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             GESTURES.forEach { (gesture, meaning) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(
                         gesture,
                         color = Tokens.Accent,
@@ -74,7 +74,7 @@ fun FirstRunCard(state: AppState) {
                     Text(meaning, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(16.dp))
             BigButton("Start watching", Modifier.fillMaxWidth(), primary = true) {
                 state.dismissFirstRun()
             }

@@ -92,10 +92,10 @@ fun LibraryScreen(state: AppState) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(46.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(23.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(23.dp))
-                .padding(horizontal = 18.dp),
+                .height(48.dp)
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
+                .padding(horizontal = 16.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             if (query.isEmpty()) {
@@ -168,7 +168,7 @@ private fun SimTile(def: SimDef, favourite: Boolean, onClick: () -> Unit) {
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             def.title,
             color = Tokens.TextPrimary,

@@ -698,6 +698,43 @@ for f in files:
             f"declaration order, so anything the constructor reaches that "
             f"writes it throws before the app can start. Move it above init")
 
+# 18. Spacing and radius off the design system.
+#
+#     DESIGN: "4 dp grid, 16 dp gutters, 8 dp between related controls and 16 dp
+#     between groups, 48 dp minimum touch target, 52 dp primary actions. Radius
+#     12 dp cards, 24 dp sheets, full pill for chips."
+#
+#     The code had fourteen distinct off-grid values across 76 uses and nine
+#     different corner radii, so page gutters shifted by up to 6 dp as you moved
+#     between screens and the same gap was written as 6, 10, 12 or 14 depending
+#     on who wrote it. Individually invisible; together, it is most of what
+#     "cobbled together" means. There is one scale now, and this keeps it.
+RADII_ALLOWED = {'12', '24'}
+HAIRLINES = {'1', '1.5', '2', '3'}
+
+for f in files:
+    if '/ui/' not in f and not f.endswith('MainActivity.kt'):
+        continue
+    src = strip(open(f).read())
+    for m in re.finditer(r'RoundedCornerShape\(\s*([\d.]+)\.dp', src):
+        v = m.group(1)
+        # The progress bar is 6 dp tall; a card radius on it would be a lozenge.
+        if v in RADII_ALLOWED or v == '3':
+            continue
+        line = src[:m.start()].count('\n') + 1
+        problems.append(
+            f"{f}:{line}: corner radius {v}.dp — the contract is 12 for cards "
+            f"and inputs, 24 for sheets, and a pill for chips")
+    for m in re.finditer(r'(?<![\w.])(\d+(?:\.\d+)?)\.dp', src):
+        v = m.group(1)
+        if v in HAIRLINES:
+            continue
+        if float(v) % 4 == 0:
+            continue
+        line = src[:m.start()].count('\n') + 1
+        problems.append(
+            f"{f}:{line}: {v}.dp is off the 4 dp grid")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

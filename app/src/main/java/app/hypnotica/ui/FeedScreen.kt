@@ -131,15 +131,15 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                         if (state.isFavourite(state.currentDef.id)) "★" else "☆",
                         selected = state.isFavourite(state.currentDef.id)
                     ) { state.toggleFavourite(state.currentDef.id) }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     GlyphButton("↻") { state.restart(newSeed = true) }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     GlyphButton("≡") { state.screen = Screen.LIBRARY }
                 }
             }
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 BigButton("Open controls", Modifier.weight(1f), primary = true) {
                     state.controlsOpen = true

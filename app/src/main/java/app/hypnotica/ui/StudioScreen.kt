@@ -100,6 +100,9 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
     /** The template waiting for a second tap, or -1. */
     var confirmTemplate by remember { mutableIntStateOf(-1) }
+
+    /** Clearing a track takes two taps, like replacing a template does. */
+    var confirmClear by remember { mutableStateOf(false) }
     var exportProgress by remember { mutableFloatStateOf(0f) }
     var runningExport by remember { mutableStateOf<VideoExporter?>(null) }
     var formatIndex by remember { mutableIntStateOf(0) }
@@ -152,11 +155,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             .fillMaxSize()
             .background(Tokens.Bg)
             .safeDrawingPadding()
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             GlyphButton("‹") { state.screen = Screen.SETTINGS }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
             Text("Studio", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
             BigButton(
@@ -241,8 +244,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Box(
                 (if (tallerThanSlot) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
                     .aspectRatio(previewAspect, matchHeightConstraintsFirst = tallerThanSlot)
-                    .clip(RoundedCornerShape(14.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
             ) {
                 SimCanvas(
                     surface = surface,
@@ -288,23 +291,23 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 )
                 Pill("Cancel") { runningExport?.cancel() }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
+                    .height(8.dp)
                     .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
             ) {
                 Box(
                     Modifier
                         .fillMaxWidth(exportProgress.coerceIn(0f, 1f))
-                        .height(6.dp)
+                        .height(8.dp)
                         .background(Tokens.Accent, RoundedCornerShape(3.dp))
                 )
             }
         }
         exportMessage?.let {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     it,
@@ -320,7 +323,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         }
 
         // Transport
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             BigButton(if (playing) "Pause" else "Play") {
                 playing = !playing
@@ -352,12 +355,12 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         }
 
         // Scrubber
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(34.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                .height(32.dp)
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .pointerInput(project.duration) {
                     detectHorizontalDragGestures { change, _ ->
                         val fraction = (change.position.x / size.width).coerceIn(0f, 1f)
@@ -371,8 +374,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Box(
                 Modifier
                     .fillMaxWidth((playhead / project.duration).coerceIn(0f, 1f))
-                    .height(34.dp)
-                    .background(Tokens.Accent.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
+                    .height(32.dp)
+                    .background(Tokens.Accent.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
             )
             Text(
                 "drag to scrub",
@@ -383,7 +386,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         }
 
         // Tracks
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             SectionLabel("Track")
             ChipRow(
@@ -461,9 +464,30 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                         state.notice = "No key here — scrub onto a ◆ first."
                     }
                 }
-                Pill("Clear track") {
-                    project.track(selectedTrack).clear()
-                    revision++
+                val keyCount = remember(revision, selectedTrack) {
+                    project.track(selectedTrack).size
+                }
+                Pill(
+                    if (confirmClear) "Clear track — sure?" else "Clear track",
+                    selected = confirmClear,
+                    danger = true
+                ) {
+                    when {
+                        keyCount == 0 ->
+                            state.notice = "That track has no keys to clear."
+                        !confirmClear -> {
+                            confirmClear = true
+                            state.notice =
+                                "Tap again to remove all $keyCount keys on " +
+                                "${selectedTrack.title}. There is no undo."
+                        }
+                        else -> {
+                            confirmClear = false
+                            state.notice = null
+                            project.track(selectedTrack).clear()
+                            revision++
+                        }
+                    }
                 }
             }
 
@@ -583,7 +607,7 @@ private fun TrackStrip(
         Modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(12.dp))
     ) {
         // Keys can be dragged along the strip, which the guide has promised
         // since the strip was built: without it a recorded move could only be
@@ -724,9 +748,9 @@ private fun CaptionEditor(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 11.dp),
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 12.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             if (text.isEmpty()) {
@@ -756,4 +780,4 @@ private fun CaptionEditor(
 }
 
 /** Width of a keyframe marker, kept out of the strip's usable span. */
-private val MARKER = 14.dp
+private val MARKER = 16.dp
