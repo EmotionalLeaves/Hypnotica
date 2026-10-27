@@ -116,8 +116,8 @@ fun EquationPresets(state: AppState) {
     // what distinguish the presets, so they are what we compare.
     val version = state.paramVersion
     val selected = remember(version) {
-        val fx = state.formulaOn("fx")
-        val fy = state.formulaOn("fy")
+        val fx = state.paramText("fx")
+        val fy = state.paramText("fy")
         EquationSim.PRESETS.indexOfFirst { it.fx == fx && it.fy == fy }
     }
     ChipRow(EquationSim.PRESETS.map { it.name }, selected) { index ->

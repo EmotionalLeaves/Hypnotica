@@ -32,7 +32,18 @@ data class Param(
     /** Slider response. Counts that span decades read far better on a log slider. */
     val logScale: Boolean = false,
     /** Starting text for an EXPR parameter. */
-    val defaultText: String = ""
+    val defaultText: String = "",
+    /**
+     * The key of a boolean parameter that takes this one over while it is on.
+     *
+     * Optics' Angle was the case that asked for it: the sim overwrites the
+     * angle on every step while "Sweep the angle" is on, and that switch
+     * defaults to on, so the Angle slider moved, read out a new number in
+     * degrees, and changed nothing — the only control in the app that a
+     * rebuild could not rescue. Naming the owner lets the control say so
+     * and go dim, rather than lying about what it does.
+     */
+    val mutedBy: String? = null
 ) {
     companion object {
         fun int(
@@ -47,10 +58,11 @@ data class Param(
         fun float(
             key: String, label: String, min: Float, max: Float, default: Float,
             card: Card = Card.MOTION, advancedOnly: Boolean = false,
-            unit: String = "", logScale: Boolean = false
+            unit: String = "", logScale: Boolean = false, mutedBy: String? = null
         ) = Param(
             key, label, ParamType.FLOAT, min, max, default,
-            card = card, advancedOnly = advancedOnly, unit = unit, logScale = logScale
+            card = card, advancedOnly = advancedOnly, unit = unit, logScale = logScale,
+            mutedBy = mutedBy
         )
 
         fun bool(
@@ -209,6 +221,53 @@ class ParamValues(val schema: List<Param>) {
     var revision: Int = 0
         private set
 
+    /**
+     * Which values the sim reads while it is running, as opposed to only while
+     * it is being built.
+     *
+     * A value a sim copies into a field in setup() and never looks at again
+     * cannot change anything mid-run: dragging its slider moved the number and
+     * left the picture alone, which was true of about a quarter of every
+     * control in the app — whole cards of them, and the headline Chaos and
+     * Energy macros along with them. The alternative to this was a hand-kept
+     * list of fifty-odd keys that would rot the first time a sim changed, so
+     * the sim is asked instead: reads are recorded over the first few frames of
+     * a run, and whatever shows up is what can be changed in flight. Anything
+     * else needs the run built again to take effect, which is what the Data
+     * card has always done.
+     */
+    private val liveReads = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** False for all but the first few frames of a run, so reads cost one read. */
+    @Volatile
+    private var watching = false
+
+    /** True once a run has been watched long enough for [readLive] to mean something. */
+    @Volatile
+    var readsSettled = false
+        private set
+
+    /** Called after setup(), so what setup itself read does not count as live. */
+    fun watchReads() {
+        liveReads.clear()
+        readsSettled = false
+        watching = true
+    }
+
+    /** Called a few frames later: whatever was read by then is read live. */
+    fun settleReads() {
+        if (!watching) return
+        watching = false
+        readsSettled = true
+    }
+
+    /** True when the running sim reads [key] as it steps or draws. */
+    fun readLive(key: String): Boolean = liveReads.contains(key)
+
+    private fun mark(key: String) {
+        if (watching) liveReads.add(key)
+    }
+
     init {
         reset()
     }
@@ -227,13 +286,20 @@ class ParamValues(val schema: List<Param>) {
 
     fun has(key: String): Boolean = values.containsKey(key)
 
-    fun f(key: String, fallback: Float = 0f): Float = values[key] ?: fallback
+    fun f(key: String, fallback: Float = 0f): Float {
+        mark(key)
+        return values[key] ?: fallback
+    }
 
-    fun i(key: String, fallback: Int = 0): Int =
-        values[key]?.let { Math.round(it) } ?: fallback
+    fun i(key: String, fallback: Int = 0): Int {
+        mark(key)
+        return values[key]?.let { Math.round(it) } ?: fallback
+    }
 
-    fun b(key: String, fallback: Boolean = false): Boolean =
-        values[key]?.let { it >= 0.5f } ?: fallback
+    fun b(key: String, fallback: Boolean = false): Boolean {
+        mark(key)
+        return values[key]?.let { it >= 0.5f } ?: fallback
+    }
 
     /** The selected option of a CHOICE parameter. */
     fun choice(key: String, fallback: String = ""): String {

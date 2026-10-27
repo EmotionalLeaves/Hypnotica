@@ -130,10 +130,22 @@ class AppState(
             applySafety()
         }
 
-    /** The synth's volume. Saved by the caller when the gesture ends. */
+    /**
+     * The synth's volume. Saved by the caller when the gesture ends.
+     *
+     * Mirrored into snapshot state rather than read straight off the synth,
+     * which is the convention speed and trails already follow. Read directly,
+     * the slider had nothing to recompose on: the volume really changed, and
+     * the thumb stayed where it was — and since the drag offset kept
+     * accumulating against a thumb that never moved, by the second drag the
+     * finger and the thumb were in different places entirely.
+     */
+    private var volumeState by mutableFloatStateOf(0.8f)
+
     var volume: Float
-        get() = engine.synth.volume
+        get() = volumeState
         set(value) {
+            volumeState = value
             engine.synth.volume = value
         }
 
@@ -454,9 +466,30 @@ class AppState(
     /** True when a typed formula is driving [key], so the UI can say so. */
     fun formulaOn(key: String): String? = engine.core.params.expressionSource(key)
 
-    /** A macro that touches the Data card rebuilds the run, like its sliders do. */
+    /**
+     * The text of a typed formula parameter.
+     *
+     * Not [formulaOn]: that reads the map `setExpression` writes, and an EXPR
+     * parameter goes through `setText` instead, so asking it about fx or fy
+     * always answered null — which is how the equation preset chips came to
+     * compute a selected index that was always -1, the very literal the
+     * computation replaced.
+     */
+    fun paramText(key: String, fallback: String = ""): String =
+        engine.core.params.text(key, fallback)
+
+    /**
+     * A macro rebuilds the run when any value it moves would.
+     *
+     * Card alone was not enough: every target of boids' Chaos, ball-escape's
+     * Chaos and the derived Energy macro is a Motion value its sim reads only
+     * at setup, so the headline control of Simple mode moved four numbers and
+     * changed nothing at all.
+     */
     fun commitMacro(macro: Macro) {
-        if (macro.card == Card.DATA) restart(newSeed = false)
+        val rebuild = macro.card == Card.DATA ||
+            macro.targets.keys.any { needsRestart(macro.card, it) }
+        if (rebuild) restart(newSeed = false)
     }
 
     fun paramValue(key: String): Float = engine.core.params.f(key)
@@ -516,7 +549,30 @@ class AppState(
      * Data-card parameters shape what gets built in setup(), so they land on the
      * next run rather than mid-flight. Everything else applies live.
      */
-    fun needsRestart(p: Param): Boolean = p.card == Card.DATA
+    /**
+     * Whether applying [p] means building the run again.
+     *
+     * This used to be "is it on the Data card", and that answer was wrong for
+     * about a quarter of every control in the app: some fifty values that the
+     * sims copy into a field in setup() and never look at again. Dragging one
+     * moved the number, bumped the version, and left the picture untouched —
+     * whole cards of them, boids' Separation/Alignment/Cohesion/Speed, the
+     * sorting sims' Algorithm chip, Mandelbrot's Resolution and Detail — and
+     * the Chaos and Energy macros that Simple mode leans hardest on were inert
+     * on those sims for the same reason.
+     *
+     * The sim is asked rather than told: [ParamValues] records which keys are
+     * read while a run is stepping, so a value nothing reads live can only be
+     * applied by rebuilding. Until a run has been watched long enough to know,
+     * the old rule stands, so the answer is never worse than it was.
+     */
+    fun needsRestart(p: Param): Boolean = needsRestart(p.card, p.key)
+
+    private fun needsRestart(card: Card, key: String): Boolean {
+        if (card == Card.DATA) return true
+        val params = engine.core.params
+        return params.readsSettled && !params.readLive(key)
+    }
 
     fun commitParam(p: Param) {
         if (needsRestart(p)) restart(newSeed = false)

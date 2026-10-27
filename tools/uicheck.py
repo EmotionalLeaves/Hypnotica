@@ -387,14 +387,30 @@ for f in ['app/src/main/java/app/hypnotica/core/recipe/LuaRecipe.kt',
 #     snapshot-backed in its own body.
 CONTROLS = {
     'ValueSlider': ('value', 1),
-    'ChipRow': ('selected', 1),
-    'ToggleRow': ('on', 1),
+    'ChipRow': ('selectedIndex', 1),
+    'ToggleRow': ('checked', 1),
 }
+# AppState properties whose getter reads no snapshot state, worked out from
+# AppState itself so this stays true as it changes. `volume` was one: a slider
+# bound to it could not move, and no amount of snapshot state elsewhere in the
+# same composable would have helped.
+_appstate = 'app/src/main/java/app/hypnotica/ui/AppState.kt'
+LEAKY = []
+if glob.glob(_appstate):
+    _src = strip(open(_appstate).read())
+    _snap = set(re.findall(r'(?:var|val)\s+(\w+)\s+by\s+mutable', _src))
+    for _m in re.finditer(
+            r'\n    (?:var|val)\s+(\w+)\s*:\s*[\w<>?, .]+\n?\s*get\(\)\s*=\s*([^\n]+)',
+            _src):
+        if not any(_s in _m.group(2) for _s in _snap):
+            LEAKY.append(_m.group(1))
+
 # Reads Compose cannot observe: plain fields and map lookups.
 INVISIBLE = re.compile(
     r'\b(?:paramValue|macroPosition|formulaOn|paramText)\s*\(|'
     r'\b(?:project|mapping|engine|clip|track)\s*\.|'
-    r'\.params\s*\.')
+    r'\.params\s*\.' +
+    (r'|\bstate\.(?:' + '|'.join(LEAKY) + r')\b' if LEAKY else ''))
 # Reading one of these in the body is what subscribes the composable. A bare
 # `remember {}` is not on the list: with no keys it never re-evaluates, so it
 # is not evidence of anything. Nor is a local called `version` -- the thing

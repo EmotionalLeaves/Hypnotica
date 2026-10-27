@@ -329,6 +329,22 @@ private fun describeMacro(position: Float): String = when {
     else -> "everything"
 }
 
+
+/**
+ * The reason a parameter's control is inert right now, or null.
+ *
+ * Some values are taken over by another switch: optics overwrites its Angle on
+ * every step while "Sweep the angle" is on. Saying so, and dimming the control,
+ * is the difference between a setting the person can find and a slider that
+ * looks broken.
+ */
+internal fun mutedReason(state: AppState, p: Param): String? {
+    val owner = p.mutedBy ?: return null
+    if (state.paramValue(owner) < 0.5f) return null
+    val label = state.params().firstOrNull { it.key == owner }?.label ?: owner
+    return "set by $label"
+}
+
 @Composable
 private fun ParamControl(state: AppState, p: Param) {
     // Subscribing to the version is what makes this row redraw. The values
@@ -338,16 +354,17 @@ private fun ParamControl(state: AppState, p: Param) {
     // was told to show was still the old one.
     val version = state.paramVersion + state.driftTick
     val shown = remember(version, p.key) { state.paramValue(p.key) }
+    val muted = remember(version, p.key) { mutedReason(state, p) }
     when (p.type) {
         ParamType.EXPR -> ExprParamField(state, p)
 
-        ParamType.BOOL -> ToggleRow(p.label, shown >= 0.5f) {
+        ParamType.BOOL -> ToggleRow(p.label, shown >= 0.5f, enabled = muted == null) {
             state.setParamBool(p, it)
         }
 
         ParamType.CHOICE -> {
             SectionLabel(p.label)
-            ChipRow(p.choices, Math.round(shown)) { idx ->
+            ChipRow(p.choices, Math.round(shown), enabled = muted == null) { idx ->
                 state.setParamChoice(p, idx)
             }
         }
@@ -360,7 +377,8 @@ private fun ParamControl(state: AppState, p: Param) {
                 min = p.min,
                 max = p.max,
                 logScale = p.logScale,
-                valueText = describe(p, v),
+                valueText = muted ?: describe(p, v),
+                enabled = muted == null,
                 onCommit = { state.commitParam(p) }
             ) { nv -> state.setParam(p, nv) }
         }

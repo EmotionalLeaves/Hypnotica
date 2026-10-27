@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -22,10 +23,17 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -123,16 +131,41 @@ fun ChipRow(
     options: List<String>,
     selectedIndex: Int,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onSelect: (Int) -> Unit
 ) {
+    // The selected chip is scrolled to, which it never used to be. A row of
+    // palettes or scales is wider than a phone, so the chip you were on was
+    // usually off the right-hand edge — and the row then looked as though
+    // nothing was selected at all. Worse on the Laws tab, where the first edit
+    // appends a "Custom" chip at position sixteen and selects it.
+    val scroll = rememberScrollState()
+    var measured by remember(options.size) { mutableStateOf(IntArray(options.size)) }
+    LaunchedEffect(selectedIndex, options.size, scroll.maxValue) {
+        if (selectedIndex < 0 || selectedIndex >= measured.size) return@LaunchedEffect
+        if (scroll.maxValue <= 0) return@LaunchedEffect
+        val target = measured.take(selectedIndex).sum()
+        scroll.animateScrollTo(target.coerceIn(0, scroll.maxValue))
+    }
     Row(
         modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+            .horizontalScroll(scroll),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         options.forEachIndexed { i, label ->
-            Pill(label, selected = i == selectedIndex) { onSelect(i) }
+            Pill(
+                label,
+                selected = i == selectedIndex,
+                modifier = Modifier.onSizeChanged { size ->
+                    // Chip widths vary with their labels, so where to scroll to
+                    // has to be measured rather than guessed.
+                    if (i < measured.size && measured[i] != size.width + 8) {
+                        measured = measured.copyOf().also { it[i] = size.width + 8 }
+                    }
+                },
+                enabled = enabled
+            ) { onSelect(i) }
         }
     }
 }
@@ -150,28 +183,48 @@ fun ValueSlider(
     modifier: Modifier = Modifier,
     logScale: Boolean = false,
     valueText: String? = null,
+    enabled: Boolean = true,
     onCommit: (() -> Unit)? = null,
     onChange: (Float) -> Unit
 ) {
-    val position = if (logScale) toLog(value, min, max) else ((value - min) / (max - min)).coerceIn(0f, 1f)
+    // A control that another setting has taken over should look like it. Until
+    // this existed, every overridden slider in the app was full brightness and
+    // fully draggable while doing nothing at all, which is indistinguishable
+    // from broken.
+    val dim = if (enabled) 1f else 0.38f
+    val span = max - min
+    val position = when {
+        span <= 0f -> 0f
+        logScale -> toLog(value, min, max)
+        else -> ((value - min) / span).coerceIn(0f, 1f)
+    }
     Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, color = Tokens.TextPrimary, style = MaterialTheme.typography.titleMedium)
+            Text(
+                label,
+                color = Tokens.TextPrimary.copy(alpha = dim),
+                style = MaterialTheme.typography.titleMedium
+            )
             Text(
                 valueText ?: formatValue(value),
-                color = Tokens.TextSecondary,
+                color = Tokens.TextSecondary.copy(alpha = dim),
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.End
             )
         }
         Slider(
             value = position,
+            enabled = enabled,
             onValueChange = { p ->
-                onChange(if (logScale) fromLog(p, min, max) else min + p * (max - min))
+                val raw = if (logScale) fromLog(p, min, max) else min + p * span
+                // Clamped on the way out as well as on the way in: a saved
+                // state or a macro can leave a value past the end of the track,
+                // and without this the first touch silently jumped it.
+                onChange(raw.coerceIn(min, max))
             },
             onValueChangeFinished = { onCommit?.invoke() },
             colors = SliderDefaults.colors(
@@ -188,20 +241,34 @@ fun ToggleRow(
     label: String,
     checked: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onChange: (Boolean) -> Unit
 ) {
     Row(
         modifier
             .fillMaxWidth()
-            .clickable { onChange(!checked) }
+            // One toggleable node for the whole row rather than a clickable row
+            // wrapped around a switch that is also toggleable: two nodes doing
+            // the same job made a screen reader announce every row twice.
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onChange
+            )
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            label,
+            color = Tokens.TextPrimary.copy(alpha = if (enabled) 1f else 0.38f),
+            style = MaterialTheme.typography.bodyMedium
+        )
         Switch(
             checked = checked,
-            onCheckedChange = onChange,
+            enabled = enabled,
+            onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = Tokens.Accent

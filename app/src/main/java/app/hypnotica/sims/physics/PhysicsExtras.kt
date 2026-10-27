@@ -822,7 +822,10 @@ class OpticsSim : Sim {
                 Param.choice("shape", "Glass", listOf("Prism", "Lens", "Slab"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("rays", "Rays", 1, 60, 9, card = Card.DATA),
                 Param.float("height", "Beam height", -0.6f, 0.8f, 0.35f, card = Card.DATA),
-                Param.float("angle", "Angle", -1.2f, 1.2f, -0.35f, card = Card.MOTION, unit = "rad"),
+                Param.float(
+                    "angle", "Angle", -1.2f, 1.2f, -0.35f, card = Card.MOTION, unit = "rad",
+                    mutedBy = "sweep"
+                ),
                 Param.bool("sweep", "Sweep the angle", true, card = Card.MOTION)
             ),
             create = { OpticsSim() }

@@ -137,12 +137,17 @@ private fun ExactParamRow(state: AppState, p: Param) {
     // slider on the Params tab springs back when you let go.
     val version = state.paramVersion + state.driftTick
     val value = remember(version, p.key) { state.paramValue(p.key) }
+    val muted = remember(version, p.key) { mutedReason(state, p) }
     when (p.type) {
         ParamType.EXPR -> ExprParamField(state, p)
-        ParamType.BOOL -> ToggleRow(p.label, value >= 0.5f) { state.setParamBool(p, it) }
+        ParamType.BOOL -> ToggleRow(p.label, value >= 0.5f, enabled = muted == null) {
+            state.setParamBool(p, it)
+        }
         ParamType.CHOICE -> {
             SectionLabel(p.label)
-            ChipRow(p.choices, Math.round(value)) { state.setParamChoice(p, it) }
+            ChipRow(p.choices, Math.round(value), enabled = muted == null) {
+                state.setParamChoice(p, it)
+            }
         }
         else -> {
             ValueSlider(
@@ -151,7 +156,9 @@ private fun ExactParamRow(state: AppState, p: Param) {
                 min = p.min,
                 max = p.max,
                 logScale = p.logScale,
-                valueText = formatValue(value) + (if (p.unit.isNotEmpty()) " " + p.unit else ""),
+                valueText = muted
+                    ?: (formatValue(value) + (if (p.unit.isNotEmpty()) " " + p.unit else "")),
+                enabled = muted == null,
                 onCommit = { state.commitParam(p) }
             ) { state.setParam(p, it) }
             FormulaField(state, p)

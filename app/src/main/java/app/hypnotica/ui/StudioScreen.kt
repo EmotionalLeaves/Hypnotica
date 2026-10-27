@@ -65,6 +65,19 @@ import java.io.File
 private const val PREVIEW_SLOT = 0.62f
 
 /**
+ * How tall the preview is allowed to get.
+ *
+ * Without this the slot was fillMaxWidth().aspectRatio(0.62f), which on any
+ * phone is about 1.6 times the screen width — some 620 dp of a roughly 860 dp
+ * screen. The editor below it had no weight, so it was measured against what
+ * was left: on a large phone about fifteen, on a small one none. Everything
+ * from the Track chips down to the export format — fifteen of this screen's
+ * twenty-two controls — was a grey sliver or simply absent. The preview is
+ * capped and the editor given the slack, so the controls exist on every phone.
+ */
+private val PREVIEW_MAX_HEIGHT = 300.dp
+
+/**
  * Studio: the sim as footage.
  *
  * The timeline holds keyframes, not frames, so a project is a few kilobytes and
@@ -195,7 +208,12 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         val previewAspect = format.width.toFloat() / format.height.toFloat()
         val tallerThanSlot = previewAspect <= PREVIEW_SLOT
         Box(
-            Modifier.fillMaxWidth().aspectRatio(PREVIEW_SLOT),
+            Modifier
+                .align(Alignment.CenterHorizontally)
+                .heightIn(max = PREVIEW_MAX_HEIGHT)
+                // Sized from the height rather than the width, so the cap above
+                // is the one that binds.
+                .aspectRatio(PREVIEW_SLOT, matchHeightConstraintsFirst = true),
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -341,7 +359,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
         // Tracks
         Spacer(Modifier.height(10.dp))
-        Column(Modifier.verticalScroll(rememberScrollState())) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             SectionLabel("Track")
             ChipRow(
                 TrackKind.entries.map { it.title },

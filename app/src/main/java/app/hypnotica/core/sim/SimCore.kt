@@ -66,7 +66,22 @@ class SimCore(def: SimDef, seed: Long = 1L) {
     init {
         env.laws = Laws.OUR_UNIVERSE
         sim.setup(env)
+        beginWatch()
     }
+
+    /**
+     * Start recording what the sim reads as it runs. Called after every setup,
+     * including the one in this constructor: a core that never begins watching
+     * never settles, and the controls would fall back to the old card rule for
+     * the whole run.
+     */
+    private fun beginWatch() {
+        params.watchReads()
+        watchFrames = WATCH_FRAMES
+    }
+
+    /** Frames left in which to record what the sim reads as it runs. */
+    private var watchFrames = 0
 
     fun setLaws(laws: Laws) {
         env.laws = laws
@@ -107,11 +122,22 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         finished = false
         stepCount = 0L
         sim.setup(env)
+        // From here on, what the sim reads is what it reads live. Anything it
+        // only touched inside setup() above cannot be changed without building
+        // the run again, and the controls need to know which is which.
+        beginWatch()
     }
 
     /** Advance by one display frame. */
     fun advance(frameSeconds: Float) {
         if (paused || finished) return
+
+        // Only a frame the sim actually ran counts: a paused run reads nothing,
+        // and settling on that would mark every value as setup-only.
+        if (watchFrames > 0) {
+            watchFrames--
+            if (watchFrames == 0) params.settleReads()
+        }
 
         val laws = env.laws
         var scale = speed * laws.timeScale * laws.timeDirection
@@ -216,6 +242,13 @@ class SimCore(def: SimDef, seed: Long = 1L) {
     fun onInput(e: TouchEvent) = sim.onInput(env, e)
 
     companion object {
+
+        /**
+         * How many running frames to watch before deciding what a sim reads
+         * live. More than one because a sim may read a value only on a tick it
+         * does not take every frame, and because draw() runs after advance().
+         */
+        const val WATCH_FRAMES = 30
         const val SLOWMO_SECONDS = 1.0f
         const val SLOWMO_FACTOR = 0.25f
         const val MAX_FRAME_SECONDS = 0.05f
