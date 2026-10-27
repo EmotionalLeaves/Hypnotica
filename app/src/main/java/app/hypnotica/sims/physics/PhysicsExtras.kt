@@ -198,7 +198,7 @@ class NBodySim : Sim {
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.PAIRWISE_FORCE),
             heroLabel = "New galaxy",
             defaultPalette = "Ember",
-            typicalSeconds = 30f,
+            typicalSeconds = 12f,
             params = listOf(
                 Param.choice("start", "Starting shape", listOf("Rotating disc", "Random cloud"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
@@ -575,7 +575,7 @@ class ClothSim : Sim {
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.FRICTION),
             heroLabel = "Shake it",
             defaultPalette = "Ocean",
-            typicalSeconds = 24f,
+            typicalSeconds = 48f,
             params = listOf(
                 Param.int("cols", "Columns", 3, 200, 26, card = Card.DATA, logScale = true),
                 Param.int("rows", "Rows", 2, 200, 20, card = Card.DATA, logScale = true),
@@ -607,6 +607,8 @@ class OpticsSim : Sim {
     private var focused = false
     private var tightest = Float.MAX_VALUE
     private var tightenedFor = 0f
+    /** What the beam measured before the sweep went looking, for comparison. */
+    private var startMeasure = Float.MAX_VALUE
     private var sourceY = 0.35f
     private var angle = -0.35f
     private var shape = 0
@@ -628,6 +630,7 @@ class OpticsSim : Sim {
         tightest = Float.MAX_VALUE
         tightenedFor = 0f
         trace(env)
+        startMeasure = focusMeasure()
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -638,22 +641,57 @@ class OpticsSim : Sim {
         }
         trace(env)
         env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), 0f, 0.25f)
-        // The focus: the moment the rays are at their tightest on the far
-         // side of the glass, which is what a lens does and what the sweep is
-         // hunting for. A clock at twelve seconds fired wherever the sweep
-         // happened to be.
-        val spread = tightestSpread()
-        if (spread < tightest) {
-            tightest = spread
+        // The focus: the moment the rays are at their tightest on the far side
+        // of the glass, which is what a lens does and what the sweep is hunting
+        // for. A clock at twelve seconds fired wherever the sweep happened to
+        // be; an absolute threshold of 0.12 world units was the next attempt,
+        // and it only fitted one ray count. Measured: at one ray and at sixty,
+        // and with the beam aimed below the glass, the spread never reached
+        // 0.12 and the sim never paid off at all — no slow motion, no sweep,
+        // and TickTock throwing away every seed. How much tighter the beam got
+        // than it started is a question that has an answer at every setting.
+        val measure = focusMeasure()
+        if (measure.isFinite() && !startMeasure.isFinite()) startMeasure = measure
+        if (measure < tightest) {
+            tightest = measure
             tightenedFor = 0f
         } else {
             tightenedFor += abs(dt)
         }
-        if (!focused && tightest < FOCUS_SPREAD && tightenedFor > 0.4f && elapsed > 2f) {
+        val converged = tightest.isFinite() && startMeasure.isFinite() &&
+            tightest <= startMeasure * FOCUS_RATIO
+        if (!focused && elapsed > EARLIEST_FOCUS &&
+            ((converged && tightenedFor > 0.8f) || elapsed > FOCUS_BACKSTOP)
+        ) {
             focused = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
+    }
+
+    /**
+     * How converged the beam is, as a number to be made small.
+     *
+     * With two rays or more that is how close together they get past the glass.
+     * One ray has no focus, so it is how straight the ray still is: a single
+     * ray's moment is the angle where the glass bends it hardest, which is the
+     * same sweep hunting for the same extreme.
+     */
+    private fun focusMeasure(): Float {
+        if (rays.size >= 2) return tightestSpread()
+        val ray = rays.firstOrNull() ?: return Float.MAX_VALUE
+        if (ray.count < 4) return Float.MAX_VALUE
+        val n = ray.count
+        val inX = ray.xs[1] - ray.xs[0]
+        val inY = ray.ys[1] - ray.ys[0]
+        val outX = ray.xs[n - 1] - ray.xs[n - 2]
+        val outY = ray.ys[n - 1] - ray.ys[n - 2]
+        val inLen = hypot(inX, inY)
+        val outLen = hypot(outX, outY)
+        if (inLen < 1e-6f || outLen < 1e-6f) return Float.MAX_VALUE
+        // 1 for an undeviated ray, falling towards 0 the harder it is bent.
+        val cosTurn = ((inX * outX + inY * outY) / (inLen * outLen)).coerceIn(-1f, 1f)
+        return (1f + cosTurn) * 0.5f
     }
 
     /**
@@ -807,7 +845,23 @@ class OpticsSim : Sim {
 
     companion object {
         /** How close the rays have to come together to count as a focus. */
-        const val FOCUS_SPREAD = 0.12f
+        /**
+         * How much tighter than its start the beam has to get to count as
+         * focused. Relative, so it means the same thing at one ray and at
+         * sixty.
+         */
+        const val FOCUS_RATIO = 0.4f
+
+        /**
+         * A quarter of the sweep, which is where it first reaches an extreme.
+         * The sweep is sin(elapsed * 0.4), so a full cycle is 15.7 seconds and
+         * the first turning point is at 3.9 — before that, whatever the beam
+         * has found it has not finished finding.
+         */
+        const val EARLIEST_FOCUS = 3.9f
+
+        /** Glass the beam never meets still owes a payoff. */
+        const val FOCUS_BACKSTOP = 14f
 
         const val MAX_SEGMENTS = 320
 
@@ -820,7 +874,7 @@ class OpticsSim : Sim {
             formats = listOf(TrapFormat.REVEAL, TrapFormat.LOOP),
             heroLabel = "New angle",
             defaultPalette = "Spectrum",
-            typicalSeconds = 24f,
+            typicalSeconds = 16f,
             params = listOf(
                 Param.choice("shape", "Glass", listOf("Prism", "Lens", "Slab"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("rays", "Rays", 1, 60, 9, card = Card.DATA),
@@ -986,7 +1040,7 @@ class ChargesSim : Sim {
             lawKnobs = setOf(LawKnob.CHARGE),
             heroLabel = "New charges",
             defaultPalette = "Aurora",
-            typicalSeconds = 24f,
+            typicalSeconds = 10f,
             params = listOf(
                 Param.int("charges", "Charges", 1, 12, 4, card = Card.DATA),
                 Param.int("tracers", "Tracers", 50, 80000, 2400, card = Card.DATA, logScale = true),

@@ -431,7 +431,7 @@ class GameOfLifeSim : Sim {
             formats = listOf(TrapFormat.GROW, TrapFormat.COLOR_BATTLE),
             heroLabel = "Reseed",
             defaultPalette = "Ocean",
-            typicalSeconds = 30f,
+            typicalSeconds = 22f,
             params = listOf(
                 Param.int("grid", "Grid size", 16, 1024, 160, card = Card.DATA, logScale = true),
                 Param.float("density", "Start density", 0.02f, 0.9f, 0.32f, card = Card.DATA),

@@ -34,7 +34,8 @@ data class Param(
     /** Starting text for an EXPR parameter. */
     val defaultText: String = "",
     /**
-     * The key of a boolean parameter that takes this one over while it is on.
+     * The key of another parameter that takes this one over, or leaves it
+     * unused, at the values in [mutedAt].
      *
      * Optics' Angle was the case that asked for it: the sim overwrites the
      * angle on every step while "Sweep the angle" is on, and that switch
@@ -42,8 +43,19 @@ data class Param(
      * degrees, and changed nothing — the only control in the app that a
      * rebuild could not rescue. Naming the owner lets the control say so
      * and go dim, rather than lying about what it does.
+     *
+     * A choice can own a value too, which is what the default of [mutedAt]
+     * stopped being enough for: the Equation sim reads Start x and Start y in
+     * setup and, in the curve mode it ships in, overwrites both on the first
+     * step — so two sliders with a four-unit range drew the same picture at
+     * every position.
      */
-    val mutedBy: String? = null
+    val mutedBy: String? = null,
+    /**
+     * The owner's values at which this control is inert. The default is the
+     * boolean case, "while the switch is on".
+     */
+    val mutedAt: List<Int> = listOf(1)
 ) {
     companion object {
         fun int(
@@ -58,11 +70,13 @@ data class Param(
         fun float(
             key: String, label: String, min: Float, max: Float, default: Float,
             card: Card = Card.MOTION, advancedOnly: Boolean = false,
-            unit: String = "", logScale: Boolean = false, mutedBy: String? = null
+            unit: String = "", logScale: Boolean = false, mutedBy: String? = null,
+            mutedAt: List<Int> = listOf(1)
         ) = Param(
             key, label, ParamType.FLOAT, min, max, default,
             card = card, advancedOnly = advancedOnly, unit = unit, logScale = logScale,
-            mutedBy = mutedBy
+            mutedBy = mutedBy,
+            mutedAt = mutedAt
         )
 
         fun bool(

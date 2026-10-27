@@ -144,7 +144,18 @@ data class SimDef(
     val heroRestarts: Boolean = true,
     val defaultPalette: String = "Spectrum",
     val defaultSound: String = "Music box",
-    /** Typical length of a satisfying run, used by TickTock and Studio templates. */
+    /**
+     * Typical length of a satisfying run: long enough to contain the payoff
+     * with room to breathe after it.
+     *
+     * Read by TickTock's pre-check, which will not offer a seed whose payoff
+     * lands outside a share of this, and by Studio's templates, which place
+     * their keyframes as shares of it rather than at fixed seconds. The doc
+     * comment here claimed both of those for a long time while neither was
+     * true — nothing read it at all — which is why the declared lengths drifted
+     * far enough that one sim's payoff landed at 5% of its run and another's
+     * eight seconds after the end. ArcTest is what holds them together now.
+     */
     val typicalSeconds: Float = 24f,
     /**
      * The laws this sim actually reads.

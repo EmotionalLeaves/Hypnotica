@@ -341,7 +341,11 @@ class AppState(
             existing.seed = engine.core.seed
             return existing
         }
-        val made = Project.template("Build-up to payoff", currentDef.id, engine.core.seed)
+        // The sim's own length, so the template's payoff keyframes land on
+        // this sim's payoff rather than always at twenty-six seconds.
+        val made = Project.template(
+            "Build-up to payoff", currentDef.id, engine.core.seed, currentDef.typicalSeconds
+        )
         project = made
         return made
     }

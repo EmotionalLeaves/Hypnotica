@@ -52,8 +52,26 @@ class ClipDirector(seed: Long = System.nanoTime()) {
      */
     var sizeScale = 1f
 
-    var minPayoffSeconds = 4f
-    var maxPayoffSeconds = 40f
+    /**
+     * The window a clip's payoff has to land in, as a share of the sim's own
+     * typical length.
+     *
+     * It used to be a flat four to forty seconds for every sim, which is no
+     * window at all: a sim that resolves in ten seconds and one that takes
+     * forty both passed on almost any seed, so the pre-check could only reject
+     * a seed that never paid off. Against the sim's own declared length the
+     * check has something to say — a seed whose payoff lands in the first
+     * seconds, or long after the run is over, is a seed worth throwing away.
+     *
+     * The band is wide on purpose. The design doc puts the payoff at 70%; this
+     * only rejects what is plainly outside the arc.
+     */
+    var minPayoffShare = 0.3f
+    var maxPayoffShare = 1.15f
+
+    /** Absolute bounds, whatever a sim declares. */
+    var minPayoffSeconds = 2f
+    var maxPayoffSeconds = 45f
 
     private companion object {
         /** How many recent sim-and-hook pairs to avoid repeating. */
@@ -156,7 +174,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             lastAttempts++
             val candidate = propose() ?: return@repeat
             val payoff = checkPayoff(candidate)
-            if (payoff in minPayoffSeconds..maxPayoffSeconds) {
+            if (payoff in payoffWindow(candidate.def)) {
                 remember(candidate)
                 return candidate.copy(payoffSeconds = payoff)
             }
@@ -302,6 +320,14 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         "start" -> 9999f
         "particles" -> 24000f
         else -> DEFAULT_CAP
+    }
+
+    /** The seconds a payoff may land in for this sim, from what it declares. */
+    fun payoffWindow(def: SimDef): ClosedFloatingPointRange<Float> {
+        val d = def.typicalSeconds.coerceAtLeast(1f)
+        val lo = (d * minPayoffShare).coerceAtLeast(minPayoffSeconds)
+        val hi = (d * maxPayoffShare).coerceIn(lo + 1f, maxPayoffSeconds)
+        return lo..hi
     }
 
     /**

@@ -550,7 +550,7 @@ class SpirographSim : Sim {
             formats = listOf(TrapFormat.GROW),
             heroLabel = "New ratio",
             defaultPalette = "Spectrum",
-            typicalSeconds = 22f,
+            typicalSeconds = 10f,
             params = listOf(
                 Param.float("wheel", "Inner wheel", 0.05f, 0.6f, 0.27f, card = Card.DATA),
                 Param.float("pen", "Pen offset", 0.02f, 0.5f, 0.2f, card = Card.DATA),

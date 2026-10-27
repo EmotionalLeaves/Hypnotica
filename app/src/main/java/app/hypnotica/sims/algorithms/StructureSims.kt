@@ -172,6 +172,18 @@ class NQueensSim : Sim {
     /** Scales the try rate with the board, so a big board still solves. */
     private val BASE_TRIES = 34f
 
+    /**
+     * Chosen by measurement, not taste: with the ramp below, the shipped board
+     * of ten solves in 7.2 seconds, which is where the design doc's arc puts
+     * the payoff in the ten seconds this sim declares. The old rate solved it
+     * in 2.3 — too fast to see the backtracking the sim's own blurb is about,
+     * "place, test, take it back".
+     */
+    private val WATCHABLE_DIVISOR = 3400f
+
+    /** How quickly the search gathers pace. Measured, see the note in step(). */
+    private val RAMP_SECONDS = 6f
+
     private var n = 10
     private var cols = IntArray(0)
     private var row = 0
@@ -182,9 +194,11 @@ class NQueensSim : Sim {
     private var carry = 0f
     private var restSeconds = -1f
     private var lastRejected = -1
+    private var elapsed = 0f
 
     override fun setup(env: SimEnv) {
         n = env.params.i("size", 10).coerceIn(4, 16)
+        elapsed = 0f
         cols = IntArray(n) { -1 }
         row = 0
         tries = 0
@@ -211,11 +225,24 @@ class NQueensSim : Sim {
             return
         }
         if (solved) return
-        // Backtracking cost climbs steeply with the board: at 24 queens a fixed
-        // thirty-four tries a second never reaches an answer. The floor rises
-        // with the board so every size on the slider finishes.
-        val minimumRate = BASE_TRIES * n * n * n / 400f
-        carry += abs(dt) * max(env.params.f("rate", 34f), minimumRate)
+        elapsed += abs(dt)
+        // Backtracking cost climbs steeply with the board, so the rate a
+        // board needs to finish in a watchable time climbs with it. That used
+        // to be a floor under an absolute tries-a-second slider — and the floor
+        // sat above the slider's own default, so on the shipped board the
+        // control did nothing at all from one end up to 85, which is 41% of a
+        // log slider's travel. A multiplier over the board's own rate means
+        // every position does something at every size.
+        // And the search accelerates as it runs. No formula in n can set a
+        // rate that suits every board: measured, the first solution costs about
+        // 13 tries at four queens, 200 at ten, and over fourteen thousand at
+        // sixteen, which is not any power of n. A rate that climbs covers the
+        // range — small boards still solve in seconds, sixteen reaches an
+        // answer instead of never — and it suits the sim, which should feel
+        // like it is bearing down on the solution rather than plodding.
+        val ramp = 1f + elapsed / RAMP_SECONDS
+        val base = BASE_TRIES * n * n * n / WATCHABLE_DIVISOR * ramp * ramp
+        carry += abs(dt) * base * env.params.f("rate", 1f).coerceIn(0.05f, 60f)
         var budget = min(carry.toInt(), 200000)
         carry -= budget
         while (budget-- > 0 && !solved) {
@@ -308,12 +335,15 @@ class NQueensSim : Sim {
             formats = listOf(TrapFormat.PERFECT_FIT, TrapFormat.GUESS, TrapFormat.LAST_STANDING),
             heroLabel = "Solve again",
             defaultPalette = "Ember",
-            typicalSeconds = 14f,
+            typicalSeconds = 10f,
             params = listOf(
                 // Plain backtracking, which is the point of watching it, does
                 // not finish a board much past this inside a run.
                 Param.int("size", "Board size", 4, 16, 10, card = Card.DATA),
-                Param.float("rate", "Speed", 2f, 20000f, 34f, card = Card.MOTION, unit = "/s", logScale = true)
+                Param.float(
+                    "rate", "Speed", 0.05f, 60f, 1f,
+                    card = Card.MOTION, unit = "x", logScale = true
+                )
             ),
             create = { NQueensSim() }
         )

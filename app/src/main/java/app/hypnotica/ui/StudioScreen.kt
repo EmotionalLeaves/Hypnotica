@@ -580,7 +580,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 }
                 confirmTemplate = -1
                 val fresh = Project.template(
-                    Project.TEMPLATES[index], state.currentDef.id, state.engine.core.seed
+                    Project.TEMPLATES[index], state.currentDef.id, state.engine.core.seed,
+                    state.currentDef.typicalSeconds
                 )
                 state.project = fresh
                 state.engine.project = fresh

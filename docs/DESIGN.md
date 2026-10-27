@@ -62,6 +62,22 @@ motion (time drops to 0.25x and eases back over a second), a small camera
 punch-in, a rising sweep from the synth, a rate-limited flash and a heavy haptic.
 A sim does not implement any of that; it says *now*, and the engine performs.
 
+The share is measured against the sim's own `typicalSeconds`, and both halves of
+that have to be true: a payoff condition that fires on a real event, and a
+declared length that the event sits sensibly inside. `ArcTest` fails the build
+when they disagree, and TickTock will not offer a seed whose payoff lands
+outside the window. Which half is wrong is a judgement each time — a payoff that
+fires 1.2 seconds in is a bad condition, not a four-second sim.
+
+A payoff must be an event, never the clock: "ten seconds have passed" fires
+whether or not anything happened. Where a sim has no single dramatic moment
+— a continuous picture rather than a story — the event is the picture
+resolving: the rate of change falling away, the field finishing filling in,
+the rhythm thinning out. Those are facts about the sim and they arrive on
+their own schedule. A time-based backstop is allowed only as a guarantee
+behind such a condition, so that a sim which has genuinely gone still still
+pays off; if the backstop is firing often, the condition is wrong.
+
 ## Motion craft
 
 - Easing on everything that is not physics; nothing in the UI moves linearly.

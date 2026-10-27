@@ -211,6 +211,9 @@ class EquationSim : Sim {
     }
 
     companion object {
+        /** The index of the curve mode in the "mode" choice, which ships first. */
+        private const val MODE_CURVE = 0
+
         fun def(): SimDef = SimDef(
             id = "math/equation",
             title = "Equation plotter",
@@ -220,7 +223,7 @@ class EquationSim : Sim {
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "Restart",
             defaultPalette = "Aurora",
-            typicalSeconds = 24f,
+            typicalSeconds = 10f,
             params = listOf(
                 Param.choice(
                     "mode", "What the formulas mean",
@@ -232,8 +235,16 @@ class EquationSim : Sim {
                 // Where the trajectory starts is the subject of an ODE sim,
                 // not an expert detail, and neither is an integer Evolve can
                 // drift — so hiding them left no simple route at all.
-                Param.float("x0", "Start x", -2f, 2f, 0.4f, card = Card.DATA),
-                Param.float("y0", "Start y", -2f, 2f, 0.1f, card = Card.DATA),
+                // Curve mode computes both coordinates from t on the first
+                // step, so where it started is gone before anything is drawn.
+                Param.float(
+                    "x0", "Start x", -2f, 2f, 0.4f, card = Card.DATA,
+                    mutedBy = "mode", mutedAt = listOf(MODE_CURVE)
+                ),
+                Param.float(
+                    "y0", "Start y", -2f, 2f, 0.1f, card = Card.DATA,
+                    mutedBy = "mode", mutedAt = listOf(MODE_CURVE)
+                ),
                 Param.float("scale", "Scale", 0.02f, 2f, 0.42f, card = Card.LOOK, logScale = true),
                 Param.float("dot", "Line weight", 0.001f, 0.012f, 0.004f, card = Card.LOOK),
                 Param.int("trail", "Trail", 100, 120000, 9000, card = Card.LOOK, logScale = true),

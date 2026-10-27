@@ -1,6 +1,7 @@
 package app.hypnotica.core.studio
 
 import app.hypnotica.core.render.Camera
+import kotlin.math.min
 import kotlin.math.max
 import kotlin.math.abs
 import kotlin.math.pow
@@ -265,50 +266,81 @@ class Project(var simId: String, var seed: Long) {
 
     /** Ready-made starting points so a project is never a blank timeline. */
     companion object {
-        fun template(name: String, simId: String, seed: Long): Project {
+        /**
+         * Build a starting project, laid out around the length of the sim it is
+         * for.
+         *
+         * [seconds] is the sim's own typical length. Every keyframe below is
+         * placed as a share of it rather than at a fixed second, because the
+         * same numbers cannot be right for a sim that resolves in ten seconds
+         * and one that takes forty: "Build-up to payoff" used to put its slow
+         * motion, its punch-in and its flash at 26 seconds whatever it was
+         * opened on, which is eight seconds after the payoff of one sim in the
+         * app and twenty-three seconds after another's. The whole point of the
+         * template is that those three land together on the moment.
+         */
+        fun template(name: String, simId: String, seed: Long, seconds: Float = 30f): Project {
             val p = Project(simId, seed)
             p.name = name
+            // A project shorter than a few seconds cannot be keyframed usefully.
+            val d = seconds.coerceIn(8f, 120f)
+            // Where the design doc puts the payoff: setup 10%, build 60%,
+            // payoff 10%, resolve 20%.
+            val moment = d * 0.7f
             when (name) {
                 "Slow orbit" -> {
-                    p.duration = 20f
+                    p.duration = d
                     p.track(TrackKind.ROTATION).set(0f, 0f, Easing.LINEAR)
-                    p.track(TrackKind.ROTATION).set(20f, 6.283f, Easing.LINEAR)
+                    p.track(TrackKind.ROTATION).set(d, 6.283f, Easing.LINEAR)
                     p.track(TrackKind.ZOOM).set(0f, 0.9f)
-                    p.track(TrackKind.ZOOM).set(20f, 1.15f)
+                    p.track(TrackKind.ZOOM).set(d, 1.15f)
                 }
                 "Build-up to payoff" -> {
-                    p.duration = 30f
+                    p.duration = d
+                    // The run-up is a share of the build, not a fixed four
+                    // seconds, so a short sim does not spend half of itself
+                    // accelerating.
+                    val runUp = (d * 0.13f).coerceIn(1.5f, 5f)
                     p.track(TrackKind.SPEED).set(0f, 0.6f)
-                    p.track(TrackKind.SPEED).set(22f, 2.2f)
-                    p.track(TrackKind.SPEED).set(26f, 0.35f, Easing.EASE_OUT)
-                    p.track(TrackKind.SPEED).set(30f, 1f)
-                    p.track(TrackKind.ZOOM).set(22f, 1f)
-                    p.track(TrackKind.ZOOM).set(26f, 1.25f, Easing.OVERSHOOT)
-                    p.track(TrackKind.FLASH).set(25.8f, 0f, Easing.HOLD)
-                    p.track(TrackKind.FLASH).set(26f, 0.5f)
-                    p.track(TrackKind.FLASH).set(26.6f, 0f)
-                    p.texts.add(TextClip("Watch what happens", 0.5f, 4f))
+                    p.track(TrackKind.SPEED).set(moment - runUp, 2.2f)
+                    p.track(TrackKind.SPEED).set(moment, 0.35f, Easing.EASE_OUT)
+                    p.track(TrackKind.SPEED).set(d, 1f)
+                    p.track(TrackKind.ZOOM).set(moment - runUp, 1f)
+                    p.track(TrackKind.ZOOM).set(moment, 1.25f, Easing.OVERSHOOT)
+                    p.track(TrackKind.FLASH).set(moment - 0.2f, 0f, Easing.HOLD)
+                    p.track(TrackKind.FLASH).set(moment, 0.5f)
+                    p.track(TrackKind.FLASH).set(moment + 0.6f, 0f)
+                    p.texts.add(TextClip("Watch what happens", 0.5f, min(4f, d * 0.2f)))
                 }
                 "Gravity flip" -> {
-                    p.duration = 24f
+                    p.duration = d
+                    val flip = d * 0.5f
                     p.track(TrackKind.GRAVITY).set(0f, 9.81f, Easing.HOLD)
-                    p.track(TrackKind.GRAVITY).set(12f, 9.81f)
-                    p.track(TrackKind.GRAVITY).set(13f, 0f, Easing.EASE_IN_OUT)
-                    p.track(TrackKind.GRAVITY).set(14f, 24f, Easing.OVERSHOOT)
+                    p.track(TrackKind.GRAVITY).set(flip - 1f, 9.81f)
+                    p.track(TrackKind.GRAVITY).set(flip, 0f, Easing.EASE_IN_OUT)
+                    p.track(TrackKind.GRAVITY).set(flip + 1f, 24f, Easing.OVERSHOOT)
                     p.track(TrackKind.TRAILS).set(0f, 0f)
-                    p.track(TrackKind.TRAILS).set(13f, 0.8f)
-                    p.track(TrackKind.TRAILS).set(20f, 0.2f)
-                    p.texts.add(TextClip("Gravity flips at 12 s", 10f, 13f, big = false))
+                    p.track(TrackKind.TRAILS).set(flip, 0.8f)
+                    p.track(TrackKind.TRAILS).set(min(d, flip + 7f), 0.2f)
+                    // The caption names the second it happens, so it has to be
+                    // the second it happens.
+                    p.texts.add(
+                        TextClip(
+                            "Gravity flips at ${flip.toInt()} s",
+                            max(0f, flip - 3f), flip, big = false
+                        )
+                    )
                 }
                 "Perfect loop" -> {
-                    p.duration = 16f
+                    // Half the length, so the zoom in and out is symmetric.
+                    p.duration = d
                     p.track(TrackKind.ZOOM).set(0f, 1f, Easing.EASE_IN_OUT)
-                    p.track(TrackKind.ZOOM).set(8f, 1.1f, Easing.EASE_IN_OUT)
-                    p.track(TrackKind.ZOOM).set(16f, 1f, Easing.EASE_IN_OUT)
+                    p.track(TrackKind.ZOOM).set(d * 0.5f, 1.1f, Easing.EASE_IN_OUT)
+                    p.track(TrackKind.ZOOM).set(d, 1f, Easing.EASE_IN_OUT)
                     p.track(TrackKind.TRAILS).set(0f, 0.55f)
                 }
                 else -> {
-                    p.duration = 20f
+                    p.duration = d
                 }
             }
             return p

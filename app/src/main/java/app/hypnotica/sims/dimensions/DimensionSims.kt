@@ -396,7 +396,7 @@ class SlicingSim : Sim {
             formats = listOf(TrapFormat.LOOP, TrapFormat.REVEAL, TrapFormat.CUT),
             heroLabel = "Send it through",
             defaultPalette = "Ocean",
-            typicalSeconds = 22f,
+            typicalSeconds = 8f,
             params = listOf(
                 Param.choice(
                     "shape", "Object", listOf("Hypersphere", "Hypercube", "Cone"), 0,
@@ -703,18 +703,35 @@ class NdBounceSim : Sim {
     private var elapsed = 0f
     private var spin = 0f
 
-    /** Which of the 2*dims walls have been struck, so the payoff is a fact. */
-    private var wallHit = BooleanArray(Nd.MAX_DIMS * 2)
-    private var wallsTouched = 0
-    private var allWallsHit = false
+    /**
+     * Which of the 2*dims walls each ball has struck, as a bit per wall.
+     *
+     * It used to be one set of flags for the whole box, and the payoff was
+     * "every wall struck by anything" — which with the default two dozen balls
+     * is over in 1.2 seconds, a fifth of the way through the setup beat, and
+     * barely later in six dimensions than in two. The comment below claimed the
+     * moment arrives later the more dimensions there are; with that many balls
+     * it did not. One ball having reached all twelve walls does, and it is a
+     * fact about the sim's subject rather than about how many balls there are.
+     */
+    private var visited = IntArray(0)
+    private var axesToured = 0
+    private var paidOff = false
+    /** Bounces per second, smoothed, and what the build settled at. */
+    private var rateNow = 0f
+    private var buildRate = 0f
+    private var buildSamples = 0
 
     override fun setup(env: SimEnv) {
         val p = env.params
         dims = p.i("dims", 4).coerceIn(2, Nd.MAX_DIMS)
         count = p.i("balls", 24).coerceIn(1, 600)
-        wallHit = BooleanArray(Nd.MAX_DIMS * 2)
-        wallsTouched = 0
-        allWallsHit = false
+        visited = IntArray(count)
+        axesToured = 0
+        paidOff = false
+        rateNow = 0f
+        buildRate = 0f
+        buildSamples = 0
         pos = FloatArray(count * dims)
         vel = FloatArray(count * dims)
         tint = FloatArray(count)
@@ -748,10 +765,10 @@ class NdBounceSim : Sim {
                 pos[base + d] += vel[base + d] * dt
                 if (pos[base + d] > wall) {
                     pos[base + d] = wall; vel[base + d] = -vel[base + d] * e; hitsThisStep++
-                    wallHit[d * 2] = true
+                    visited[i] = visited[i] or (1 shl d)
                 } else if (pos[base + d] < -wall) {
                     pos[base + d] = -wall; vel[base + d] = -vel[base + d] * e; hitsThisStep++
-                    wallHit[d * 2 + 1] = true
+                    visited[i] = visited[i] or (1 shl d)
                 }
             }
         }
@@ -767,19 +784,57 @@ class NdBounceSim : Sim {
         spin += env.params.f("spin", 0.4f) * dt
         if (dims >= 4) Nd.rotatePlane(pos, count, dims, 0, 3, env.params.f("spin", 0.4f) * dt)
 
-        // Every wall struck at least once: in two dimensions that is four, in
-        // six it is twelve, so the moment arrives later the more dimensions
-        // there are — which is the point of the sim. A stopwatch at sixteen
-        // seconds said nothing about whether anything had happened.
-        if (!allWallsHit) {
-            var touched = 0
-            for (d in 0 until dims * 2) if (wallHit[d]) touched++
-            wallsTouched = touched
-            if (touched >= dims * 2) {
-                allWallsHit = true
-                payoffFrame = true
-                env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+        // One ball having struck every wall: in two dimensions that is four
+        // walls, in six it is twelve, so the moment arrives later the more
+        // dimensions there are — which is the point of the sim. A stopwatch at
+        // sixteen seconds said nothing about whether anything had happened.
+        // The payoff is the rhythm changing decisively from the one the build
+        // established — thinning out as the bounces damp away, or thickening if
+        // the laws are returning more energy than they take.
+        //
+        // Two earlier conditions were measured and thrown away. "Every wall
+        // struck at least once by anything" was over in 1.2 seconds with the
+        // default two dozen balls, a twentieth of the way into a run the design
+        // doc puts the payoff at 70% of — and barely later in six dimensions
+        // than in two, despite the comment that used to sit here claiming that
+        // was the point. "The fullest beat so far" sounds right for a rhythm
+        // and cannot work in a damped box: the default bounce returns 88% of
+        // the energy, so the busiest beat is always an early one and a late
+        // step has nothing left to beat it with. Of forty-seven runs that fell
+        // through to the backstop, forty-two were still bouncing happily.
+        //
+        // A decisive change in the rate is the event this sim actually has, it
+        // arrives on its own schedule, and it holds in both directions.
+        val dtAbs = abs(dt)
+        if (dtAbs > 1e-6f) {
+            val instant = hitsThisStep / dtAbs
+            // About a third of a second of smoothing: enough that one busy step
+            // is not an event, little enough that the thinning is not hidden.
+            rateNow += (instant - rateNow) * min(1f, dtAbs * 3f)
+        }
+        if (!paidOff) {
+            when {
+                // The first second is the drop into the box, not the rhythm.
+                elapsed < SETTLE_SECONDS -> Unit
+                elapsed < BUILD_SECONDS -> {
+                    buildRate += rateNow
+                    buildSamples++
+                }
+                else -> {
+                    val established = if (buildSamples > 0) buildRate / buildSamples else 0f
+                    val thinned = established > 0.5f && rateNow < established * THINNED
+                    val thickened = established > 0.5f && rateNow > established * THICKENED
+                    if (thinned || thickened || elapsed > BUILD_SECONDS + BACKSTOP_SECONDS) {
+                        paidOff = true
+                        payoffFrame = true
+                        env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+                    }
+                }
             }
+            val full = (1 shl dims) - 1
+            var toured = 0
+            for (i in 0 until count) if (visited[i] == full) toured++
+            axesToured = toured
         }
     }
 
@@ -805,11 +860,23 @@ class NdBounceSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "dimensions" to dims.toString(),
-        "walls hit" to "$wallsTouched/${dims * 2}",
+        "all axes" to "$axesToured/$count balls",
+        "bounces a second" to String.format(java.util.Locale.US, "%.0f", rateNow),
         "bounces" to hits.toString()
     )
 
     companion object {
+        /** The drop into the box, before there is a rhythm to measure. */
+        private const val SETTLE_SECONDS = 1.5f
+        /** Long enough for the rhythm to establish what normal is. */
+        private const val BUILD_SECONDS = 14f
+        /** A box that never changes its mind still owes a payoff. */
+        private const val BACKSTOP_SECONDS = 9f
+        /** Thinned to this share of the established rate. */
+        private const val THINNED = 0.45f
+        /** Or thickened to this much of it, for a box that gains energy. */
+        private const val THICKENED = 1.8f
+
         fun def(): SimDef = SimDef(
             id = "dimensions/nd-bounce",
             title = "Bouncing in N dimensions",
@@ -911,7 +978,13 @@ class BallVolumeSim : Sim {
             typicalSeconds = 14f,
             params = listOf(
                 Param.int("upto", "Up to dimension", 4, 40, 20, card = Card.DATA),
-                Param.float("rate", "Speed", 0.4f, 12f, 2.2f, card = Card.MOTION, unit = "/s")
+                // The peak at five dimensions is the moment this sim exists
+                // for, and at 2.2 dimensions a second it arrived 2.3 seconds
+                // in — a sixth of the way into the run, with the blurb's
+                // "then falls to nothing" over before anyone had read the
+                // first number. A bar and a bit a second is a pace you can
+                // follow, and the slider still goes to twelve.
+                Param.float("rate", "Speed", 0.4f, 12f, 0.7f, card = Card.MOTION, unit = "/s")
             ),
             create = { BallVolumeSim() }
         )

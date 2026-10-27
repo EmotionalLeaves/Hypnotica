@@ -518,7 +518,7 @@ class PathfindingSim : Sim {
             formats = listOf(TrapFormat.GUESS, TrapFormat.REVEAL, TrapFormat.RACE, TrapFormat.ESCAPE),
             heroLabel = "New map",
             defaultPalette = "Aurora",
-            typicalSeconds = 24f,
+            typicalSeconds = 10f,
             params = listOf(
                 Param.choice(
                     "algorithm", "Algorithm",

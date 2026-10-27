@@ -190,7 +190,7 @@ class VoronoiSim : Sim {
             formats = listOf(TrapFormat.COLOR_BATTLE, TrapFormat.REVEAL),
             heroLabel = "New seeds",
             defaultPalette = "Candy",
-            typicalSeconds = 22f,
+            typicalSeconds = 10f,
             params = listOf(
                 Param.choice("metric", "Distance", listOf("Straight line", "City blocks"), 0,
                     card = Card.DATA, input = ParamInput.TILES),

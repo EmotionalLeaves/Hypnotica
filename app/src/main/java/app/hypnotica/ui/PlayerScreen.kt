@@ -446,9 +446,16 @@ private fun describeMacro(position: Float): String = when {
  */
 internal fun mutedReason(state: AppState, p: Param): String? {
     val owner = p.mutedBy ?: return null
-    if (state.paramValue(owner) < 0.5f) return null
-    val label = state.params().firstOrNull { it.key == owner }?.label ?: owner
-    return "set by $label"
+    if (Math.round(state.paramValue(owner)) !in p.mutedAt) return null
+    val ownerParam = state.params().firstOrNull { it.key == owner }
+    val label = ownerParam?.label ?: owner
+    // A switch takes a value over; a choice leaves it unused in that mode, and
+    // saying "set by What the formulas mean" would explain nothing.
+    val choice = ownerParam
+        ?.takeIf { it.type == ParamType.CHOICE }
+        ?.choices
+        ?.getOrNull(Math.round(state.paramValue(owner)))
+    return if (choice != null) "not used with \"$choice\"" else "set by $label"
 }
 
 @Composable
