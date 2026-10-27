@@ -262,7 +262,7 @@ private fun MotionCard(state: AppState) {
         max = 10f,
         logScale = true,
         valueText = String.format("%.2fx", state.speed)
-    ) { state.setSpeed(it) }
+    ) { state.speed = it }
     CardControls(state, Card.MOTION)
 }
 
@@ -278,7 +278,7 @@ private fun LookCard(state: AppState) {
         min = 0f,
         max = 0.96f,
         valueText = if (state.trails < 0.02f) "off" else formatValue(state.trails)
-    ) { state.setTrails(it) }
+    ) { state.trails = it }
     CardControls(state, Card.LOOK)
 }
 

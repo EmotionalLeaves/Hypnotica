@@ -34,13 +34,30 @@ class AppState(val engine: SimEngine) {
     var paramVersion by mutableIntStateOf(0)
         private set
 
-    var speed by mutableFloatStateOf(1f)
+    private var speedState by mutableFloatStateOf(1f)
+    private var trailsState by mutableFloatStateOf(0f)
+
+    /** Playback speed, 0.1x to 10x. Setting it reaches straight into the core. */
+    var speed: Float
+        get() = speedState
+        set(value) {
+            speedState = value.coerceIn(0.1f, 10f)
+            engine.core.speed = speedState
+        }
+
+    /** 0 = no trails, 0.96 = long smeary ones. */
+    var trails: Float
+        get() = trailsState
+        set(value) {
+            trailsState = value.coerceIn(0f, 0.96f)
+            engine.setTrails(trailsState)
+        }
+
     var paused by mutableStateOf(false)
     var paletteName by mutableStateOf("Spectrum")
     var soundPresetName by mutableStateOf("Music box")
     var songIndex by mutableIntStateOf(0)
     var lawsName by mutableStateOf("Our universe")
-    var trails by mutableFloatStateOf(0f)
     var showCounters by mutableStateOf(true)
     var reduceFlashing by mutableStateOf(false)
     var reduceMotion by mutableStateOf(false)
@@ -71,11 +88,6 @@ class AppState(val engine: SimEngine) {
         engine.core.paused = paused
     }
 
-    fun setSpeed(v: Float) {
-        speed = v.coerceIn(0.1f, 10f)
-        engine.core.speed = speed
-    }
-
     fun setPalette(name: String) {
         paletteName = name
         engine.setPalette(name)
@@ -94,11 +106,6 @@ class AppState(val engine: SimEngine) {
     fun setLaws(name: String) {
         lawsName = name
         engine.setLaws(Laws.preset(name))
-    }
-
-    fun setTrails(v: Float) {
-        trails = v
-        engine.setTrails(v)
     }
 
     fun applySafety() {
