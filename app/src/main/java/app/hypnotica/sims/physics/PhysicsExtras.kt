@@ -50,6 +50,16 @@ class NBodySim : Sim {
     private var centralMass = 0f
     private var collapsed = false
 
+    /**
+     * How far out the bulk of the system reaches, so the view can pull back to
+     * keep it: the 85th percentile of the bodies' distance from the centre,
+     * sampled a few times a second. Bodies flung clear of the system are let
+     * go; the cluster is kept whole.
+     */
+    private var reach = 0f
+    private var sinceReach = 0f
+    private val reachSample = FloatArray(REACH_SAMPLES)
+
     override fun setup(env: SimEnv) {
         val p = env.params
         n = p.i("bodies", 400).coerceIn(2, 4000)
@@ -65,12 +75,18 @@ class NBodySim : Sim {
         trailFill = 0
 
         val disc = p.choiceIndex("start") == 0
+        // A round disc that fits the width. It was squashed to the screen's
+        // shape — on a phone held upright, half as wide as it was tall — while
+        // every body was still given the speed of a circular orbit at its
+        // unsquashed radius. None of them were on the orbit they were moving
+        // for, and a fifth to a quarter were thrown clean off the screen.
+        val discScale = min(1f, env.halfWidth / 0.92f)
         for (i in 0 until n) {
             if (disc) {
                 // A rotating disc, which is what makes spiral structure appear.
-                val r = 0.12f + sqrt(env.rng.nextFloat()) * 0.78f
+                val r = (0.12f + sqrt(env.rng.nextFloat()) * 0.78f) * discScale
                 val a = env.rng.range(0f, 2f * PI.toFloat())
-                px[i] = cos(a) * r * env.halfWidth / 0.5f * 0.5f
+                px[i] = cos(a) * r
                 py[i] = sin(a) * r
                 val orbital = sqrt(centralMass * 0.0016f / max(0.05f, r))
                 vx[i] = -sin(a) * orbital
@@ -87,11 +103,34 @@ class NBodySim : Sim {
         elapsed = 0f
         payoffFrame = false
         collapsed = false
+        reach = 0f
+        sinceReach = REACH_EVERY
     }
+
+    private fun measureReach() {
+        val count = min(n, REACH_SAMPLES)
+        val stride = max(1, n / count)
+        for (k in 0 until count) {
+            val i = (k * stride).coerceAtMost(n - 1)
+            reachSample[k] = max(abs(px[i]), abs(py[i]))
+        }
+        java.util.Arrays.sort(reachSample, 0, count)
+        reach = reachSample[((count - 1) * REACH_SHARE).toInt()]
+    }
+
+    /** The cluster's reach, with a margin; it only ever asks for more room. */
+    override fun frameHalfWidth(env: SimEnv): Float = reach * REACH_MARGIN
+    override fun frameHalfHeight(env: SimEnv): Float = reach * REACH_MARGIN
+
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
+        sinceReach += abs(dt)
+        if (sinceReach >= REACH_EVERY) {
+            sinceReach = 0f
+            measureReach()
+        }
         val laws = env.laws
         val softening = 0.01f
         val sign = laws.massSign
@@ -183,6 +222,10 @@ class NBodySim : Sim {
         listOf("bodies" to String.format(java.util.Locale.US, "%,d", n))
 
     companion object {
+        private const val REACH_SAMPLES = 512
+        private const val REACH_SHARE = 0.85f
+        private const val REACH_MARGIN = 1.12f
+        private const val REACH_EVERY = 0.25f
         private const val MAX_SPEED = 3.2f
         /** Above this, all-pairs is dropped and only the central mass pulls. */
         const val PAIRWISE_LIMIT = 900
