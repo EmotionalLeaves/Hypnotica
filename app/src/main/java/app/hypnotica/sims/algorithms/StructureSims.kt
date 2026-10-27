@@ -834,7 +834,21 @@ class GraphLayoutSim : Sim {
     private var settled = false
     private var elapsed = 0f
 
+    /**
+     * How the graph is framed: drawn scaled about its own centre so it fills
+     * the screen, eased as it grows. Its physics settles into a small knot —
+     * measured, five per cent of the screen — and it was drawn at that size, a
+     * cluster in the middle of an empty phone. The framing changes only what
+     * is drawn; the layout underneath is untouched.
+     */
+    private var fitScale = 1f
+    private var fitX = 0f
+    private var fitY = 0f
+
     override fun setup(env: SimEnv) {
+        fitScale = 1f
+        fitX = 0f
+        fitY = 0f
         val p = env.params
         n = p.i("nodes", 70).coerceIn(3, 900)
         px = FloatArray(n); py = FloatArray(n)
@@ -910,6 +924,7 @@ class GraphLayoutSim : Sim {
             moved += abs(vx[i]) + abs(vy[i])
         }
         energy = energy * 0.9f + (moved / n) * 0.1f
+        frame(env, dt)
         env.emit(EventKind.STEP, energy.coerceIn(0f, 1f), 0f, 0.25f)
         if (!settled && elapsed > 10f && energy < 0.012f) {
             settled = true
@@ -918,17 +933,56 @@ class GraphLayoutSim : Sim {
         }
     }
 
+    /** Scratch for the framing's percentiles, so it allocates nothing per step. */
+    private var sortX = FloatArray(0)
+    private var sortY = FloatArray(0)
+
+    /**
+     * Ease the framing towards the graph's extent: the bulk of the nodes, with
+     * the outliers allowed to reach the edge. Framing the full extent let a
+     * couple of dangling leaves set the scale, and the graph stayed a knot in
+     * the middle of the screen.
+     */
+    private fun frame(env: SimEnv, dt: Float) {
+        if (n < 2) return
+        if (sortX.size < n) { sortX = FloatArray(n); sortY = FloatArray(n) }
+        for (i in 0 until n) { sortX[i] = px[i]; sortY[i] = py[i] }
+        java.util.Arrays.sort(sortX, 0, n)
+        java.util.Arrays.sort(sortY, 0, n)
+        val lo = (n * 0.02f).toInt()
+        val hi = (n - 1 - lo).coerceAtLeast(lo + 1)
+        val bulkW = (sortX[hi] - sortX[lo]) * 0.5f + 0.02f
+        val bulkH = (sortY[hi] - sortY[lo]) * 0.5f + 0.02f
+        val fullW = (sortX[n - 1] - sortX[0]) * 0.5f + 0.02f
+        val fullH = (sortY[n - 1] - sortY[0]) * 0.5f + 0.02f
+        val bulk = min(env.halfWidth * FILL / bulkW, FILL / bulkH)
+        // The whole graph may run to the edge of the screen, not off it.
+        val whole = min(env.halfWidth / fullW, 1f / fullH)
+        val target = min(bulk, whole).coerceIn(0.6f, MAX_FIT)
+        // Slow, so the frame breathes with the graph rather than snapping to it.
+        val k = min(1f, abs(dt) * 1.2f)
+        fitScale += (target - fitScale) * k
+        fitX += ((sortX[lo] + sortX[hi]) * 0.5f - fitX) * k
+        fitY += ((sortY[lo] + sortY[hi]) * 0.5f - fitY) * k
+    }
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
+        val s = fitScale
         g.reserveInstances(edges + n)
         for (e in 0 until edges) {
             val a = edgeA[e]
             val b = edgeB[e]
-            g.line(px[a], py[a], px[b], py[b], 0.0018f, Palette.withAlpha(palette.at(0.35f), 0.5f))
+            g.line(
+                (px[a] - fitX) * s, (py[a] - fitY) * s, (px[b] - fitX) * s, (py[b] - fitY) * s,
+                0.0018f * min(s, 2f), Palette.withAlpha(palette.at(0.35f), 0.5f)
+            )
         }
-        val r = max(0.005f, min(0.02f, 0.9f / sqrt(n.toFloat())))
+        // Grown with the framing, but not all the way: at full scale the
+        // shipped nodes would be coins.
+        val r = max(0.005f, min(0.02f, 0.9f / sqrt(n.toFloat()))) * kotlin.math.sqrt(s)
         for (i in 0 until n) {
-            g.disc(px[i], py[i], r, palette.at(i.toFloat() / n))
+            g.disc((px[i] - fitX) * s, (py[i] - fitY) * s, r, palette.at(i.toFloat() / n))
         }
     }
 
@@ -940,6 +994,12 @@ class GraphLayoutSim : Sim {
     )
 
     companion object {
+        /** Share of the screen the graph is framed to fill. */
+        private const val FILL = 0.8f
+
+        /** The most the framing will magnify, so a two-node graph is not a wall. */
+        private const val MAX_FIT = 6f
+
         fun def(): SimDef = SimDef(
             id = "algorithms/graph-layout",
             title = "Graph untangling itself",
