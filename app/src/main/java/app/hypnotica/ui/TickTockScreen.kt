@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,13 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.director.Clip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 
 /**
@@ -232,25 +234,40 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             AnimatedVisibility(visible = showChrome) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            current?.def?.title ?: "",
-                            color = Tokens.TextPrimary,
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            buildString {
-                                append(current?.def?.family ?: "")
-                                append("  ·  swipe up for the next")
-                            },
-                            color = Tokens.TextSecondary,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            "$watched clips  ·  double-tap to like  ·  hold to open",
-                            color = Tokens.TextSecondary.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        // Nothing is drawn until there is a clip. While the
+                        // first one is being found this used to render an empty
+                        // title and a line beginning with a bare separator —
+                        // "  ·  swipe up for the next" — with nothing in front
+                        // of it, for the several seconds a generation takes.
+                        val clip = current
+                        if (clip != null) {
+                            Text(
+                                clip.def.title,
+                                color = Tokens.TextPrimary,
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                clip.def.family,
+                                color = Tokens.TextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            // Shortened: at one clip the old line was 47
+                            // characters against 272 dp of column, so it always
+                            // wrapped and left one word alone on a second line.
+                            Text(
+                                "$watched clips  ·  hold to open",
+                                color = Tokens.TextSecondary.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
+                    Spacer(Modifier.width(12.dp))
                     GlyphButton("‹") { state.screen = Screen.SETTINGS }
                 }
             }

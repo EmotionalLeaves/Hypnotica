@@ -1,5 +1,10 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.hypnotica.sims.SimRegistry
 
@@ -101,31 +107,55 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    hookFor(state),
-                    color = Tokens.TextPrimary,
-                    style = MaterialTheme.typography.displaySmall,
+                AnimatedContent(
+                    targetState = state.currentDef.id,
+                    transitionSpec = {
+                        fadeIn(tween(Tokens.Base)) togetherWith fadeOut(tween(Tokens.Fast))
+                    },
+                    label = "feedHook",
                     modifier = Modifier.weight(1f)
-                )
+                ) { _ ->
+                    Text(
+                        hookFor(state),
+                        color = Tokens.TextPrimary,
+                        style = MaterialTheme.typography.displaySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Spacer(Modifier.weight(1f))
             Row(
                 Modifier.fillMaxWidth().padding(16.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        state.currentDef.title,
-                        color = Tokens.TextPrimary,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        if (hint) "${state.currentDef.shelf.title}  ·  swipe up for the next"
-                        else state.currentDef.shelf.title,
-                        color = Tokens.TextSecondary,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                AnimatedContent(
+                    targetState = state.currentDef.id,
+                    transitionSpec = {
+                        fadeIn(tween(Tokens.Base)) togetherWith fadeOut(tween(Tokens.Fast))
+                    },
+                    label = "feedTitle",
+                    modifier = Modifier.weight(1f)
+                ) { _ ->
+                    Column {
+                        Text(
+                            state.currentDef.title,
+                            color = Tokens.TextPrimary,
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            if (hint) "${state.currentDef.shelf.title}  ·  swipe up or down"
+                            else state.currentDef.shelf.title,
+                            color = Tokens.TextSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
+                Spacer(Modifier.width(12.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     GlyphButton(
                         if (state.isFavourite(state.currentDef.id)) "★" else "☆",
