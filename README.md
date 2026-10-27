@@ -17,7 +17,7 @@ tests, signs and publishes the APK.
 
 | | |
 | --- | --- |
-| Sims | 57, across Algorithms, Physics, Math, Dimensions, Life & nature and Art & pattern |
+| Sims | 57, across Algorithms, Physics, Math, Dimensions, Life & nature and Art & music |
 | Sound | A synth fed by sim events — every note has a visible cause |
 | Laws | Gravity, bounciness, friction, time direction and more, shared by every physics sim |
 | Controls | Simple mode (macros and big sliders) and Advanced mode (exact numbers, formulas, Lua) |

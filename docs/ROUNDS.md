@@ -46,7 +46,7 @@ phone, and nothing here can tick it from a build server.
 - Lua recipe sandbox with a per-step time budget; recipes are plain text files
   that register as sims. `docs/RECIPE_SPEC.md` is the contract.
 - 57 sims across six shelves: Algorithms, Physics, Math, Dimensions, Life &
-  nature, Art & pattern.
+  nature, Art & music.
 - Live Library previews: each card runs the sim headlessly for a moment and
   paints its real draw list.
 - Offline MP4 export with the synth's audio, captions composited in, cancellable,

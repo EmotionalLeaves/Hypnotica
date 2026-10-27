@@ -178,7 +178,7 @@ A formula you typed outranks the drift; Evolve leaves it alone.
 ## Changing the laws
 
 One `Laws` table is shared by every physics sim, so changing it changes all of
-them at once. Fourteen presets — Our universe, Moon, Zero-G, Upside-down, Bouncy,
+them at once. Fifteen presets — Our universe, Moon, Zero-G, Upside-down, Bouncy,
 Sticky, Ghosts, Syrup, Slow light, Backwards time, Repulsive gravity, Negative
 mass, Wrap-around space, Strong charges, Heavy & bouncy — plus the sliders and
 switches behind them: gravity, bounciness, friction, time speed, time direction,
@@ -228,14 +228,14 @@ size afterwards.
 
 - **Nine tracks**: camera x, camera y, zoom, rotation, speed, gravity,
   bounciness, trails, flash. A track with no keyframes leaves that value alone.
-- **Keyframes** with five easing curves, set from whatever the sim is doing right
+- **Keyframes** with seven easing curves, set from whatever the sim is doing right
   now, dragged on the strip, removed one at a time or cleared.
 - **Freezes**: stretches where time stops but the camera keeps moving.
 - **Captions** at the playhead, big or small, which are composited into the
   exported file as well as shown in the preview.
-- **Four templates** to start from, and scrubbing that re-simulates from the seed
+- **Five templates** to start from, and scrubbing that re-simulates from the seed
   rather than scrubbing a recording.
-- **Export** to MP4 with the synth's audio, at 9:16, 1:1 or 16:9, rendered
+- **Export** to MP4 with the synth's audio, at 9:16, 1:1, 16:9 or a smaller 720p, rendered
   offline frame by frame so the file is smooth even if the preview is not —
   cancellable, and saved into `Movies/Hypnotica` where the gallery can see it,
   with a share sheet for everything else.
