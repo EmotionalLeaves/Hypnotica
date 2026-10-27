@@ -18,6 +18,20 @@ import androidx.compose.ui.unit.sp
  * colour pop and saves battery on an OLED screen.
  */
 object Tokens {
+
+    /**
+     * How long things take to move, in milliseconds.
+     *
+     * DESIGN specifies these four and the code had none of them, so every
+     * animation in the app ran on Compose's default spring — around 350-400 ms,
+     * slower than any of these, and springy where the contract asks for timed
+     * easing.
+     */
+    const val Fast = 120
+    const val Base = 200
+    const val Sheet = 280
+    const val Slow = 350
+
     val Bg = Color(0xFF07080C)
     val Surface = Color(0xFF14161C)
     val SurfaceStrong = Color(0xFF1E212A)

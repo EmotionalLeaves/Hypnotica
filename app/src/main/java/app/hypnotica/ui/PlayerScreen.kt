@@ -1,6 +1,10 @@
 package app.hypnotica.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -32,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.audio.Scale
 import app.hypnotica.core.audio.Song
@@ -124,18 +129,30 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            AnimatedVisibility(visible = overlayVisible) {
+            AnimatedVisibility(
+                visible = overlayVisible,
+                // Fade, not the default expand-and-shrink: growing the bar's
+                // height clips the title and squashes the buttons on the way.
+                enter = fadeIn(tween(Tokens.Base)),
+                exit = fadeOut(tween(Tokens.Base))
+            ) {
                 TopBar(state, uiTick)
             }
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(
                 visible = state.controlsOpen,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it }
+                enter = slideInVertically(tween(Tokens.Sheet, easing = FastOutSlowInEasing)) { it } +
+                    fadeIn(tween(Tokens.Sheet)),
+                exit = slideOutVertically(tween(Tokens.Sheet, easing = FastOutSlowInEasing)) { it } +
+                    fadeOut(tween(Tokens.Fast))
             ) {
                 ControlDrawer(state)
             }
-            AnimatedVisibility(visible = overlayVisible) {
+            AnimatedVisibility(
+                visible = overlayVisible,
+                enter = fadeIn(tween(Tokens.Base)),
+                exit = fadeOut(tween(Tokens.Base))
+            ) {
                 ActionBar(state, surface)
             }
         }
@@ -154,7 +171,9 @@ private fun TopBar(state: AppState, uiTick: Int) {
             Text(
                 state.currentDef.title,
                 color = Tokens.TextPrimary,
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             val counters = remember(uiTick) { state.engine.core.sim.counters() }
             val line = if (state.recording) {
@@ -176,10 +195,17 @@ private fun TopBar(state: AppState, uiTick: Int) {
                 line,
                 color = if (state.recording) Tokens.Danger else Tokens.TextSecondary,
                 // Tabular figures: a counter that changes every frame must not
-                // make the line around it twitch.
+                // make the line around it twitch. One line, for the same
+                // reason at the scale above: a seven-figure comparison count
+                // wrapped and grew the whole bar mid-run.
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum")
             )
         }
+        // The title column ran flush into the star, with 12 dp of air on its
+        // other side.
+        Spacer(Modifier.width(12.dp))
         GlyphButton(if (state.isFavourite(state.currentDef.id)) "★" else "☆") {
             state.toggleFavourite(state.currentDef.id)
         }
@@ -219,8 +245,8 @@ private fun ControlDrawer(state: AppState) {
         Modifier
             .fillMaxWidth()
             .background(Tokens.Surface.copy(alpha = 0.96f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .padding(16.dp)
             .heightIn(max = 420.dp)
+            .padding(16.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),

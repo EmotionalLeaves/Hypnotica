@@ -1,5 +1,7 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
@@ -67,18 +70,35 @@ fun Pill(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    // Selection fades rather than snapping. This is the app's whole selection
+    // vocabulary — every chip, filter, mute, tab and card — and it used to
+    // change background, border colour, border WIDTH and text colour in a
+    // single frame, so tapping a palette made two chips jump four properties
+    // each. The border width is now constant, because changing it moved the
+    // pill's geometry by half a dp as well.
+    val background by animateColorAsState(
+        if (selected) Tokens.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f),
+        tween(Tokens.Fast),
+        label = "pillBackground"
+    )
+    val outline by animateColorAsState(
+        if (selected) Tokens.Accent else Color.White.copy(alpha = 0.12f),
+        tween(Tokens.Fast),
+        label = "pillOutline"
+    )
+    val ink by animateColorAsState(
+        if (selected) Tokens.TextPrimary else Tokens.TextSecondary,
+        tween(Tokens.Fast),
+        label = "pillInk"
+    )
     Box(
         modifier
             .heightIn(min = 48.dp)
-            .background(
-                if (selected) Tokens.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f),
-                CircleShape
-            )
-            .border(
-                if (selected) 1.5.dp else 1.dp,
-                if (selected) Tokens.Accent else Color.White.copy(alpha = 0.12f),
-                CircleShape
-            )
+            .background(background, CircleShape)
+            .border(1.5.dp, outline, CircleShape)
+            // Clipped before the click, so the press ripple is a pill rather
+            // than a rectangle drawn over one.
+            .clip(CircleShape)
             .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 16.dp, vertical = 10.dp)
             .alpha(if (enabled) 1f else 0.4f),
@@ -86,7 +106,7 @@ fun Pill(
     ) {
         Text(
             label,
-            color = if (selected) Tokens.TextPrimary else Tokens.TextSecondary,
+            color = ink,
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -114,6 +134,7 @@ fun BigButton(
                 if (primary) Tokens.Accent else Color.White.copy(alpha = 0.12f),
                 RoundedCornerShape(14.dp)
             )
+            .clip(RoundedCornerShape(14.dp))
             .clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center
@@ -321,6 +342,7 @@ fun GlyphButton(
                 CircleShape
             )
             .border(1.dp, Color.White.copy(alpha = if (selected) 0.3f else 0.12f), CircleShape)
+            .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {

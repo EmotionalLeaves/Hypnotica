@@ -19,9 +19,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,9 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.hypnotica.core.studio.Easing
@@ -52,11 +54,11 @@ import app.hypnotica.core.studio.TrackKind
 import app.hypnotica.export.ExportSettings
 import app.hypnotica.export.Publish
 import app.hypnotica.export.VideoExporter
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * The shape of the slot the preview sits in. The picture is letterboxed inside
@@ -157,7 +159,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Spacer(Modifier.width(10.dp))
             Text("Studio", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
-            BigButton(if (exporting) "Exporting…" else "Export", primary = true) {
+            BigButton(
+            if (exporting) "Exporting…" else "Export",
+            Modifier.widthIn(min = 132.dp),
+            primary = true
+        ) {
                 if (!exporting) {
                     exporting = true
                     exportMessage = null
@@ -536,7 +542,10 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                         color = Tokens.TextSecondary,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f),
-                        maxLines = 1
+                        maxLines = 1,
+                        // Without this a long caption is cut mid-letter and
+                        // nothing says it continues.
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.width(8.dp))
                     Pill("Remove") {
