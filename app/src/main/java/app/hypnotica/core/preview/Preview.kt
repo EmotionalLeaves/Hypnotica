@@ -82,14 +82,19 @@ object Previews {
             val g = G()
             g.reset()
             core.draw(g)
-            flatten(g)
+            flatten(g, core.fit())
         } catch (e: Throwable) {
             lastError = "${def.id}: $e"
             Preview.EMPTY
         }
     }
 
-    private fun flatten(g: G): Preview {
+    /**
+     * [fit] is the pull-back a sim drawn at a fixed size asks for, applied
+     * here as the player applies it, so a card shows the whole Fourier curve
+     * rather than its middle.
+     */
+    private fun flatten(g: G, fit: Float = 1f): Preview {
         val total = g.instanceCount + g.glowCount + g.pointCount
         if (total <= 0) return Preview.EMPTY
         val keep = minOf(total, Preview.MAX_SHAPES)
@@ -146,6 +151,12 @@ object Previews {
             }
             index++
             i++
+        }
+        if (fit < 1f) {
+            for (k in 0 until written) {
+                val base = k * Preview.STRIDE
+                for (f in 0 until 4) out[base + f] *= fit
+            }
         }
         return Preview(out, written, g.background)
     }
