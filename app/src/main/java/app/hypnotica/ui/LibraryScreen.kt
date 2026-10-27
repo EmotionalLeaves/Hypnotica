@@ -40,18 +40,34 @@ import app.hypnotica.core.sim.SimDef
 import app.hypnotica.sims.SimRegistry
 
 /** Browse every sim, grouped into shelves. */
+/** The chip index of the favourites, which is not one of the registry's shelves. */
+private const val FAVOURITES_SHELF = 1
+
 @Composable
 fun LibraryScreen(state: AppState) {
     var query by remember { mutableStateOf("") }
     var shelfIndex by remember { mutableStateOf(0) }
 
-    val shelves = remember { listOf<Shelf?>(null) + SimRegistry.shelves() }
-    val shelfNames = remember { listOf("All") + SimRegistry.shelves().map { it.title } }
+    // Index 1 is the favourites, which had no way of being seen at all: the
+    // star persisted across restarts and the only thing that read it was the
+    // badge on a tile, so a collection could be built and then only found by
+    // scrolling fifty-eight tiles looking for badges.
+    val shelves = remember { listOf<Shelf?>(null, null) + SimRegistry.shelves() }
+    val shelfNames = remember {
+        listOf("All", "★ Favourites") + SimRegistry.shelves().map { it.title }
+    }
 
-    val results = remember(query, shelfIndex) {
+    // The favourites are snapshot state, so unstarring from the grid refreshes
+    // the list rather than leaving a tile behind that is no longer a favourite.
+    val starred = state.favourites.value
+    val results = remember(query, shelfIndex, starred) {
         val base = SimRegistry.search(query)
-        val shelf = shelves.getOrNull(shelfIndex)
-        if (shelf == null) base else base.filter { it.shelf == shelf }
+        when {
+            shelfIndex == FAVOURITES_SHELF -> base.filter { it.id in starred }
+            else -> shelves.getOrNull(shelfIndex)?.let { shelf ->
+                base.filter { it.shelf == shelf }
+            } ?: base
+        }
     }
 
     Column(
@@ -101,6 +117,13 @@ fun LibraryScreen(state: AppState) {
         Spacer(Modifier.height(12.dp))
         ChipRow(shelfNames, shelfIndex) { shelfIndex = it }
         Spacer(Modifier.height(12.dp))
+        if (shelfIndex == FAVOURITES_SHELF && results.isEmpty()) {
+            Text(
+                "Nothing starred yet — double-tap a sim, or use the ★ on the feed.",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),

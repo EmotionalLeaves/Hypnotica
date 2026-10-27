@@ -50,11 +50,25 @@ class RecipeStore(private val dir: File) {
         SimRegistry.setRecipes(loaded.mapNotNull { it.def })
     }
 
+    /**
+     * The name a recipe is actually stored under.
+     *
+     * Public because the screen has to look the recipe up again afterwards, and
+     * it used to do so with the raw text from the box. So "My Recipe (v2)" was
+     * saved as "My Recipe v2" and then not found: the recipe compiled, the file
+     * was written, and Run reported "Saved, but the recipe did not load" in
+     * red. Delete had the mirror of the same bug, deleting a file named by the
+     * raw text, failing silently and saying "Deleted".
+     */
+    fun safeName(name: String): String = name.trim().ifEmpty { "untitled" }
+        .replace(Regex("[^A-Za-z0-9 _-]"), "")
+        .take(48)
+        .trim()
+        .ifEmpty { "untitled" }
+
     /** Save, re-parse and register. Returns the error message, or null on success. */
     fun save(name: String, source: String): String? {
-        val safe = name.trim().ifEmpty { "untitled" }
-            .replace(Regex("[^A-Za-z0-9 _-]"), "")
-            .take(48)
+        val safe = safeName(name)
         val parsed = LuaRecipe.parse(source, safe)
         val error = parsed.exceptionOrNull()?.message
         return try {
@@ -67,9 +81,12 @@ class RecipeStore(private val dir: File) {
         }
     }
 
-    fun delete(name: String) {
-        runCatching { File(dir, name + EXT).delete() }
+    /** True when a recipe was there and is now gone. */
+    fun delete(name: String): Boolean {
+        val gone = runCatching { File(dir, safeName(name) + EXT).delete() }
+            .getOrNull() ?: false
         load()
+        return gone
     }
 
     fun sourceFor(name: String): String? = entries.firstOrNull { it.name == name }?.source

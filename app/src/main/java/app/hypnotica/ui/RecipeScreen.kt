@@ -60,7 +60,10 @@ fun RecipeScreen(state: AppState) {
             .padding(horizontal = 14.dp)
     ) {
         Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            GlyphButton("‹") { state.screen = Screen.LIBRARY }
+            // Back to where you came from: both routes into this screen are
+            // from Settings ("Write a sim", and the Code tab's button), and the
+            // Library has no route here at all.
+            GlyphButton("‹") { state.screen = Screen.SETTINGS }
             Spacer(Modifier.width(10.dp))
             Text("Recipes", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
@@ -126,7 +129,7 @@ fun RecipeScreen(state: AppState) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 240.dp, max = 460.dp)
+                    .heightIn(min = 200.dp, max = 260.dp)
                     .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                     .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
                     .padding(10.dp)
@@ -163,7 +166,13 @@ fun RecipeScreen(state: AppState) {
                         message = error
                         messageIsError = true
                     } else {
-                        val def = store.list().firstOrNull { it.name == name.trim() }?.def
+                        // The store sanitises the name on the way in, so the
+                        // lookup has to use the same one. Using the raw text
+                        // meant any punctuation at all, or a name over 48
+                        // characters, compiled and saved fine and then reported
+                        // "Saved, but the recipe did not load".
+                        val stored = store.safeName(name)
+                        val def = store.list().firstOrNull { it.name == stored }?.def
                         if (def == null) {
                             message = "Saved, but the recipe did not load"
                             messageIsError = true
@@ -190,10 +199,19 @@ fun RecipeScreen(state: AppState) {
                     message = null
                 }
                 Pill("Delete") {
-                    store.delete(name)
+                    val gone = store.delete(name)
                     listVersion++
-                    message = "Deleted"
-                    messageIsError = false
+                    if (gone) {
+                        // Otherwise the editor still holds the recipe just
+                        // deleted, and the next Run quietly recreates it.
+                        name = "my-recipe"
+                        source = STARTER
+                        message = "Deleted"
+                        messageIsError = false
+                    } else {
+                        message = "No saved recipe by that name"
+                        messageIsError = true
+                    }
                 }
             }
 
