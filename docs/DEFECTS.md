@@ -30,11 +30,17 @@ Measured, not yet acted on.
 - **Silent stretches, measured on the real synth at 8-bit.** Gradient descent
   sounded only while the overall best improved — three seconds — then held six
   silent seconds; each walker now lands with its own note and the run ends when
-  all have landed, at a learning rate slow enough to watch (12 s, was 12 s with
-  half of it silent). Lorenz was silent for up to five seconds while it circled
+  all have landed, at a learning rate slow enough to watch (about 12 s, as before, but no
+  longer half silent). Lorenz was silent for up to five seconds while it circled
   one wing; it now plays a quiet note at the top of every loop. Pathfinding's
   route reveal was silent; it sings like the maze's. The prime spiral's held
   ending is 2.5 s, from 4.
+- **Ball escape was silent seventy per cent of the time.** At its start speed the
+  ball made slow hops under gravity that never reached a wall, three quiet
+  seconds at a time. It starts faster with a narrower gap; quiet stretches are
+  under a fifth of the run and it is six times louder on average. The outer gap
+  now starts overhead: started anywhere, it sat under the ball one run in ten
+  and the ball fell out before anything had built.
 
 - The payoff flash and chime, live and in export; the bell at the end note.
 - The vignette, which drew a dark frame around every sim.

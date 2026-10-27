@@ -69,7 +69,7 @@ class BallEscapeSim : Sim {
         balls.clear()
         spawned.clear()
         rings = p.i("rings", 1).coerceIn(1, 12)
-        gapWidth = p.f("gap", 0.75f)
+        gapWidth = p.f("gap", 0.42f)
         growth = 1f + p.f("growth", 1.1f) * 0.01f
         speedUp = 1f + p.f("speedup", 3f) * 0.01f
         multiply = p.b("multiply", false)
@@ -82,8 +82,14 @@ class BallEscapeSim : Sim {
         }
 
         val count = p.i("balls", 1).coerceIn(1, 64)
-        val speed = p.f("speed0", 0.7f)
+        val speed = p.f("speed0", 1.2f)
         energy = speed
+        // The outer gap starts overhead, away from where gravity drops the
+        // ball. Started anywhere, it was under the ball one run in ten and the
+        // ball fell out before its first or second bounce, before anything
+        // had built.
+        val up = atan2(env.laws.gravityDirY, -env.laws.gravityDirX)
+        ringAngle[0] = up - gapWidth * 0.5f
         repeat(count) {
             val a = env.rng.range(0f, 2f * PI.toFloat())
             balls.add(
@@ -107,8 +113,11 @@ class BallEscapeSim : Sim {
             return
         }
         val laws = env.laws
-        val gx = laws.gravityDirX * laws.gravity * 0.06f
-        val gy = -laws.gravityDirY * laws.gravity * 0.06f
+        // At a start speed of 0.7 the ball spent seventy per cent of a run on
+        // slow hops that never reached a wall, three silent seconds at a time.
+        // It starts at 1.2 now, with a narrower gap to keep the build.
+        val gx = laws.gravityDirX * laws.gravity * GRAVITY_SCALE
+        val gy = -laws.gravityDirY * laws.gravity * GRAVITY_SCALE
 
         for (i in ringAngle.indices) ringAngle[i] += ringSpin[i] * dt
 
@@ -261,6 +270,7 @@ class BallEscapeSim : Sim {
     companion object {
         private const val TWO_PI = (PI * 2.0).toFloat()
         private const val MAX_SPEED = 7.5f
+        private const val GRAVITY_SCALE = 0.06f
 
         fun def(): SimDef = SimDef(
             id = "physics/ball-escape",
@@ -273,7 +283,7 @@ class BallEscapeSim : Sim {
                 LawKnob.FRICTION, LawKnob.CONTACT, LawKnob.LIGHT_SPEED),
             heroLabel = "Add ball",
             heroRestarts = false,
-            typicalSeconds = 34f,
+            typicalSeconds = 11f,
             params = listOf(
                 Param.int("balls", "Balls", 1, 64, 1, card = Card.DATA),
                 Param.float("size", "Ball size", 0.012f, 0.14f, 0.045f, card = Card.DATA),
@@ -281,8 +291,8 @@ class BallEscapeSim : Sim {
                 // gap and speed-up escapes on every seed, around 16 s in.
                 // More rings make a longer, less certain run on purpose.
                 Param.int("rings", "Rings", 1, 12, 1, card = Card.DATA),
-                Param.float("gap", "Gap", 0.12f, 1.6f, 0.55f, card = Card.DATA, unit = "rad"),
-                Param.float("speed0", "Start speed", 0.2f, 3f, 0.7f, card = Card.MOTION),
+                Param.float("gap", "Gap", 0.12f, 1.6f, 0.42f, card = Card.DATA, unit = "rad"),
+                Param.float("speed0", "Start speed", 0.2f, 3f, 1.2f, card = Card.MOTION),
                 Param.float("growth", "Growth per hit", 0f, 5f, 1.1f, card = Card.MOTION, unit = "%"),
                 Param.float("speedup", "Speed-up per hit", 0f, 5f, 3f, card = Card.MOTION, unit = "%"),
                 Param.float("spin", "Ring spin", 0f, 3f, 1f, card = Card.MOTION),
