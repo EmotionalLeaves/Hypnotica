@@ -849,7 +849,7 @@ for f in files:
 # key the block on the value.
 for f in files:
     src = strip(open(f).read())
-    for m in re.finditer(r'\.pointerInput\(([^)]*)\)\s*\{', src):
+    for m in re.finditer(r'(?:\.pointerInput|(?<![\w.])LaunchedEffect|(?<![\w.])DisposableEffect)\(([^)]*)\)\s*\{', src):
         keys = set(re.findall(r'\w+', m.group(1)))
         # The enclosing composable: from its `fun` to this point.
         start = src.rfind('\nfun ', 0, m.start())
@@ -872,7 +872,7 @@ for f in files:
             if re.search(r'(?<![\w.])' + name + r'(?!\w)', body):
                 line = src[:m.start()].count('\n') + 1
                 problems.append(
-                    f"{f}:{line}: pointerInput reads `{name}`, a value taken from "
+                    f"{f}:{line}: a long-lived block (gesture handler or effect) reads `{name}`, a value taken from "
                     f"state when the composable ran — the handler keeps the first "
                     f"one forever. Read the state inside the handler, or add "
                     f"`{name}` to the keys")
