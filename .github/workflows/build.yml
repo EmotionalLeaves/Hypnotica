@@ -57,10 +57,45 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Unit tests
-        run: ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
+        id: tests
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest 2>&1 | tee build-output.txt
 
       - name: Build release APK
-        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
+        id: assemble
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace :app:assembleRelease 2>&1 | tee -a build-output.txt
+
+      # The raw log archive is not reachable from every network, so failures are
+      # echoed back onto the commit where the API can read them.
+      - name: Report failure on the commit
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo '### Build failed'
+            echo
+            echo 'Compiler errors:'
+            echo '```'
+            grep -E "^e: |^w: .*error|error:" build-output.txt | head -60 || echo '(none found)'
+            echo '```'
+            echo 'Failing tests:'
+            echo '```'
+            grep -E "FAILED|AssertionError|expected:|Exception" build-output.txt | head -40 || echo '(none found)'
+            echo '```'
+            echo 'Tail:'
+            echo '```'
+            tail -60 build-output.txt
+            echo '```'
+          } > failure.md
+          # Commit comments cap out well below this; keep it comfortably short.
+          head -c 60000 failure.md > failure-trimmed.md
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" \
+            -f body="$(cat failure-trimmed.md)" > /dev/null
+          echo "Posted failure details as a commit comment."
 
       - name: Collect APK
         id: collect

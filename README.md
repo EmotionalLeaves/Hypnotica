@@ -1,0 +1,58 @@
+# Hypnotica
+
+An Android app that turns math and code into looping visual simulations with
+sound generated from the simulation itself. Sorting algorithms, pendulums,
+bouncing balls, cellular automata, chaos, particle fields — open it and something
+is already moving.
+
+**Install:** open the [latest release](https://github.com/EmotionalLeaves/Hypnotica/releases/latest)
+on your phone, download the `.apk` and tap it. Android asks once for permission
+to install from your browser. Every build is signed with the same key, so each
+one installs over the last.
+
+No computer is needed to build this. Push to `main` and GitHub Actions compiles,
+tests, signs and publishes the APK.
+
+## What is in it
+
+| | |
+| --- | --- |
+| Sims | 20 so far, across Algorithms, Physics, Math and Life & nature |
+| Sound | A synth fed by sim events — every note has a visible cause |
+| Laws | Gravity, bounciness, friction, time direction and more, shared by every physics sim |
+| Controls | Simple mode (big cards) and Advanced mode (exact numbers, formulas) |
+| Scale | 150,000 particles or 200,000 sorting bars inside a 16 ms frame |
+
+## Building
+
+CI does it for you. If you ever do have a machine:
+
+```
+./gradlew :app:assembleRelease      # signed APK in app/build/outputs/apk/release
+./gradlew :app:testDebugUnitTest    # determinism, sorting, laws, safety
+```
+
+Requires JDK 17 and the Android SDK (compileSdk 35).
+
+## Signing
+
+`keystore/hypnotica-release.jks` is committed on purpose, with the password
+`hypnotica`, so a fresh clone produces an installable APK with no setup. **It is
+public and must never be used for a Play Store listing.** To use your own key,
+add these repository secrets and the workflow picks them up automatically:
+
+`KEYSTORE_B64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
+
+## Docs
+
+| File | What it covers |
+| --- | --- |
+| [docs/AGENTS.md](docs/AGENTS.md) | Rules for anyone (or any AI) working on this repo |
+| [docs/DESIGN.md](docs/DESIGN.md) | Design principles, tokens, the satisfaction checklist |
+| [docs/ROUNDS.md](docs/ROUNDS.md) | What is built, what is next, and the test for each round |
+| [docs/RECIPE_SPEC.md](docs/RECIPE_SPEC.md) | The API a sim is written against |
+| [QA.md](QA.md) | The phone checklist to run on every build |
+
+## Licence
+
+Personal project. No licence granted yet.
