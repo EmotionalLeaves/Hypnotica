@@ -364,9 +364,11 @@ private fun CodeTab(state: AppState) {
         )
     }
     Spacer(Modifier.height(10.dp))
+    BigButton("Open the recipe editor", primary = true) { state.screen = Screen.RECIPES }
+    Spacer(Modifier.height(6.dp))
     Text(
-        "Lua recipes land in round 6; see docs/RECIPE_SPEC.md for the API they " +
-            "are written against.",
+        "Recipes are Lua. A few dozen lines make a sim the app treats exactly " +
+            "like a built-in one.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )

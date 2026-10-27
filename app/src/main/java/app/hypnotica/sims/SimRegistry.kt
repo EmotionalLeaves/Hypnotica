@@ -12,30 +12,69 @@ import app.hypnotica.sims.physics.PhysicsSims
 import app.hypnotica.sims.scale.ScaleSims
 import app.hypnotica.sims.sorting.SortingSim
 
-/** Everything the Library, the Feed and TickTock can reach. */
+/**
+ * Everything the Library, the Feed and TickTock can reach.
+ *
+ * Built-in sims are fixed; recipes are added at runtime and sit alongside them
+ * with no second-class treatment, which is the point of having recipes at all.
+ */
 object SimRegistry {
 
-    val all: List<SimDef> by lazy {
+    private val builtIn: List<SimDef> by lazy {
         buildList {
             addAll(SortingSim.defs())
             addAll(MazeSims.defs())
             addAll(PhysicsSims.defs())
             addAll(MathSims.defs())
             addAll(LifeSims.defs())
-            addAll(DimensionSims.defs())
             addAll(ArtSims.defs())
+            addAll(DimensionSims.defs())
             addAll(ScaleSims.defs())
         }
     }
 
-    val byId: Map<String, SimDef> by lazy { all.associateBy { it.id } }
+    @Volatile
+    private var recipes: List<SimDef> = emptyList()
+
+    @Volatile
+    private var cached: List<SimDef> = emptyList()
+
+    @Volatile
+    private var cachedIndex: Map<String, SimDef> = emptyMap()
+
+    val all: List<SimDef>
+        get() {
+            if (cached.isEmpty() || cached.size != builtIn.size + recipes.size) rebuild()
+            return cached
+        }
+
+    private fun rebuild() {
+        val merged = builtIn + recipes
+        cached = merged
+        cachedIndex = merged.associateBy { it.id }
+    }
+
+    /** Replace the recipe-backed sims. Called whenever the recipe store changes. */
+    fun setRecipes(defs: List<SimDef>) {
+        recipes = defs
+        rebuild()
+    }
+
+    fun recipeCount(): Int = recipes.size
+
+    fun isRecipe(id: String): Boolean = recipes.any { it.id == id }
+
+    val byId: Map<String, SimDef>
+        get() {
+            if (cachedIndex.isEmpty() || cachedIndex.size != builtIn.size + recipes.size) rebuild()
+            return cachedIndex
+        }
 
     fun shelves(): List<Shelf> = Shelf.entries.filter { shelf -> all.any { it.shelf == shelf } }
 
     fun inShelf(shelf: Shelf): List<SimDef> = all.filter { it.shelf == shelf }
 
-    fun families(shelf: Shelf): List<String> =
-        inShelf(shelf).map { it.family }.distinct()
+    fun families(shelf: Shelf): List<String> = inShelf(shelf).map { it.family }.distinct()
 
     fun withFormat(format: TrapFormat): List<SimDef> = all.filter { format in it.formats }
 

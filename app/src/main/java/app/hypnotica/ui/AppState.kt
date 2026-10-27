@@ -10,13 +10,14 @@ import app.hypnotica.core.director.Clip
 import app.hypnotica.core.laws.Laws
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.RecipeStore
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.studio.Project
 import app.hypnotica.engine.SimEngine
 import app.hypnotica.sims.SimRegistry
 
-enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO }
+enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO, RECIPES }
 
 /**
  * Everything the UI needs to know, in one place.
@@ -24,7 +25,11 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO }
  * Parameter values live in the engine, not here; [paramVersion] is bumped on every
  * change so Compose knows to read them again.
  */
-class AppState(val engine: SimEngine, private val prefs: Prefs? = null) {
+class AppState(
+    val engine: SimEngine,
+    private val prefs: Prefs? = null,
+    val recipeStore: RecipeStore? = null
+) {
 
     var screen by mutableStateOf(Screen.FEED)
     var currentDef by mutableStateOf(SimRegistry.defaultSim())
