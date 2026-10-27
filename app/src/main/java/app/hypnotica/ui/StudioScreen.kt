@@ -331,13 +331,6 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 state.engine.releaseCamera()
                 revision++
             }
-            Spacer(Modifier.weight(1f))
-            Text(
-                String.format(java.util.Locale.US, "%.1f / %.0fs", playhead, project.duration),
-                color = Tokens.TextSecondary,
-                maxLines = 1,
-                style = MaterialTheme.typography.bodySmall
-            )
         }
 
         // Scrubber
@@ -345,7 +338,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(32.dp)
+                .height(48.dp)
                 .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .pointerInput(project.duration) {
                     // The playhead follows the finger every sample; the sim is
@@ -373,11 +366,13 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Box(
                 Modifier
                     .fillMaxWidth(fill)
-                    .height(32.dp)
+                    .height(48.dp)
                     .background(Tokens.Accent.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
             )
+            // The time sits on the scrubber. At the end of the button row it was
+            // left forty-odd dp on a phone and cut off mid-number.
             Text(
-                "drag to scrub",
+                String.format(java.util.Locale.US, "%.1f / %.0fs  ·  drag", playhead, project.duration),
                 color = Tokens.TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.Center)
@@ -822,7 +817,7 @@ private fun CaptionEditor(
         Box(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp)
+                .heightIn(min = 48.dp)
                 .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 12.dp),

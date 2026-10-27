@@ -60,7 +60,7 @@ fun ExprParamField(state: AppState, p: Param) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp)
+                .heightIn(min = 48.dp)
                 .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                 .border(
                     1.dp,
