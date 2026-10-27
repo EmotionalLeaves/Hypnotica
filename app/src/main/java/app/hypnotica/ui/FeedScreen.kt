@@ -175,7 +175,6 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     state.controlsOpen = true
                     state.screen = Screen.PLAYER
                 }
-                Spacer(Modifier.width(2.dp))
                 BigButton("Settings") { state.screen = Screen.SETTINGS }
             }
         }

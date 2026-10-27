@@ -179,7 +179,16 @@ private fun TopBar(state: AppState, uiTick: Int) {
                 overflow = TextOverflow.Ellipsis
             )
             val counters = remember(uiTick) { state.engine.core.sim.counters() }
-            val line = if (state.recording) {
+            // A recipe that fails at run time reports through this same counter
+            // list, which meant two things: it was hidden entirely when "Show
+            // live counters" was off — the default is on, but it is a setting —
+            // and it was printed by the same joiner as everything else, value
+            // first, so it read "line 14: attempt to index a nil value recipe
+            // error". It gets its own line, in red, whatever the setting says.
+            val recipeError = counters.firstOrNull { it.first == "recipe error" }?.second
+            val line = if (recipeError != null) {
+                "Recipe stopped — $recipeError"
+            } else if (state.recording) {
                 val rec = remember(uiTick) { state.engine.recorder }
                 // A recording that has run its length stops itself, rather than
                 // sitting at "60s" until somebody notices. Done in an effect,
@@ -196,7 +205,8 @@ private fun TopBar(state: AppState, uiTick: Int) {
             }
             Text(
                 line,
-                color = if (state.recording) Tokens.Danger else Tokens.TextSecondary,
+                color = if (state.recording || recipeError != null) Tokens.Danger
+                    else Tokens.TextSecondary,
                 // Tabular figures: a counter that changes every frame must not
                 // make the line around it twitch. One line, for the same
                 // reason at the scale above: a seven-figure comparison count
@@ -222,7 +232,13 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BigButton(if (state.paused) "Play" else "Pause", Modifier.weight(1f)) { state.togglePause() }
+        // The hero gets more of the row, because it is the one control the
+        // design calls "whatever this sim's one big action is" — and five of
+        // the hero labels ("Restart the cycle", "Drop them again") did not fit
+        // the share it had on a 360 dp phone and were cut mid-word.
+        BigButton(if (state.paused) "Play" else "Pause", Modifier.weight(0.8f)) {
+            state.togglePause()
+        }
         BigButton(state.currentDef.heroLabel, Modifier.weight(1.4f), primary = true) {
             if (state.currentDef.heroRestarts) {
                 state.restart(newSeed = true)

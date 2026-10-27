@@ -93,6 +93,9 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     var exporting by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
     var exported by remember { mutableStateOf<File?>(null) }
+
+    /** True when the last export ended in the catch, so the line can be red. */
+    var exportFailed by remember { mutableStateOf(false) }
     var captionText by remember { mutableStateOf("") }
     var captionBig by remember { mutableStateOf(true) }
     // Flash has nothing live to read, so Studio holds the value to be keyed.
@@ -173,6 +176,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 if (!exporting) {
                     exporting = true
                     exportMessage = null
+                    // Cleared with the message. It was not, so an export that
+                    // failed after one that worked showed the failure with a
+                    // live Share button beside it — which shared the OLD file.
+                    exported = null
+                    exportFailed = false
                     scope.launch {
                         val settings = ExportSettings.ALL[formatIndex]
                         val dir = File(context.getExternalFilesDir(null), "exports")
@@ -208,7 +216,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             runCatching { out.delete() }
                             "Cancelled."
                         } catch (e: Throwable) {
-                            "Export failed: ${e.message}"
+                            // MediaCodec and MediaMuxer failures routinely carry
+                            // a null message, so this used to read "Export
+                            // failed: null" — a Java field name shown to someone
+                            // who just wanted a video. Say what to try instead,
+                            // and keep the detail only when there is one.
+                            exportFailed = true
+                            val detail = e.message?.takeIf { m -> m.isNotBlank() && m.length < 80 }
+                            "Could not finish the export. Try the smaller format, " +
+                                "or a shorter duration." + (detail?.let { d -> " ($d)" } ?: "")
                         }
                         progressJob.cancel()
                         runningExport = null
@@ -321,7 +337,9 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     it,
-                    color = Tokens.TextSecondary,
+                    // "In your gallery", "Cancelled." and a failure were all the
+                    // same grey.
+                    color = if (exportFailed) Tokens.Danger else Tokens.TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f)
                 )

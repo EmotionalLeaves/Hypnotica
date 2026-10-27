@@ -1,6 +1,7 @@
 package app.hypnotica.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -283,23 +284,39 @@ fun ValueSlider(
             Text(
                 valueText ?: formatValue(value),
                 color = Tokens.TextSecondary.copy(alpha = dim),
-                style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.End,
                 maxLines = 1,
+                // Tabular figures, like the counter line: this is the one
+                // readout that changes while you hold it, and "0.42" -> "0.5"
+                // -> "0.61" reflowed its own width on every frame of a drag.
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFeatureSettings = "tnum"
+                ),
                 modifier = Modifier.widthIn(min = 56.dp)
             )
         }
+        // The thumb glides when something else moves it, and tracks the finger
+        // exactly when you do. A macro moves several sliders at once, Evolve
+        // nudges every live value, and a Studio template loads a whole set —
+        // and because the UI learns about those through a 250 ms tick, every
+        // thumb in the drawer teleported in quarter-second steps.
+        var dragging by remember { mutableStateOf(false) }
+        val glide by animateFloatAsState(position, tween(Tokens.Base), label = "sliderThumb")
         Slider(
-            value = position,
+            value = if (dragging) position else glide,
             enabled = enabled,
             onValueChange = { p ->
+                dragging = true
                 val raw = if (logScale) fromLog(p, min, max) else min + p * span
                 // Clamped on the way out as well as on the way in: a saved
                 // state or a macro can leave a value past the end of the track,
                 // and without this the first touch silently jumped it.
                 onChange(raw.coerceIn(min, max))
             },
-            onValueChangeFinished = { onCommit?.invoke() },
+            onValueChangeFinished = {
+                dragging = false
+                onCommit?.invoke()
+            },
             colors = SliderDefaults.colors(
                 thumbColor = Tokens.Accent,
                 activeTrackColor = Tokens.Accent,

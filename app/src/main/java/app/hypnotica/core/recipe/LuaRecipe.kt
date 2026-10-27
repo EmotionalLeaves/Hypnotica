@@ -183,7 +183,14 @@ class LuaRecipe private constructor(
 
         fun cleanMessage(raw: String?): String {
             val m = raw ?: "Recipe failed to load"
-            return m.replace("recipe:", "line ").take(220)
+            // The package name on a Java exception surfaced through luaj is
+            // noise to someone writing Lua: "line 14:
+            // java.lang.ArrayIndexOutOfBoundsException: length=90; index=200"
+            // tells them where to look and then shouts a class name at them.
+            return m.replace("recipe:", "line ")
+                .replace("java.lang.", "")
+                .replace("java.util.", "")
+                .take(220)
         }
 
         private fun shelfFrom(name: String): Shelf =

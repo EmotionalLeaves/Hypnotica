@@ -118,9 +118,19 @@ fun LibraryScreen(state: AppState) {
         Spacer(Modifier.height(12.dp))
         ChipRow(shelfNames, shelfIndex) { shelfIndex = it }
         Spacer(Modifier.height(12.dp))
-        if (shelfIndex == FAVOURITES_SHELF && results.isEmpty()) {
+        // A search that matched nothing used to render an empty grid and
+        // nothing else — a blank dark page under a field still offering to
+        // "Search 61 sims", which reads as a fault rather than a result.
+        if (results.isEmpty()) {
             Text(
-                "Nothing starred yet — double-tap a sim, or use the ★ on the feed.",
+                when {
+                    shelfIndex == FAVOURITES_SHELF ->
+                        "Nothing starred yet — double-tap a sim, or use the ★ on the feed."
+                    query.isNotBlank() ->
+                        "Nothing matches \"$query\". Try a shorter word, or tap All " +
+                            "to search every shelf."
+                    else -> "Nothing on this shelf yet."
+                },
                 color = Tokens.TextSecondary,
                 style = MaterialTheme.typography.bodySmall
             )
