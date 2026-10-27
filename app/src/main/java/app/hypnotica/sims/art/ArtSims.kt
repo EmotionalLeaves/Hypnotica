@@ -141,7 +141,7 @@ class PolyrhythmSim : Sim {
             params = listOf(
                 Param.choice("layout", "Layout", listOf("Rings", "Lines"), 0, card = Card.LOOK, input = ParamInput.TILES),
                 Param.int("wheels", "Wheels", 2, 48, 12, card = Card.DATA),
-                Param.int("loops", "Base loops per cycle", 2, 120, 24, card = Card.MOTION, advancedOnly = true),
+                Param.int("loops", "Base loops per cycle", 2, 120, 24, card = Card.MOTION),
                 Param.float("cycle", "Cycle length", 4f, 120f, 24f, card = Card.MOTION, unit = "s")
             ),
             create = { PolyrhythmSim() }

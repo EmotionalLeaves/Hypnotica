@@ -16,9 +16,6 @@ nothing is a bug, and the menu must not promise what the code does not do.*
   reverse, or stop claiming it. The Friction slider and the "No friction" pill
   also have no effect under reversed time in ball-escape, pendulum-wave and
   newtons-cradle, because those clamp `friction * dt` to a positive range.
-- **The Template chips destroy the project with no confirmation.** The row no
-  longer highlights a template that is not loaded, and says what replacing it
-  will cost, but a tap still wipes the work with no undo.
 - **`dimensions/ball-volume` and `dimensions/curved-space` are not dimension
   simulations** — one is a bar chart of a formula, the other is flat 2-D with no
   dimension parameter. The shelf holds six sims; `DimensionSims.defs()` returns
@@ -36,16 +33,10 @@ nothing is a bug, and the menu must not promise what the code does not do.*
   the subject rather than a drawing detail, carries both grid axes and the
   pace, and sweeps logarithmic counts logarithmically — but on a sim with one
   size parameter it is still one slider over one value.
-- **Ten advanced-only parameters have no Simple route,** four of them `INT` so
-  Evolve cannot reach them either: `range`, `drag`, `oscillations`, `viewer`,
-  `x0`, `y0`, `loops`, `planeA`, `planeB`, `stiffness`.
-- **Sound: scale, base pitch, range, decay, note ceiling and the per-event mutes
-  are Advanced-only.** A "Brightness" or "Busyness" macro over base pitch,
-  range and the note ceiling is exactly the shape of control the brief asked
-  for and does not exist. A preset tap still overwrites four of them with no
-  warning, in either mode.
-- **Palette, trails, speed, Evolve and Record have no Advanced control,** so the
-  dual interface loses capability in both directions.
+- **The scale and the per-event mutes are still Advanced-only,** and a preset
+  tap overwrites the pitch, range, decay and scale with no warning, in either
+  mode. Simple mode now has Brightness and Busyness over the other five
+  values.
 - **The recipe editor is reachable only through Advanced → Code,** and Lua
   recipes cannot declare macros at all, so every user-written sim is stuck with
   a single derived slider.

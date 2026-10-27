@@ -2,6 +2,7 @@ package app.hypnotica.core.recipe
 
 import app.hypnotica.core.render.G
 import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.Sim
 import app.hypnotica.core.sim.SimDef
@@ -66,13 +67,49 @@ class LuaRecipe private constructor(
         defaultPalette = meta.palette,
         defaultSound = meta.sound,
         typicalSeconds = meta.seconds,
-        usesLaws = meta.usesLaws,
+        lawKnobs = if (meta.usesLaws) knobsIn(source) else emptySet(),
         create = { LuaSim(source) }
     )
 
     companion object {
 
         const val MAX_SOURCE_BYTES = 200_000
+
+        /**
+         * The laws a recipe's own `law(...)` calls actually ask for.
+         *
+         * A recipe that says `uses_laws` would otherwise be offered the whole
+         * Laws card, most of which it ignores — the same dead-control problem
+         * the built-in sims had. Read from the source, so a recipe that asks
+         * for gravity gets the gravity slider and nothing else. A recipe that
+         * builds the name at runtime falls back to the common set, because that
+         * cannot be read from here.
+         */
+        fun knobsIn(source: String): Set<LawKnob> {
+            val pattern = Regex("\\blaw\\s*\\(\\s*[\"']([a-z_]+)[\"']")
+            val names = pattern.findAll(source).map { it.groupValues[1] }.toSet()
+            if (names.isEmpty()) return COMMON_KNOBS
+            val knobs = HashSet<LawKnob>()
+            for (name in names) {
+                when (name) {
+                    "gravity" -> knobs.add(LawKnob.GRAVITY)
+                    "restitution", "bounciness" -> knobs.add(LawKnob.BOUNCE)
+                    "friction" -> knobs.add(LawKnob.FRICTION)
+                    "sticky", "pass_through" -> knobs.add(LawKnob.CONTACT)
+                    "electric" -> knobs.add(LawKnob.CHARGE)
+                    "wrap" -> knobs.add(LawKnob.SPACE)
+                    "mass_sign", "g_constant", "falloff" -> knobs.add(LawKnob.PAIRWISE_FORCE)
+                    "light_speed" -> knobs.add(LawKnob.LIGHT_SPEED)
+                    // time_dir and time_scale are engine-wide and always shown.
+                }
+            }
+            return if (knobs.isEmpty()) COMMON_KNOBS else knobs
+        }
+
+        /** What a recipe gets when its law names cannot be read from the source. */
+        private val COMMON_KNOBS = setOf(
+            LawKnob.GRAVITY, LawKnob.BOUNCE, LawKnob.FRICTION, LawKnob.CONTACT, LawKnob.SPACE
+        )
 
         /** Build a fresh sandbox. Each sim instance gets its own. */
         fun sandbox(): Globals {

@@ -229,8 +229,11 @@ class EquationSim : Sim {
                 ),
                 Param.expr("fx", "x formula", "sin(3 * t)", card = Card.DATA),
                 Param.expr("fy", "y formula", "sin(4 * t + 1.57)", card = Card.DATA),
-                Param.float("x0", "Start x", -2f, 2f, 0.4f, card = Card.DATA, advancedOnly = true),
-                Param.float("y0", "Start y", -2f, 2f, 0.1f, card = Card.DATA, advancedOnly = true),
+                // Where the trajectory starts is the subject of an ODE sim,
+                // not an expert detail, and neither is an integer Evolve can
+                // drift — so hiding them left no simple route at all.
+                Param.float("x0", "Start x", -2f, 2f, 0.4f, card = Card.DATA),
+                Param.float("y0", "Start y", -2f, 2f, 0.1f, card = Card.DATA),
                 Param.float("scale", "Scale", 0.02f, 2f, 0.42f, card = Card.LOOK, logScale = true),
                 Param.float("dot", "Line weight", 0.001f, 0.012f, 0.004f, card = Card.LOOK),
                 Param.int("trail", "Trail", 100, 120000, 9000, card = Card.LOOK, logScale = true),

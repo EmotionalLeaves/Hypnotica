@@ -36,6 +36,7 @@ import app.hypnotica.core.laws.Space
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
+import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.EventKind
 
@@ -98,6 +99,34 @@ private fun ParamsTab(state: AppState) {
     )
     Spacer(Modifier.height(8.dp))
     params.forEach { ExactParamRow(state, it) }
+
+    // The five controls that belong to the run rather than to the sim. They
+    // lived only on the Simple cards, so the dual interface lost capability in
+    // both directions: an advanced user had to switch to Simple to change the
+    // palette and switch back again.
+    Spacer(Modifier.height(14.dp))
+    SectionLabel("The run")
+    ValueSlider(
+        "Speed", state.speed, 0.1f, 10f, logScale = true,
+        valueText = String.format("%.2fx", state.speed)
+    ) { state.speed = it }
+    ValueSlider(
+        "Trails", state.trails, 0f, 0.96f,
+        valueText = if (state.trails < 0.02f) "none" else String.format("%.0f%%", state.trails * 100f)
+    ) { state.trails = it }
+    SectionLabel("Palette")
+    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName).coerceAtLeast(0)) {
+        state.setPalette(Palette.NAMES[it])
+    }
+    Spacer(Modifier.height(6.dp))
+    ToggleRow("Evolve", state.evolve) { state.evolve = it }
+    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (state.recording) {
+            Pill("Stop and edit", selected = true) { state.stopRecording() }
+        } else {
+            Pill("Record moves") { state.notice = null; state.startRecording() }
+        }
+    }
 }
 
 /** One parameter with its slider, its exact value and a formula box. */

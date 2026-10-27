@@ -89,6 +89,9 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     // the other eight could only be keyed to whatever the timeline was already
     // producing, which meant they could not be authored at all.
     var keyValue by remember { mutableFloatStateOf(0f) }
+
+    /** The template waiting for a second tap, or -1. */
+    var confirmTemplate by remember { mutableIntStateOf(-1) }
     var exportProgress by remember { mutableFloatStateOf(0f) }
     var runningExport by remember { mutableStateOf<VideoExporter?>(null) }
     var formatIndex by remember { mutableIntStateOf(0) }
@@ -398,7 +401,15 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             // A template replaces the project outright. After Record moves the
             // row used to highlight a template that was not loaded, so tapping
             // it to confirm what you were looking at destroyed the recording.
-            if (Project.TEMPLATES.indexOf(project.name) < 0) {
+            if (confirmTemplate >= 0) {
+                Text(
+                    "Tap \"" + Project.TEMPLATES[confirmTemplate] +
+                        "\" again to replace every keyframe and caption here.",
+                    color = Tokens.Accent,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            } else if (Project.TEMPLATES.indexOf(project.name) < 0) {
                 Text(
                     "Showing \"" + project.name + "\". Choosing a template replaces it.",
                     color = Tokens.TextSecondary,
@@ -406,7 +417,16 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
             }
+            // Asked once, because a tap replaces every keyframe and caption
+            // with no undo — and after Record moves the row used to highlight a
+            // template that was not loaded, so tapping it to confirm what you
+            // were looking at destroyed the recording.
             ChipRow(Project.TEMPLATES, Project.TEMPLATES.indexOf(project.name)) { index ->
+                if (confirmTemplate != index && project.hasAnyKeyframes()) {
+                    confirmTemplate = index
+                    return@ChipRow
+                }
+                confirmTemplate = -1
                 val fresh = Project.template(
                     Project.TEMPLATES[index], state.currentDef.id, state.engine.core.seed
                 )

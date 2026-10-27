@@ -273,6 +273,56 @@ for f in sorted(glob.glob('app/src/main/java/app/hypnotica/sims/**/*.kt', recurs
                 f"{f}: reads {', '.join(sorted(set(fields) & reads))} but no sim here "
                 f"declares LawKnob.{knob}, so the control for it is hidden")
 
+# 9. a named argument that the constructor does not have
+#    kcheck cannot compile the two Lua files (they need the luaj jar, which is
+#    only in the Gradle cache), so a change to SimDef's shape broke the build
+#    from a file no local check was reading. These calls are the shape every
+#    sim and every recipe is built through, so they are worth checking by hand.
+CONSTRUCTORS = {
+    'SimDef': 'app/src/main/java/app/hypnotica/core/sim/Sim.kt',
+    'Macro': 'app/src/main/java/app/hypnotica/core/recipe/Params.kt',
+    'Clip': 'app/src/main/java/app/hypnotica/core/director/ClipDirector.kt',
+    'ExportSettings': 'app/src/main/java/app/hypnotica/export/VideoExporter.kt',
+}
+accepted = {}
+for name, path in CONSTRUCTORS.items():
+    src = open(path).read()
+    m = re.search(r'(?:data )?class ' + name + r'\s*\((.*?)\n\)', src, re.S)
+    if not m:
+        problems.append(f"{path}: cannot find the declaration of {name}")
+        continue
+    accepted[name] = set(re.findall(r'\bval (\w+)\s*:', m.group(1)))
+
+for f in sorted(glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=True)):
+    src = strip(open(f).read())
+    for name, allowed in accepted.items():
+        for m in re.finditer(r'\b' + name + r'\s*\(', src):
+            # Not the declaration itself: there the token before each '=' is the
+            # parameter's type, not an argument name.
+            if re.search(r'class\s+$', src[:m.start()]):
+                continue
+            # Walk to the matching bracket, tracking depth so only the call's
+            # own arguments are considered.
+            depth, i, used = 0, m.end() - 1, []
+            while i < len(src):
+                ch = src[i]
+                if ch in '([{':
+                    depth += 1
+                elif ch in ')]}':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif depth == 1 and ch == '=' and src[i + 1:i + 2] != '=':
+                    back = re.search(r'(\w+)\s*$', src[:i])
+                    if back:
+                        used.append(back.group(1))
+                i += 1
+            line = src[:m.start()].count('\n') + 1
+            for arg in used:
+                if arg not in allowed:
+                    problems.append(
+                        f"{f}:{line}: {name}(...) has no parameter named '{arg}'")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

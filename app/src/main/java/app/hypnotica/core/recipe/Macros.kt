@@ -176,10 +176,15 @@ object Macros {
      * speed of zero is not a setting anybody wants.
      */
     private fun energy(def: SimDef): Macro? {
-        val plain = motionFloats(def, includeAdvanced = false)
-        // A sim with one visible speed slider often keeps its real character in
-        // the advanced values; one macro should still reach them.
-        val targets = if (plain.size >= 2) plain else motionFloats(def, includeAdvanced = true)
+        // Every live value, the advanced-only ones included. A sim's real
+        // character is often in those — a flock's neighbour range, an
+        // attractor's constants, a predator model's four rates — and preferring
+        // the plain ones when there were two of them left ten parameters with
+        // no simple route at all, four of them integers that Evolve cannot
+        // reach either. One slider reaching more is the whole point of Simple
+        // mode, and the midpoint still reproduces what the sim ships with, so
+        // nothing moves until it is touched.
+        val targets = motionFloats(def, includeAdvanced = true)
         if (targets.size < 2) return null
         val mids = HashMap<String, Float>(targets.size)
         for (p in def.params) {

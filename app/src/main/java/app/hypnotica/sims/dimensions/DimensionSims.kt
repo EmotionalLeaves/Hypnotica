@@ -197,11 +197,16 @@ class HypercubeSim : Sim {
             typicalSeconds = 26f,
             params = listOf(
                 Param.int("dims", "Dimensions", 2, Nd.MAX_DIMS, 4, card = Card.DATA),
-                Param.int("planeA", "Spin plane, first axis", 0, Nd.MAX_DIMS - 1, 0, card = Card.MOTION, advancedOnly = true),
-                Param.int("planeB", "Spin plane, second axis", 0, Nd.MAX_DIMS - 1, 3, card = Card.MOTION, advancedOnly = true),
+                // Which plane turns is the most interesting thing about a
+                // higher-dimensional object, and hiding it behind Advanced meant
+                // raising the dimension count to six added thirty-two corners
+                // and no new plane to watch them turn in. Both are integers, so
+                // Evolve could not reach them either.
+                Param.int("planeA", "Spin plane, first axis", 0, Nd.MAX_DIMS - 1, 0, card = Card.MOTION),
+                Param.int("planeB", "Spin plane, second axis", 0, Nd.MAX_DIMS - 1, 3, card = Card.MOTION),
                 Param.float("spin", "Spin", 0.05f, 2f, 0.55f, card = Card.MOTION),
                 Param.float("tilt", "Tilt", 0f, 1.5f, 0.22f, card = Card.MOTION),
-                Param.float("viewer", "Viewer distance", 1.6f, 8f, 3f, card = Card.LOOK, advancedOnly = true)
+                Param.float("viewer", "Viewer distance", 1.6f, 8f, 3f, card = Card.LOOK)
             ),
             create = { HypercubeSim() }
         )

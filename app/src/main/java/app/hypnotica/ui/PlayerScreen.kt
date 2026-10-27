@@ -422,12 +422,46 @@ private fun LookCard(state: AppState) {
 
 @Composable
 private fun SoundCard(state: AppState) {
+    val mapping = state.engine.mapping
+    // Reading the version is what makes these sliders show their own effect:
+    // SoundMapping holds plain fields for the audio thread, not snapshot state.
+    val version = state.soundVersion
+
     SectionLabel("Sound")
     ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName).coerceAtLeast(0)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
     SectionLabel("Song mode")
     ChipRow(Song.NAMES, state.songIndex) { state.setSong(it) }
+
+    // Two sliders over five values. The scale, the base pitch, the range, the
+    // decay and the note ceiling were Advanced-only, which left Simple mode
+    // with a preset and nothing else — and this is exactly the shape the brief
+    // asked for: more capability, controlled more simply.
+    val brightness = remember(version) {
+        Macro.positionOf(60f..880f, 523f, mapping.baseHz, log = true)
+    }
+    ValueSlider(
+        "Brightness", brightness, 0f, 1f,
+        valueText = String.format("%.0f Hz, %.1f octaves", mapping.baseHz, mapping.octaves)
+    ) { t ->
+        mapping.baseHz = Macro.valueAt(60f..880f, 523f, t, log = true)
+        mapping.octaves = Macro.valueAt(1f..6f, 3f, t)
+        state.soundChanged()
+    }
+    val busyness = remember(version) {
+        Macro.positionOf(4f..400f, 60f, mapping.maxNotesPerSecond, log = true)
+    }
+    ValueSlider(
+        "Busyness", busyness, 0f, 1f,
+        valueText = String.format("%.0f notes/s, %.2f s decay", mapping.maxNotesPerSecond, mapping.decay)
+    ) { t ->
+        mapping.maxNotesPerSecond = Macro.valueAt(4f..400f, 60f, t, log = true)
+        // Busier means shorter notes, or they pile into a drone.
+        mapping.decay = Macro.valueAt(2f..0.06f, 0.6f, t, log = true)
+        state.soundChanged()
+    }
+
     CardControls(state, Card.SOUND)
 }
 

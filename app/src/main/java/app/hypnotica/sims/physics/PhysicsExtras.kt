@@ -579,7 +579,7 @@ class ClothSim : Sim {
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
                 Param.float("wind", "Wind", 0f, 1.5f, 0.2f, card = Card.MOTION),
-                Param.int("stiffness", "Stiffness", 1, 12, 4, card = Card.MOTION, advancedOnly = true)
+                Param.int("stiffness", "Stiffness", 1, 12, 4, card = Card.MOTION)
             ),
             create = { ClothSim() }
         )
