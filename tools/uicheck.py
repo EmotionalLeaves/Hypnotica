@@ -661,72 +661,42 @@ for f in files:
             problems.append(
                 f"{f}:{line}: uses {name}( but does not import it")
 
-# 17. Snapshot state written from a constructor before it exists.
+# 17. Snapshot state declared below an init block.
 #
 #     Kotlin creates property delegates and runs init blocks in declaration
 #     order, so a `by mutableStateOf` property declared BELOW an init block does
 #     not exist while that block runs. Writing to it there is a null dereference
-#     inside the constructor, and for AppState that means the app does not
-#     launch at all — no screen, no message, just a process that dies.
+#     inside the constructor, and for AppState that meant the app did not launch
+#     at all — no screen, no message, just a process that died. It shipped:
+#     AppState.init calls load(), load() calls soundChanged(), and soundVersion
+#     was declared three hundred lines below the init block.
 #
-#     That shipped. AppState.init calls load(), load() calls soundChanged(),
-#     and soundVersion was declared three hundred lines below the init block.
-#
-#     The reach is transitive: init's own body, plus every function in the same
-#     file it calls, plus every function those call.
-STATE_DECL = re.compile(r'\n\s+(?:private\s+)?(?:var|val)\s+(\w+)\s+by\s+mutable\w*StateOf')
+#     The first version of this rule traced what init could reach — its body,
+#     the functions it calls, and the functions those call — and flagged only
+#     properties actually written. That worked, but it is a heuristic standing
+#     between the app and a crash with no message, and one missed indirection
+#     makes it silent. Every class in this app happens to declare all of its
+#     snapshot state above its init block already, so the rule is the flat
+#     thing instead: none of it goes below. A write that does not exist today
+#     cannot be added tomorrow by someone who has never heard of this.
+STATE_DECL = re.compile(
+    r'\n\s+(?:private\s+)?(?:var|val)\s+(\w+)\s+by\s+mutable\w*StateOf')
 
 for f in files:
     src = strip(open(f).read())
     init = re.search(r'\n    init\s*\{', src)
     if not init:
         continue
-    # The init block's body.
-    depth, i = 0, src.index('{', init.start())
-    start = i
-    while i < len(src):
-        if src[i] == '{':
-            depth += 1
-        elif src[i] == '}':
-            depth -= 1
-            if depth == 0:
-                break
-        i += 1
-    init_body = src[start:i]
     init_at = src[:init.start()].count('\n') + 2
-
-    # Every function in this file, by name, so calls can be followed.
-    bodies_by_name = {}
-    for name, body, _ in bodies(src):
-        bodies_by_name.setdefault(name, "")
-        bodies_by_name[name] += body
-
-    # Transitive closure of what init can reach.
-    reached = set()
-    frontier = [init_body]
-    text = init_body
-    while frontier:
-        chunk = frontier.pop()
-        for m in re.finditer(r'(?<![\w.])(\w+)\s*\(', chunk):
-            name = m.group(1)
-            if name in bodies_by_name and name not in reached:
-                reached.add(name)
-                frontier.append(bodies_by_name[name])
-                text += bodies_by_name[name]
-
     for m in STATE_DECL.finditer(src):
-        name = m.group(1)
         line = src[:m.start()].count('\n') + 2
         if line <= init_at:
             continue
-        written = re.search(
-            r'(?<![\w.])' + name + r'\s*(?:\+\+|--|=(?!=)|\+=|-=)', text)
-        if written:
-            problems.append(
-                f"{f}:{line}: '{name}' is snapshot state declared below the "
-                f"init block on line {init_at}, and the constructor writes it — "
-                f"delegates are created in declaration order, so this throws "
-                f"before anything can run")
+        problems.append(
+            f"{f}:{line}: '{m.group(1)}' is snapshot state declared below the "
+            f"init block on line {init_at} — delegates are created in "
+            f"declaration order, so anything the constructor reaches that "
+            f"writes it throws before the app can start. Move it above init")
 
 for p in problems:
     print(p)
