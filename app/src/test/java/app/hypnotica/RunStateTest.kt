@@ -72,6 +72,16 @@ class RunStateTest {
     }
 
     @Test
+    fun `a seed comes back exactly, however large`() {
+        // A double holds 53 bits; a seed is 64. Read as a double, a seed this
+        // size came back as a neighbouring number — a different run entirely.
+        for (seed in longArrayOf(Long.MAX_VALUE, Long.MIN_VALUE, 9_007_199_254_740_993L, -1L, 0L)) {
+            val run = (parseRun("""{"recipe":"x","seed":$seed}""") as RunParse.Ok).run
+            assertEquals("seed $seed", seed, run.seed)
+        }
+    }
+
+    @Test
     fun `a run with nothing but a sim in it still applies`() {
         val run = (parseRun("""{"recipe":"physics/pendulum-wave"}""") as RunParse.Ok).run
         assertNull(run.seed)

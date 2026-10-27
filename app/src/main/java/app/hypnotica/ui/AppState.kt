@@ -29,6 +29,8 @@ import app.hypnotica.core.recipe.runLaws
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.studio.MoveRecorder
 import app.hypnotica.core.studio.Project
+import app.hypnotica.core.studio.parseProject
+import app.hypnotica.core.studio.projectJson
 import app.hypnotica.engine.SimEngine
 import app.hypnotica.sims.SimRegistry
 
@@ -349,11 +351,29 @@ class AppState(
         }
         // The sim's own length, so the template's payoff keyframes land on
         // this sim's payoff rather than always at twenty-six seconds.
+        // A project saved before the app was last killed comes back first.
+        // It follows the sim on screen, as one held in memory always has.
+        prefs?.studioProject?.let { parseProject(it) }?.let { restored ->
+            restored.simId = currentDef.id
+            restored.seed = engine.core.seed
+            project = restored
+            return restored
+        }
         val made = Project.template(
             "Build-up to payoff", currentDef.id, engine.core.seed, currentDef.typicalSeconds
         )
         project = made
         return made
+    }
+
+    /**
+     * Write the Studio project down. It lived only in memory, and Android
+     * reclaims a backgrounded app whenever it likes — a phone call was enough to
+     * take a session's keyframes. Cheap: a project is a few kilobytes.
+     */
+    fun saveProject() {
+        val p = project ?: return
+        prefs?.studioProject = projectJson(p)
     }
 
     /** Record moves: capture the camera and the controls, then edit in Studio. */
@@ -382,6 +402,7 @@ class AppState(
         }
         val built = rec.finish()
         project = built
+        saveProject()
         screen = Screen.STUDIO
     }
 

@@ -114,6 +114,13 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     var formatIndex by remember { mutableIntStateOf(0) }
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    // Saved shortly after every edit, so the work outlives the process.
+    LaunchedEffect(revision) {
+        if (revision == 0) return@LaunchedEffect
+        delay(SAVE_AFTER_MS)
+        state.saveProject()
+    }
     val context = LocalContext.current
 
     DisposableEffect(Unit) {
@@ -126,6 +133,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         state.paused = false
         state.engine.seek(0f)
         onDispose {
+            state.saveProject()
             // An export is a blocking job on another thread: cancelling the
             // composition does not touch it, so it is told to stop here.
             runningExport?.cancel()
@@ -832,3 +840,6 @@ private fun CaptionEditor(
 
 /** Width of a keyframe marker, kept out of the strip's usable span. */
 private val MARKER = 16.dp
+
+/** A pause in editing long enough to be worth writing down. */
+private const val SAVE_AFTER_MS = 400L

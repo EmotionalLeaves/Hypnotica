@@ -78,6 +78,17 @@ class Track(val kind: TrackKind) {
     fun keyframes(): List<Keyframe> = keys
 
     /**
+     * Put keys back exactly as they were, without the same-spot merging that
+     * [set] does for a finger. Copying a project through [set] merged any two
+     * keys closer than 0.3 s — which [moveNear] can leave — so an export could
+     * be missing a key the preview still showed.
+     */
+    fun restore(from: List<Keyframe>) {
+        keys.clear()
+        keys.addAll(from.sortedBy { it.time })
+    }
+
+    /**
      * Add a key, or replace the one already at this spot.
      *
      * [within] is how close counts as the same spot, and every one of set,
@@ -239,10 +250,7 @@ class Project(var simId: String, var seed: Long) {
         val made = Project(simId, seed)
         made.duration = duration
         made.name = name
-        for ((kind, track) in tracks) {
-            val into = made.track(kind)
-            for (k in track.keyframes()) into.set(k.time, k.value, k.easing)
-        }
+        for ((kind, track) in tracks) made.track(kind).restore(track.keyframes())
         made.texts.addAll(texts)
         made.freezes.addAll(freezes)
         return made

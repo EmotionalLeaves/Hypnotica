@@ -24,9 +24,6 @@ Measured, not yet acted on.
   wave at 31.0 and declares 38. Nothing cuts a clip at that number, but Studio's
   "Perfect loop" template sets its project length from it, and that project
   does not loop.
-- **A Studio project lives only in memory.** Keyframes, freezes and captions are
-  a few kilobytes with no key in preferences and no onSaveInstanceState, so
-  process death takes a session's editing. Rotation is safe; a phone call is not.
 - **The size slider ignores the device benchmark.** `Bench` measures the phone
   and only TickTock's clips use the result; the player's slider offers 400,000
   particles to a phone already measured as modest.
@@ -54,6 +51,10 @@ Measured, not yet acted on.
 - Pause shown as Play over a running sim after loading, a clip, or Studio.
 - Saved settings keeping old defaults on an existing install.
 - Binary tree opening every run on a black screen.
+- A Studio project lost whenever Android reclaimed the app; and the exporter's
+  copy of it merging keyframes closer than 0.3 s, so a clip could be missing a
+  key the preview showed.
+- Seeds above 2^53 coming back as a different number from a pasted run.
 
 ## What the last two rounds found
 

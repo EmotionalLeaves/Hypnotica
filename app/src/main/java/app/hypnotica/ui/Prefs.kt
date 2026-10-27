@@ -120,6 +120,11 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_TASTE, "") ?: ""
         set(value) = sp.edit().putString(KEY_TASTE, value).apply()
 
+    /** The Studio project, as ProjectJson writes it, so it outlives the process. */
+    var studioProject: String?
+        get() = sp.getString(KEY_PROJECT, null)
+        set(value) = sp.edit().putString(KEY_PROJECT, value).apply()
+
     var mutedFormats: Set<String>
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
@@ -142,6 +147,7 @@ class Prefs(context: Context) {
         const val KEY_TASTE = "taste"
         const val KEY_MUTED = "muted_formats"
         const val KEY_SCHEMA = "schema"
+        const val KEY_PROJECT = "studio_project"
 
         /** Bump with a step in [migrate] whenever a default changes for people already using the app. */
         const val SCHEMA = 2
