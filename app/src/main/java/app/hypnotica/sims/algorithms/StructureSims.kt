@@ -884,7 +884,7 @@ class GraphLayoutSim : Sim {
             shelf = Shelf.ALGORITHMS,
             family = "Graphs & networks",
             blurb = "Edges pull, nodes push, and a readable shape appears.",
-            formats = listOf(TrapFormat.GROW, TrapFormat.LOOP, TrapFormat.REVEAL),
+            formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "New graph",
             defaultPalette = "Aurora",
             typicalSeconds = 20f,

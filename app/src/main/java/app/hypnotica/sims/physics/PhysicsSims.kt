@@ -666,7 +666,7 @@ class NewtonsCradleSim : Sim {
             shelf = Shelf.PHYSICS,
             family = "Pendulums & oscillators",
             blurb = "Momentum passes straight through the middle.",
-            formats = listOf(TrapFormat.LOOP, TrapFormat.CHAIN),
+            formats = listOf(TrapFormat.CHAIN),
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.BOUNCE, LawKnob.FRICTION, LawKnob.CONTACT),
             heroLabel = "Lift and drop",
             typicalSeconds = 20f,

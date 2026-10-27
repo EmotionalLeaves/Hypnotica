@@ -217,7 +217,7 @@ class EquationSim : Sim {
             shelf = Shelf.MATH,
             family = "Equations",
             blurb = "Type a pair of formulas and watch them draw.",
-            formats = listOf(TrapFormat.GROW, TrapFormat.LOOP, TrapFormat.REVEAL),
+            formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "Restart",
             defaultPalette = "Aurora",
             typicalSeconds = 24f,

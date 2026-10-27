@@ -342,7 +342,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
                     shelf = Shelf.ALGORITHMS,
                     family = "Sorting algorithms",
                     blurb = "Any of twelve sorts, five views, one array.",
-                    formats = listOf(TrapFormat.GUESS, TrapFormat.SONG, TrapFormat.LOOP),
+                    formats = listOf(TrapFormat.GUESS, TrapFormat.SONG),
                     params = listOf(
                         Param.choice("algorithm", "Algorithm", Algorithms.NAMES, 0, card = Card.MOTION)
                     ) + sharedParams(),

@@ -187,7 +187,7 @@ class VoronoiSim : Sim {
             shelf = Shelf.MATH,
             family = "Geometry & topology",
             blurb = "Every point belongs to its nearest seed. The walls slide.",
-            formats = listOf(TrapFormat.COLOR_BATTLE, TrapFormat.LOOP, TrapFormat.REVEAL),
+            formats = listOf(TrapFormat.COLOR_BATTLE, TrapFormat.REVEAL),
             heroLabel = "New seeds",
             defaultPalette = "Candy",
             typicalSeconds = 22f,

@@ -816,7 +816,7 @@ class NdBounceSim : Sim {
             shelf = Shelf.DIMENSIONS,
             family = "Physics in N dimensions",
             blurb = "More dimensions, more walls, a busier rhythm.",
-            formats = listOf(TrapFormat.SONG, TrapFormat.LOOP, TrapFormat.ESCAPE),
+            formats = listOf(TrapFormat.SONG, TrapFormat.ESCAPE),
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.GRAVITY_DIRECTION, LawKnob.BOUNCE, LawKnob.CONTACT),
             heroLabel = "Shake the box",
             defaultPalette = "Ember",

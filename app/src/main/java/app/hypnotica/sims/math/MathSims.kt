@@ -686,7 +686,7 @@ class FourierSim : Sim {
             shelf = Shelf.MATH,
             family = "Waves & fields",
             blurb = "Spinning circles that add up to a square wave.",
-            formats = listOf(TrapFormat.LOOP, TrapFormat.SONG),
+            formats = listOf(TrapFormat.SONG),
             heroLabel = "New shape",
             defaultPalette = "Aurora",
             typicalSeconds = 22f,
