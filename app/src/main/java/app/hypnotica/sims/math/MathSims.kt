@@ -822,7 +822,7 @@ class CollatzSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
-        if (autoAdvance && shown > length + 18) {
+        if (autoAdvance && shown > length + 12) {
             start += 1
             buildSequence(start)
             shown = 0f

@@ -219,7 +219,8 @@ class BoidsSim : Sim {
         }
         val order0 = sqrt(sx * sx + sy * sy) / sample
         flockiness = flockiness * 0.95f + order0 * 0.05f
-        if (elapsed > 2f) {
+        // From almost the start: two silent seconds opened every run.
+        if (elapsed > 0.4f) {
             env.emit(EventKind.STEP, flockiness.coerceIn(0f, 1f), 0f, 0.25f)
         }
         // The payoff is the flock having finished organising: the order it is
