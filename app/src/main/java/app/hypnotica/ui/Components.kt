@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -188,6 +189,33 @@ fun NoticeLine(text: String?, modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.bodySmall,
         modifier = modifier.padding(top = 4.dp)
     )
+}
+
+/**
+ * Fades a screen up as it arrives.
+ *
+ * The app has no screen transitions at all: every one of the nineteen places
+ * that set state.screen swaps the whole chrome between two frames. The obvious
+ * fix — a Crossfade or AnimatedContent over the navigation `when` — is the one
+ * thing that cannot be done here, because four of the seven screens host the
+ * same GLSurfaceView and keeping two of them composed at once makes them fight
+ * over it: the outgoing screen would show a hole where the simulation was for
+ * the length of the transition, which is worse than the cut.
+ *
+ * So the arriving screen fades up on its own. The panels are opaque, so this
+ * reads as the screen resolving rather than appearing, and nothing is composed
+ * twice.
+ */
+@Composable
+fun ScreenEnter(content: @Composable () -> Unit) {
+    var shown by remember { mutableStateOf(false) }
+    val fade by animateFloatAsState(
+        if (shown) 1f else 0f,
+        tween(Tokens.Base),
+        label = "screenEnter"
+    )
+    LaunchedEffect(Unit) { shown = true }
+    Box(Modifier.fillMaxSize().alpha(fade)) { content() }
 }
 
 /** A chip row that scrolls sideways when it does not fit. */

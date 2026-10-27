@@ -288,68 +288,6 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             }
         }
 
-        NoticeLine(state.notice)
-
-        Box(Modifier.fillMaxWidth().height(20.dp)) {
-            val fade by animateFloatAsState(
-                if (catchingUp) 1f else 0f,
-                tween(Tokens.Fast),
-                label = "catchingUp"
-            )
-            if (fade > 0.01f) {
-                Text(
-                    "catching up…",
-                    color = Tokens.TextSecondary.copy(alpha = fade),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-        }
-
-        if (exporting) {
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    String.format(java.util.Locale.US, "%.0f%%", exportProgress * 100f),
-                    color = Tokens.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f)
-                )
-                Pill("Cancel") { runningExport?.cancel() }
-            }
-            Spacer(Modifier.height(8.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(exportProgress.coerceIn(0f, 1f))
-                        .height(8.dp)
-                        .background(Tokens.Accent, RoundedCornerShape(3.dp))
-                )
-            }
-        }
-        exportMessage?.let {
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    it,
-                    // "In your gallery", "Cancelled." and a failure were all the
-                    // same grey.
-                    color = if (exportFailed) Tokens.Danger else Tokens.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f)
-                )
-                exported?.let { file ->
-                    Spacer(Modifier.width(8.dp))
-                    Pill("Share") { Publish.share(context, file) }
-                }
-            }
-        }
-
         // Transport
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -424,6 +362,76 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.Center)
             )
+        }
+
+        // The run's status sits here, between the scrubber and the editor,
+        // rather than above the transport row.
+        //
+        // These four blocks appear and disappear — a notice, the catching-up
+        // line, the export progress, the export result — and above the
+        // transport they moved it and the scrubber down by as much as 176 dp
+        // while a finger was on them. Below the scrubber the only thing they
+        // can push is the editor, which has weight(1f) and absorbs it.
+        NoticeLine(state.notice)
+
+        Box(Modifier.fillMaxWidth().height(20.dp)) {
+            val fade by animateFloatAsState(
+                if (catchingUp) 1f else 0f,
+                tween(Tokens.Fast),
+                label = "catchingUp"
+            )
+            if (fade > 0.01f) {
+                Text(
+                    "catching up…",
+                    color = Tokens.TextSecondary.copy(alpha = fade),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+
+        if (exporting) {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    String.format(java.util.Locale.US, "%.0f%%", exportProgress * 100f),
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                Pill("Cancel") { runningExport?.cancel() }
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(exportProgress.coerceIn(0f, 1f))
+                        .height(8.dp)
+                        .background(Tokens.Accent, RoundedCornerShape(3.dp))
+                )
+            }
+        }
+        exportMessage?.let {
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    it,
+                    // "In your gallery", "Cancelled." and a failure were all the
+                    // same grey.
+                    color = if (exportFailed) Tokens.Danger else Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                exported?.let { file ->
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Share") { Publish.share(context, file) }
+                }
+            }
         }
 
         // Tracks

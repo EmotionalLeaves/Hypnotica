@@ -40,6 +40,7 @@ import app.hypnotica.ui.PlayerScreen
 import app.hypnotica.ui.Prefs
 import app.hypnotica.ui.RecipeScreen
 import app.hypnotica.ui.Screen
+import app.hypnotica.ui.ScreenEnter
 import app.hypnotica.ui.SettingsScreen
 import app.hypnotica.ui.SimSurfaceView
 import app.hypnotica.ui.StudioScreen
@@ -185,11 +186,13 @@ private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: Strin
     when (state.screen) {
         Screen.FEED -> FeedScreen(state, surface)
         Screen.PLAYER -> PlayerScreen(state, surface)
-        Screen.LIBRARY -> LibraryScreen(state)
-        Screen.SETTINGS -> SettingsScreen(state, versionName)
+        // The opaque panels fade up; the four screens that host the sim do not,
+        // because the picture behind them is already continuous.
+        Screen.LIBRARY -> ScreenEnter { LibraryScreen(state) }
+        Screen.SETTINGS -> ScreenEnter { SettingsScreen(state, versionName) }
         Screen.TICKTOCK -> TickTockScreen(state, surface)
         Screen.STUDIO -> StudioScreen(state, surface)
-        Screen.RECIPES -> RecipeScreen(state)
+        Screen.RECIPES -> ScreenEnter { RecipeScreen(state) }
     }
 }
 
