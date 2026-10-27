@@ -17,6 +17,8 @@ import app.hypnotica.ui.PlayerScreen
 import app.hypnotica.ui.Screen
 import app.hypnotica.ui.SettingsScreen
 import app.hypnotica.ui.SimSurfaceView
+import app.hypnotica.ui.StudioScreen
+import app.hypnotica.ui.TickTockScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -66,6 +68,8 @@ private fun AppRoot(state: AppState, surface: SimSurfaceView) {
         Screen.PLAYER -> PlayerScreen(state, surface)
         Screen.LIBRARY -> LibraryScreen(state)
         Screen.SETTINGS -> SettingsScreen(state, BuildConfigName.VERSION)
+        Screen.TICKTOCK -> TickTockScreen(state, surface)
+        Screen.STUDIO -> StudioScreen(state, surface)
     }
 }
 

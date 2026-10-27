@@ -1,7 +1,9 @@
 package app.hypnotica.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -76,6 +79,24 @@ fun SettingsScreen(state: AppState, versionName: String) {
             modifier = Modifier.padding(top = 6.dp)
         )
 
+        SectionLabel("Time check")
+        ChipRow(
+            listOf("Off", "Every 15 min", "Every 30 min", "Every hour"),
+            when (state.timeCheckMinutes) {
+                15 -> 1
+                30 -> 2
+                60 -> 3
+                else -> 0
+            }
+        ) {
+            state.timeCheckMinutes = when (it) {
+                1 -> 15
+                2 -> 30
+                3 -> 60
+                else -> 0
+            }
+        }
+
         Spacer(Modifier.height(28.dp))
         Row(
             Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -87,6 +108,34 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 style = MaterialTheme.typography.bodySmall
             )
         }
+
+        // Below the version number, unlabelled, exactly as designed: a clock for
+        // TickTock and a film strip for Studio.
+        Row(
+            Modifier.fillMaxWidth().padding(top = 6.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            QuietGlyph("◷") { state.screen = Screen.TICKTOCK }
+            Spacer(Modifier.width(26.dp))
+            QuietGlyph("✇") { state.screen = Screen.STUDIO }
+        }
         Spacer(Modifier.height(36.dp))
+    }
+}
+
+/** Almost invisible until you look for it. */
+@Composable
+private fun QuietGlyph(glyph: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            glyph,
+            color = Tokens.TextSecondary.copy(alpha = 0.22f),
+            style = MaterialTheme.typography.titleMedium
+        )
     }
 }

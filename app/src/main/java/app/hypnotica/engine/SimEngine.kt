@@ -16,6 +16,8 @@ import app.hypnotica.core.safety.SafetySettings
 import app.hypnotica.core.sim.SimCore
 import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.sim.TouchEvent
+import app.hypnotica.core.studio.Project
+import app.hypnotica.core.studio.TrackKind
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.max
@@ -58,6 +60,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     private var pendingRestart: Long? = null
 
     @Volatile
+    private var pendingParams: Pair<Map<String, Float>, Long>? = null
+
+    @Volatile
     var onPayoff: (() -> Unit)? = null
 
     @Volatile
@@ -69,6 +74,30 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** Extra zoom applied around the payoff, the "punch-in". */
     private var punch = 0f
     private var baseZoom = 1f
+
+    // ------------------------------------------------------------- studio
+
+    /** When set, the timeline drives the camera, speed, laws and look. */
+    @Volatile
+    var project: Project? = null
+
+    @Volatile
+    var studioTime: Float = 0f
+
+    @Volatile
+    var studioPlaying: Boolean = false
+
+    @Volatile
+    private var pendingSeek: Float? = null
+
+    /**
+     * Move the playhead. The run is deterministic, so the state at any moment is
+     * found by starting again from the seed and stepping forward; there is no
+     * snapshot to go stale.
+     */
+    fun seek(seconds: Float) {
+        pendingSeek = seconds.coerceAtLeast(0f)
+    }
 
     init {
         mapping.safety = safety
@@ -82,6 +111,15 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     fun restart(seed: Long = System.nanoTime()) {
         pendingRestart = seed
+    }
+
+    /**
+     * Apply a whole parameter set and restart, as one atomic change on the GL
+     * thread. Used when a generated clip or a saved state is loaded, so the run
+     * matches exactly what was checked.
+     */
+    fun applyParams(values: Map<String, Float>, seed: Long) {
+        pendingParams = values to seed
     }
 
     fun setLaws(laws: Laws) = core.setLaws(laws)
@@ -132,6 +170,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             mapping.resetSong()
             resetRunState()
         }
+        pendingParams?.let { (values, seed) ->
+            pendingParams = null
+            for ((k, v) in values) core.params.set(k, v)
+            core.restart(seed)
+            resetRunState()
+        }
         pendingRestart?.let {
             pendingRestart = null
             core.restart(it)
@@ -141,7 +185,41 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         core.env.reduceMotion = safety.reduceMotion
         flashLimiter.reduceFlashing = safety.reduceFlashing
 
-        if (running) core.advance(dt)
+        val proj = project
+        var timelineFlash = 0f
+        var frozen = false
+
+        if (proj != null) {
+            pendingSeek?.let { target ->
+                pendingSeek = null
+                core.restart(core.seed)
+                resetRunState()
+                val steps = (target * core.stepHz).toInt().coerceAtMost(MAX_SEEK_STEPS)
+                core.advanceSteps(steps)
+                core.events.clear()
+                studioTime = target
+            }
+            if (studioPlaying) {
+                studioTime += dt
+                if (studioTime >= proj.duration) {
+                    studioTime = 0f
+                    pendingSeek = 0f
+                }
+            }
+            frozen = proj.isFrozenAt(studioTime)
+            proj.applyCamera(studioTime, camera)
+            core.speed = proj.track(TrackKind.SPEED).valueAt(studioTime)
+            scene.trails = proj.track(TrackKind.TRAILS).valueAt(studioTime)
+            core.setLaws(
+                core.env.laws.copy(
+                    gravity = proj.track(TrackKind.GRAVITY).valueAt(studioTime),
+                    restitution = proj.track(TrackKind.BOUNCINESS).valueAt(studioTime)
+                )
+            )
+            timelineFlash = proj.track(TrackKind.FLASH).valueAt(studioTime)
+        }
+
+        if (running && !frozen && (proj == null || studioPlaying)) core.advance(dt)
 
         if (core.payoffFired && !payoffNotified) {
             payoffNotified = true
@@ -155,10 +233,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         }
 
         // Punch-in: a small, quick push towards the action when the payoff lands.
+        // In Studio the timeline owns the camera, so the automatic push stays out.
         if (punch > 0f) {
             punch = max(0f, punch - dt * 0.9f)
         }
-        camera.zoom = baseZoom * (1f + 0.045f * punch)
+        if (proj == null) {
+            camera.zoom = baseZoom * (1f + 0.045f * punch)
+        }
 
         g.reset()
         g.background = Palette.BG
@@ -166,7 +247,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
         mapping.pump(core.events, dt)
 
-        val allowed = flashLimiter.allow(g.flashRequest, dt)
+        val allowed = flashLimiter.allow(max(g.flashRequest, timelineFlash), dt)
         scene.render(g, camera, allowed)
     }
 
@@ -203,6 +284,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     companion object {
+        /** A seek re-simulates from the seed, so very long ones are capped. */
+        const val MAX_SEEK_STEPS = 60 * 120 * 5
+
         fun clampSpeed(v: Float): Float = min(10f, max(0.1f, v))
     }
 }

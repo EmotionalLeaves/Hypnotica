@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.audio.Song
 import app.hypnotica.core.audio.SoundPreset
-import app.hypnotica.core.laws.Laws
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
@@ -174,21 +173,32 @@ private fun ControlDrawer(state: AppState) {
         }
         Spacer(Modifier.height(12.dp))
 
-        val cards = visibleCards(state)
-        ChipRow(cards.map { it.title }, cards.indexOf(state.card).coerceAtLeast(0)) {
-            state.card = cards[it]
-        }
-        Spacer(Modifier.height(8.dp))
-
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            when (state.card) {
-                Card.DATA -> CardControls(state, Card.DATA)
-                Card.MOTION -> MotionCard(state)
-                Card.LOOK -> LookCard(state)
-                Card.SOUND -> SoundCard(state)
-                Card.LAWS -> LawsCard(state)
+        if (state.advanced) {
+            val tabs = AdvancedTab.entries
+            ChipRow(tabs.map { it.title }, tabs.indexOf(state.advancedTab)) {
+                state.advancedTab = tabs[it]
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                AdvancedPanel(state, state.advancedTab)
+                Spacer(Modifier.height(16.dp))
+            }
+        } else {
+            val cards = visibleCards(state)
+            ChipRow(cards.map { it.title }, cards.indexOf(state.card).coerceAtLeast(0)) {
+                state.card = cards[it]
+            }
+            Spacer(Modifier.height(8.dp))
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                when (state.card) {
+                    Card.DATA -> CardControls(state, Card.DATA)
+                    Card.MOTION -> MotionCard(state)
+                    Card.LOOK -> LookCard(state)
+                    Card.SOUND -> SoundCard(state)
+                    Card.LAWS -> LawsCard(state)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
         }
     }
 }
@@ -295,14 +305,12 @@ private fun SoundCard(state: AppState) {
 
 @Composable
 private fun LawsCard(state: AppState) {
-    SectionLabel("Universe")
-    val names = Laws.PRESETS.map { it.name }
-    ChipRow(names, names.indexOf(state.lawsName).coerceAtLeast(0)) { state.setLaws(names[it]) }
-    Spacer(Modifier.height(8.dp))
+    LawsControls(state, advanced = false)
     Text(
         "Every physics sim reads these rules, so changing the universe changes them all.",
         color = Tokens.TextSecondary,
-        style = MaterialTheme.typography.bodySmall
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp)
     )
     CardControls(state, Card.LAWS)
 }

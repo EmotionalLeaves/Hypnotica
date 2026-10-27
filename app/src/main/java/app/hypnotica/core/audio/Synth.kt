@@ -211,6 +211,14 @@ class Synth(private val sampleRate: Int = 44100) {
         return voices[quietest]
     }
 
+    /**
+     * Render a block without an output device.
+     *
+     * The offline exporter drives this directly, so a saved video carries exactly
+     * the sound the run produced rather than a recording of the speaker.
+     */
+    fun renderOffline(out: FloatArray, frames: Int) = render(out, frames)
+
     private fun render(out: FloatArray, frames: Int) {
         java.util.Arrays.fill(out, 0f)
         val vol = if (muted) 0f else volume.coerceIn(0f, 1f)

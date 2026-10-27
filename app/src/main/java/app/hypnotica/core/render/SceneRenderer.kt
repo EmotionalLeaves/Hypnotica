@@ -7,23 +7,6 @@ import java.nio.FloatBuffer
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Where the view is looking. Studio animates these; the player drags them. */
-class Camera {
-    var x = 0f
-    var y = 0f
-    /** Visible half-height in world units is 1 / zoom. */
-    var zoom = 1f
-    var rotation = 0f
-
-    fun reset() {
-        x = 0f; y = 0f; zoom = 1f; rotation = 0f
-    }
-
-    fun copyFrom(o: Camera) {
-        x = o.x; y = o.y; zoom = o.zoom; rotation = o.rotation
-    }
-}
-
 /**
  * Turns a [G] draw list into GL calls: at most four passes a frame no matter how
  * many objects are on screen.

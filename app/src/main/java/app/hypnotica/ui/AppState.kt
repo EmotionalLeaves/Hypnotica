@@ -6,15 +6,17 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.hypnotica.core.audio.Song
+import app.hypnotica.core.director.Clip
 import app.hypnotica.core.laws.Laws
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.sim.SimDef
+import app.hypnotica.core.studio.Project
 import app.hypnotica.engine.SimEngine
 import app.hypnotica.sims.SimRegistry
 
-enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS }
+enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO }
 
 /**
  * Everything the UI needs to know, in one place.
@@ -31,6 +33,7 @@ class AppState(val engine: SimEngine) {
     var controlsOpen by mutableStateOf(false)
     var advanced by mutableStateOf(false)
     var card by mutableStateOf(Card.DATA)
+    var advancedTab by mutableStateOf(AdvancedTab.DATA)
     var paramVersion by mutableIntStateOf(0)
         private set
 
@@ -57,8 +60,19 @@ class AppState(val engine: SimEngine) {
     var paletteName by mutableStateOf("Spectrum")
     var soundPresetName by mutableStateOf("Music box")
     var songIndex by mutableIntStateOf(0)
-    var lawsName by mutableStateOf("Our universe")
     var showCounters by mutableStateOf(true)
+
+    /** 0 = off. Minutes between TickTock's "you have been scrolling" card. */
+    var timeCheckMinutes by mutableIntStateOf(0)
+
+    /** The Studio project being edited, kept while the app is open. */
+    var project by mutableStateOf<Project?>(null)
+
+    /** The live rules of the universe. Every physics sim reads these. */
+    var laws by mutableStateOf(Laws.OUR_UNIVERSE)
+        private set
+
+    val lawsName: String get() = laws.name
     var reduceFlashing by mutableStateOf(false)
     var reduceMotion by mutableStateOf(false)
     var haptics by mutableStateOf(true)
@@ -104,8 +118,15 @@ class AppState(val engine: SimEngine) {
     }
 
     fun setLaws(name: String) {
-        lawsName = name
-        engine.setLaws(Laws.preset(name))
+        laws = Laws.preset(name)
+        engine.setLaws(laws)
+    }
+
+    /** Change one rule, keeping the rest. The name becomes "Custom" once edited. */
+    fun editLaws(block: (Laws) -> Laws) {
+        val edited = block(laws)
+        laws = if (edited == laws) edited else edited.copy(name = "Custom")
+        engine.setLaws(laws)
     }
 
     fun applySafety() {
@@ -145,6 +166,66 @@ class AppState(val engine: SimEngine) {
 
     fun commitParam(p: Param) {
         if (needsRestart(p)) restart(newSeed = false)
+    }
+
+    /** Load and start a generated clip exactly as the director checked it. */
+    fun playClip(clip: Clip) {
+        currentDef = clip.def
+        paletteName = clip.palette
+        soundPresetName = clip.soundPreset
+        laws = clip.laws
+        engine.loadSim(clip.def, clip.seed)
+        engine.setLaws(clip.laws)
+        engine.setPalette(clip.palette)
+        engine.setSoundPreset(clip.soundPreset)
+        engine.applyParams(clip.params, clip.seed)
+        paramVersion++
+    }
+
+    /** Hand the clip on screen to the normal player, controls and all. */
+    fun openClipInPlayer(clip: Clip) {
+        playClip(clip)
+        controlsOpen = true
+        screen = Screen.PLAYER
+    }
+
+    /**
+     * The whole run as one small object: recipe, seed, parameters, laws, look and
+     * sound. This is what a replay link or a Studio project stores, and it is
+     * enough to reproduce any frame exactly.
+     */
+    fun stateJson(): String {
+        val core = engine.core
+        val sb = StringBuilder(512)
+        sb.append("{\n")
+        sb.append("  \"recipe\": \"").append(currentDef.id).append("\",\n")
+        sb.append("  \"seed\": ").append(core.seed).append(",\n")
+        sb.append("  \"params\": {")
+        val entries = currentDef.params
+        entries.forEachIndexed { i, p ->
+            if (i > 0) sb.append(",")
+            sb.append("\n    \"").append(p.key).append("\": ")
+            val expr = core.params.expressionSource(p.key)
+            if (expr != null) {
+                sb.append('"').append(expr.replace("\"", "'")).append('"')
+            } else if (p.type == ParamType.CHOICE) {
+                sb.append('"').append(core.params.choice(p.key)).append('"')
+            } else if (p.type == ParamType.INT) {
+                sb.append(core.params.i(p.key))
+            } else if (p.type == ParamType.BOOL) {
+                sb.append(core.params.b(p.key))
+            } else {
+                sb.append(String.format("%.4f", core.params.f(p.key)))
+            }
+        }
+        sb.append("\n  },\n")
+        sb.append("  \"laws\": \"").append(laws.name).append("\",\n")
+        sb.append("  \"look\": { \"palette\": \"").append(paletteName)
+            .append("\", \"trails\": ").append(String.format("%.2f", trails)).append(" },\n")
+        sb.append("  \"sound\": { \"preset\": \"").append(soundPresetName)
+            .append("\", \"scale\": \"").append(engine.mapping.scale.name).append("\" }\n")
+        sb.append("}")
+        return sb.toString()
     }
 
     fun toggleFavourite(id: String) {
