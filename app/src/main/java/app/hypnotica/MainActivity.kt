@@ -100,7 +100,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        engine.release()
+        // The GL objects can only be deleted on the thread that owns the
+        // context; calling this straight from here made every glDelete a
+        // silent no-op.
+        surface.queueEvent { engine.release() }
         super.onDestroy()
     }
 }

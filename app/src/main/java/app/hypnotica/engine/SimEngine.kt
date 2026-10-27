@@ -57,6 +57,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     private val pendingTouches = java.util.concurrent.ConcurrentLinkedQueue<TouchEvent>()
 
+    /** The camera plus the shake, so the shake never touches the real one. */
+    private val shaken = Camera()
+
     private val g = G()
     private var lastFrameNanos = 0L
 
@@ -97,9 +100,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** Decaying offset applied after a heavy impact. */
     private var shake = 0f
     private var shakeSeed = 0
-    private var shakeWasOn = false
-    private var shakeBaseX = 0f
-    private var shakeBaseY = 0f
+    private var shakeOffsetX = 0f
+    private var shakeOffsetY = 0f
 
     // ------------------------------------------------------------- studio
 
@@ -341,24 +343,18 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             camera.zoom = baseZoom * breathing * (1f + 0.045f * punch)
 
             // Screen shake: a few pixels for a moment, on the heaviest frames.
-            // Where the camera was is captured as the shake starts and put back
-            // when it ends, so the offset never accumulates.
+            // Added to the camera at render time rather than written into it,
+            // so a pan during the shake is kept rather than snapped back.
             if (shake > 0f) {
-                if (!shakeWasOn) {
-                    shakeBaseX = camera.x
-                    shakeBaseY = camera.y
-                    shakeWasOn = true
-                }
                 shakeSeed = shakeSeed * 1103515245 + 12345
                 val a = ((shakeSeed shr 16) and 0xFF) / 255f - 0.5f
                 val b = ((shakeSeed shr 8) and 0xFF) / 255f - 0.5f
                 val amount = SHAKE_WORLD * shake * shake
-                camera.x = shakeBaseX + a * amount
-                camera.y = shakeBaseY + b * amount
-            } else if (shakeWasOn) {
-                camera.x = shakeBaseX
-                camera.y = shakeBaseY
-                shakeWasOn = false
+                shakeOffsetX = a * amount
+                shakeOffsetY = b * amount
+            } else {
+                shakeOffsetX = 0f
+                shakeOffsetY = 0f
             }
         }
 
@@ -369,7 +365,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         mapping.pump(core.events, dt)
 
         val allowed = flashLimiter.allow(max(g.flashRequest, timelineFlash), dt)
-        scene.render(g, camera, allowed)
+        if (shakeOffsetX != 0f || shakeOffsetY != 0f) {
+            shaken.copyFrom(camera)
+            shaken.x += shakeOffsetX
+            shaken.y += shakeOffsetY
+            scene.render(g, shaken, allowed)
+        } else {
+            scene.render(g, camera, allowed)
+        }
     }
 
     /**
@@ -401,11 +404,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         finishNotified = false
         punch = 0f
         shake = 0f
-        if (shakeWasOn) {
-            camera.x = shakeBaseX
-            camera.y = shakeBaseY
-            shakeWasOn = false
-        }
+        shakeOffsetX = 0f
+        shakeOffsetY = 0f
         flashLimiter.reset()
         synth.allOff()
     }
@@ -429,8 +429,16 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         val ndcX = px / w * 2f - 1f
         val ndcY = 1f - py / h * 2f
         val aspect = w / h
-        val x = camera.x + ndcX * aspect / camera.zoom
-        val y = camera.y + ndcY / camera.zoom
+        // Undo the camera's own transform in reverse: scale, then rotate back.
+        // The rotation was missing, so once the view was twisted every tap,
+        // drag and long-press landed somewhere else — most of a screen away at
+        // half a radian.
+        val sx = ndcX * aspect / camera.zoom
+        val sy = ndcY / camera.zoom
+        val c = kotlin.math.cos(camera.rotation)
+        val s = kotlin.math.sin(camera.rotation)
+        val x = camera.x + sx * c - sy * s
+        val y = camera.y + sx * s + sy * c
         return x to y
     }
 

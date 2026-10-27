@@ -8,13 +8,22 @@ package app.hypnotica.core.render
  * plain data so it can be driven and tested without a device.
  */
 class Camera {
+
+    // Written by the gestures on the UI thread and by the timeline on the sim
+    // thread, and read every frame by the renderer: volatile so a frame cannot
+    // see half of a move.
+    @Volatile
     var x = 0f
+
+    @Volatile
     var y = 0f
 
     /** Visible half-height in world units is 1 / zoom. */
+    @Volatile
     var zoom = 1f
 
     /** Radians, applied about the camera centre. */
+    @Volatile
     var rotation = 0f
 
     fun reset() {

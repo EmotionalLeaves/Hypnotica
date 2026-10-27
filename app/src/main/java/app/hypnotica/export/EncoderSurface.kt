@@ -106,8 +106,10 @@ class EncoderSurface(
             )
             if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
             if (eglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
-            EGL14.eglReleaseThread()
-            EGL14.eglTerminate(eglDisplay)
+            // Only what this class made is destroyed. eglTerminate is not
+            // reference counted and this is the default display — the same one
+            // the live GLSurfaceView is drawing on — so terminating it here
+            // took the player's own context down with the export.
         }
         eglDisplay = EGL14.EGL_NO_DISPLAY
         eglContext = EGL14.EGL_NO_CONTEXT

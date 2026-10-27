@@ -166,8 +166,14 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
     private fun panBy(dxPixels: Float, dyPixels: Float) {
         if (height <= 0) return
         val worldPerPixel = 2f / (height * engine.camera.zoom)
-        engine.camera.x -= dxPixels * worldPerPixel
-        engine.camera.y += dyPixels * worldPerPixel
+        // Along the screen, not along the world: after a twist, a sideways drag
+        // used to send the view off at the camera's angle instead.
+        val dx = -dxPixels * worldPerPixel
+        val dy = dyPixels * worldPerPixel
+        val c = kotlin.math.cos(engine.camera.rotation)
+        val s = kotlin.math.sin(engine.camera.rotation)
+        engine.camera.x += dx * c - dy * s
+        engine.camera.y += dx * s + dy * c
     }
 
     private fun pinchDistance(e: MotionEvent): Float =

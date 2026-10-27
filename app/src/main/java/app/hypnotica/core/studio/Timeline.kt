@@ -150,6 +150,26 @@ class Project(var simId: String, var seed: Long) {
         track(TrackKind.ROTATION).let { if (!it.isEmpty()) camera.rotation = it.valueAt(time) }
     }
 
+    /**
+     * A snapshot the offline render can own.
+     *
+     * The exporter runs for minutes on another thread while Studio is still
+     * open, and a caption typed or a keyframe dragged in the meantime would be
+     * a list changing underneath the frame loop.
+     */
+    fun copy(): Project {
+        val made = Project(simId, seed)
+        made.duration = duration
+        made.name = name
+        for ((kind, track) in tracks) {
+            val into = made.track(kind)
+            for (k in track.keyframes()) into.set(k.time, k.value, k.easing)
+        }
+        made.texts.addAll(texts)
+        made.freezes.addAll(freezes)
+        return made
+    }
+
     fun hasAnyKeyframes(): Boolean = tracks.values.any { !it.isEmpty() }
 
     fun textAt(time: Float): TextClip? = texts.firstOrNull { time >= it.start && time < it.end }

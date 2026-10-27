@@ -13,6 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The shaders are Kotlin strings, so the Android build never looks inside
+  # them: a typo in the GLSL compiles fine here and shows up on the phone as a
+  # black screen. Headless Chromium speaks the same GLSL ES 3.00 the driver
+  # does, so this compiles every program for real and measures what the ring
+  # and point shaders put on screen. It runs beside the build, not before it,
+  # so a flake in the browser install never costs us the APK.
+  shaders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install a browser to compile against
+        run: |
+          npm init -y > /dev/null
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+
+      - name: Compile and link every shader
+        run: node tools/glslcheck.js
+
+      - name: Measure what the shaders draw
+        run: node tools/glslpixels.js
+
   build:
     runs-on: ubuntu-latest
     env:

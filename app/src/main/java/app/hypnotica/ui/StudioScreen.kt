@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -55,6 +57,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+
+/**
+ * The shape of the slot the preview sits in. The picture is letterboxed inside
+ * it, so switching export format never reflows the screen under your thumb.
+ */
+private const val PREVIEW_SLOT = 0.62f
 
 /**
  * Studio: the sim as footage.
@@ -133,7 +141,8 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             paletteName = state.paletteName,
                             soundPresetName = state.soundPresetName,
                             params = state.engine.core.params.snapshot(),
-                            settings = settings
+                            settings = settings,
+                            trails = state.trails
                         )
                         runningExport = exporter
                         val progressJob = launch {
@@ -146,7 +155,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             withContext(Dispatchers.Default) { exporter.export(out) }
                             val outcome = withContext(Dispatchers.IO) { Publish.publish(context, out) }
                             exported = outcome.shareable
-                            outcome.message
+                            if (exporter.audioTruncated) {
+                                outcome.message + " The sound is short — the encoder ran out of time."
+                            } else {
+                                outcome.message
+                            }
                         } catch (e: InterruptedException) {
                             runCatching { out.delete() }
                             "Cancelled."
@@ -162,23 +175,38 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             }
         }
 
-        // Preview
+        // Preview. The frame keeps the same slot on screen whichever format is
+        // chosen, and the picture inside it is letterboxed to that format's
+        // shape: the renderer reads the view's own aspect, so lining a shot up
+        // here is lining up the file.
+        val format = ExportSettings.ALL[formatIndex]
+        val previewAspect = format.width.toFloat() / format.height.toFloat()
+        val tallerThanSlot = previewAspect <= PREVIEW_SLOT
         Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.62f)
-                .clip(RoundedCornerShape(14.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            Modifier.fillMaxWidth().aspectRatio(PREVIEW_SLOT),
+            contentAlignment = Alignment.Center
         ) {
-            SimCanvas(surface = surface, modifier = Modifier.fillMaxSize())
-            project.textAt(playhead)?.let { clip ->
-                Text(
-                    clip.text,
-                    color = Tokens.TextPrimary,
-                    style = if (clip.big) MaterialTheme.typography.displaySmall
-                    else MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(16.dp)
-                )
+            Box(
+                (if (tallerThanSlot) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
+                    .aspectRatio(previewAspect, matchHeightConstraintsFirst = tallerThanSlot)
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            ) {
+                SimCanvas(surface = surface, modifier = Modifier.fillMaxSize())
+                project.textAt(playhead)?.let { clip ->
+                    // Where TextOverlay will actually put it: clip space is y-up,
+                    // Compose's bias is y-down, hence the sign.
+                    val centreY = if (clip.big) 0.18f else -0.74f
+                    Text(
+                        clip.text,
+                        color = Tokens.TextPrimary,
+                        style = if (clip.big) MaterialTheme.typography.displaySmall
+                        else MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .align(BiasAlignment(0f, -centreY))
+                            .padding(horizontal = 12.dp)
+                    )
+                }
             }
         }
 

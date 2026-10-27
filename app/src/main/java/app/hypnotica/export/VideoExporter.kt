@@ -51,13 +51,19 @@ data class ExportSettings(
  */
 class VideoExporter(
     private val def: SimDef,
-    private val project: Project,
+    project: Project,
     private val laws: Laws,
     private val paletteName: String,
     private val soundPresetName: String,
     private val params: Map<String, Float>,
-    private val settings: ExportSettings = ExportSettings.VERTICAL
+    private val settings: ExportSettings = ExportSettings.VERTICAL,
+    /** The look the player had, used wherever a track has nothing to say. */
+    private val trails: Float = 0f,
+    private val vignette: Float = 0.35f
 ) {
+
+    /** The render owns its own copy; Studio stays editable while it runs. */
+    private val project: Project = project.copy()
 
     /** 0..1, safe to read from any thread. */
     @Volatile
@@ -66,6 +72,11 @@ class VideoExporter(
 
     @Volatile
     var cancelled: Boolean = false
+        private set
+
+    /** True when the sound had to be cut short; the caller says so. */
+    @Volatile
+    var audioTruncated: Boolean = false
         private set
 
     /** Asks a running export to stop at the next frame. */
@@ -104,7 +115,8 @@ class VideoExporter(
             val scene = SceneRenderer()
             scene.surfaceCreated()
             scene.surfaceChanged(settings.width, settings.height)
-            scene.vignette = 0.35f
+            scene.vignette = vignette
+            scene.trails = trails
 
             val core = SimCore(def, project.seed)
             core.setAspect(settings.width.toFloat() / settings.height.toFloat())
@@ -123,8 +135,12 @@ class VideoExporter(
             val flash = FlashLimiter()
             val frameSeconds = 1f / settings.fps
             var sweptAt = false
-            val audioFramesPerVideoFrame = (SAMPLE_RATE / settings.fps)
-            val mixBuffer = FloatArray(audioFramesPerVideoFrame * 2)
+            // Carried, not divided: 44100 does not divide evenly by every frame
+            // rate, and the leftover is a sixth of a second of drift a minute.
+            val exactAudioPerFrame = SAMPLE_RATE.toDouble() / settings.fps
+            var audioCarry = 0.0
+            val maxAudioFrames = kotlin.math.ceil(exactAudioPerFrame).toInt() + 2
+            val mixBuffer = FloatArray(maxAudioFrames * 2)
 
             for (frame in 0 until totalFrames) {
                 if (cancelled) throw InterruptedException("Export cancelled")
@@ -148,11 +164,14 @@ class VideoExporter(
                     )
                 )
                 val trailsTrack = project.track(TrackKind.TRAILS)
+                // An empty track leaves the player's own trails alone, the same
+                // rule the laws follow above.
                 if (!trailsTrack.isEmpty()) scene.trails = trailsTrack.valueAt(time)
 
                 if (!frozen) {
-                    val steps = max(0, (core.stepHz * frameSeconds * max(0f, speed)).toInt())
-                    core.advanceSteps(steps)
+                    // Carried, not truncated: at 60 fps a bare toInt() made every
+                    // speed below half a step a frame export as a frozen picture.
+                    core.advanceSeconds(frameSeconds, speed)
                 }
 
                 g.reset()
@@ -176,9 +195,12 @@ class VideoExporter(
                         mapping.finalSweep()
                     }
                     mapping.pump(core.events, frameSeconds)
+                    audioCarry += exactAudioPerFrame
+                    val audioFrames = audioCarry.toInt().coerceIn(0, maxAudioFrames)
+                    audioCarry -= audioFrames
                     java.util.Arrays.fill(mixBuffer, 0f)
-                    synth.renderOffline(mixBuffer, audioFramesPerVideoFrame)
-                    val pcm = ShortArray(audioFramesPerVideoFrame * 2)
+                    synth.renderOffline(mixBuffer, audioFrames)
+                    val pcm = ShortArray(audioFrames * 2)
                     for (i in pcm.indices) {
                         pcm[i] = (mixBuffer[i].coerceIn(-1f, 1f) * 32000f).toInt().toShort()
                     }
@@ -277,7 +299,12 @@ class VideoExporter(
 
         // A wall-clock deadline as well as a spin count: a codec that accepts no
         // input would otherwise sit in "Exporting..." for minutes with no way out.
-        val deadline = System.nanoTime() + (AUDIO_SECONDS_LIMIT * 1_000_000_000L)
+        // Scaled to the clip: a fixed forty seconds was less than a long
+        // export needs, and running out left a short audio track muxed in
+        // without a word.
+        val deadline = System.nanoTime() +
+            ((AUDIO_SECONDS_PER_SECOND * blocks.size / 60f + 20f) * 1_000_000_000L).toLong()
+        var ranOut = false
         try {
             while (!finished && spins-- > 0 && System.nanoTime() < deadline) {
                 if (cancelled) throw InterruptedException("Export cancelled")
@@ -300,7 +327,10 @@ class VideoExporter(
                             // A device that ignores KEY_MAX_INPUT_SIZE gets the
                             // block in pieces rather than losing its tail.
                             val remaining = block.size - blockOffset
-                            val shorts = min(remaining, input.capacity() / 2)
+                            // Rounded down to a whole stereo frame: an odd split
+                            // swaps left and right for the rest of the block and
+                            // loses a sample from the clock.
+                            val shorts = (min(remaining, input.capacity() / 2) / 2) * 2
                             val bb = ByteBuffer.allocate(shorts * 2)
                                 .order(java.nio.ByteOrder.nativeOrder())
                             for (i in 0 until shorts) bb.putShort(block[blockOffset + i])
@@ -348,6 +378,14 @@ class VideoExporter(
             }
             codec.release()
         }
+        if (!finished) {
+            ranOut = true
+            android.util.Log.w(
+                "Hypnotica",
+                "Audio encoding ran out of time; the clip's sound is short"
+            )
+        }
+        audioTruncated = ranOut
         return outFormat to out
     }
 
@@ -398,7 +436,7 @@ class VideoExporter(
         /** How much encoded video the exporter may hold before muxing. */
         const val MAX_BUFFER_MB = 80
 
-        /** Longest the audio encoder may take before the clip goes out silent. */
-        const val AUDIO_SECONDS_LIMIT = 40L
+        /** Encoding budget per second of clip, plus a flat twenty. */
+        const val AUDIO_SECONDS_PER_SECOND = 2f
     }
 }

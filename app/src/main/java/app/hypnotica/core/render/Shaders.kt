@@ -20,9 +20,11 @@ object Shaders {
         layout(location = 3) in vec4 iColor;
         uniform vec4 uCam;
         uniform vec2 uCamRot;
+        uniform float uPixelsPerWorld;
         out vec2 vLocal;
         out vec4 vColor;
         out vec2 vExtra;
+        out float vRadiusPx;
         flat out int vShape;
         void main() {
             float c = cos(iMisc.x);
@@ -36,6 +38,7 @@ object Shaders {
             vLocal = aCorner;
             vColor = iColor;
             vExtra = iMisc.zw;
+            vRadiusPx = max(iGeom.z, iGeom.w) * uPixelsPerWorld;
             vShape = int(iMisc.y + 0.5);
         }
     """.trimIndent()
@@ -46,18 +49,27 @@ object Shaders {
         in vec2 vLocal;
         in vec4 vColor;
         in vec2 vExtra;
+        in float vRadiusPx;
         flat in int vShape;
         out vec4 fragColor;
         void main() {
             float a = vColor.a;
+            // The antialiasing band, measured in the same units as d: one screen
+            // pixel wide. A fixed fraction of the quad instead ate most of a thin
+            // ring, which is why small rings used to render faint and fat.
+            float feather = clamp(1.0 / max(1.0, vRadiusPx), 0.0005, 0.25);
             if (vShape == 1) {
                 float d = length(vLocal);
-                a *= 1.0 - smoothstep(0.86, 1.0, d);
+                a *= 1.0 - smoothstep(1.0 - feather, 1.0, d);
             } else if (vShape == 2) {
                 float d = length(vLocal);
                 float inner = vExtra.x;
-                a *= (1.0 - smoothstep(0.93, 1.0, d)) *
-                     smoothstep(max(0.0, inner - 0.04), inner + 0.02, d);
+                float i0 = max(0.0, inner - feather);
+                // smoothstep is undefined when its edges meet, and inner is 0 for
+                // a ring thicker than its radius, so keep them apart.
+                float i1 = max(i0 + 0.0005, inner);
+                a *= (1.0 - smoothstep(1.0 - feather, 1.0, d)) *
+                     smoothstep(i0, i1, d);
                 float gap = vExtra.y;
                 if (gap > 0.0) {
                     float ang = atan(vLocal.y, vLocal.x);
@@ -88,8 +100,12 @@ object Shaders {
             vec2 rot = vec2(rel.x * uCamRot.x - rel.y * uCamRot.y,
                             rel.x * uCamRot.y + rel.y * uCamRot.x);
             gl_Position = vec4(rot * uCam.zw, 0.0, 1.0);
-            gl_PointSize = clamp(aPosSize.z * uPixelsPerWorld, 1.0, 96.0);
-            vColor = aColor;
+            float want = aPosSize.z * uPixelsPerWorld;
+            float size = clamp(want, 1.0, 96.0);
+            gl_PointSize = size;
+            float shrink = clamp(want / size, 0.0, 1.0);
+            float dim = max(shrink * shrink, 0.25);
+            vColor = vec4(aColor.rgb, aColor.a * dim);
         }
     """.trimIndent()
 
@@ -172,8 +188,13 @@ object Shaders {
         uniform float uAlpha;
         out vec4 fragColor;
         void main() {
+            // An Android bitmap arrives with its colour already multiplied by its
+            // alpha, so the fade has to scale both halves and the blend is
+            // GL_ONE. Treating it as straight alpha multiplied the edge pixels by
+            // their coverage twice, which greyed the letter edges and made a
+            // caption fade in dark instead of soft.
             vec4 c = texture(uTex, vUv);
-            fragColor = vec4(c.rgb, c.a * uAlpha);
+            fragColor = vec4(c.rgb * uAlpha, c.a * uAlpha);
         }
     """.trimIndent()
 

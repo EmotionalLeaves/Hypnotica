@@ -67,7 +67,8 @@ class TextOverlay {
 
         GLES30.glUseProgram(program)
         GLES30.glEnable(GLES30.GL_BLEND)
-        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        // The texture is premultiplied; see OVERLAY_FRAG.
+        GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glUniform4f(
             GLES30.glGetUniformLocation(program, "uRect"), 0f, centreY, halfW, halfH
         )
@@ -112,6 +113,9 @@ class TextOverlay {
             y += lineHeight
         }
 
+        // Pin the unit first: upload runs before draw binds anything, so without
+        // this it would land on whichever unit the last pass left active.
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
         GLES30.glTexParameteri(
             GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR
@@ -155,6 +159,9 @@ class TextOverlay {
         GLES30.glDeleteProgram(program)
         GLES30.glDeleteBuffers(1, intArrayOf(quadVbo), 0)
         GLES30.glDeleteTextures(1, intArrayOf(texture), 0)
+        program = 0
+        quadVbo = 0
+        texture = 0
         ready = false
         cached = null
     }

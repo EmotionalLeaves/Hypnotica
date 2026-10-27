@@ -54,6 +54,9 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         private set
 
     private var accumulator = 0f
+
+    /** Fractional steps owed to the offline path; see [advanceSeconds]. */
+    private var offlineCarry = 0f
     private var slowMoRemaining = 0f
 
     /** How much the payoff slow-mo is currently scaling time, 1 = normal. */
@@ -96,6 +99,7 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         sim = def.create()
         env.time = 0f
         accumulator = 0f
+        offlineCarry = 0f
         slowMoRemaining = 0f
         timeScaleNow = 1f
         payoffFired = false
@@ -157,14 +161,15 @@ class SimCore(def: SimDef, seed: Long = 1L) {
     }
 
     /**
-     * Run n steps with no rendering. Used by the payoff pre-check and the offline
-     * render, so it has to obey the same laws the live loop does — otherwise a
-     * backwards or slowed universe would export forwards at 1x.
+     * Run exactly n steps with no rendering.
+     *
+     * The timestep is the same fixed one the live loop uses — a law that slows
+     * time changes how many steps a second of wall clock buys, not how big each
+     * step is, or the integration would follow a different trajectory from the
+     * one that was previewed. [advanceSeconds] does that conversion.
      */
     fun advanceSteps(n: Int) {
-        val laws = env.laws
-        val dt = (1f / stepHz) * laws.timeDirection *
-            (if (laws.timeScale > 0f) laws.timeScale else 1f)
+        val dt = (1f / stepHz) * env.laws.timeDirection
         var i = 0
         while (i < n && !finished) {
             params.tick(env.time)
@@ -184,6 +189,22 @@ class SimCore(def: SimDef, seed: Long = 1L) {
             if (sim.finished()) finished = true
             i++
         }
+    }
+
+    /**
+     * Advance by a span of wall-clock seconds, as the live loop would: the laws'
+     * time scale and the given speed set how many fixed steps that is, and the
+     * remainder is carried, so a speed under half a step a frame is not rounded
+     * away to a frozen picture.
+     */
+    fun advanceSeconds(seconds: Float, speed: Float = 1f) {
+        val laws = env.laws
+        val scale = if (laws.timeScale > 0f) laws.timeScale else 1f
+        offlineCarry += seconds * stepHz * speed.coerceAtLeast(0f) * scale
+        val steps = offlineCarry.toInt()
+        if (steps <= 0) return
+        offlineCarry -= steps
+        advanceSteps(steps)
     }
 
     fun draw(g: G) {

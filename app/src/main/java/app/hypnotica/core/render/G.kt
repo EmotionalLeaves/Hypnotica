@@ -83,6 +83,17 @@ class G {
         glows = glows.copyOf(cap)
     }
 
+    /**
+     * True when every number is one the GPU can use.
+     *
+     * A NaN position is implementation-defined in the vertex stage, and several
+     * drivers answer by rasterising the primitive across the whole viewport —
+     * a full-screen flash that the safety limiter never sees, because it never
+     * passed through [flash]. One test on the hot path is worth that.
+     */
+    private fun usable(a: Float, b: Float, c: Float, d: Float): Boolean =
+        a.isFinite() && b.isFinite() && c.isFinite() && d.isFinite()
+
     private fun push(
         target: FloatArray, base: Int,
         cx: Float, cy: Float, hw: Float, hh: Float, rot: Float,
@@ -99,10 +110,11 @@ class G {
         target[base + 8] = ((color ushr 16) and 0xFF) / 255f
         target[base + 9] = ((color ushr 8) and 0xFF) / 255f
         target[base + 10] = (color and 0xFF) / 255f
-        target[base + 11] = (((color ushr 24) and 0xFF) / 255f) * alphaScale
+        target[base + 11] = (((color ushr 24) and 0xFF) / 255f) * alphaScale.coerceIn(0f, 1f)
     }
 
     fun rect(cx: Float, cy: Float, hw: Float, hh: Float, color: Int, rot: Float = 0f, alpha: Float = 1f) {
+        if (!usable(cx, cy, hw, hh) || !rot.isFinite()) return
         ensureInstances(1)
         push(instances, instanceCount * STRIDE, cx, cy, hw, hh, rot, SHAPE_RECT, 0f, 0f, color, alpha)
         instanceCount++
@@ -114,6 +126,7 @@ class G {
     }
 
     fun disc(cx: Float, cy: Float, r: Float, color: Int, alpha: Float = 1f) {
+        if (!usable(cx, cy, r, r)) return
         ensureInstances(1)
         push(instances, instanceCount * STRIDE, cx, cy, r, r, 0f, SHAPE_DISC, 0f, 0f, color, alpha)
         instanceCount++
@@ -127,7 +140,9 @@ class G {
         cx: Float, cy: Float, r: Float, thickness: Float, color: Int,
         gap: Float = 0f, gapAngle: Float = 0f, alpha: Float = 1f
     ) {
+        if (!usable(cx, cy, r, thickness) || !gap.isFinite() || !gapAngle.isFinite()) return
         if (r <= 0f) return
+        // coerceIn lets a NaN through, so the division is guarded above.
         val inner = ((r - thickness) / r).coerceIn(0f, 0.999f)
         ensureInstances(1)
         push(instances, instanceCount * STRIDE, cx, cy, r, r, gapAngle, SHAPE_RING, inner, gap, color, alpha)
@@ -136,12 +151,14 @@ class G {
 
     /** A soft additive blob, drawn under the solid shapes. */
     fun glow(cx: Float, cy: Float, r: Float, color: Int, alpha: Float = 1f) {
+        if (!usable(cx, cy, r, r)) return
         ensureGlows(1)
         push(glows, glowCount * STRIDE, cx, cy, r, r, 0f, SHAPE_GLOW, 0f, 0f, color, alpha)
         glowCount++
     }
 
     fun line(x1: Float, y1: Float, x2: Float, y2: Float, width: Float, color: Int, alpha: Float = 1f) {
+        if (!usable(x1, y1, x2, y2) || !width.isFinite()) return
         val dx = x2 - x1
         val dy = y2 - y1
         val len = hypot(dx, dy)
@@ -149,7 +166,18 @@ class G {
         rect((x1 + x2) * 0.5f, (y1 + y2) * 0.5f, len * 0.5f, width * 0.5f, color, atan2(dy, dx), alpha)
     }
 
-    fun polyline(xs: FloatArray, ys: FloatArray, count: Int, width: Float, color: Int, alpha: Float = 1f) {
+    fun polyline(
+        xs: FloatArray,
+        ys: FloatArray,
+        count: Int,
+        width: Float,
+        color: Int,
+        alpha: Float = 1f
+    ) {
+        @Suppress("NAME_SHADOWING")
+        // A count larger than the arrays threw on the GL thread, which takes the
+        // renderer with it. The shorter of the three wins.
+        val count = minOf(count, xs.size, ys.size)
         if (count < 2) return
         ensureInstances(count - 1)
         for (i in 0 until count - 1) {
@@ -170,6 +198,7 @@ class G {
 
     /** The huge-count path: one soft dot, 16 bytes, no per-object draw call. */
     fun point(x: Float, y: Float, size: Float, color: Int) {
+        if (!usable(x, y, size, size)) return
         ensurePoints(1)
         val p = pointCount * 3
         pointPos[p] = x

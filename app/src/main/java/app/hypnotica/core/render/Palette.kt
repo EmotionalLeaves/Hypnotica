@@ -55,9 +55,12 @@ class Palette(val name: String, private val stops: IntArray, private val wheel: 
 
         fun brighten(c: Int, amount: Float): Int {
             val a = (c ushr 24) and 0xFF
-            val r = (((c ushr 16) and 0xFF) + 255 * amount).toInt().coerceAtMost(255)
-            val g = (((c ushr 8) and 0xFF) + 255 * amount).toInt().coerceAtMost(255)
-            val b = ((c and 0xFF) + 255 * amount).toInt().coerceAtMost(255)
+            // Clamped at both ends: a negative amount is a legitimate way to
+            // darken, and without the lower bound its sign bits would run into
+            // the neighbouring channels and the alpha.
+            val r = (((c ushr 16) and 0xFF) + 255 * amount).toInt().coerceIn(0, 255)
+            val g = (((c ushr 8) and 0xFF) + 255 * amount).toInt().coerceIn(0, 255)
+            val b = ((c and 0xFF) + 255 * amount).toInt().coerceIn(0, 255)
             return (a shl 24) or (r shl 16) or (g shl 8) or b
         }
 
