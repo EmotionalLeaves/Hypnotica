@@ -109,7 +109,24 @@ class MazeSim : Sim {
                     tracePath()
                 }
             } else {
+                val before = revealed.toInt()
                 revealed += 0.6f
+                // The solution path sings as it is drawn, rising as it goes. The reveal is the maze's best moment and it was
+                // silent — five seconds at the shipped speed, the longest quiet
+                // stretch of any sim still moving. The mapping's own budget
+                // folds a fast reveal into fewer, fuller notes.
+                if (revealed.toInt() > before && pathLength > 0) {
+                    val at = revealed.toInt().coerceAtMost(pathLength - 1)
+                    // The same cell the drawing has just reached: it reveals
+                    // pathCells in order, which runs from the goal back.
+                    val cell = pathCells[at]
+                    env.emit(
+                        EventKind.WRITE,
+                        at.toFloat() / pathLength,
+                        ((cell % w).toFloat() / w) * 2f - 1f,
+                        0.35f
+                    )
+                }
                 if (revealed >= pathLength) {
                     restSeconds = 1.6f
                     break
