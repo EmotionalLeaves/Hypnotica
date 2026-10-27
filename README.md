@@ -21,7 +21,7 @@ tests, signs and publishes the APK.
 | Sound | A synth fed by sim events — every note has a visible cause |
 | Laws | Gravity, bounciness, friction, time direction and more — each sim offered the ones it reads |
 | Controls | Simple mode (macros and big sliders) and Advanced mode (exact numbers, formulas, Lua) |
-| Scale | Measured on a two-core runner: 200,000 sorting bars in 4.5 ms a frame, 20,000 pendulums in 4.2 ms, a 1024² Game of Life in 11.9 ms, 400,000 particles in 44.8 ms |
+| Scale | Measured on a two-core runner, simulation only: 200,000 sorting bars in 4.7 ms a frame, 20,000 pendulums in 1.7 ms, 400,000 particles in 35.3 ms, and a 1024² Game of Life in 7.0 ms a generation — per generation rather than per frame, because it advances on a rate and a per-frame figure would describe the rate slider instead of the work |
 | TickTock | An endless generated feed where every clip is simulated through before you see it |
 | Studio | Keyframed camera, laws and captions, rendered offline to MP4 with sound |
 

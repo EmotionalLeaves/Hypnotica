@@ -17,7 +17,7 @@ It should take about two minutes.
 ## Feed
 
 - [ ] Swipe up moves to another sim, immediately
-- [ ] Swipe down goes back
+- [ ] Swipe down goes to the previous sim (it is not a back gesture)
 - [ ] The hook line and sim name are readable over the simulation
 - [ ] A run that finishes moves on by itself
 
