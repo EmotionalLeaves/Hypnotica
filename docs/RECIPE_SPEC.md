@@ -205,6 +205,7 @@ function on_input(s, kind, x, y) end   -- kind: "tap", "drag", "long_press", ...
 | `emit(kind, value, pan, strength)` | A sound, a haptic and impact juice |
 | `rect`, `bar`, `disc`, `ring`, `glow`, `line`, `point` | Draw |
 | `palette(t)` | A colour from the run's palette, `t` in 0..1 |
+| — | Anywhere a colour is taken, a number between 0 and 1 is read as a palette position instead of an ARGB value; pass `palette(t)` or `hsv(h, s, v)` for anything else |
 | `hsv(h, s, v)` | A colour of your own |
 | `flash(strength)` | Ask for a flash; the limiter decides |
 

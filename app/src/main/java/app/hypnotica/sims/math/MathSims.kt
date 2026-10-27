@@ -699,6 +699,9 @@ class CollatzSim : Sim {
 
     private var start = 27
     private var sequence = LongArray(0)
+
+    /** The longest Collatz trajectory the sim will draw. */
+    private val MAX_TRAJECTORY = 2048
     private var length = 0
     private var shown = 0f
     private var payoffFrame = false
@@ -720,18 +723,20 @@ class CollatzSim : Sim {
      * which reached both the draw list and the synth and stayed there.
      */
     private fun buildSequence(from: Int) {
-        val list = ArrayList<Long>(256)
+        // Written into a buffer that is allocated once: auto-advance calls this
+        // from step() every time a number finishes, and a fresh list each time
+        // would be garbage made inside the loop.
+        if (sequence.size < MAX_TRAJECTORY) sequence = LongArray(MAX_TRAJECTORY)
         var n = from.toLong()
-        var guard = 2000
+        var at = 0
         peak = from.toLong()
-        while (n != 1L && guard-- > 0) {
-            list.add(n)
+        while (n != 1L && at < MAX_TRAJECTORY - 1) {
+            sequence[at++] = n
             n = if (n % 2L == 0L) n / 2 else 3 * n + 1
             if (n > peak) peak = n
         }
-        list.add(1L)
-        sequence = LongArray(list.size) { list[it] }
-        length = sequence.size
+        sequence[at++] = 1L
+        length = at
     }
 
     override fun step(env: SimEnv, dt: Float) {

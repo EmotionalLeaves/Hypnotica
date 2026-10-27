@@ -225,7 +225,14 @@ class RecipeStore(private val dir: File) {
                 }
 
                 function setup(s)
+                  -- The ninety ring slots are made once and reused. Building a
+                  -- table per drop inside step() is allocation in the hot loop,
+                  -- which the spec forbids for the same reason Kotlin sims avoid
+                  -- it: a collection pause is a visible stutter.
                   s.r = {}
+                  for i = 1, 90 do
+                    s.r[i] = { x = 0, y = 0, age = -1, tint = 0 }
+                  end
                   s.carry = 0
                   s.count = 0
                 end
@@ -235,13 +242,16 @@ class RecipeStore(private val dir: File) {
                   while s.carry >= 1 do
                     s.carry = s.carry - 1
                     s.count = s.count + 1
-                    local slot = (s.count % 90) + 1
-                    s.r[slot] = { x = rng(-aspect(), aspect()), y = rng(-1, 1), age = 0, tint = rng() }
-                    emit("hit", s.r[slot].tint, s.r[slot].x, 0.7)
+                    local d = s.r[(s.count % 90) + 1]
+                    d.x = rng(-aspect(), aspect())
+                    d.y = rng(-1, 1)
+                    d.age = 0
+                    d.tint = rng()
+                    emit("hit", d.tint, d.x, 0.7)
                   end
                   for i = 1, 90 do
                     local d = s.r[i]
-                    if d ~= nil then d.age = d.age + dt end
+                    if d.age >= 0 then d.age = d.age + dt end
                   end
                 end
 
@@ -255,7 +265,7 @@ class RecipeStore(private val dir: File) {
                   local life = param("life")
                   for i = 1, 90 do
                     local d = s.r[i]
-                    if d ~= nil and d.age < life then
+                    if d.age >= 0 and d.age < life then
                       local f = d.age / life
                       local radius = d.age * param("grow")
                       ring(d.x, d.y, radius, 0.004, palette(d.tint), 0, 0, 1 - f)
