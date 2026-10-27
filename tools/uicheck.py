@@ -539,6 +539,51 @@ for f in files:
                     f"below, on line {line}, inside {fn}() — a local function "
                     f"is only in scope after its declaration")
 
+# 14. The same local name declared twice in one scope.
+#
+#     Rule 5 catches this at package level. It happens just as easily inside a
+#     composable, which here is a long body edited in pieces by whoever is
+#     adding a control, and a second `val knobs` cost a CI round trip.
+#
+#     Scope is found by walking the braces, not the indentation. The first
+#     draft of this rule compared indentation and immediately flagged the two
+#     `val shown` in ControlDrawer's if/else — same column, different branches,
+#     entirely legal. Only declarations in the same block are compared, and a
+#     name may be shadowed in any block nested inside it.
+for f in files:
+    src = strip(open(f).read())
+    for fn, body, offset in bodies(src):
+        # One frame per block, holding the names declared directly in it.
+        frames = [{}]
+        i = 0
+        decl = re.compile(r'(?:val|var)\s+(\w+)\s*[:=]')
+        while i < len(body):
+            c = body[i]
+            if c == '{':
+                frames.append({})
+                i += 1
+                continue
+            if c == '}':
+                if len(frames) > 1:
+                    frames.pop()
+                i += 1
+                continue
+            m = decl.match(body, i)
+            # Must start on a word boundary, or "oval x" would match.
+            if m and (i == 0 or not (body[i - 1].isalnum() or body[i - 1] == '_')):
+                name = m.group(1)
+                line = src[:offset + i].count('\n') + 1
+                if name in frames[-1]:
+                    problems.append(
+                        f"{f}:{line}: '{name}' is already declared in this "
+                        f"block of {fn}(), on line {frames[-1][name]} — "
+                        f"conflicting declarations")
+                else:
+                    frames[-1][name] = line
+                i = m.end()
+                continue
+            i += 1
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

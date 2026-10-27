@@ -272,7 +272,6 @@ fun LawsControls(state: AppState, advanced: Boolean) {
     // row would simply show nothing selected.
     // Only presets this sim would actually show a difference for. Offering the
     // other twelve was the last ungated control on this tab.
-    val knobs = state.currentDef.lawKnobs
     val presetNames = remember(state.currentDef.id) {
         val ours = Laws.PRESETS.first { it.name == Laws.OUR_UNIVERSE.name }
         Laws.PRESETS.filter { it.name == ours.name || it.differsFor(ours, knobs) }.map { it.name }
