@@ -759,6 +759,16 @@ class PredatorPreySim : Sim {
 
     private var prey = 0.9
     private var predators = 0.4
+
+    /**
+     * The largest populations seen this run, which set the plot's scale. It
+     * was a fixed four prey and three predators to the screen, and at the
+     * shipped values the predators reach nine: two thirds of the loop was
+     * drawn above the top of the screen. Only ever grows, so the picture
+     * settles once the loop has been round once instead of breathing.
+     */
+    private var peakPrey = 1.0
+    private var peakPred = 1.0
     private var voiceClock = 0f
 
     /** Seconds between the two tracking voices. */
@@ -780,6 +790,8 @@ class PredatorPreySim : Sim {
         val p = env.params
         prey = p.f("prey0", 0.9f).toDouble()
         predators = p.f("pred0", 0.4f).toDouble()
+        peakPrey = max(prey * 1.2, 0.5)
+        peakPred = max(predators * 1.2, 0.5)
         voiceClock = 0f
         a = p.f("growth", 1.1f).toDouble()
         b = p.f("predation", 0.4f).toDouble()
@@ -809,6 +821,8 @@ class PredatorPreySim : Sim {
         val k2y = c * mx * my - d * my
         prey = (prey + k2x * h).coerceIn(0.0001, 40.0)
         predators = (predators + k2y * h).coerceIn(0.0001, 40.0)
+        if (prey > peakPrey) peakPrey = prey
+        if (predators > peakPred) peakPred = predators
 
         historyX[head] = prey.toFloat()
         historyY[head] = predators.toFloat()
@@ -853,22 +867,24 @@ class PredatorPreySim : Sim {
         val halfW = env.halfWidth
 
         // Phase portrait: the closed loop is the point of the model.
+        val sx = (1.5f * halfW) / peakPrey.toFloat()
+        val sy = 1.55f / peakPred.toFloat()
         g.reservePoints(filled)
         for (k in 0 until filled) {
             val idx = (head - 1 - k + historyX.size * 2) % historyX.size
             val age = k.toFloat() / filled
             g.point(
-                (historyX[idx] / 4f - 0.5f) * halfW * 1.5f,
-                historyY[idx] / 3f - 0.1f,
+                historyX[idx] * sx - halfW * 0.7f,
+                historyY[idx] * sy - 0.7f,
                 0.006f,
                 Palette.withAlpha(palette.at(0.2f + age * 0.5f), (1f - age) * 0.85f + 0.15f)
             )
         }
-        g.glow((prey.toFloat() / 4f - 0.5f) * halfW * 1.5f, predators.toFloat() / 3f - 0.1f, 0.09f, Palette.SUCCESS, 0.8f)
+        g.glow(prey.toFloat() * sx - halfW * 0.7f, predators.toFloat() * sy - 0.7f, 0.09f, Palette.SUCCESS, 0.8f)
 
         // Live populations as two bars.
-        g.bar(-halfW * 0.78f, -0.95f, 0.05f, (prey.toFloat() / 4f).coerceIn(0f, 1.6f), palette.at(0.25f))
-        g.bar(-halfW * 0.6f, -0.95f, 0.05f, (predators.toFloat() / 3f).coerceIn(0f, 1.6f), palette.at(0.8f))
+        g.bar(-halfW * 0.86f, -0.95f, 0.05f, (prey / peakPrey).toFloat().coerceIn(0f, 1f) * 1.7f, palette.at(0.25f))
+        g.bar(-halfW * 0.7f, -0.95f, 0.05f, (predators / peakPred).toFloat().coerceIn(0f, 1f) * 1.7f, palette.at(0.8f))
     }
 
     override fun payoff(): Boolean = payoffFrame

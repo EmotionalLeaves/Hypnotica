@@ -116,14 +116,17 @@ class HanoiSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth * 0.92f
-        val pegGap = halfW
+        // The widest disc reaches 0.46 of a peg gap either side of its peg, so
+        // the gap is two thirds of the width: at the full width the biggest
+        // discs on the outer pegs ran off both edges of the screen.
+        val pegGap = halfW / 1.5f
         val baseY = -0.75f
         val discH = min(0.085f, 1.3f / discs)
         for (i in 0 until 3) {
             val x = (i - 1) * pegGap
             g.rect(x, baseY + 0.55f, 0.008f, 0.55f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.45f))
         }
-        g.rect(0f, baseY - 0.02f, halfW * 1.5f, 0.018f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
+        g.rect(0f, baseY - 0.02f, halfW, 0.018f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
         for (i in 0 until 3) {
             val x = (i - 1) * pegGap
             for ((level, disc) in pegs[i].withIndex()) {

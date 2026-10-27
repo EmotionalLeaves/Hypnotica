@@ -239,16 +239,38 @@ class GearsSim : Sim {
         val count = p.i("gears", 5).coerceIn(2, 9)
         speed = p.f("speed", 0.9f)
         val toothSize = 0.055f
-        var x = -env.halfWidth * 0.72f
-        var dir = 1f
-        var prevRadius = 0f
+        // The train zigzags down the screen, then the whole of it is scaled to
+        // fit. It used to run in a straight line to the right, three and a
+        // third units long on a screen not one unit wide: on a phone held
+        // upright, three quarters of the gears were off the edge.
+        val xs = FloatArray(count)
+        val ys = FloatArray(count)
+        val radii = FloatArray(count)
+        val teethOf = IntArray(count)
         for (i in 0 until count) {
-            val teeth = p.i("teeth", 14).coerceIn(6, 40) + i * p.i("step", 4).coerceIn(0, 12)
-            val radius = teeth * toothSize / (2f * PI.toFloat()) * 2f
-            if (i > 0) x += prevRadius + radius
-            gears.add(Gear(x, sin(i * 0.9f) * 0.22f, radius, teeth, dir, i.toFloat() / count))
+            teethOf[i] = p.i("teeth", 14).coerceIn(6, 40) + i * p.i("step", 4).coerceIn(0, 12)
+            radii[i] = teethOf[i] * toothSize / (2f * PI.toFloat()) * 2f
+            if (i > 0) {
+                val heading = -PI.toFloat() / 2f + (if (i % 2 == 1) ZIGZAG else -ZIGZAG)
+                val d = radii[i - 1] + radii[i]
+                xs[i] = xs[i - 1] + cos(heading) * d
+                ys[i] = ys[i - 1] + sin(heading) * d
+            }
+        }
+        var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE
+        var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+        for (i in 0 until count) {
+            val reach = radii[i] * TOOTH_REACH
+            x0 = min(x0, xs[i] - reach); x1 = max(x1, xs[i] + reach)
+            y0 = min(y0, ys[i] - reach); y1 = max(y1, ys[i] + reach)
+        }
+        val fit = min(1f, min(2f * env.halfWidth * FILL / (x1 - x0), 2f * FILL / (y1 - y0)))
+        val cx = (x0 + x1) * 0.5f
+        val cy = (y0 + y1) * 0.5f
+        var dir = 1f
+        for (i in 0 until count) {
+            gears.add(Gear((xs[i] - cx) * fit, (ys[i] - cy) * fit, radii[i] * fit, teethOf[i], dir, i.toFloat() / count))
             dir = -dir
-            prevRadius = radius
         }
         elapsed = 0f
         payoffFrame = false
@@ -322,6 +344,12 @@ class GearsSim : Sim {
     }
 
     companion object {
+        /** How far either side of straight down each link of the train turns. */
+        private const val ZIGZAG = 0.62f
+        /** A gear's teeth reach this far out, as a share of its radius. */
+        private const val TOOTH_REACH = 1.18f
+        private const val FILL = 0.9f
+
         fun def(): SimDef = SimDef(
             id = "physics/gears",
             title = "Gear train",
@@ -571,6 +599,16 @@ class ClothSim : Sim {
             }
         }
     }
+
+
+    /**
+     * The sheet is a fixed 1.5 across, and the wind carries it further: on a
+     * phone held upright, nearly twice the screen, so the pinned corners hung
+     * off the edges. The view pulls back instead of the sheet being made
+     * smaller, because a smaller sheet is a different sheet — it falls and
+     * settles on another clock.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float = 1.05f
 
     override fun payoff(): Boolean = payoffFrame
 

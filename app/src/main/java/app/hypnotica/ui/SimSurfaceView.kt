@@ -223,7 +223,7 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
 
     private fun panBy(dxPixels: Float, dyPixels: Float) {
         if (height <= 0) return
-        val worldPerPixel = 2f / (height * engine.camera.zoom)
+        val worldPerPixel = 2f / (height * engine.viewScale())
         // Along the screen, not along the world: after a twist, a sideways drag
         // used to send the view off at the camera's angle instead.
         val dx = -dxPixels * worldPerPixel

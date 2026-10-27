@@ -126,6 +126,9 @@ class PolyrhythmSim : Sim {
         }
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.95f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
@@ -243,6 +246,9 @@ class HarmonographSim : Sim {
             )
         }
     }
+
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.56f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -534,6 +540,9 @@ class SpirographSim : Sim {
             g.glow(trailX[count - 1], trailY[count - 1], 0.055f, Palette.SUCCESS, 0.7f)
         }
     }
+
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.92f
 
     override fun payoff(): Boolean = payoffFrame
 

@@ -98,6 +98,19 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         env.aspect = aspect
     }
 
+    /**
+     * How far the view pulls back so the whole sim is on screen: 1 when it
+     * already fits, less when it reaches past the edges. See [Sim.frameHalfWidth].
+     */
+    fun fit(): Float {
+        var f = 1f
+        val w = sim.frameHalfWidth(env)
+        if (w.isFinite() && w > env.halfWidth && env.halfWidth > 0f) f = kotlin.math.min(f, env.halfWidth / w)
+        val h = sim.frameHalfHeight(env)
+        if (h.isFinite() && h > 1f) f = kotlin.math.min(f, 1f / h)
+        return f.coerceIn(MIN_FIT, 1f)
+    }
+
     /** Swap in a different sim, keeping the player's speed and laws. */
     fun load(newDef: SimDef, newSeed: Long = seed) {
         def = newDef
@@ -276,6 +289,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
          * does not take every frame, and because draw() runs after advance().
          */
         const val WATCH_FRAMES = 30
+        /** No sim is pulled back further than this, whatever it asks for. */
+        const val MIN_FIT = 0.2f
         /**
          * How long the slow motion lasts, in simulated seconds.
          *

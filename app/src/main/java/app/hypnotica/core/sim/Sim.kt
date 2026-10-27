@@ -144,6 +144,20 @@ interface Sim {
 
     /** Short live counters shown as an overlay, e.g. "comparisons 1,204". */
     fun counters(): List<Pair<String, String>> = emptyList()
+
+    /**
+     * How much world, either side of the centre, this sim needs on screen.
+     *
+     * Zero, the default, means the sim lays itself out inside
+     * [SimEnv.halfWidth] and the unit height. A sim drawn at a fixed size — a
+     * ring, a square, a spiral — says how far it reaches, and the view pulls
+     * back until that fits. On a phone held upright the screen is under half a
+     * unit wide, and a ring of radius 0.92 had its sides cut off.
+     */
+    fun frameHalfWidth(env: SimEnv): Float = 0f
+
+    /** The same, upwards and downwards from the centre. Zero means one unit. */
+    fun frameHalfHeight(env: SimEnv): Float = 0f
 }
 
 /** Metadata plus the factory for one sim. */

@@ -322,6 +322,9 @@ class ChaosGameSim : Sim {
         }
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.82f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = false
@@ -483,6 +486,9 @@ class PrimeSpiralSim : Sim {
         }
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.97f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = drawn >= limit && restSeconds in -1000f..0f
@@ -600,6 +606,9 @@ class MonteCarloPiSim : Sim {
         g.rect(0f, 0f, 0.004f, r, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.89f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = false
@@ -675,7 +684,27 @@ class FourierSim : Sim {
         theta = 0f
         payoffFrame = false
         loops = 0
+        // How far the traced curve reaches, sampled once round the loop, so
+        // the view can pull back to hold all of it. A square wave of many
+        // terms reached 1.7 either side, on a screen under 0.5 wide.
+        var reach = 0f
+        for (step in 0 until 720) {
+            val th = step * (2f * PI.toFloat() / 720f)
+            var x = 0f
+            var y = 0f
+            for (k in 0 until terms) {
+                val a = freqs[k] * th + phases[k]
+                x += amps[k] * cos(a)
+                y += amps[k] * sin(a)
+            }
+            reach = max(reach, max(abs(x), abs(y)))
+        }
+        extent = reach * 0.55f + 0.05f
     }
+
+    private var extent = 1f
+    override fun frameHalfWidth(env: SimEnv): Float = extent
+    override fun frameHalfHeight(env: SimEnv): Float = extent
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false

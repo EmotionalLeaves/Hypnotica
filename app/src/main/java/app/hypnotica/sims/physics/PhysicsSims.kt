@@ -260,6 +260,9 @@ class BallEscapeSim : Sim {
         env.emit(EventKind.BIRTH, 0.7f, 0f, 0.8f)
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = ringRadius + 0.04f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = restSeconds in -1000f..0f && (escaped > 0 || balls.none { it.alive })
@@ -457,41 +460,45 @@ class PendulumWaveSim : Sim {
         }
     }
 
+    /**
+     * Seen from above: one row per pendulum, top to bottom, each bob swinging
+     * left and right from a centre line. That is the view the pendulum wave is
+     * known by — the rows drift into a snake, braid, and snap back into a
+     * single line.
+     *
+     * It was drawn from the front, every pendulum hanging from one bar with its
+     * string, and on a phone held upright the bar and the swing were three
+     * times wider than the screen: the ends were cut off, and fitting the
+     * whole of it left a small picture in the middle of a tall screen.
+     */
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val spread = env.halfWidth * 0.86f
-        val pivotY = 0.92f
-        g.line(-spread, pivotY, spread, pivotY, 0.008f, Palette.TEXT_SECONDARY, 0.45f)
+        val reach = env.halfWidth * 0.86f / kotlin.math.sin(MAX_SWING)
+        val top = 0.86f
+        g.line(0f, top + 0.04f, 0f, -top - 0.04f, 0.004f, Palette.TEXT_SECONDARY, 0.3f)
 
-        // Past a few hundred, a bob and its string would be thinner than a pixel,
-        // so the whole curtain goes through the point path instead.
+        // Past a few hundred a bob would be thinner than a pixel, so the whole
+        // curtain goes through the point path instead.
         if (count > DRAWN_AS_POINTS) {
             g.reservePoints(count)
             val size = (2.6f - count / 12000f).coerceIn(1.2f, 2.6f)
             for (i in 0 until count) {
                 val t = i.toFloat() / (count - 1)
-                val px = -spread + t * spread * 2f
-                val l = lengths[i]
-                g.point(
-                    px + sin(angles[i]) * l,
-                    pivotY - cos(angles[i]) * l,
-                    size,
-                    palette.at(t)
-                )
+                g.point(sin(angles[i]) * reach, top - t * top * 2f, size, palette.at(t))
             }
             return
         }
 
+        val rowGap = if (count <= 1) 0f else top * 2f / (count - 1)
+        val bob = (rowGap * 0.36f).coerceIn(0.008f, 0.034f)
         for (i in 0 until count) {
             val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
-            val px = -spread + t * spread * 2f
-            val l = lengths[i]
-            val bx = px + sin(angles[i]) * l
-            val by = pivotY - cos(angles[i]) * l
+            val y = if (count <= 1) 0f else top - t * top * 2f
+            val bx = sin(angles[i]) * reach
             val c = palette.at(t)
-            g.line(px, pivotY, bx, by, 0.004f, Palette.TEXT_SECONDARY, 0.35f)
-            g.glow(bx, by, 0.09f, c, 0.5f)
-            g.disc(bx, by, 0.028f, c)
+            g.line(0f, y, bx, y, 0.003f, Palette.TEXT_SECONDARY, 0.3f)
+            g.glow(bx, y, bob * 3.2f, c, 0.5f)
+            g.disc(bx, y, bob, c)
         }
     }
 
@@ -533,6 +540,8 @@ class PendulumWaveSim : Sim {
 
         /** Above this, bobs and strings become points. */
         const val DRAWN_AS_POINTS = 400
+        /** The Swing slider's top, which reaches the edge of the screen. */
+        private const val MAX_SWING = 1.2f
 
         /** How many of them are allowed to make a sound. */
         const val VOICES = 48

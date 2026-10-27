@@ -583,6 +583,9 @@ class LorenzSim : Sim {
         }
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.6f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> =

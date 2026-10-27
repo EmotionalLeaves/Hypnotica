@@ -191,6 +191,9 @@ class HypercubeSim : Sim {
         if (e.kind == TouchEvent.Kind.DRAG) manualSpin = (manualSpin + e.x * 0.6f).coerceIn(-3f, 3f)
     }
 
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.65f
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
@@ -388,6 +391,9 @@ class SlicingSim : Sim {
             g.line(ax, centreY + ay, proj[0] * scale, centreY + proj[1] * scale, 0.003f, colour)
         }
     }
+
+    /** The widest shell is 0.65 across; the object travels up and down through the frame on purpose. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.68f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -879,6 +885,9 @@ class NdBounceSim : Sim {
         for (i in 0 until count * dims) vel[i] += env.rng.range(-kick, kick)
         env.emit(EventKind.HIT, 0.8f, 0f, 0.9f)
     }
+
+    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.74f
 
     override fun payoff(): Boolean = payoffFrame
 

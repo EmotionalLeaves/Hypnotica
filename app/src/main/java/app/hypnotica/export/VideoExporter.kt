@@ -189,6 +189,8 @@ class VideoExporter(
                 val allowed = flash.allow(wanted, frameSeconds)
 
                 GLES30.glViewport(0, 0, settings.width, settings.height)
+                // The same pull-back the preview had, at the file's own shape.
+                scene.fit = core.fit()
                 // The export's own frame time, so a 30 fps file gets the
                 // same trail length as the 60 fps preview rather than double.
                 scene.render(g, camera, allowed, frameSeconds)

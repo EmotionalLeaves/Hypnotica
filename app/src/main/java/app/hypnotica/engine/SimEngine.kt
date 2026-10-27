@@ -493,7 +493,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
                 // 1 that is about fourteen — but the pinch reaches 40x, where
                 // the same constant was two hundred times the intended
                 // amplitude: a lurch rather than a tick.
-                val amount = SHAKE_WORLD * shake * shake / camera.zoom.coerceAtLeast(0.05f)
+                val amount = SHAKE_WORLD * shake * shake / (camera.zoom * scene.fit).coerceAtLeast(0.05f)
                 shakeOffsetX = a * amount
                 shakeOffsetY = b * amount
             } else {
@@ -501,6 +501,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
                 shakeOffsetY = 0f
             }
         }
+
+        // The pull-back that keeps a fixed-size sim on screen, eased so that
+        // moving from one sim to the next is a short glide, not a jump.
+        val wantFit = core.fit()
+        scene.fit = if (scene.fit <= 0f || kotlin.math.abs(wantFit - scene.fit) < 0.002f) wantFit
+        else scene.fit + (wantFit - scene.fit) * kotlin.math.min(1f, dt * FIT_RATE)
 
         g.reset()
         g.background = Palette.BG
@@ -612,6 +618,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     fun baseZoom(): Float = baseZoom
 
+    /** World-to-screen scale: the camera's zoom with the sim's fit applied. */
+    fun viewScale(): Float = camera.zoom * scene.fit
+
     fun release() {
         synth.stop()
         scene.release()
@@ -629,8 +638,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         // The rotation was missing, so once the view was twisted every tap,
         // drag and long-press landed somewhere else — most of a screen away at
         // half a radian.
-        val sx = ndcX * aspect / camera.zoom
-        val sy = ndcY / camera.zoom
+        val scale = camera.zoom * scene.fit
+        val sx = ndcX * aspect / scale
+        val sy = ndcY / scale
         val c = kotlin.math.cos(camera.rotation)
         val s = kotlin.math.sin(camera.rotation)
         val x = camera.x + sx * c - sy * s
@@ -659,6 +669,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         /** Screen shake: a few pixels of world, gone inside 150 ms. */
         const val SHAKE_SECONDS = 0.15f
         const val SHAKE_WORLD = 0.012f
+        /** How fast the view glides to a new sim's fit, per second. */
+        const val FIT_RATE = 5f
 
         /** A flick can produce a lot of moves; a frame need not apply all of them. */
         const val MAX_PENDING_TOUCHES = 64

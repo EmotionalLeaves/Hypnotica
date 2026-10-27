@@ -66,6 +66,12 @@ class SceneRenderer {
      */
     var vignette = 0f
 
+    /**
+     * How far the view is pulled back so a sim drawn at a fixed size fits the
+     * screen: 1 for most sims. Applied with the camera's zoom, on top of it.
+     */
+    var fit = 1f
+
     var ready = false
         private set
 
@@ -223,8 +229,8 @@ class SceneRenderer {
         }
 
         val aspect = viewportWidth.toFloat() / viewportHeight.toFloat()
-        val scaleY = camera.zoom
-        val scaleX = camera.zoom / aspect
+        val scaleY = camera.zoom * fit
+        val scaleX = camera.zoom * fit / aspect
         val cr = cos(-camera.rotation)
         val sr = sin(-camera.rotation)
         val pixelsPerWorld = viewportHeight * scaleY * 0.5f

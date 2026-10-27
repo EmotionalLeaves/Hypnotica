@@ -27,6 +27,21 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **A dozen sims were cut off on a phone held upright.** The screen there is
+  under half a unit wide, and these drew at a fixed size as if it were square.
+  Measured, a quarter to three quarters of what they drew was off the sides:
+  the ball-escape ring cut to two arcs, the gear train running off to the right,
+  the Monte Carlo square, prime spiral, spirograph, polyrhythm, chaos game,
+  Fourier curve, hypercube, slicing shells, N-D box and Lorenz wings all
+  clipped, and the predator–prey loop two thirds above the top of the screen.
+  A sim drawn at a fixed size now says how far it reaches and the view pulls
+  back to fit (touch, pan and export follow). The gear train zigzags down the
+  screen and scales to fit; Hanoi's outer discs fit; the predator–prey plot
+  scales to the loop; the pendulum wave is drawn from above, one row per
+  pendulum — the snake view it is known by — so it fills an upright screen
+  instead of being a small picture in the middle of it. `FrameTest` holds every
+  sim to the width of an upright phone.
+
 - **Silent stretches, measured on the real synth at 8-bit.** Gradient descent
   sounded only while the overall best improved — three seconds — then held six
   silent seconds; each walker now lands with its own note and the run ends when
