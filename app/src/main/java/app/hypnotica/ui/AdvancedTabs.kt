@@ -120,7 +120,11 @@ private fun ParamsTab(state: AppState) {
         state.setPalette(Palette.NAMES[it])
     }
     Spacer(Modifier.height(6.dp))
-    ToggleRow("Evolve", state.evolve) { state.evolve = it }
+    ToggleRow(
+        if (state.canEvolve) "Evolve" else "Evolve — nothing on this sim drifts",
+        state.evolve,
+        enabled = state.canEvolve
+    ) { state.evolve = it }
     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state.recording) {
             Pill("Stop and edit", selected = true) { state.stopRecording() }
@@ -160,7 +164,7 @@ private fun ExactParamRow(state: AppState, p: Param) {
     // See ParamControl in PlayerScreen: the parameter values are not snapshot
     // state, so without reading the version this row never redraws and every
     // slider on the Params tab springs back when you let go.
-    val version = state.paramVersion + state.driftTick
+    val version = state.paramVersion + state.liveTick
     val value = remember(version, p.key) { state.paramValue(p.key) }
     val muted = remember(version, p.key) { mutedReason(state, p) }
     when (p.type) {
@@ -186,7 +190,10 @@ private fun ExactParamRow(state: AppState, p: Param) {
                 enabled = muted == null,
                 onCommit = { state.commitParam(p) }
             ) { state.setParam(p, it) }
-            FormulaField(state, p)
+            // Not offered for a value the run only reads while being built: a
+            // formula in t cannot mean anything there, and it silently did
+            // nothing.
+            if (!state.needsRestart(p)) FormulaField(state, p)
         }
     }
 }
@@ -226,12 +233,7 @@ private fun FormulaField(state: AppState, p: Param) {
                 value = text,
                 onValueChange = { next ->
                     text = next
-                    if (next.isBlank()) {
-                        state.engine.core.params.clearExpression(p.key)
-                        ok = true
-                    } else {
-                        ok = state.engine.core.params.setExpression(p.key, next)
-                    }
+                    ok = state.setParamFormula(p, next)
                 },
                 singleLine = true,
                 textStyle = TextStyle(
@@ -536,9 +538,22 @@ private fun SoundTab(state: AppState) {
 
     SectionLabel("Which events make a sound")
     Column {
+        // Dimmed rather than hidden for the kinds this sim does not make, so
+        // the list does not reflow as a run produces its first of each. Every
+        // sim was offered all nine; most make two to six, so on a sorting sim
+        // five of these switches flipped and changed nothing.
+        val events = state.engine.core.events
         EventKind.entries.forEach { kind ->
-            val enabled = remember(version, kind) { mapping.isEnabled(kind) }
-            ToggleRow(kind.name.lowercase().replaceFirstChar { it.uppercase() }, enabled) {
+            val on = remember(version, kind) { mapping.isEnabled(kind) }
+            val made = remember(version, kind, state.currentDef.id, state.liveTick) {
+                events.hasEmitted(kind)
+            }
+            ToggleRow(
+                kind.name.lowercase().replaceFirstChar { it.uppercase() } +
+                    (if (made) "" else " — not used by this sim"),
+                on,
+                enabled = made
+            ) {
                 mapping.setEnabled(kind, it)
                 state.soundChanged()
             }

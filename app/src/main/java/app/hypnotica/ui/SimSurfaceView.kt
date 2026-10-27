@@ -45,6 +45,21 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
     private var lastPinchAngle = 0f
     private var lastTapAt = 0L
 
+    /**
+     * A single tap, held back in case a second one is coming.
+     *
+     * The first tap used to fire onTap immediately, which made double-tap
+     * unreachable wherever the single tap navigates: on the feed the first tap
+     * opened the player, Compose rebound onDoubleTap to the player's handler
+     * before the second tap landed, and the feed's own double-tap handler was
+     * dead code. In TickTock the like worked but the first tap had already
+     * hidden the caption — including the line that says double-tap is a thing.
+     *
+     * Held only when a double-tap handler is actually registered, so a screen
+     * with nothing on double-tap keeps responding to taps instantly.
+     */
+    private var pendingTap: Runnable? = null
+
     private val longPressRunnable = Runnable {
         if (!moved && !pinching) {
             longPressFired = true
@@ -148,13 +163,28 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                 val (wx, wy) = engine.worldFromScreen(event.x, event.y)
                 if (!moved && !pinching && !longPressFired && dur < 400) {
                     val now = System.currentTimeMillis()
-                    if (now - lastTapAt < DOUBLE_TAP_MS) {
+                    val double = onDoubleTap
+                    if (now - lastTapAt < DOUBLE_TAP_MS && double != null) {
                         lastTapAt = 0L
-                        onDoubleTap?.invoke()
+                        pendingTap?.let { removeCallbacks(it) }
+                        pendingTap = null
+                        double.invoke()
                     } else {
                         lastTapAt = now
-                        if (!cameraMode) engine.onTouch(TouchEvent(TouchEvent.Kind.TAP, wx, wy))
-                        onTap?.invoke()
+                        val fire = Runnable {
+                            pendingTap = null
+                            if (!cameraMode) {
+                                engine.onTouch(TouchEvent(TouchEvent.Kind.TAP, wx, wy))
+                            }
+                            onTap?.invoke()
+                        }
+                        if (double == null) {
+                            fire.run()
+                        } else {
+                            pendingTap?.let { removeCallbacks(it) }
+                            pendingTap = fire
+                            postDelayed(fire, DOUBLE_TAP_MS)
+                        }
                     }
                 } else if (!cameraMode) {
                     engine.onTouch(TouchEvent(TouchEvent.Kind.DRAG_END, wx, wy))
@@ -165,6 +195,8 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
 
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPressRunnable)
+                pendingTap?.let { removeCallbacks(it) }
+                pendingTap = null
                 pinching = false
                 moved = false
             }

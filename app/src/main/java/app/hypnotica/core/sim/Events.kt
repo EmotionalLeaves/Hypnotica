@@ -34,9 +34,26 @@ class EventQueue(private val capacity: Int = 512) {
     var emitted: Long = 0L
         private set
 
+    /**
+     * Which kinds this run has actually produced.
+     *
+     * The Sound card offers a switch for all nine kinds on every sim, and most
+     * sims make two to six: on a sorting sim, Hit, Cross, Birth, Death and Step
+     * are five switches that flip and change nothing, and on a physics sim it
+     * is the mirror image. Marking them as they arrive lets the card show which
+     * ones this sim can use, without a table of declarations to keep in step
+     * with fifty-eight sims. One array write per emit, inside a lock that is
+     * already held.
+     */
+    private val seen = BooleanArray(EventKind.entries.size)
+
+    /** True once this run has emitted [kind] at least once. */
+    fun hasEmitted(kind: EventKind): Boolean = seen[kind.ordinal]
+
     fun emit(kind: EventKind, value: Float, pan: Float = 0f, strength: Float = 1f) {
         synchronized(lock) {
             emitted++
+            seen[kind.ordinal] = true
             val next = (tail + 1) % capacity
             if (next == head) {
                 dropped++
@@ -73,6 +90,7 @@ class EventQueue(private val capacity: Int = 512) {
             tail = 0
             dropped = 0
             emitted = 0L
+            java.util.Arrays.fill(seen, false)
         }
     }
 }

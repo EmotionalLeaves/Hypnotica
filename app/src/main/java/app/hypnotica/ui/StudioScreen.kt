@@ -134,11 +134,21 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             .coerceIn(selectedTrack.min, selectedTrack.max)
     }
 
+    // engine.seeking is a plain volatile the GL thread writes, so nothing told
+    // Compose when it went false: the label appeared during a scrub, because
+    // the playhead was changing, and then stayed up until some unrelated
+    // interaction redrew the screen — shifting the layout while it was there.
+    var catchingUp by remember { mutableStateOf(false) }
     LaunchedEffect(playing) {
         state.engine.studioPlaying = playing
-        while (playing) {
+        // No exit: a scrub sets seeking without changing `playing`, so a loop
+        // that stopped when paused would never see it clear. The effect is
+        // cancelled when the screen goes away, which is the right end for it.
+        while (true) {
             delay(50)
-            playhead = state.engine.studioTime
+            if (playing) playhead = state.engine.studioTime
+            val now = state.engine.seeking
+            if (now != catchingUp) catchingUp = now
         }
     }
 
@@ -250,7 +260,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
         NoticeLine(state.notice)
 
-        if (state.engine.seeking) {
+        if (catchingUp) {
             Text(
                 "catching up…",
                 color = Tokens.TextSecondary,
@@ -373,13 +383,24 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 TrackKind.entries.indexOf(selectedTrack)
             ) { selectedTrack = TrackKind.entries[it] }
 
-            SectionLabel("Easing for the next key")
-            ChipRow(Easing.entries.map { it.title }, Easing.entries.indexOf(easing)) {
+            val firstKey = remember(version, selectedTrack) {
+                project.track(selectedTrack).size == 0
+            }
+            SectionLabel(
+                if (firstKey) "Easing — nothing to ease from yet"
+                else "Easing into the next key"
+            )
+            ChipRow(
+                Easing.entries.map { it.title },
+                Easing.entries.indexOf(easing),
+                enabled = !firstKey
+            ) {
                 easing = Easing.entries[it]
             }
 
             // Dragging this previews the value on screen as well as choosing
-            // it, so a key is always set to something that has been seen.
+            // it, so a key is always set to something that has been seen —
+            // except for the four tracks where there is nothing to see yet.
             ValueSlider(
                 "Value to key",
                 keyValue,
@@ -389,6 +410,22 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             ) { v ->
                 keyValue = v
                 previewKeyValue(state, selectedTrack, v)
+            }
+            // Flash has nothing live to show, and speed, gravity and bounciness
+            // only show once the sim steps — which it does not do with a project
+            // attached unless Play is on. Without this the slider moved, the
+            // readout changed and the picture sat still, which reads as broken.
+            if (!previewsOnScreen(selectedTrack)) {
+                Text(
+                    if (selectedTrack == TrackKind.FLASH) {
+                        "Flash only shows in the export and while playing."
+                    } else {
+                        "${selectedTrack.title} only shows while playing — press Play to see it."
+                    },
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
             }
             if (isCameraTrack(selectedTrack)) {
                 Text(
@@ -601,6 +638,21 @@ private fun TrackStrip(
 private fun isCameraTrack(kind: TrackKind): Boolean = when (kind) {
     TrackKind.CAMERA_X, TrackKind.CAMERA_Y, TrackKind.ZOOM, TrackKind.ROTATION -> true
     else -> false
+}
+
+/**
+ * Whether dragging "Value to key" shows anything in the paused preview.
+ *
+ * The camera and the trails are applied to the frame as it is drawn, so they
+ * show at once. Speed, gravity and bounciness only become visible once the sim
+ * takes a step, and with a project attached it does not step unless Play is on;
+ * flash is composited by the exporter and the playing frame loop. For those
+ * four the slider moved and the picture did not, which is a dead control until
+ * it says why.
+ */
+private fun previewsOnScreen(kind: TrackKind): Boolean = when (kind) {
+    TrackKind.SPEED, TrackKind.GRAVITY, TrackKind.BOUNCINESS, TrackKind.FLASH -> false
+    else -> true
 }
 
 /** The value in the units the track is actually in. */

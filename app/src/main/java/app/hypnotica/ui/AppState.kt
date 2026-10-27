@@ -55,16 +55,19 @@ class AppState(
     var paramVersion by mutableIntStateOf(0)
 
     /**
-     * Bumped a few times a second while Evolve is on. Evolve drifts the values
-     * from the GL thread, which cannot touch snapshot state, so without this
-     * the picture changes while every slider sits frozen — and the sliders are
-     * what tell you what the picture is doing.
+     * Bumped a few times a second while the player is on screen.
+     *
+     * Everything the engine knows but Compose cannot see needs this. Evolve
+     * drifts the parameter values from the GL thread, which must not touch
+     * snapshot state, so without it the picture changed while every slider sat
+     * frozen. The same goes for which event kinds a run has actually produced,
+     * which decides whether a sound switch can do anything.
      */
-    var driftTick by mutableIntStateOf(0)
+    var liveTick by mutableIntStateOf(0)
         private set
 
-    fun tickDrift() {
-        driftTick++
+    fun tickLive() {
+        liveTick++
     }
 
     /** Where each Simple-mode macro slider sits, per sim. */
@@ -533,6 +536,37 @@ class AppState(
      * compute a selected index that was always -1, the very literal the
      * computation replaced.
      */
+    /**
+     * Drive a value from a formula in t, or clear it when the box is emptied.
+     *
+     * The Advanced formula box used to write the engine directly, so nothing
+     * bumped the version and nothing committed: on a value the run only reads
+     * while being built, typing a formula did nothing whatsoever. Returns
+     * whether the text parses, which is what colours the box.
+     */
+    /**
+     * Whether Evolve has anything it is allowed to move on this sim.
+     *
+     * The drift skips Data-card values and anything that is not a float, so on
+     * the n-body sim (whose only float is on the Data card) and curved space
+     * the switch flipped on, stayed on, and nothing ever drifted.
+     */
+    val canEvolve: Boolean
+        get() = currentDef.params.any {
+            it.card != Card.DATA && it.type == ParamType.FLOAT
+        }
+
+    fun setParamFormula(p: Param, text: String): Boolean {
+        val ok = if (text.isBlank()) {
+            engine.core.params.clearExpression(p.key)
+            true
+        } else {
+            engine.core.params.setExpression(p.key, text)
+        }
+        if (ok) paramVersion++
+        return ok
+    }
+
     fun paramText(key: String, fallback: String = ""): String =
         engine.core.params.text(key, fallback)
 

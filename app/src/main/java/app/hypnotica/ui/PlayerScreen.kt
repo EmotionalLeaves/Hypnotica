@@ -66,9 +66,9 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         while (true) {
             delay(250)
             uiTick++
-            // Evolve moves the values behind the controls' back; this is what
-            // lets the controls follow.
-            if (state.evolve) state.tickDrift()
+            // Not only while Evolve is on: the sound switches also need it, to
+            // know which kinds of event this run has produced.
+            state.tickLive()
         }
     }
 
@@ -305,7 +305,7 @@ private fun CardControls(state: AppState, card: Card, showEmpty: Boolean = true)
 private fun MacroControl(state: AppState, macro: Macro) {
     // Same reason as ParamControl: the cached position is checked against the
     // parameter map's own revision, which is not snapshot state.
-    val version = state.paramVersion + state.driftTick
+    val version = state.paramVersion + state.liveTick
     val position = remember(version, macro.key) { state.macroPosition(macro) }
     ValueSlider(
         label = macro.label,
@@ -366,7 +366,7 @@ private fun ParamControl(state: AppState, p: Param) {
     // in snapshot state, so nothing in here recomposes on its own: the slider
     // moved under your finger and sprang straight back, because the value it
     // was told to show was still the old one.
-    val version = state.paramVersion + state.driftTick
+    val version = state.paramVersion + state.liveTick
     val shown = remember(version, p.key) { state.paramValue(p.key) }
     val muted = remember(version, p.key) { mutedReason(state, p) }
     when (p.type) {
@@ -420,7 +420,11 @@ private fun MotionCard(state: AppState) {
     TimeControls(state)
     CardControls(state, Card.MOTION)
     Spacer(Modifier.height(4.dp))
-    ToggleRow("Evolve", state.evolve) { state.evolve = it }
+    ToggleRow(
+        if (state.canEvolve) "Evolve" else "Evolve — nothing on this sim drifts",
+        state.evolve,
+        enabled = state.canEvolve
+    ) { state.evolve = it }
     Text(
         "Lets the settings drift slowly while it plays, so a loop never settles.",
         color = Tokens.TextSecondary,
@@ -511,10 +515,17 @@ private fun SoundCard(state: AppState) {
             ) {
                 row.forEach { kind ->
                     val on = remember(version, kind) { mapping.isEnabled(kind) }
+                    // Same as the Advanced tab: most sims make two to six of
+                    // the nine kinds, and the rest were live-looking pills that
+                    // silenced nothing.
+                    val made = remember(version, kind, state.currentDef.id, state.liveTick) {
+                        state.engine.core.events.hasEmitted(kind)
+                    }
                     Pill(
                         kind.name.lowercase().replaceFirstChar { it.uppercase() },
                         selected = on,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = made
                     ) {
                         mapping.setEnabled(kind, !on)
                         state.soundChanged()

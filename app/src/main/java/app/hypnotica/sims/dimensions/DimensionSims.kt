@@ -59,8 +59,12 @@ class HypercubeSim : Sim {
         screenY = FloatArray(n)
         screenD = FloatArray(n)
         behind = BooleanArray(n) { verts[it * dims + (dims - 1)] < 0f }
-        planeA = p.i("planeA", 0).coerceIn(0, dims - 1)
-        planeB = p.i("planeB", min(3, dims - 1)).coerceIn(0, dims - 1)
+        // Wrapped rather than clamped. Both sliders offer 0..MAX_DIMS-1 while
+        // only 0..dims-1 exist, so at the default four dimensions the top third
+        // of each slider clamped to the same axis and did nothing visible.
+        // Wrapping makes every position name a real axis.
+        planeA = Math.floorMod(p.i("planeA", 0), dims)
+        planeB = Math.floorMod(p.i("planeB", min(3, dims - 1)), dims)
         if (planeA == planeB) planeB = (planeA + 1) % dims
         elapsed = 0f
         payoffFrame = false
