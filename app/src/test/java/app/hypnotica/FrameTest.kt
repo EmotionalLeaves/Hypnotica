@@ -66,7 +66,41 @@ class FrameTest {
         )
     }
 
+    /**
+     * A point's size is in world units, like everything else drawn. Two sims
+     * passed 1.2 to 2.6 and 1.6 — sizes in pixels, as if — which is most of
+     * the screen; the renderer clamps a dot at 96 pixels, so their big-count
+     * modes drew as walls of overlapping blobs. Checked at a large count,
+     * which is where sims switch to points.
+     */
+    @Test
+    fun everyPointIsSizedInWorldUnits() {
+        val g = G()
+        val big = setOf("count", "n", "bodies", "dots", "points", "walkers", "beads", "tracers", "bricks", "circles", "limit", "trail", "nodes", "balls")
+        val wrong = ArrayList<String>()
+        for (def in SimRegistry.all) {
+            val core = SimCore(def, 3L)
+            core.setAspect(0.46f)
+            for (p in def.params) if (p.logScale && p.key in big) core.params.set(p.key, minOf(p.max, 20000f))
+            core.restart(3L)
+            var t = 0f
+            while (t < 3f) {
+                core.advance(1f / 60f)
+                t += 1f / 60f
+            }
+            g.reset()
+            core.sim.draw(core.env, g, 1f)
+            var largest = 0f
+            for (j in 0 until g.pointCount) largest = maxOf(largest, g.pointPos[j * 3 + 2])
+            if (largest > MAX_POINT) wrong.add("${def.id}: a point ${"%.2f".format(java.util.Locale.US, largest)} across")
+        }
+        assertTrue("Points sized as if in pixels:\n" + wrong.joinToString("\n"), wrong.isEmpty())
+    }
+
     companion object {
+        /** A point this large is a disc's job, or a mistake. */
+        const val MAX_POINT = 0.05f
+
         /** A little past the edge is a glow or a stroke; more is cut off. */
         const val LIMIT = 1.15f
         val LEAVES_ON_PURPOSE = setOf("physics/n-body")

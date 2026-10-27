@@ -488,7 +488,9 @@ class BinaryTreeSim : Sim {
                 g.point(
                     xs[i],
                     0.88f - depth[i] * rowH,
-                    1.6f,
+                    // World units, like every point size: 1.6 was the size of
+                    // the whole screen, clamped to the renderer's largest dot.
+                    dotSize * 1.6f,
                     palette.at(depth[i].toFloat() / levels)
                 )
             }

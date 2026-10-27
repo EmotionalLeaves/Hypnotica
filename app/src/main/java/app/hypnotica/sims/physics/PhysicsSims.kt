@@ -481,7 +481,10 @@ class PendulumWaveSim : Sim {
         // curtain goes through the point path instead.
         if (count > DRAWN_AS_POINTS) {
             g.reservePoints(count)
-            val size = (2.6f - count / 12000f).coerceIn(1.2f, 2.6f)
+            // In world units, as every point size is. It was 1.2 to 2.6 — taken
+            // for pixels — which the renderer clamps to its largest dot, so a
+            // curtain of thousands drew as a solid wall of overlapping blobs.
+            val size = (top * 2f / count * 1.6f).coerceIn(0.003f, 0.012f)
             for (i in 0 until count) {
                 val t = i.toFloat() / (count - 1)
                 g.point(sin(angles[i]) * reach, top - t * top * 2f, size, palette.at(t))
@@ -913,6 +916,7 @@ object PhysicsSims {
     fun defs(): List<SimDef> = listOf(
         BallEscapeSim.def(),
         PendulumWaveSim.def(),
+        DoublePendulumSim.def(),
         NewtonsCradleSim.def(),
         GaltonBoardSim.def()
     )

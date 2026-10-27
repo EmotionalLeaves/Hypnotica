@@ -27,6 +27,21 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **N-body threw a fifth of its bodies off the screen.** The disc was squashed
+  to the screen's shape while each body kept the speed of a circular orbit at
+  its unsquashed radius. The disc is round and fits the width, and the view
+  follows the bulk of the system: nine in ten stay on screen, from seven.
+- **Library cards showed the first 1.6 seconds**, so a sim that builds looked
+  empty. Each card is now the sim just after its payoff, or at the end of its
+  run, within a third of a second of a phone's time.
+- **Two sims sized their points in pixels.** The pendulum-wave curtain and the
+  binary tree past ten thousand nodes passed 1.2–2.6 and 1.6 — most of the
+  screen in world units — and drew walls of 96-pixel blobs. `FrameTest` now
+  checks every point at a large count.
+- **New: the double-pendulum fan.** Hundreds of double pendulums let go a
+  millionth of a radian apart, swinging as one and then splitting into a
+  spray; the payoff is the split, measured.
+
 - **A read-through of every screen, as a phone shows it.**
   - On the feed, once the buttons had faded, a tap to bring them back opened
     the player instead; the first tap now only brings them back.
