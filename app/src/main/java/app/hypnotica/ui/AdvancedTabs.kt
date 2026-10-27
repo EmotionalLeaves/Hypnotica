@@ -132,7 +132,11 @@ private fun ParamsTab(state: AppState) {
 /** One parameter with its slider, its exact value and a formula box. */
 @Composable
 private fun ExactParamRow(state: AppState, p: Param) {
-    val value = state.paramValue(p.key)
+    // See ParamControl in PlayerScreen: the parameter values are not snapshot
+    // state, so without reading the version this row never redraws and every
+    // slider on the Params tab springs back when you let go.
+    val version = state.paramVersion + state.driftTick
+    val value = remember(version, p.key) { state.paramValue(p.key) }
     when (p.type) {
         ParamType.EXPR -> ExprParamField(state, p)
         ParamType.BOOL -> ToggleRow(p.label, value >= 0.5f) { state.setParamBool(p, it) }

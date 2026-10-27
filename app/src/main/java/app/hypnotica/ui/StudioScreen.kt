@@ -392,7 +392,10 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             }
 
             SectionLabel("Length")
-            ValueSlider("Duration", project.duration, 4f, 60f, valueText = String.format("%.0f s", project.duration)) {
+            // Read through the revision: the project is a plain object, so this
+            // slider only redraws because something in scope asked for it.
+            val shownDuration = remember(revision) { project.duration }
+            ValueSlider("Duration", shownDuration, 4f, 60f, valueText = String.format("%.0f s", shownDuration)) {
                 project.duration = it
                 revision++
             }

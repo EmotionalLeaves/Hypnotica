@@ -66,6 +66,9 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         while (true) {
             delay(250)
             uiTick++
+            // Evolve moves the values behind the controls' back; this is what
+            // lets the controls follow.
+            if (state.evolve) state.tickDrift()
         }
     }
 
@@ -286,7 +289,10 @@ private fun CardControls(state: AppState, card: Card) {
  */
 @Composable
 private fun MacroControl(state: AppState, macro: Macro) {
-    val position = state.macroPosition(macro)
+    // Same reason as ParamControl: the cached position is checked against the
+    // parameter map's own revision, which is not snapshot state.
+    val version = state.paramVersion + state.driftTick
+    val position = remember(version, macro.key) { state.macroPosition(macro) }
     ValueSlider(
         label = macro.label,
         value = position,
@@ -325,22 +331,29 @@ private fun describeMacro(position: Float): String = when {
 
 @Composable
 private fun ParamControl(state: AppState, p: Param) {
+    // Subscribing to the version is what makes this row redraw. The values
+    // themselves live in a concurrent map the sim thread reads every step, not
+    // in snapshot state, so nothing in here recomposes on its own: the slider
+    // moved under your finger and sprang straight back, because the value it
+    // was told to show was still the old one.
+    val version = state.paramVersion + state.driftTick
+    val shown = remember(version, p.key) { state.paramValue(p.key) }
     when (p.type) {
         ParamType.EXPR -> ExprParamField(state, p)
 
-        ParamType.BOOL -> ToggleRow(p.label, state.paramValue(p.key) >= 0.5f) {
+        ParamType.BOOL -> ToggleRow(p.label, shown >= 0.5f) {
             state.setParamBool(p, it)
         }
 
         ParamType.CHOICE -> {
             SectionLabel(p.label)
-            ChipRow(p.choices, Math.round(state.paramValue(p.key))) { idx ->
+            ChipRow(p.choices, Math.round(shown)) { idx ->
                 state.setParamChoice(p, idx)
             }
         }
 
         else -> {
-            val v = state.paramValue(p.key)
+            val v = shown
             ValueSlider(
                 label = p.label,
                 value = v,

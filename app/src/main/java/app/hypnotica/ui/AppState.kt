@@ -54,6 +54,19 @@ class AppState(
     var advancedTab by mutableStateOf(AdvancedTab.DATA)
     var paramVersion by mutableIntStateOf(0)
 
+    /**
+     * Bumped a few times a second while Evolve is on. Evolve drifts the values
+     * from the GL thread, which cannot touch snapshot state, so without this
+     * the picture changes while every slider sits frozen — and the sliders are
+     * what tell you what the picture is doing.
+     */
+    var driftTick by mutableIntStateOf(0)
+        private set
+
+    fun tickDrift() {
+        driftTick++
+    }
+
     /** Where each Simple-mode macro slider sits, per sim. */
     private val macroPositions = mutableStateMapOf<String, Float>()
 
@@ -452,6 +465,11 @@ class AppState(
         // Dragging a slider by hand replaces a formula on the same value — but
         // only when a person does it, never when Evolve or a macro moves it.
         engine.core.params.clearExpression(p.key)
+        // And a hand on the slider outranks Evolve for a few seconds, the same
+        // way a typed formula does. Otherwise you drag a value, let go, and
+        // watch the drift pull it back — which looks exactly like a slider
+        // that does not work.
+        engine.holdFromDrift(p.key)
         engine.core.params.set(p.key, if (p.type == ParamType.INT) Math.round(value).toFloat() else value)
         paramVersion++
     }

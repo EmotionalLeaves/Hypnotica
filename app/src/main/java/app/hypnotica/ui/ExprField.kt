@@ -111,7 +111,16 @@ fun ExprParamField(state: AppState, p: Param) {
 fun EquationPresets(state: AppState) {
     Spacer(Modifier.height(4.dp))
     SectionLabel("Start from")
-    ChipRow(EquationSim.PRESETS.map { it.name }, -1) { index ->
+    // Which preset you are on, so the chip stays lit after you pick it and you
+    // can see at a glance when you have edited away from one. The formulas are
+    // what distinguish the presets, so they are what we compare.
+    val version = state.paramVersion
+    val selected = remember(version) {
+        val fx = state.formulaOn("fx")
+        val fy = state.formulaOn("fy")
+        EquationSim.PRESETS.indexOfFirst { it.fx == fx && it.fy == fy }
+    }
+    ChipRow(EquationSim.PRESETS.map { it.name }, selected) { index ->
         val preset = EquationSim.PRESETS[index]
         state.params().firstOrNull { it.key == "mode" }
             ?.let { state.setParam(it, preset.mode.toFloat()) }

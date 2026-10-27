@@ -372,6 +372,127 @@ for f in ['app/src/main/java/app/hypnotica/core/recipe/LuaRecipe.kt',
             f"compile here — CI is the only compiler for this file, so add it "
             f"to LUAJ_PROVEN in tools/uicheck.py only once a build has passed")
 
+# 12. A control that shows a value Compose cannot see changing.
+#
+#     This is the defect the user actually hit: "not all buttons and sliders
+#     work". Every sim parameter lives in a ConcurrentHashMap the sim thread
+#     reads each step, not in snapshot state, so a row that shows one and does
+#     not also read a version counter never recomposes. The Kotlin is correct,
+#     the handler runs, the value changes -- and the thumb springs back to where
+#     it was, because the row was never told to redraw. Three rows shipped like
+#     that, which is most of the sliders in both modes.
+#
+#     The check: if a control is handed a value that comes from one of these
+#     invisible sources, the composable it sits in has to read something
+#     snapshot-backed in its own body.
+CONTROLS = {
+    'ValueSlider': ('value', 1),
+    'ChipRow': ('selected', 1),
+    'ToggleRow': ('on', 1),
+}
+# Reads Compose cannot observe: plain fields and map lookups.
+INVISIBLE = re.compile(
+    r'\b(?:paramValue|macroPosition|formulaOn|paramText)\s*\(|'
+    r'\b(?:project|mapping|engine|clip|track)\s*\.|'
+    r'\.params\s*\.')
+# Reading one of these in the body is what subscribes the composable. A bare
+# `remember {}` is not on the list: with no keys it never re-evaluates, so it
+# is not evidence of anything. Nor is a local called `version` -- the thing
+# that counts is the snapshot property it was read from, which is a match in
+# its own right.
+SUBSCRIBED = re.compile(
+    r'\b(?:paramVersion|soundVersion|exprEpoch|macroRevisions|favourites)\b|'
+    r'\bmutable(?:State|IntState|FloatState|StateMap|StateList)Of\b|'
+    r'\bcollectAsState(?:WithLifecycle)?\s*\(')
+
+
+def args_of(src: str, open_paren: int):
+    """Split one argument list into its top-level arguments."""
+    depth, start, out = 0, open_paren + 1, []
+    i = open_paren
+    while i < len(src):
+        c = src[i]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            depth -= 1
+            if depth == 0:
+                out.append(src[start:i])
+                return out, i
+        elif c == ',' and depth == 1:
+            out.append(src[start:i])
+            start = i + 1
+        i += 1
+    return out, len(src)
+
+
+def bodies(src: str):
+    """Every function in the file, as (name, body). Brace-balanced."""
+    for m in re.finditer(r'\bfun\s+(\w+)\s*\(', src):
+        name = m.group(1)
+        _, close = args_of(src, m.end() - 1)
+        brace = src.find('{', close)
+        if brace < 0 or '\n\n' in src[close:brace]:
+            continue
+        depth, i = 0, brace
+        while i < len(src):
+            if src[i] == '{':
+                depth += 1
+            elif src[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        yield name, src[brace:i], brace
+
+
+for f in files:
+    src = strip(open(f).read())
+    for fn, body, offset in bodies(src):
+        subscribed = SUBSCRIBED.search(body) is not None
+        for control, (named, position) in CONTROLS.items():
+            for m in re.finditer(r'(?<![\w.])' + control + r'\s*\(', body):
+                args, _ = args_of(body, m.end() - 1)
+                shown = None
+                for a in args:
+                    kw = re.match(r'\s*(\w+)\s*=(?!=)', a)
+                    if kw and kw.group(1) == named:
+                        shown = a[kw.end():]
+                if shown is None:
+                    positional = [a for a in args if not re.match(r'\s*\w+\s*=(?!=)', a)]
+                    if len(positional) > position:
+                        shown = positional[position]
+                if shown is None:
+                    continue
+                # The row usually hands over a local, not the call itself:
+                #   val v = state.paramValue(p.key)
+                #   ValueSlider(value = v, ...)
+                # so resolve one level of local before judging it. Without this
+                # the rule sees a bare 'v' and waves the defect through, which
+                # is exactly what it did on its first draft.
+                seen = set()
+                while True:
+                    bare = re.fullmatch(r'\s*(\w+)\s*', shown)
+                    if not bare or bare.group(1) in seen:
+                        break
+                    seen.add(bare.group(1))
+                    rhs = re.search(
+                        r'\bval\s+' + bare.group(1) + r'\s*(?::[^=\n]+)?=([^\n]+)',
+                        body)
+                    if not rhs:
+                        break
+                    shown = rhs.group(1)
+                if not INVISIBLE.search(shown):
+                    continue
+                if subscribed:
+                    continue
+                line = src[:offset + m.start()].count('\n') + 1
+                problems.append(
+                    f"{f}:{line}: {control} in {fn}() shows"
+                    f" '{shown.strip()[:44]}', which Compose cannot see change,"
+                    f" and {fn}() reads no snapshot state — the control will"
+                    f" spring back instead of moving")
+
 for p in problems:
     print(p)
 print(f"\n{len(problems)} problem(s) across {len(files)} files")

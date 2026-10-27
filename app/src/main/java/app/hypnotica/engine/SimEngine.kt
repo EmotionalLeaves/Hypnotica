@@ -51,6 +51,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     private var evolveClock = 0f
 
+    /** Values a person just dragged; Evolve stands off them for a moment. */
+    private val driftHold =
+        app.hypnotica.core.recipe.DriftHold(DRIFT_HOLD_NANOS)
+
     /** Set while the person is recording their moves in the player. */
     @Volatile
     var recorder: app.hypnotica.core.studio.MoveRecorder? = null
@@ -444,6 +448,11 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
      * Data-card values are left alone: changing those mid-run would mean
      * rebuilding the sim underneath itself.
      */
+    /** Called when a person moves a value by hand: Evolve stands off it. */
+    fun holdFromDrift(key: String) {
+        driftHold.touch(key, System.nanoTime())
+    }
+
     private fun drift(dt: Float) {
         evolveClock += dt
         if (evolveClock < 0.25f) return
@@ -454,6 +463,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             if (p.type != app.hypnotica.core.recipe.ParamType.FLOAT) continue
             // A formula the person typed outranks the drift.
             if (core.params.hasExpression(p.key)) continue
+            // So does a hand that just moved this one.
+            if (driftHold.holds(p.key, System.nanoTime())) continue
             val phase = index * 1.37f
             val wave = kotlin.math.sin(core.env.time * 0.08f + phase) * 0.5f + 0.5f
             val span = p.max - p.min
@@ -464,6 +475,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     private fun resetRunState() {
+        driftHold.clear()
         payoffNotified = false
         finishNotified = false
         punch = 0f
@@ -513,6 +525,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     companion object {
+        /**
+         * How long Evolve stands off a value after a hand moves it. Long enough
+         * to let go, look at it and move it again; short enough that Evolve is
+         * still Evolve.
+         */
+        const val DRIFT_HOLD_NANOS = 6_000_000_000L
+
         /** How deep the idle zoom breathes, and how slowly. Under one percent. */
         const val BREATH_DEPTH = 0.008f
         const val BREATH_HZ = 0.07f
