@@ -24,6 +24,15 @@ class Synth(private val sampleRate: Int = 44100) {
 
     companion object {
         const val MAX_VOICES = 64
+
+        /** How long a note takes to reach full height. Short enough to still read as a hit. */
+        const val ATTACK_SECONDS = 0.004f
+
+        /**
+         * One-pole coefficient for a cutoff near 6 kHz at 44.1 kHz.
+         * k = 1 - exp(-2*pi*fc/fs).
+         */
+        const val LOWPASS_K = 0.575f
         private const val KS_SIZE = 1024
         private const val REVERB_SAMPLES = 14700 // ~0.33 s
     }
@@ -44,9 +53,25 @@ class Synth(private val sampleRate: Int = 44100) {
         var ksIndex = 0
         var ksLen = 0
         var noiseState = 1
+
+        /**
+         * Samples left of the attack ramp.
+         *
+         * Every note used to begin at full amplitude on its first sample — a
+         * step from silence, which is a click. With events arriving dozens of
+         * times a second that is a continuous crackle riding on top of the
+         * notes, and it is most of what "harsh" means here. A few milliseconds
+         * of ramp removes it and is far too short to soften an attack.
+         */
+        var attackLeft = 0
     }
 
     private val voices = Array(MAX_VOICES) { Voice() }
+
+    /** Attack ramp length, and the one-pole low-pass state for the mix. */
+    private val attackSamples = (sampleRate * ATTACK_SECONDS).toInt().coerceAtLeast(1)
+    private var lowL = 0f
+    private var lowR = 0f
     private var nextVoice = 0
 
     private var track: AudioTrack? = null
@@ -170,6 +195,7 @@ class Synth(private val sampleRate: Int = 44100) {
             v.phase = 0f
             v.phaseInc = f / sampleRate
             v.amp = amplitude.coerceIn(0f, 1f)
+            v.attackLeft = attackSamples
             val d = decaySeconds.coerceAtLeast(0.01f)
             v.decay = exp(-1f / (d * sampleRate)).coerceIn(0.9f, 0.9999995f)
             val p = pan.coerceIn(-1f, 1f)
@@ -259,6 +285,22 @@ class Synth(private val sampleRate: Int = 44100) {
             }
             reverbIndex = ri
         }
+        // One-pole low-pass on the mix.
+        //
+        // The square, click and noise voices are generated point by point with
+        // no band limiting, so the harmonics they put above half the sample
+        // rate fold back down as inharmonic fizz that follows the pitch around.
+        // This is the cheapest thing that takes the edge off without dulling
+        // the notes: six kilohertz leaves every fundamental and the first few
+        // harmonics of all of them untouched.
+        val k = LOWPASS_K
+        for (i in 0 until frames) {
+            lowL += (out[i * 2] - lowL) * k
+            lowR += (out[i * 2 + 1] - lowR) * k
+            out[i * 2] = lowL
+            out[i * 2 + 1] = lowR
+        }
+
         // Soft limiter: keeps a wall of events from clipping.
         for (i in 0 until frames * 2) {
             val x = out[i]
@@ -270,6 +312,7 @@ class Synth(private val sampleRate: Int = 44100) {
 
     private fun renderVoice(v: Voice, out: FloatArray, frames: Int, vol: Float) {
         var amp = v.amp
+        var attackLeft = v.attackLeft
         var phase = v.phase
         val inc = v.phaseInc
         var modPhase = v.modPhase
@@ -289,7 +332,16 @@ class Synth(private val sampleRate: Int = 44100) {
                     val p = phase % 1f
                     if (p < 0.5f) 4f * p - 1f else 3f - 4f * p
                 }
-                VoiceType.SQUARE -> if ((phase % 1f) < 0.5f) 0.55f else -0.55f
+                // Softened from a hard +/-0.55: a square's harmonics fall away
+                // slowly, so at equal amplitude it is much the brightest voice
+                // in the set. Rounding the corners costs nothing and keeps the
+                // squareness audible.
+                VoiceType.SQUARE -> {
+                    val p = phase % 1f
+                    val raw = if (p < 0.5f) 1f else -1f
+                    val edge = min(min(p, abs(p - 0.5f)), 1f - p) * 40f
+                    raw * 0.42f * min(1f, edge)
+                }
                 VoiceType.BELL -> {
                     val m = sin(modPhase * 2f * PI.toFloat())
                     modPhase += v.modInc
@@ -317,13 +369,22 @@ class Synth(private val sampleRate: Int = 44100) {
             }
             phase += inc
             if (phase > 1e6f) phase -= 1e6f
-            val value = s * amp
+            // Ramped in over a few milliseconds rather than starting at full
+            // height, which is what stops each note beginning with a click.
+            val env = if (attackLeft > 0) {
+                attackLeft--
+                1f - attackLeft.toFloat() / attackSamples
+            } else {
+                1f
+            }
+            val value = s * amp * env
             out[i * 2] += value * gainL
             out[i * 2 + 1] += value * gainR
             amp *= v.decay
             v.age++
         }
         v.amp = amp
+        v.attackLeft = attackLeft
         v.phase = phase
         v.modPhase = modPhase
         v.noiseState = seed

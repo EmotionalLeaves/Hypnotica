@@ -92,7 +92,16 @@ class PolyrhythmSim : Sim {
                 val c = palette.at(t)
                 g.ring(0f, 0f, r, 0.0022f, Palette.withAlpha(c, 0.35f), alpha = 0.6f)
                 val phase = (elapsed / cycleSeconds) * loopsFor(i)
-                val a = -PI.toFloat() / 2f + (phase % 1f) * 2f * PI.toFloat()
+                // Phase zero is the top, where the trigger line is drawn, and
+                // the wheels turn like clock hands.
+                //
+                // This was -PI/2, which put phase zero at the BOTTOM while the
+                // line points up — so every wheel made its sound a half turn
+                // away from the mark it is supposed to be struck on, and the
+                // dot that was glowing was always the one furthest from the
+                // line. The hit itself was always right; only the picture of
+                // it was upside down.
+                val a = PI.toFloat() / 2f - (phase % 1f) * 2f * PI.toFloat()
                 val x = cos(a) * r
                 val y = sin(a) * r
                 val flash = hitFlash[i]

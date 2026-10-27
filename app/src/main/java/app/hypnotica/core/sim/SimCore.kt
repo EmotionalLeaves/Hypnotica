@@ -59,6 +59,9 @@ class SimCore(def: SimDef, seed: Long = 1L) {
     private var offlineCarry = 0f
     private var slowMoRemaining = 0f
 
+    /** Simulated time at which the slow motion began. */
+    private var slowMoStartedAt = 0f
+
     /** How much the payoff slow-mo is currently scaling time, 1 = normal. */
     var timeScaleNow: Float = 1f
         private set
@@ -116,6 +119,7 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         accumulator = 0f
         offlineCarry = 0f
         slowMoRemaining = 0f
+        slowMoStartedAt = 0f
         timeScaleNow = 1f
         payoffFired = false
         payoffAt = -1f
@@ -142,10 +146,19 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         val laws = env.laws
         var scale = speed * laws.timeScale * laws.timeDirection
 
+        // How far into the slow motion we are, in SIMULATED seconds.
+        //
+        // This used to count down in real frame seconds. That was fine while
+        // the step size was fixed, but the step size now follows it — and a
+        // step size derived from wall-clock time would differ between a 60 Hz
+        // phone, a 120 Hz phone and a 30 fps export, so the same seed would
+        // integrate differently on each. Simulated time is the same number
+        // everywhere, so the run stays reproducible.
         if (slowMoRemaining > 0f) {
-            slowMoRemaining = max(0f, slowMoRemaining - frameSeconds)
+            val since = kotlin.math.abs(env.time) - slowMoStartedAt
+            slowMoRemaining = max(0f, SLOWMO_SIM_SECONDS - since)
             // Ease back out of slow motion instead of snapping.
-            val t = 1f - (slowMoRemaining / SLOWMO_SECONDS).coerceIn(0f, 1f)
+            val t = 1f - (slowMoRemaining / SLOWMO_SIM_SECONDS).coerceIn(0f, 1f)
             val eased = SLOWMO_FACTOR + (1f - SLOWMO_FACTOR) * (t * t)
             scale *= eased
             timeScaleNow = eased
@@ -153,12 +166,23 @@ class SimCore(def: SimDef, seed: Long = 1L) {
             timeScaleNow = 1f
         }
 
-        val dt = 1f / stepHz
+        // Finer steps while time is slow, which is what makes slow motion worth
+        // watching.
+        //
+        // The step was a fixed 1/120 of a simulated second however slowly time
+        // was running, so at a quarter speed the picture only moved thirty
+        // times a real second — the sim stepped on every other frame and held
+        // still on the rest. The payoff, the one moment the app slows down for,
+        // was the choppiest thing on screen. Scaling the step by the same
+        // factor as time keeps the number of steps per REAL second constant, so
+        // this is smoother at no cost: four times the detail through the
+        // payoff, the same work per second as always.
+        val dt = (timeScaleNow / stepHz).coerceAtLeast(MIN_STEP_SECONDS)
         accumulator += min(frameSeconds, MAX_FRAME_SECONDS) * scale
 
         // The budget follows what was asked for: a fixed 16 steps capped the
         // speed slider at about 8x however far it was dragged.
-        val wanted = (kotlin.math.abs(accumulator) * stepHz).toInt() + 2
+        val wanted = (kotlin.math.abs(accumulator) / dt).toInt() + 2
         var budget = wanted.coerceIn(MAX_STEPS_PER_FRAME, MAX_STEPS_BURST)
         while (kotlin.math.abs(accumulator) >= dt && budget > 0) {
             val signedDt = if (accumulator > 0f) dt else -dt
@@ -175,7 +199,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
                 // negative, and a negative payoff time looks like "never" to the
                 // clip director.
                 payoffAt = kotlin.math.abs(env.time)
-                slowMoRemaining = SLOWMO_SECONDS
+                slowMoStartedAt = payoffAt
+                slowMoRemaining = SLOWMO_SIM_SECONDS
                 events.emit(EventKind.DONE, 1f, 0f, 1f)
             }
             if (sim.finished()) {
@@ -249,7 +274,17 @@ class SimCore(def: SimDef, seed: Long = 1L) {
          * does not take every frame, and because draw() runs after advance().
          */
         const val WATCH_FRAMES = 30
-        const val SLOWMO_SECONDS = 1.0f
+        /**
+         * How long the slow motion lasts, in simulated seconds.
+         *
+         * Real time is longer, because time is running slowly: about a second
+         * and a half at the quarter speed it starts from, easing back to
+         * normal. Measured rather than guessed — see the probe in the commit.
+         */
+        const val SLOWMO_SIM_SECONDS = 0.55f
+
+        /** A floor on the step, so a very slow setting cannot stall the run. */
+        const val MIN_STEP_SECONDS = 1f / 2000f
         const val SLOWMO_FACTOR = 0.25f
         const val MAX_FRAME_SECONDS = 0.05f
         const val MAX_STEPS_PER_FRAME = 16
