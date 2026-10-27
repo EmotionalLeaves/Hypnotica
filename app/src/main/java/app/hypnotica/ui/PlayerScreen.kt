@@ -330,7 +330,7 @@ private fun MotionCard(state: AppState) {
     ) { state.speed = it }
     CardControls(state, Card.MOTION)
     Spacer(Modifier.height(4.dp))
-    ToggleRow("Evolve", state.evolve) { state.setEvolve(it) }
+    ToggleRow("Evolve", state.evolve) { state.evolve = it }
     Text(
         "Lets the settings drift slowly while it plays, so a loop never settles.",
         color = Tokens.TextSecondary,
@@ -369,7 +369,7 @@ private fun LookCard(state: AppState) {
         max = 0.96f,
         valueText = if (state.trails < 0.02f) "off" else formatValue(state.trails)
     ) { state.trails = it }
-    ToggleRow("Drag pans the view", state.cameraDrag) { state.setCameraDrag(it) }
+    ToggleRow("Drag pans the view", state.cameraDrag) { state.cameraDrag = it }
     Text(
         "On, one finger moves the camera. Off, it reaches into the sim. Two " +
             "fingers always pan, pinch zooms and a twist rotates.",

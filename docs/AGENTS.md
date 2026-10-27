@@ -46,6 +46,16 @@ Read this first, then `docs/ROUNDS.md` for the round you are on.
 
 ## Offline checks without an emulator
 
+Before pushing, run `python3 tools/uicheck.py`. The Compose screens, the engine
+glue and the exporter cannot be compiled without the Android SDK, so that script
+stands in for the compiler's resolution step over those files: it strips
+comments and strings, then requires every capitalised symbol to be imported,
+declared in the same package or part of the standard library, and every Modifier
+extension that is not a layout-scope member to have its import. It exits
+non-zero when something is unresolved. It is a stand-in, not a compiler — CI is
+still the thing that proves the build.
+
+
 The engine below the UI is plain Kotlin with no Android imports, so it can be
 run headless. The unit tests already cover sorting correctness, RNG determinism,
 the expression compiler, the laws table, parameter clamping and the flash

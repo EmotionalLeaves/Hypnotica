@@ -86,29 +86,34 @@ class AppState(
     /** 0 = off. Minutes between TickTock's "you have been scrolling" card. */
     var timeCheckMinutes by mutableIntStateOf(0)
 
+    private var evolveState by mutableStateOf(false)
+
     /**
      * Evolve: the sim's own settings drift slowly while it plays, so a loop
      * never settles into exactly the same thing twice.
+     *
+     * A property with a side effect rather than a setX() function, because a
+     * `var` and a `fun setX()` compile to the same JVM method.
      */
-    var evolve by mutableStateOf(false)
-        private set
+    var evolve: Boolean
+        get() = evolveState
+        set(value) {
+            evolveState = value
+            engine.evolve = value
+        }
+
+    private var cameraDragState by mutableStateOf(false)
 
     /** When on, one finger pans the view instead of reaching into the sim. */
-    var cameraDrag by mutableStateOf(false)
-        private set
-
-    fun setCameraDrag(on: Boolean) {
-        cameraDrag = on
-        onCameraDrag?.invoke(on)
-    }
+    var cameraDrag: Boolean
+        get() = cameraDragState
+        set(value) {
+            cameraDragState = value
+            onCameraDrag?.invoke(value)
+        }
 
     /** Set by the activity, which owns the surface the gesture lives on. */
     var onCameraDrag: ((Boolean) -> Unit)? = null
-
-    fun setEvolve(on: Boolean) {
-        evolve = on
-        engine.evolve = on
-    }
 
     /**
      * TickTock's generator. It lives here rather than in the screen so the
