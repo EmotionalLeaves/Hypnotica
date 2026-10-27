@@ -63,6 +63,26 @@ class AppState(
      * frozen. The same goes for which event kinds a run has actually produced,
      * which decides whether a sound switch can do anything.
      */
+    /**
+     * Bumped whenever a sound value changes, so the Sound tab redraws.
+     *
+     * SoundMapping is plain fields read by the audio thread, not snapshot
+     * state; without this the sliders that write them never showed their own
+     * effect, and a preset tap silently replaced four of them.
+     *
+     * Declared up here with the other counters for a reason: init() calls
+     * load(), load() calls soundChanged(), and Kotlin creates delegates in
+     * declaration order — so sitting below the init block this one did not
+     * exist yet when it was written to, and constructing AppState threw. The
+     * app would not launch at all.
+     */
+    var soundVersion by mutableIntStateOf(0)
+        private set
+
+    fun soundChanged() {
+        soundVersion++
+    }
+
     var liveTick by mutableIntStateOf(0)
         private set
 
@@ -415,20 +435,6 @@ class AppState(
         engine.setPalette(name)
         chosenPalette = name
         prefs?.paletteName = name
-    }
-
-    /**
-     * Bumped whenever a sound value changes, so the Sound tab redraws.
-     *
-     * SoundMapping is plain fields read by the audio thread, not snapshot
-     * state; without this the sliders that write them never showed their own
-     * effect, and a preset tap silently replaced four of them.
-     */
-    var soundVersion by mutableIntStateOf(0)
-        private set
-
-    fun soundChanged() {
-        soundVersion++
     }
 
     fun setSoundPreset(name: String) {
