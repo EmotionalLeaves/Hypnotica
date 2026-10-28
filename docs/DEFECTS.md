@@ -27,6 +27,15 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **Kaleidoscope clips.** About a third of TickTock's clips of sims drawn round
+  their centre — the spirograph, the chaos game, the pendulum fan — are folded
+  three, four or six ways. The fold is applied to the finished draw list, so
+  every sim gets it for free; sims laid out to the screen's edges are never
+  folded.
+- **The feed's headline changes** each time a sim comes round, drawn from all
+  the hooks of all its formats, and the feed's camera leans in through each
+  run's build as TickTock's does.
+
 - **New: glass, struck.** A pane hit again and again in one place, the cracks
   running further each time — straight ones out from the centre, then rings
   joining them — until one strike too many and it comes apart. The shards are

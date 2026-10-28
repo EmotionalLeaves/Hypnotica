@@ -182,6 +182,16 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         liked = false
         progress = 0f
         state.playClip(clip)
+        // Some clips are folded into a kaleidoscope: three, four or six ways,
+        // from the clip's seed. The engine only folds sims drawn round their
+        // centre, so a sort or a grid is never turned into confetti.
+        val roll = ((clip.seed ushr 17) and 0xFF).toInt()
+        state.engine.kaleido = when {
+            roll < 40 -> 6
+            roll < 64 -> 4
+            roll < 80 -> 3
+            else -> 1
+        }
     }
 
     /** Bring the chrome back in from the side it leaves by. */
@@ -305,6 +315,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
     DisposableEffect(Unit) {
         onDispose {
+            state.engine.kaleido = 1
             state.engine.onFinished = null
             // Generation is a long CPU burn on the shared dispatcher, and
             // leaving the screen used not to stop it: the work carried on

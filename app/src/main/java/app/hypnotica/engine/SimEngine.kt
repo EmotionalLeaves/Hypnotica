@@ -102,6 +102,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** Extra zoom applied around the payoff, the "punch-in". */
     private var punch = 0f
     private var baseZoom = 1f
+    /** Kaleidoscope folds for what is drawn; 1 for none. Set by TickTock per clip. */
+    @Volatile
+    var kaleido: Int = 1
+
     /** The sim the current fit was worked out for; a new one is framed at once. */
     private var fitFor: Any? = null
 
@@ -517,6 +521,11 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         g.reset()
         g.background = Palette.BG
         core.draw(g)
+        // A kaleidoscope, for a sim drawn round its centre — the ones the view
+        // pulls back to fit. Anything laid out to the screen's edges would
+        // fold into a mess, so it is left alone.
+        val folds = kaleido
+        if (folds > 1 && wantFit < 0.99f) g.kaleido(folds)
 
         mapping.pump(core.events, dt)
 

@@ -249,5 +249,60 @@ class G {
     /** Reserve room before a tight loop so the arrays grow once, not log(n) times. */
     fun reservePoints(n: Int) = ensurePoints(n)
 
+    /**
+     * Repeat everything drawn so far [folds] times round the centre, a
+     * kaleidoscope. Shapes, glows and points each get turned copies; a shape's
+     * own rotation turns with it, so a ring's gap and a bar's angle follow.
+     * Stops short rather than overflow: a frame already near the ceiling
+     * gets fewer copies, never a crash.
+     */
+    fun kaleido(folds: Int) {
+        if (folds <= 1) return
+        val step = (2.0 * Math.PI / folds).toFloat()
+        val n0 = instanceCount
+        val g0 = glowCount
+        val p0 = pointCount
+        for (m in 1 until folds) {
+            val c = kotlin.math.cos(step * m)
+            val sn = kotlin.math.sin(step * m)
+            if ((instanceCount + n0) > MAX_INSTANCES || (pointCount + p0) > MAX_POINTS) {
+                overflowed = true
+                return
+            }
+            ensureInstances(n0)
+            for (i in 0 until n0) {
+                val from = i * STRIDE
+                val to = instanceCount * STRIDE
+                System.arraycopy(instances, from, instances, to, STRIDE)
+                val x = instances[from]; val y = instances[from + 1]
+                instances[to] = x * c - y * sn
+                instances[to + 1] = x * sn + y * c
+                instances[to + 4] = instances[from + 4] + step * m
+                instanceCount++
+            }
+            ensureGlows(g0)
+            for (i in 0 until g0) {
+                val from = i * STRIDE
+                val to = glowCount * STRIDE
+                System.arraycopy(glows, from, glows, to, STRIDE)
+                val x = glows[from]; val y = glows[from + 1]
+                glows[to] = x * c - y * sn
+                glows[to + 1] = x * sn + y * c
+                glowCount++
+            }
+            ensurePoints(p0)
+            for (i in 0 until p0) {
+                val from = i * 3
+                val to = pointCount * 3
+                val x = pointPos[from]; val y = pointPos[from + 1]
+                pointPos[to] = x * c - y * sn
+                pointPos[to + 1] = x * sn + y * c
+                pointPos[to + 2] = pointPos[from + 2]
+                System.arraycopy(pointColor, i * 4, pointColor, pointCount * 4, 4)
+                pointCount++
+            }
+        }
+    }
+
     fun reserveInstances(n: Int) = ensureInstances(n)
 }
