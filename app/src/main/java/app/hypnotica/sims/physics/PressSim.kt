@@ -114,7 +114,10 @@ class PressSim : Sim {
         elapsed += h
         // The press: steady, slowing a little once it bites, so the last of
         // the squeeze is drawn out.
-        val speed = env.params.f("speed", 1f) * PLATE_SPEED * (if (touched && gaveAt < 0f) bite else if (touched) 1f else 1.6f)
+        // The slow squeeze on glass, times the slowest setting, took two
+        // minutes to give; never slower than a fifth of the base speed.
+        val factor = env.params.f("speed", 1f) * (if (touched && gaveAt < 0f) bite else if (touched) 1f else 1.6f)
+        val speed = PLATE_SPEED * factor.coerceAtLeast(MIN_FACTOR)
         if (bottomAt < 0f) {
             plate = max(plateStop, plate - speed * h)
             if (plate <= plateStop) {
@@ -260,6 +263,7 @@ class PressSim : Sim {
         const val GRAVITY_SCALE = 0.3f
         const val CREAK_STEP = 0.08f
         const val GIVE_SHARE = 0.1f
+        const val MIN_FACTOR = 0.2f
         val MATERIAL_LIMIT = floatArrayOf(0.2f, 0.35f, 0.75f)
         val MATERIAL_STIFF = floatArrayOf(1f, 0.6f, 0.25f)
         val MATERIAL_BITE = floatArrayOf(0.2f, 0.7f, 1f)
