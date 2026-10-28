@@ -259,8 +259,15 @@ class HarmonographSim : Sim {
         }
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.56f
+    /**
+     * Drawn at a fixed size; on a phone held upright the view pulls back to
+     * fit it, and on a wide screen it closes in, where it was a small knot in
+     * the middle. (Following the swing in as it dies cropped the older,
+     * wider loops still on screen.)
+     */
+    override fun frameHalfWidth(env: SimEnv): Float = EXTENT
+
+    override fun focus(env: SimEnv): Float = EXTENT
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -268,6 +275,7 @@ class HarmonographSim : Sim {
         listOf("ink" to String.format(java.util.Locale.US, "%,d", filled))
 
     companion object {
+        const val EXTENT = 0.56f
         fun def(): SimDef = SimDef(
             id = "art/harmonograph",
             title = "Harmonograph",

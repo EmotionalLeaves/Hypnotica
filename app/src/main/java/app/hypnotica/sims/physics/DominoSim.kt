@@ -89,7 +89,11 @@ class DominoSim : Sim {
 
     /** Rows back and forth down the screen, with a half turn at each end. */
     private fun snake(count: Int, hw: Float): FloatArray {
-        val rows = max(2, sqrt(count / (2f * hw) * 1.8f).toInt())
+        // Rows far enough apart for a fallen domino — 1.6 gaps long — to lie
+        // between them: spaced by count alone, they fell across the next row
+        // and the whole snake read as one solid slab.
+        val gap = sqrt(1.8f * 2f * hw / (ROW_ROOM * count))
+        val rows = max(2, (1.8f / (ROW_ROOM * gap)).toInt())
         val perRow = max(2, count / rows)
         val out = FloatArray(count * 2)
         val rowGap = 1.8f / rows
@@ -209,6 +213,8 @@ class DominoSim : Sim {
 
     companion object {
         const val MAX_DOMINOES = 4000
+        /** Row spacing in gaps along a row: room for a domino 1.6 gaps long. */
+        const val ROW_ROOM = 1.9f
         const val PUSH = 1.2f
         const val HANDOFF = 0.55f
         const val GRAVITY_SCALE = 0.35f
