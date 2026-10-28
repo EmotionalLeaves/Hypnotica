@@ -27,6 +27,14 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: colour war.** The board split between up to four colours, each with
+  balls that roam their own ground and take the squares they bounce off.
+  Left even it settled at a quarter each for ever, every border defended as
+  hard as it was attacked; now ground is momentum — more of it makes a colour's
+  balls faster, and every thirty squares taken earns another ball — so leads
+  build, colours are knocked out, and one ends up holding most of the board.
+  Each colour takes squares in its own register, a call and answer on the beat.
+
 - **New: the marble race and the sorting race.** Eight marbles down a tall
   course of pegs and spinning paddles, the camera riding with the leader, every
   peg a note pitched by where it sits across the course; and four sorts on the

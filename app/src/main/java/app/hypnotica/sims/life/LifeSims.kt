@@ -1072,6 +1072,7 @@ object LifeSims {
         LangtonsAntSim.def(),
         FallingSandSim.def(),
         PredatorPreySim.def(),
-        ReactionDiffusionSim.def()
+        ReactionDiffusionSim.def(),
+        ColourWarSim.def()
     )
 }
