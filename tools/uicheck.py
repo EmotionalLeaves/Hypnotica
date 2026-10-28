@@ -64,7 +64,7 @@ for f in glob.glob('app/src/main/java/app/hypnotica/**/*.kt', recursive=True):
     src = open(f).read()
     pkg = re.search(r'^package ([\w.]+)', src, re.M)
     pkg = pkg.group(1) if pkg else ''
-    for m in re.finditer(r'^(?:@\w+\s*)?(?:private |internal |public )?(?:data |sealed |abstract |open |enum |value )*(?:class|object|interface|fun|val|var)\s+(\w+)', src, re.M):
+    for m in re.finditer(r'^(?:@\w+\s*)?(?:private |internal |public )?(?:const |data |sealed |abstract |open |enum |value )*(?:class|object|interface|fun|val|var)\s+(\w+)', src, re.M):
         package_decls.setdefault(pkg, set()).add(m.group(1))
 
 problems = []

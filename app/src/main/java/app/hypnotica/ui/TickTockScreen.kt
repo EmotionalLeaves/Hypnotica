@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import app.hypnotica.core.sim.TrapFormat
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -93,6 +94,22 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
     // The like: a star that blooms where the double-tap landed and fades.
     val pop = remember { Animatable(0f) }
+
+    // The twist's word, while it lasts.
+    var twistLabel by remember { mutableStateOf<String?>(null) }
+
+    // For number formats, the number itself, big: the thing the clip asks you
+    // to watch, rather than a counter line in small print.
+    var bigNumber by remember { mutableStateOf<Pair<String, String>?>(null) }
+    LaunchedEffect(current) {
+        bigNumber = null
+        val clip = current ?: return@LaunchedEffect
+        if (clip.format != TrapFormat.NUMBER_UP) return@LaunchedEffect
+        while (true) {
+            bigNumber = state.engine.core.sim.counters().firstOrNull()
+            delay(100)
+        }
+    }
 
     // A clip that arrived some other way — the timer, a finished run — while
     // a swipe's animation had been cancelled part-way: put the chrome back.
@@ -212,16 +229,53 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         // is timed until a run near its start has been seen, or the previous
         // clip's forty seconds would end this one before it began.
         var started = false
+        // The twist this clip gets, from its seed so a replay gets the same one.
+        val twist = Twist.entries[((clip.seed ushr 7) and 0x7FFFFFFF).toInt() % Twist.entries.size]
+        val payoff = clip.payoffSeconds
+        var twisted = false
+        var twistOver = false
+        twistLabel = null
         while (true) {
             val elapsed = kotlin.math.abs(state.engine.core.env.time)
             if (!started && elapsed < 1f) started = true
             if (started) progress = (elapsed / end).coerceIn(0f, 1f)
             if (started && elapsed >= end) break
-            delay(120)
+            if (started) {
+                // The camera leans in as the build goes on — a tenth closer by
+                // the payoff — and eases back out after it, as an edit would.
+                val toward = (elapsed / payoff).coerceIn(0f, 1f)
+                val lean = if (elapsed <= payoff) toward * toward * (3f - 2f * toward)
+                else (1f - (elapsed - payoff) / LEAN_BACK_SECONDS).coerceIn(0f, 1f)
+                state.engine.setBaseZoom(1f + LEAN * lean)
+
+                // The twist: a moment in the build where the clip changes gear.
+                val (from, until) = twist.window(payoff)
+                if (!twisted && elapsed >= from && twist != Twist.NONE) {
+                    twisted = true
+                    twistLabel = twist.label
+                    when (twist) {
+                        Twist.SURGE -> state.engine.core.speed = 1.9f
+                        Twist.HUSH -> state.engine.core.speed = 0.45f
+                        Twist.DROP -> state.engine.setPalette(otherPalette(clip.palette, clip.seed))
+                        Twist.NONE -> {}
+                    }
+                }
+                if (twisted && !twistOver && elapsed >= until) {
+                    twistOver = true
+                    twistLabel = null
+                    state.engine.core.speed = 1f
+                }
+            }
+            delay(100)
         }
         if (current !== clip) return@LaunchedEffect
         generating?.cancel()
         generating = scope.launch { advance() }
+    }
+    // Whatever a clip leaned or sped up, the next one starts level.
+    LaunchedEffect(current) {
+        state.engine.setBaseZoom(1f)
+        state.engine.core.speed = 1f
     }
 
     LaunchedEffect(Unit) {
@@ -360,6 +414,32 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             )
         }
 
+        // The twist's word, centred and brief.
+        AnimatedVisibility(
+            visible = twistLabel != null,
+            enter = fadeIn(tween(Tokens.Fast)),
+            exit = fadeOut(tween(Tokens.Slow)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Text(
+                twistLabel ?: "",
+                color = Tokens.Accent,
+                style = MaterialTheme.typography.displaySmall
+            )
+        }
+
+        // The number a number clip is about.
+        bigNumber?.let { (label, value) ->
+            Column(
+                Modifier.align(Alignment.Center).padding(top = 160.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(value, color = Tokens.TextPrimary, fontSize = 56.sp,
+                    style = MaterialTheme.typography.displaySmall.copy(fontFeatureSettings = "tnum"))
+                Text(label, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         // How far through the clip: a hairline along the bottom, there even
         // when the rest has faded, as on the feeds this is named after.
         Box(
@@ -472,6 +552,42 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE_PIXELS = 90f
+
+/**
+ * A change of gear partway through a clip's build — what an editor does to
+ * keep someone watching. Each is timed against the clip's payoff, and none
+ * touches the physics, so the payoff the pre-check found still comes.
+ */
+private enum class Twist(val label: String?) {
+    NONE(null),
+    /** Doubled speed through the middle of the build. */
+    SURGE("faster"),
+    /** Slowed right before the payoff: the held breath. */
+    HUSH("wait for it"),
+    /** The colours change on the way in. */
+    DROP(null);
+
+    /** When it starts and stops, in seconds of the run. */
+    fun window(payoff: Float): Pair<Float, Float> = when (this) {
+        SURGE -> payoff * 0.35f to payoff * 0.55f
+        HUSH -> (payoff - 1.6f).coerceAtLeast(payoff * 0.5f) to payoff - 0.2f
+        DROP -> payoff * 0.5f to payoff * 0.5f + 0.1f
+        NONE -> Float.MAX_VALUE to Float.MAX_VALUE
+    }
+}
+
+/** A palette other than [current], picked by [seed]. */
+private fun otherPalette(current: String, seed: Long): String {
+    val others = app.hypnotica.core.render.Palette.NAMES.filter { it != current }
+    if (others.isEmpty()) return current
+    return others[((seed ushr 11) and 0x7FFFFFFF).toInt() % others.size]
+}
+
+/** How much closer the camera is at the payoff. */
+private const val LEAN = 0.1f
+
+/** Seconds to ease back out after it. */
+private const val LEAN_BACK_SECONDS = 1.5f
 
 /** Clips a swipe down can go back through. */
 private const val HISTORY = 30
