@@ -166,6 +166,14 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         beginWatch()
     }
 
+    /**
+     * Wall-clock time a frame's steps may take, in nanoseconds; 0 for no limit.
+     * Live play sets it. Anything that must reproduce a run step for step
+     * leaves it at 0, because a limit tied to the clock is not reproducible.
+     */
+    @Volatile
+    var stepBudgetNanos = 0L
+
     /** Advance by one display frame. */
     fun advance(frameSeconds: Float) {
         if (paused || finished) return
@@ -218,6 +226,7 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         // speed slider at about 8x however far it was dragged.
         val wanted = (kotlin.math.abs(accumulator) / dt).toInt() + 2
         var budget = wanted.coerceIn(MAX_STEPS_PER_FRAME, MAX_STEPS_BURST)
+        val began = if (stepBudgetNanos > 0L) System.nanoTime() else 0L
         while (kotlin.math.abs(accumulator) >= dt && budget > 0) {
             val signedDt = if (accumulator > 0f) dt else -dt
             params.tick(env.time)
@@ -239,6 +248,16 @@ class SimCore(def: SimDef, seed: Long = 1L) {
             }
             if (sim.finished()) {
                 finished = true
+                break
+            }
+            // Out of time for this frame: let the run fall behind rather than
+            // try to catch up. Catching up is the spiral — a heavy frame asks
+            // for more steps next frame, which is heavier still — and at forty
+            // thousand pendulums or a 200-square cloth it held the phone at a
+            // few frames a second. Behind, it plays in slow motion at a steady
+            // rate instead.
+            if (stepBudgetNanos > 0L && System.nanoTime() - began > stepBudgetNanos) {
+                budget = 0
                 break
             }
         }

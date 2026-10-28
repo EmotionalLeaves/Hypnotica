@@ -110,6 +110,9 @@ class ClipDirector(seed: Long = System.nanoTime()) {
          * headless payoff checks of it are still quick.
          */
         const val DEFAULT_CAP = 6000f
+
+        /** How far either side of its default a log-scaled size may be remixed. */
+        const val LOG_HEADROOM = 3f
     }
 
     /** How many seeds the last generate() had to try. Shown in the debug counter. */
@@ -204,6 +207,11 @@ class ClipDirector(seed: Long = System.nanoTime()) {
                 return candidate.copy(payoffSeconds = payoff)
             }
             if (fallback == null && payoff > 0f) fallback = candidate.copy(payoffSeconds = payoff)
+            // A world where this sim never pays off — a pendulum in zero-g
+            // does not swing — is not drawn for it again this session.
+            if (payoff <= 0f && candidate.laws.name != Laws.OUR_UNIVERSE.name) {
+                deadLaws.getOrPut(candidate.def.id) { HashSet() }.add(candidate.laws.name)
+            }
         }
         // Nothing in the window. The fallback pays off outside it, so it is
         // better than a swipe that appears to be swallowed, but it is not what
@@ -233,6 +241,24 @@ class ClipDirector(seed: Long = System.nanoTime()) {
 
     private fun seenRecently(def: SimDef, format: TrapFormat): Boolean =
         recentPairs.contains(def.id + "/" + format.name) || recentSims.contains(def.id)
+
+    /** Worlds that never paid off for a sim, by sim id. */
+    private val deadLaws = HashMap<String, HashSet<String>>()
+
+    /**
+     * A world that changes something this sim feels and has not already
+     * failed it. Any preset used to be drawn, so a third of law clips were
+     * "Moon" on a sim with no gravity: the same clip under another name.
+     */
+    private fun lawsFor(def: SimDef): Laws {
+        val dead = deadLaws[def.id]
+        val options = Laws.PRESETS.filter {
+            it.name != Laws.OUR_UNIVERSE.name &&
+                it.differsFor(Laws.OUR_UNIVERSE, def.lawKnobs) &&
+                (dead == null || it.name !in dead)
+        }
+        return if (options.isEmpty()) Laws.OUR_UNIVERSE else options[rng.int(0, options.size)]
+    }
 
     private fun propose(): Clip? {
         val pool = SimRegistry.all.filter { it.formats.any { f -> f !in mutedFormats } }
@@ -267,8 +293,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
 
         val seed = (rng.nextInt().toLong() shl 20) xor rng.nextInt().toLong()
         val params = randomiseParams(def)
-        val laws = if (def.usesLaws && rng.bool(0.35f)) Laws.PRESETS[rng.int(0, Laws.PRESETS.size)]
-        else Laws.OUR_UNIVERSE
+        val laws = if (def.usesLaws && rng.bool(0.35f)) lawsFor(def) else Laws.OUR_UNIVERSE
         val palette = if (rng.bool(0.5f)) def.defaultPalette else Palette.NAMES[rng.int(0, Palette.NAMES.size)]
 
         return Clip(
@@ -330,9 +355,19 @@ class ClipDirector(seed: Long = System.nanoTime()) {
                 ParamType.BOOL -> if (rng.bool(0.3f)) 1f else 0f
                 ParamType.CHOICE -> rng.int(0, max(1, p.choices.size)).toFloat()
                 ParamType.INT -> {
-                    val cap = min(p.max, sizeCap(p.key) * sizeScale)
-                    val lo = p.min
-                    if (cap <= lo) lo else rng.range(lo, cap)
+                    var cap = min(p.max, sizeCap(p.key) * sizeScale)
+                    var lo = p.min
+                    if (p.logScale && p.default > 0f) {
+                        // A log slider spans orders of magnitude, and an even
+                        // pick across it lands near the top nine times in ten:
+                        // twenty thousand birds or a 180-row cloth, which is a
+                        // stutter rather than a variation. Draw evenly in
+                        // log space, within a few doublings of the tuned value.
+                        cap = min(cap, p.default * LOG_HEADROOM * sizeScale.coerceAtLeast(0.25f))
+                        lo = max(lo, p.default / LOG_HEADROOM).coerceAtMost(cap)
+                        if (cap <= lo || lo <= 0f) lo.coerceAtLeast(p.min)
+                        else kotlin.math.exp(rng.range(kotlin.math.ln(lo), kotlin.math.ln(cap)))
+                    } else if (cap <= lo) lo else rng.range(lo, cap)
                 }
                 ParamType.FLOAT -> {
                     // Stay near the default, which is the value that was tuned.
@@ -369,6 +404,8 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         "bodies" -> 400f
         "start" -> 9999f
         "particles" -> 24000f
+        // Pixels per side of a full-screen field: 400 is 160,000 cells a frame.
+        "resolution" -> 300f
         else -> DEFAULT_CAP
     }
 

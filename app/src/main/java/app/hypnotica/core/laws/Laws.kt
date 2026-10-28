@@ -106,6 +106,14 @@ data class Laws(
      * Studio's shipped gravity-flip template exported a clip where nothing
      * flipped.
      */
+    /**
+     * The constant in front of a plain inverse-square law, or NaN when the
+     * law is anything else. Lets a sim with hundreds of thousands of pairs a
+     * step skip the general path for the case it nearly always runs.
+     */
+    fun inverseSquareConstant(): Float =
+        if (compiledForce == null && falloff == 2f) gravity / EARTH_GRAVITY * gravityConstant else Float.NaN
+
     fun pairForce(r: Float, m1: Float, m2: Float): Float {
         val rr = if (r < MIN_R) MIN_R else r
         val scale = gravity / EARTH_GRAVITY
@@ -116,7 +124,15 @@ data class Laws(
             // other's r and m between the write and the read.
             return scale * custom.eval(vars.get().with(rr, m1, m2))
         }
-        val denom = rr.toDouble().pow(falloff.toDouble()).toFloat()
+        // The usual falloffs multiplied out: a double-precision pow for each
+        // of 160,000 pairs a step was most of the n-body sim's frame.
+        val denom = when (falloff) {
+            2f -> rr * rr
+            1f -> rr
+            3f -> rr * rr * rr
+            0f -> 1f
+            else -> rr.toDouble().pow(falloff.toDouble()).toFloat()
+        }
         if (abs(denom) < 1e-20f) return 0f
         return scale * gravityConstant * m1 * m2 / denom
     }

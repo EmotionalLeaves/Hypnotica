@@ -543,6 +543,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             recorder?.feed(dt, camera, core.speed, scene.trails)
         }
 
+        // Live play may fall behind under a heavy load; Studio's timeline is
+        // keyed to simulated time and keeps every step.
+        core.stepBudgetNanos = if (proj == null) LIVE_STEP_BUDGET_NANOS else 0L
         if (running && !frozen && !seeking && (proj == null || studioPlaying)) core.advance(dt)
 
         if (core.payoffFired && !payoffNotified) {
@@ -859,3 +862,6 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
 /** What a run offers to bet on, and how it came out; see [SimEngine.pick]. */
 class PickSnapshot(val run: Long, val sides: IntArray, val winner: Int)
+
+/** How long one frame's simulation may run in live play: most of a 60 Hz frame. */
+private const val LIVE_STEP_BUDGET_NANOS = 12_000_000L

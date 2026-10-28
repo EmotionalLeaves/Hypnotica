@@ -156,6 +156,7 @@ class NBodySim : Sim {
         val laws = env.laws
         val softening = SOFTENING
         val sign = laws.massSign
+        val fastK = laws.inverseSquareConstant() * G_SCALE * sign
 
         // Every pull worked out from where the bodies are now, then every
         // body moved: updated in place, a body felt some of the others where
@@ -177,7 +178,22 @@ class NBodySim : Sim {
                     ay += f * dy / r
                 }
                 // All pairs, but only when the count is small enough to afford it.
-                if (n <= PAIRWISE_LIMIT) {
+                if (n <= PAIRWISE_LIMIT && !fastK.isNaN()) {
+                    // The same sum for plain inverse-square gravity, multiplied
+                    // out: the body's own mass cancels, and r never falls under
+                    // the law's floor because the softening keeps it above.
+                    val xi = px[i]
+                    val yi = py[i]
+                    for (j in 0 until n) {
+                        if (j == i) continue
+                        val dx = px[j] - xi
+                        val dy = py[j] - yi
+                        val r2 = dx * dx + dy * dy + softening
+                        val k = fastK * mass[j] / (r2 * sqrt(r2))
+                        ax += k * dx
+                        ay += k * dy
+                    }
+                } else if (n <= PAIRWISE_LIMIT) {
                     for (j in 0 until n) {
                         if (j == i) continue
                         val dx = px[j] - px[i]
