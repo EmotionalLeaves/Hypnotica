@@ -278,14 +278,6 @@ private fun ControlDrawer(state: AppState) {
             .heightIn(max = 420.dp)
             .padding(16.dp)
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Pill("Simple", selected = !state.advanced, Modifier.weight(1f)) { state.advanced = false }
-            Pill("Advanced", selected = state.advanced, Modifier.weight(1f)) { state.advanced = true }
-        }
         // The first few visits: the gestures that make the sim yours, which
         // were only written down near the bottom of Settings.
         GestureTip(state)
@@ -308,7 +300,7 @@ private fun ControlDrawer(state: AppState) {
             }
             val selected = tabs.indexOf(state.advancedTab).coerceAtLeast(0)
             val shown = tabs[selected]
-            ChipRow(tabs.map { it.title }, selected) { state.advancedTab = tabs[it] }
+            ModeRow(state) { ChipRow(tabs.map { it.title }, selected) { state.advancedTab = tabs[it] } }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 AdvancedPanel(state, shown)
@@ -322,7 +314,7 @@ private fun ControlDrawer(state: AppState) {
             // because the card outlives the sim it was chosen on.
             val selected = cards.indexOf(state.card).coerceAtLeast(0)
             val shown = cards[selected]
-            ChipRow(cards.map { it.title }, selected) { state.card = cards[it] }
+            ModeRow(state) { ChipRow(cards.map { it.title }, selected) { state.card = cards[it] } }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 // Crossfaded, with the drawer's height carried along: Sound is
@@ -763,3 +755,17 @@ private fun GestureTip(state: AppState) {
 }
 
 private const val GESTURE_TIP_MS = 5000L
+
+/**
+ * The card or tab chips, with the mode switch at the end of the same row. The
+ * switch had a full-width row of its own — two pills and a gap, a seventh of
+ * the drawer's height — at the top of every drawer, for a choice made rarely.
+ */
+@Composable
+private fun ModeRow(state: AppState, chips: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) { chips() }
+        Spacer(Modifier.width(8.dp))
+        Pill(if (state.advanced) "Simple" else "Advanced") { state.advanced = !state.advanced }
+    }
+}
