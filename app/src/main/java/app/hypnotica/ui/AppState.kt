@@ -269,7 +269,7 @@ class AppState(
     var halted by mutableStateOf<String?>(null)
     var soundPresetName by mutableStateOf("8-bit")
     /** The beat under the sound; see [setBeat]. */
-    var beatName by mutableStateOf(prefs?.beat ?: Prefs.BEAT_AUTO)
+    var beatName by mutableStateOf(prefs?.beat ?: BEAT_AUTO)
         private set
     var songIndex by mutableIntStateOf(0)
     // These three write themselves through. Three screens changed them without
@@ -612,7 +612,7 @@ class AppState(
     private fun applyBeat(key: Long) {
         engine.mapping.groove = when (beatName) {
             "Off" -> null
-            Prefs.BEAT_AUTO -> {
+            BEAT_AUTO -> {
                 val mix = (key xor (key ushr 29)) * 0x9E3779B97F4A7C15uL.toLong()
                 val pick = Groove.ALL[((mix ushr 33) % Groove.ALL.size).toInt()]
                 val nudge = (((mix ushr 13) and 0xFF).toInt() / 255f - 0.5f) * 0.16f

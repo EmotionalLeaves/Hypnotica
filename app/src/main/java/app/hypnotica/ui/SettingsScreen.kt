@@ -84,7 +84,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
         }
         SectionLabel("Beat")
         // Auto gives each sim its own groove; the names pin one everywhere.
-        val beats = listOf(Prefs.BEAT_AUTO) + Groove.NAMES
+        val beats = listOf(BEAT_AUTO) + Groove.NAMES
         ChipRow(beats, beats.indexOf(state.beatName).coerceAtLeast(0)) { state.setBeat(beats[it]) }
         ValueSlider(
             label = "Volume",

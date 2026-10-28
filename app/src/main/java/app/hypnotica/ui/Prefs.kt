@@ -144,7 +144,6 @@ class Prefs(context: Context) {
         const val KEY_PALETTE = "palette"
         const val KEY_SOUND = "sound"
         const val KEY_BEAT = "beat"
-        const val BEAT_AUTO = "Auto"
         const val KEY_VOLUME = "volume"
         const val KEY_CAMERA_DRAG = "cameraDrag"
         const val KEY_REDUCE_FLASH = "reduce_flashing"
@@ -166,3 +165,6 @@ class Prefs(context: Context) {
         const val SCHEMA = 2
     }
 }
+
+/** The beat setting that gives each sim, and each TickTock clip, a groove of its own. */
+internal const val BEAT_AUTO = "Auto"
