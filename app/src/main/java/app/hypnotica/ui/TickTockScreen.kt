@@ -328,7 +328,11 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     }
 
     DisposableEffect(Unit) {
+        // A clip is timed against its run: a turn of the phone mid-clip
+        // started the run over and played the clip twice.
+        state.engine.relayoutOnResize = false
         onDispose {
+            state.engine.relayoutOnResize = true
             state.engine.kaleido = 1
             // A twist or a lean in progress does not follow the person out:
             // the feed ran at 1.9x under a slider reading 1x.

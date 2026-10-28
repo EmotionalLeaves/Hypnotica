@@ -73,7 +73,9 @@ class BallSortSim : Sim {
         moving = -1
         done = BooleanArray(tubes)
         ring = FloatArray(tubes)
-        for (t in 0 until tubes) done[t] = isDone(state[t], height[t])
+        // Done means full and one colour: an empty tube isn't sorted, and
+        // counting the two that start empty kept them from ever ringing.
+        for (t in 0 until tubes) done[t] = height[t] == cap && isDone(state[t], height[t])
         // Two rows on a narrow screen once there are more than five tubes: in
         // one row the balls were specks with the top of the screen empty.
         layoutRows = if (tubes > 5 && halfW < 0.9f) 2 else 1
@@ -81,10 +83,22 @@ class BallSortSim : Sim {
         spacing = min(2f * halfW * 0.92f / perRow, 0.22f)
         tubeW = spacing * 0.36f
         ballR = tubeW * 0.82f
+        // And by height: the rows, the gap between them, and the lift over
+        // the top must all fit, or a ball in flight left the screen.
+        // Layout top: the top row's rim, plus the lift and the lifted ball,
+        // all in ball radii, plus the arc's bump; shifted down by LOWER radii.
+        val tallest = 0.9f / ((layoutRows - 1) * ((cap * 2.05f + 0.6f + 5f) * 0.5f) + (cap * 2.05f + 0.6f) * 0.5f + 4.3f - LOWER)
+        if (ballR > tallest) {
+            ballR = tallest
+            tubeW = ballR / 0.82f
+        }
         // Each row's tubes are this tall; the rows sit one above the other.
         val tubeH = (cap * 2.05f + 0.6f) * ballR
         rowGap = tubeH + ballR * 5f
-        floorY = -(layoutRows - 1) * rowGap * 0.5f - tubeH * 0.5f
+        val tubeHFinal = (cap * 2.05f + 0.6f) * ballR
+        rowGap = tubeHFinal + ballR * 5f
+        // Lowered a little: the lift only goes up, so the room is below.
+        floorY = -(layoutRows - 1) * rowGap * 0.5f - tubeHFinal * 0.5f - LOWER * ballR
         // About twelve seconds of play, however long the solution.
         stepSeconds = (TARGET_SECONDS / max(1, moves.size / 2)).coerceIn(0.12f, 0.6f)
         elapsed = 0f
@@ -226,7 +240,12 @@ class BallSortSim : Sim {
                 p < 0.7f -> (x0 + (x1 - x0) * ease((p - 0.3f) / 0.4f)) to (lift + 0.04f * sin((p - 0.3f) / 0.4f * 3.1416f))
                 else -> x1 to (lift + (y1 - lift) * ease((p - 0.7f) / 0.3f))
             }
-            g.disc(x, y, ballR, palette.at((moving + 0.5f) / colors))
+            // Drawn lifted — a shade bigger, with a shadow — so on its way
+            // past the other row's tubes it reads as passing in front.
+            val lifted = if (p > 0.15f && p < 0.85f) 1.18f else 1f
+            g.disc(x + ballR * 0.25f, y - ballR * 0.35f, ballR * lifted, 0x66000000)
+            g.disc(x, y, ballR * lifted, palette.at((moving + 0.5f) / colors))
+            g.disc(x - ballR * 0.3f, y + ballR * 0.3f, ballR * 0.3f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.5f))
         }
     }
 
@@ -238,7 +257,7 @@ class BallSortSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "moves" to "${moveIndex} / ${moves.size / 2}",
-        "sorted" to "${done.count { it } - (0 until tubes).count { height[it] == 0 }}".let { s -> "${s.toIntOrNull()?.coerceAtLeast(0) ?: 0} / $colors" }
+        "sorted" to "${done.count { it }} / $colors"
     )
 
     companion object {
@@ -246,6 +265,7 @@ class BallSortSim : Sim {
         const val SEARCH_BUDGET = 60000
         const val TARGET_SECONDS = 12f
         const val LEAD = 0.8f
+        const val LOWER = 2f
 
         fun def(): SimDef = SimDef(
             id = "algorithms/ball-sort",

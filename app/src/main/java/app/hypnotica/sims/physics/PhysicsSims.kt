@@ -973,6 +973,7 @@ object PhysicsSims {
         LastOutSim.def(),
         SoapCutSim.def(),
         PowerWashSim.def(),
-        CornerSim.def()
+        CornerSim.def(),
+        GlassBridgeSim.def()
     )
 }

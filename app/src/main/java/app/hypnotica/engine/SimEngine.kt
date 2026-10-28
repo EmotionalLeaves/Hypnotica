@@ -105,6 +105,17 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** The zoom bump on the beat's kick, 1 on the hit and easing to 0. */
     private var beat = 0f
     private var sizedOnce = false
+
+    /** The screen shape the current run was set up for. */
+    private var laidOutAspect = 0f
+
+    /**
+     * Whether a change of screen shape lays the run out again. TickTock turns
+     * it off: its clips are timed against the run's clock, and starting the
+     * run over mid-clip ran the clip twice over.
+     */
+    @Volatile
+    var relayoutOnResize = true
     private var kicksSeen = 0L
     private var baseZoom = 1f
     /**
@@ -351,16 +362,22 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         scene.surfaceChanged(width, height)
         val aspect = width.toFloat() / max(1, height).toFloat()
-        val before = core.env.aspect
         core.setAspect(aspect)
         // Turned on its side, or back: most sims lay themselves out for the
         // screen once, at setup, and carried on in the old shape — a box
         // running off the side, bars bunched in the middle. The same run
         // again, laid out afresh. Not in the studio, where the timeline owns
         // the run.
-        if (sizedOnce && project == null && before > 0f && kotlin.math.abs(aspect / before - 1f) > RELAYOUT_CHANGE) {
-            core.restart(core.seed)
-            resetRunState()
+        //
+        // Queued, not run here: setup can throw, and only the frame is
+        // guarded — a halted sim turned on its side took the app down. And
+        // measured against the shape the run was laid out for, so a resize
+        // that arrives in small steps still adds up to one.
+        if (sizedOnce && project == null && relayoutOnResize && halted == null && laidOutAspect > 0f &&
+            kotlin.math.abs(aspect / laidOutAspect - 1f) > RELAYOUT_CHANGE &&
+            pendingLoad == null && pendingParams == null && pendingRestart == null
+        ) {
+            pendingRestart = core.seed
         }
         sizedOnce = true
         GLES30.glViewport(0, 0, width, height)
@@ -707,6 +724,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     private fun resetRunState() {
+        laidOutAspect = core.env.aspect
         applyOwnSong()
         runId++
         pick = PickSnapshot(runId, app.hypnotica.core.sim.NO_CONTENDERS, -1)

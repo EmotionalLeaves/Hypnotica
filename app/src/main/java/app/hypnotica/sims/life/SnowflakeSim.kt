@@ -106,8 +106,21 @@ class SnowflakeSim : Sim {
                 2 -> wy++
                 else -> wy--
             }
-            val dx = wx - c; val dy = wy - c
-            val d2 = dx * dx + dy * dy
+            var dx = wx - c; var dy = wy - c
+            var d2 = dx * dx + dy * dy
+            // Far from the crystal, take one long stride rather than many
+            // short ones: nothing can be touched on the way, and the walk is
+            // the same in the end. Without it the wild shape at the largest
+            // size fell twice behind its schedule.
+            val d = sqrt(d2.toFloat())
+            if (d > radius + 4f) {
+                val jump = d - radius - 2f
+                val a = env.rng.range(0f, 2f * PI.toFloat())
+                wx = (wx + cos(a) * jump).roundToInt()
+                wy = (wy + sin(a) * jump).roundToInt()
+                dx = wx - c; dy = wy - c
+                d2 = dx * dx + dy * dy
+            }
             // Wandered too far: start another.
             if (d2 > (radius * 2.5f + 12f).let { it * it } || wx < 1 || wy < 1 || wx > size - 2 || wy > size - 2) {
                 walking = false
