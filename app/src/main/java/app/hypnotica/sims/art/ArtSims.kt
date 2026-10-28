@@ -582,6 +582,7 @@ object ArtSims {
         PolyrhythmSim.def(),
         HarmonographSim.def(),
         CirclePackingSim.def(),
-        SpirographSim.def()
+        SpirographSim.def(),
+        LSystemSim.def()
     )
 }

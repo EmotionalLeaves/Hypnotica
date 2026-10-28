@@ -27,6 +27,12 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: plants from rules.** An L-system — a short string rewritten by a rule a
+  few times over — read as turtle moves draws a fern, a bush, a weed, a tree or
+  grass. It grows outward from the root, every branch at once, climbing a scale
+  as it climbs, and sways in the wind once grown. Tall by nature, it fills an
+  upright phone.
+
 - **New: the ripple tank.** Straight waves roll down onto a wall with slits and
   fan out beyond it; a screen along the bottom keeps the running total, and the
   bright and dark stripes of the double-slit pattern build up on it. The payoff
