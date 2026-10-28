@@ -276,7 +276,9 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 val toward = (elapsed / payoff).coerceIn(0f, 1f)
                 val lean = if (elapsed <= payoff) toward * toward * (3f - 2f * toward)
                 else (1f - (elapsed - payoff) / LEAN_BACK_SECONDS).coerceIn(0f, 1f)
-                if (!state.engine.userZoomed) state.engine.setBaseZoom(1f + LEAN * lean)
+                // The "closer" twist pushes in on top of the lean while it lasts.
+                val push = if (twist == Twist.CLOSE && twisted && !twistOver) CLOSE_PUSH else 0f
+                if (!state.engine.userZoomed) state.engine.setBaseZoom(1f + LEAN * lean + push)
 
                 // The twist: a moment in the build where the clip changes gear.
                 val (from, until) = twist.window(payoff)
@@ -287,6 +289,13 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                         Twist.SURGE -> state.engine.core.speed = 1.9f
                         Twist.HUSH -> state.engine.core.speed = 0.45f
                         Twist.DROP -> state.engine.setPalette(otherPalette(clip.palette, clip.seed))
+                        Twist.FREEZE -> {
+                            // A held breath: stopped dead, then on again.
+                            state.engine.core.speed = 0f
+                            delay(FREEZE_MS)
+                            if (current === clip) state.engine.core.speed = 1f
+                        }
+                        Twist.CLOSE -> {}
                         Twist.NONE -> {}
                     }
                 }
@@ -759,13 +768,20 @@ private enum class Twist(val label: String?) {
     /** Slowed right before the payoff: the held breath. */
     HUSH("wait for it"),
     /** The colours change on the way in. */
-    DROP(null);
+    DROP(null),
+    /** Everything stops dead for a beat, then goes. */
+    FREEZE("freeze"),
+    /** The camera pushes right in partway through the build. */
+    CLOSE("closer");
 
     /** When it starts and stops, in seconds of the run. */
     fun window(payoff: Float): Pair<Float, Float> = when (this) {
         SURGE -> payoff * 0.35f to payoff * 0.55f
         HUSH -> (payoff - 1.6f).coerceAtLeast(payoff * 0.5f) to payoff - 0.2f
         DROP -> payoff * 0.5f to payoff * 0.5f + 0.1f
+        // Held in wall time: the run is stopped, so its clock doesn't move.
+        FREEZE -> payoff * 0.55f to payoff * 0.55f
+        CLOSE -> payoff * 0.3f to payoff * 0.6f
         NONE -> Float.MAX_VALUE to Float.MAX_VALUE
     }
 }
@@ -776,6 +792,12 @@ private fun otherPalette(current: String, seed: Long): String {
     if (others.isEmpty()) return current
     return others[((seed ushr 11) and 0x7FFFFFFF).toInt() % others.size]
 }
+
+/** How long a freeze holds, in wall time. */
+private const val FREEZE_MS = 700L
+
+/** How much further in the "closer" twist pushes. */
+private const val CLOSE_PUSH = 0.28f
 
 /** How much closer the camera is at the payoff. */
 private const val LEAN = 0.1f
