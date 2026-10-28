@@ -231,12 +231,14 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                 val minFlick = MIN_FLICK_DP.dp.toPx()
                 val tracker = VelocityTracker()
                 detectVerticalDragGestures(
-                    onDragStart = { travelled = 0f; tracker.resetTracking() },
+                    onDragStart = { travelled = 0f; tracker.resetTracking(); surface.screenSwiping = true },
                     onDragCancel = {
+                        surface.screenSwiping = false
                         travelled = 0f
                         scope.launch { drag.animateTo(0f, spring()) }
                     },
                     onDragEnd = {
+                        surface.screenSwiping = false
                         // One flick moves one sim, however far it went.
                         val vy = tracker.calculateVelocity().y
                         when {

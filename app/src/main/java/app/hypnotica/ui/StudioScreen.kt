@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import app.hypnotica.core.studio.Easing
 import app.hypnotica.core.studio.Project
 import app.hypnotica.core.studio.TrackKind
+import androidx.activity.compose.BackHandler
 import app.hypnotica.export.ExportSettings
 import app.hypnotica.export.Publish
 import app.hypnotica.export.VideoExporter
@@ -98,6 +99,20 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
 
     /** True when the last export ended in the catch, so the line can be red. */
     var exportFailed by remember { mutableStateOf(false) }
+
+    // Back during an export asks first: one stray swipe threw a long render
+    // away without a word. A second Back within a few seconds means it.
+    var backArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(backArmed) {
+        if (backArmed) { kotlinx.coroutines.delay(BACK_CONFIRM_MS); backArmed = false }
+    }
+    BackHandler(enabled = exporting) {
+        if (backArmed) state.goBack()
+        else {
+            backArmed = true
+            exportMessage = "Still exporting — Back again to cancel it."
+        }
+    }
     var captionText by remember { mutableStateOf("") }
     var captionBig by remember { mutableStateOf(true) }
     // Flash has nothing live to read, so Studio holds the value to be keyed.
@@ -896,3 +911,6 @@ private const val CONFIRM_MS = 4000L
 
 /** Edits Studio can step back through. */
 private const val UNDO_DEPTH = 40
+
+/** How long a first Back during an export waits for a second. */
+private const val BACK_CONFIRM_MS = 3000L

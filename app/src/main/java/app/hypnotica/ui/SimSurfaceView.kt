@@ -23,6 +23,12 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
     var onTap: (() -> Unit)? = null
 
     /**
+     * Set while a screen's own swipe has the gesture: the feed's swipe to the
+     * next sim was also a drag through the sim it was leaving.
+     */
+    var screenSwiping = false
+
+    /**
      * The system's own touch slop, scaled for the screen: a fixed 18 pixels
      * was a third of it on a dense screen, so a tap with any wobble turned
      * into a drag and was lost.
@@ -164,7 +170,7 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                     if (moved) {
                         if (cameraMode) {
                             panBy(event.x - lastPanX, event.y - lastPanY)
-                        } else {
+                        } else if (!screenSwiping) {
                             val (wx, wy) = engine.worldFromScreen(event.x, event.y)
                             engine.onTouch(TouchEvent(TouchEvent.Kind.DRAG, wx, wy))
                         }

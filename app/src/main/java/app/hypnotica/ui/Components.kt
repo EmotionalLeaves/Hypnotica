@@ -44,6 +44,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -405,8 +409,11 @@ fun GlyphButton(
     selected: Boolean = false,
     /** Bounce when [selected] turns on: for a "keep this" action like ★. */
     pop: Boolean = false,
+    /** What a screen reader says; known glyphs name themselves. */
+    label: String? = null,
     onClick: () -> Unit
 ) {
+    val spoken = label ?: GLYPH_NAMES[glyph] ?: glyph
     // The swap from ☆ to ★ was a single frame with nothing to say it took.
     val scale = remember { androidx.compose.animation.core.Animatable(1f) }
     var seen by remember { mutableStateOf(selected) }
@@ -430,16 +437,42 @@ fun GlyphButton(
             )
             .border(1.dp, Color.White.copy(alpha = if (selected) 0.3f else 0.12f), CircleShape)
             .clip(CircleShape)
-            .clickable { onClick() },
+            .clickable(role = Role.Button) { onClick() }
+            // Read out as what it does: "black star", "die face-5" and
+            // "squared plus" were what a screen reader said before.
+            .semantics(mergeDescendants = true) {
+                contentDescription = spoken
+                if (selected) stateDescription = "on"
+            },
         contentAlignment = Alignment.Center
     ) {
         Text(
             glyph,
             color = if (pop && selected) Tokens.Accent else Tokens.TextPrimary,
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.clearAndSetSemantics { }
         )
     }
 }
+
+/** What each glyph button does, in words. */
+private val GLYPH_NAMES = mapOf(
+    "‹" to "Back",
+    "★" to "Favourite",
+    "☆" to "Favourite",
+    "⚙" to "Settings",
+    "▦" to "Library",
+    "⚄" to "Remix",
+    "≡" to "Controls",
+    "◷" to "TickTock",
+    "⤴" to "Save and share a video",
+    "♥" to "Like",
+    "♡" to "Like",
+    "↻" to "New run",
+    "▶" to "Play",
+    "⏸" to "Pause",
+    "✇" to "Studio"
+)
 
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {

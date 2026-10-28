@@ -53,6 +53,13 @@ import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
 import kotlinx.coroutines.delay
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -255,6 +262,8 @@ private fun TopBar(state: AppState, uiTick: Int) {
             val recipeError = counters.firstOrNull { it.first == "recipe error" }?.second
             val line = if (recipeError != null) {
                 "Recipe stopped — $recipeError"
+            } else if (state.quickExporting) {
+                "making the video  ${(state.quickExportProgress * 100f).toInt()}%"
             } else if (state.recording) {
                 val rec = remember(uiTick) { state.engine.recorder }
                 // A recording that has run its length stops itself, rather than
@@ -289,6 +298,10 @@ private fun TopBar(state: AppState, uiTick: Int) {
         // The title column ran flush into the star, with 12 dp of air on its
         // other side.
         Spacer(Modifier.width(12.dp))
+        // Save this as a video and share it: one tap, not seven.
+        val context = LocalContext.current
+        GlyphButton("⤴", selected = state.quickExporting) { state.quickExport(context) }
+        Spacer(Modifier.width(8.dp))
         GlyphButton(
             if (state.isFavourite(state.currentDef.id)) "★" else "☆",
             selected = state.isFavourite(state.currentDef.id),
@@ -331,13 +344,39 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
 
 @Composable
 private fun ControlDrawer(state: AppState) {
+    // Pulled down to close, as a sheet is: it closed only by a tap on the sim,
+    // ≡ or Back. The handle at the top is where the pull starts.
+    var pull by remember { mutableFloatStateOf(0f) }
+    val closeAt = with(LocalDensity.current) { DRAWER_CLOSE_DP.dp.toPx() }
     Column(
         Modifier
             .fillMaxWidth()
+            .graphicsLayer { translationY = pull }
             .background(Tokens.Surface.copy(alpha = 0.96f), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             .heightIn(max = 420.dp)
-            .padding(16.dp)
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
     ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { d -> pull = (pull + d).coerceAtLeast(0f) },
+                    onDragStopped = { v ->
+                        if (pull > closeAt || v > DRAWER_FLING) state.controlsOpen = false
+                        pull = 0f
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .width(32.dp)
+                    .height(4.dp)
+                    .background(Tokens.TextSecondary.copy(alpha = 0.5f), RoundedCornerShape(percent = 50))
+            )
+        }
         // The first few visits: the gestures that make the sim yours, which
         // were only written down near the bottom of Settings.
         GestureTip(state)
@@ -836,3 +875,8 @@ private fun ModeRow(state: AppState, chips: @Composable () -> Unit) {
 
 /** How long the remix's note stays up. */
 private const val REMIX_NOTE_MS = 1400L
+
+/** How far the drawer is pulled down before letting go closes it. */
+private const val DRAWER_CLOSE_DP = 80
+/** Or how fast, in pixels a second. */
+private const val DRAWER_FLING = 1200f

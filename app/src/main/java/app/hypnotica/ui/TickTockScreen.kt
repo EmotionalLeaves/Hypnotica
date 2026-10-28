@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import app.hypnotica.core.director.Clip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
@@ -393,12 +394,14 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 val minFlick = MIN_FLICK_DP.dp.toPx()
                 val tracker = VelocityTracker()
                 detectVerticalDragGestures(
-                    onDragStart = { travelled = 0f; tracker.resetTracking() },
+                    onDragStart = { travelled = 0f; tracker.resetTracking(); surface.screenSwiping = true },
                     onDragCancel = {
+                        surface.screenSwiping = false
                         travelled = 0f
                         scope.launch { drag.animateTo(0f, spring()) }
                     },
                     onDragEnd = {
+                        surface.screenSwiping = false
                         val out = height * LEAVE
                         val vy = tracker.calculateVelocity().y
                         val up = travelled <= -swipePx || (vy < -flick && travelled < -minFlick)
@@ -669,7 +672,19 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    GlyphButton("‹") { state.goBack() }
+                    // The like, as a button too — not only a double-tap to
+                    // be discovered — and the clip as a video, to send.
+                    val context = LocalContext.current
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        GlyphButton(if (liked) "♥" else "♡", selected = liked, pop = true) {
+                            current?.let { if (!liked) { state.likeClip(it); liked = true } }
+                            state.tick(1)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        GlyphButton("⤴", selected = state.quickExporting) { state.quickExport(context) }
+                        Spacer(Modifier.height(8.dp))
+                        GlyphButton("‹") { state.goBack() }
+                    }
                 }
             }
         }

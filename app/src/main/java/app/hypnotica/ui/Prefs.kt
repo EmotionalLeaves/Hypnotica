@@ -125,6 +125,11 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_TASTE, "") ?: ""
         set(value) = sp.edit().putString(KEY_TASTE, value).apply()
 
+    /** TickTock clips liked, each the run that replays it exactly, newest first. */
+    var savedClips: List<String>
+        get() = (sp.getString(KEY_SAVED, "") ?: "").split(SAVED_SEP).filter { it.isNotBlank() }
+        set(value) = sp.edit().putString(KEY_SAVED, value.joinToString(SAVED_SEP)).apply()
+
     /** The Studio project, as ProjectJson writes it, so it outlives the process. */
     var studioProject: String?
         get() = sp.getString(KEY_PROJECT, null)
@@ -164,6 +169,8 @@ class Prefs(context: Context) {
         const val KEY_TIER = "device_tier"
         const val KEY_BENCH = "bench_note"
         const val KEY_TASTE = "taste"
+        const val KEY_SAVED = "savedClips"
+        const val SAVED_SEP = "\u0001"
         const val KEY_MUTED = "muted_formats"
         const val KEY_SCHEMA = "schema"
         const val KEY_PROJECT = "studio_project"

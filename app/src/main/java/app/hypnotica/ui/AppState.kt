@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.hypnotica.core.audio.Scale
 import app.hypnotica.core.audio.Song
+import kotlinx.coroutines.launch
 import app.hypnotica.core.director.Clip
 import app.hypnotica.core.director.ClipDirector
 import app.hypnotica.core.perf.Bench
@@ -229,6 +230,10 @@ class AppState(
 
     /** The variant the last remix landed on, in words, for the feed's caption. */
     var remixVariant by mutableStateOf<String?>(null)
+    /** A one-tap video being made, and how far it has got. */
+    var quickExporting by mutableStateOf(false)
+    var quickExportProgress by mutableStateOf(0f)
+
     /** When the last remix landed, so the player can say what it landed on. */
     var remixedAt by mutableStateOf(0L)
     var paletteName by mutableStateOf("Spectrum")
@@ -444,6 +449,23 @@ class AppState(
     fun likeClip(clip: Clip) {
         director.like(clip)
         prefs?.taste = director.exportTaste()
+        // And kept: a clip is a seed and settings, so the run that replays it
+        // exactly is a few hundred bytes. Liked and swiped past, it was gone.
+        val run = stateJson()
+        if (run !in savedClips) {
+            savedClips = (listOf(run) + savedClips).take(MAX_SAVED)
+            prefs?.savedClips = savedClips
+            notice = "Saved to your Library."
+        }
+    }
+
+    /** Liked TickTock clips, as replayable runs, newest first. */
+    var savedClips by mutableStateOf(prefs?.savedClips ?: emptyList())
+        private set
+
+    fun forgetSaved(run: String) {
+        savedClips = savedClips - run
+        prefs?.savedClips = savedClips
     }
 
     fun skipClip(clip: Clip) {
@@ -479,6 +501,57 @@ class AppState(
         director.resetTaste()
         prefs?.taste = ""
     }
+
+    /**
+     * A video of what's on screen, in one tap: its own build-up-to-payoff
+     * edit, rendered at 9:16, saved to the gallery and handed to the share
+     * sheet. It took seven taps and a scroll, by way of a faint mark in
+     * Settings. The Studio's own project is left alone.
+     */
+    fun quickExport(context: android.content.Context) {
+        if (quickExporting) return
+        tick(1)
+        quickExporting = true
+        quickExportProgress = 0f
+        val def = currentDef
+        val made = Project.template("Build-up to payoff", def.id, engine.core.seed, def.typicalSeconds)
+        val exporter = app.hypnotica.export.VideoExporter(
+            def = def,
+            project = made,
+            laws = laws,
+            paletteName = paletteName,
+            soundPresetName = soundPresetName,
+            groove = engine.mapping.groove,
+            song = Song.byIndex(songIndex).takeIf { it.notes.isNotEmpty() },
+            params = engine.core.params.snapshot(),
+            settings = app.hypnotica.export.ExportSettings.VERTICAL,
+            trails = trails,
+            safety = engine.safety
+        )
+        quickScope.launch {
+            val progress = launch {
+                while (true) { quickExportProgress = exporter.progress; kotlinx.coroutines.delay(150) }
+            }
+            try {
+                val dir = java.io.File(context.getExternalFilesDir(null), "exports")
+                val out = java.io.File(dir, "hypnotica-${System.currentTimeMillis()}.mp4")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { exporter.export(out) }
+                val outcome = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    app.hypnotica.export.Publish.publish(context, out)
+                }
+                notice = outcome.message
+                outcome.shareable?.let { runCatching { app.hypnotica.export.Publish.share(context, it) } }
+                engine.haptics?.verdict()
+            } catch (e: Throwable) {
+                notice = "Couldn't make the video. Try again, or use the Studio for a shorter one."
+            } finally {
+                progress.cancel()
+                quickExporting = false
+            }
+        }
+    }
+
+    private val quickScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
 
     /** The Studio project being edited, kept while the app is open. */
     var project by mutableStateOf<Project?>(null)
@@ -1107,3 +1180,6 @@ class AppState(
 
     fun isFavourite(id: String): Boolean = id in favourites.value
 }
+
+/** Liked clips kept in the Library, most recent first. */
+private const val MAX_SAVED = 60

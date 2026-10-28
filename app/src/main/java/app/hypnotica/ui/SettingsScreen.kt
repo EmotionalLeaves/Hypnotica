@@ -34,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -296,12 +298,15 @@ private fun QuietGlyph(glyph: String, onClick: () -> Unit) {
     Box(
         Modifier
             .size(48.dp)
-            .clickable { onClick() },
+            .clickable(role = androidx.compose.ui.semantics.Role.Button) { onClick() }
+            .semantics(mergeDescendants = true) { contentDescription = if (glyph == "◷") "TickTock" else "Studio" },
         contentAlignment = Alignment.Center
     ) {
         Text(
             glyph,
-            color = Tokens.TextSecondary.copy(alpha = 0.22f),
+            // Quiet, but findable: at a fifth of the ink the doors were
+            // effectively invisible.
+            color = Tokens.TextSecondary.copy(alpha = 0.5f),
             style = MaterialTheme.typography.titleMedium
         )
     }
