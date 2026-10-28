@@ -1,5 +1,7 @@
 package app.hypnotica.ui
 
+import app.hypnotica.core.studio.parseProject
+import app.hypnotica.core.studio.projectJson
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -125,6 +127,22 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
     var revision by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
+    // Undo: the project as it was before each edit, newest last. Every edit
+    // already bumps the revision, so that is where the snapshot is taken.
+    val undo = remember { ArrayDeque<String>() }
+    var lastSnapshot by remember { mutableStateOf(projectJson(project)) }
+    var undoing by remember { mutableStateOf(false) }
+    LaunchedEffect(revision) {
+        val now = projectJson(project)
+        if (undoing) {
+            undoing = false
+        } else if (now != lastSnapshot) {
+            undo.addLast(lastSnapshot)
+            while (undo.size > UNDO_DEPTH) undo.removeFirst()
+        }
+        lastSnapshot = now
+    }
+
     // Saved shortly after every edit, so the work outlives the process.
     LaunchedEffect(revision) {
         if (revision == 0) return@LaunchedEffect
@@ -187,6 +205,22 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Spacer(Modifier.width(8.dp))
             Text("Studio", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
+            // Undo the last edit. There was none: a slip of the thumb on the
+            // timeline, or a template over an hour's keys, was permanent.
+            run {
+                GlyphButton("↶", selected = false) {
+                    val previous = undo.removeLastOrNull()
+                    if (previous == null) {
+                        state.notice = "Nothing to undo."
+                    } else {
+                        parseProject(previous)?.let { project.restoreFrom(it) }
+                        undoing = true
+                        revision++
+                        state.engine.seek(playhead)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+            }
             BigButton(
             if (exporting) "Exporting…" else "Export",
             Modifier.widthIn(min = 132.dp),
@@ -858,3 +892,6 @@ private const val SAVE_AFTER_MS = 400L
 
 /** How long a two-tap confirmation stays armed. */
 private const val CONFIRM_MS = 4000L
+
+/** Edits Studio can step back through. */
+private const val UNDO_DEPTH = 40

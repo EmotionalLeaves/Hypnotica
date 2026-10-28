@@ -223,7 +223,7 @@ class DominoSim : Sim {
             family = "Chain reactions",
             blurb = "One push. Every domino that lands is the next note.",
             formats = listOf(TrapFormat.CHAIN, TrapFormat.SONG, TrapFormat.FILL),
-            lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.FRICTION),
+            lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Set them up again",
             defaultPalette = "Spectrum",
             typicalSeconds = 14f,

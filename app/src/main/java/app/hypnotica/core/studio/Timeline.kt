@@ -209,6 +209,19 @@ class Project(var simId: String, var seed: Long) {
     fun track(kind: TrackKind): Track = tracks.getValue(kind)
 
     /**
+     * Take on everything [other] holds that the person edits — keyframes,
+     * captions, freezes, length, name — keeping this object, which the engine
+     * and the screen both hold on to. Undo restores an earlier copy this way.
+     */
+    fun restoreFrom(other: Project) {
+        duration = other.duration
+        name = other.name
+        for (kind in TrackKind.entries) track(kind).restore(other.track(kind).keyframes().toList())
+        texts.clear(); texts.addAll(other.texts)
+        freezes.clear(); freezes.addAll(other.freezes)
+    }
+
+    /**
      * How close to a key counts as being on it, for this project's length.
      *
      * The scrub bar is the only way to place the playhead, so the window has to
