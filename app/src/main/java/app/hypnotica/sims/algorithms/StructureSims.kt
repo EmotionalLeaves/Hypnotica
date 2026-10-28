@@ -1064,6 +1064,7 @@ object StructureSims {
         BinaryTreeSim.def(),
         LogicGatesSim.def(),
         GradientDescentSim.def(),
-        GraphLayoutSim.def()
+        GraphLayoutSim.def(),
+        SnakeSim.def()
     )
 }

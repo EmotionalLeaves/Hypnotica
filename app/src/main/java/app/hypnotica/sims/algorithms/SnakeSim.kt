@@ -1,0 +1,271 @@
+package app.hypnotica.sims.algorithms
+
+import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.render.G
+import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.Shelf
+import app.hypnotica.core.sim.Sim
+import app.hypnotica.core.sim.SimDef
+import app.hypnotica.core.sim.SimEnv
+import app.hypnotica.core.sim.TrapFormat
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+
+/**
+ * Snake, played perfectly, to the last square.
+ *
+ * The snake follows a route through every square of the board and back — a
+ * Hamiltonian cycle — so it can never trap itself; while it is short it cuts
+ * across the route towards the apple, but only where the cut can't land it
+ * in front of its own tail. Early on it darts; by the end it is winding the
+ * whole board, one square of space left, and then none.
+ */
+class SnakeSim : Sim {
+
+    private var cols = 10
+    private var rows = 16
+    private var cells = 160
+    private var order = IntArray(0)   // cell -> its place on the route
+    private var body = IntArray(0)    // ring buffer of cells, tail first
+    private var start = 0
+    private var len = 0
+    private var occupied = BooleanArray(0)
+    private var apple = -1
+    private var grow = 0
+    private var carry = 0f
+    private var elapsed = 0f
+    private var doneAt = -1f
+    private var payoffFrame = false
+    private var eatFlash = 0f
+    private var cell = 0.1f
+    private var ox = 0f
+    private var oy = 0f
+    private var halfW = 0.46f
+
+    override fun setup(env: SimEnv) {
+        halfW = env.halfWidth
+        cols = (env.params.i("cols", 10).coerceIn(4, MAX_COLS) / 2) * 2
+        // As many rows as fill the screen at square cells; an even count, so
+        // the route can close.
+        val w = 2f * halfW * 0.92f
+        val tall = 1.7f
+        cell = w / cols
+        rows = ((tall / cell).toInt() / 2 * 2).coerceIn(4, 200)
+        if (rows * cell > tall) cell = tall / rows
+        cells = cols * rows
+        ox = -cols * cell * 0.5f
+        oy = -rows * cell * 0.5f - 0.04f
+        // The route: up column 0, then back and forth across the rest, row by
+        // row, ending beside where it began.
+        order = IntArray(cells)
+        var k = 0
+        for (r in rows - 1 downTo 0) { order[idx(0, r)] = k++ }
+        for (r in 0 until rows) {
+            if (r % 2 == 0) for (c in 1 until cols) order[idx(c, r)] = k++
+            else for (c in cols - 1 downTo 1) order[idx(c, r)] = k++
+        }
+        // That runs from the top of column 0 down: reverse it so the route's
+        // next step from the top-left corner is column 0's next cell down
+        // and the last cell (row rows-1, column 1) leads back to it.
+        // Built that way it is already a loop; nothing to reverse.
+        body = IntArray(cells)
+        occupied = BooleanArray(cells)
+        start = 0
+        len = 0
+        val first = idx(0, rows - 1)
+        push(first)
+        grow = INITIAL_LENGTH - 1
+        placeApple(env)
+        carry = 0f
+        elapsed = 0f
+        doneAt = -1f
+        payoffFrame = false
+        eatFlash = 0f
+    }
+
+    private fun idx(c: Int, r: Int) = r * cols + c
+
+    private fun push(c: Int) {
+        body[(start + len) % cells] = c
+        len++
+        occupied[c] = true
+    }
+
+    private fun popTail() {
+        occupied[body[start]] = false
+        start = (start + 1) % cells
+        len--
+    }
+
+    private fun head(): Int = body[(start + len - 1) % cells]
+    private fun tail(): Int = body[start]
+
+    private fun dist(a: Int, b: Int): Int = (order[b] - order[a] + cells) % cells
+
+    private fun placeApple(env: SimEnv) = placeAppleCell(env)
+
+    private fun placeAppleCell(env: SimEnv) {
+        val free = cells - len
+        if (free <= 0) { apple = -1; return }
+        var pick = env.rng.int(0, free)
+        for (c in 0 until cells) {
+            if (occupied[c]) continue
+            if (pick == 0) { apple = c; return }
+            pick--
+        }
+    }
+
+    override fun step(env: SimEnv, dt: Float) {
+        payoffFrame = false
+        val h = abs(dt)
+        elapsed += h
+        eatFlash = max(0f, eatFlash - h * 4f)
+        if (doneAt >= 0f) return
+        // Faster and faster, all the way: readable at first, a blur winding
+        // the whole board at the end. Growing by a constant factor a second,
+        // a small board is done in seconds and the biggest in half a minute.
+        val pace = env.params.f("pace", 1f)
+        val rate = min(MAX_RATE, MIN_RATE * Math.exp((elapsed * pace / DOUBLING).toDouble()).toFloat())
+        carry += h * rate * pace
+        var moves = 0
+        while (carry >= 1f && doneAt < 0f && moves < MAX_MOVES_PER_STEP) {
+            carry -= 1f
+            moves++
+            advance(env)
+        }
+        if (moves >= MAX_MOVES_PER_STEP) carry = 0f
+    }
+
+    private fun advance(env: SimEnv) {
+        val hd = head()
+        val hc = hd % cols; val hr = hd / cols
+        // The route's next cell is always safe.
+        var best = -1
+        var bestGain = -1
+        val toTail = if (len > 1) dist(hd, tail()) else cells
+        val toApple = if (apple >= 0) dist(hd, apple) else cells
+        // Short cuts only while there is room to spare.
+        val cutting = len + grow < cells * CUT_UNTIL
+        for (d in 0 until 4) {
+            val c = hc + DX[d]; val r = hr + DY[d]
+            if (c < 0 || r < 0 || c >= cols || r >= rows) continue
+            val n = idx(c, r)
+            if (occupied[n] && !(n == tail() && grow == 0)) continue
+            val gain = dist(hd, n)
+            if (gain == 1) { if (best < 0) { best = n; bestGain = 1 }; continue }
+            if (!cutting) continue
+            // A cut must land before the tail, with the growth still owed as
+            // margin, and not past the apple.
+            if (gain >= toTail - grow - SLACK) continue
+            if (gain > toApple) continue
+            if (gain > bestGain) { best = n; bestGain = gain }
+        }
+        if (best < 0) {
+            // Cannot happen on the route; if it does, start over rather than freeze.
+            doneAt = elapsed
+            return
+        }
+        if (grow > 0) grow-- else popTail()
+        push(best)
+        if (best == apple) {
+            grow += GROW_PER_APPLE
+            eatFlash = 1f
+            // Each apple the next note up the scale.
+            env.emit(EventKind.HIT, ((len / GROW_PER_APPLE) % 15) / 15f, ((best % cols) / max(1f, cols - 1f)) * 2f - 1f, 0.55f)
+            placeApple(env)
+        }
+        if (len >= cells) {
+            doneAt = elapsed
+            payoffFrame = true
+            env.emit(EventKind.DONE, 1f, 0f, 1f)
+        }
+    }
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        val palette = env.palette
+        // The board.
+        g.rect(0f, oy + rows * cell * 0.5f, cols * cell * 0.5f + 0.006f, rows * cell * 0.5f + 0.006f,
+            Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
+        g.rect(0f, oy + rows * cell * 0.5f, cols * cell * 0.5f, rows * cell * 0.5f, 0xFF0B0D12.toInt())
+        val half = cell * 0.5f
+        // Tail dim to head bright, along the palette.
+        for (i in 0 until len) {
+            val c = body[(start + i) % cells]
+            val t = if (len > 1) i / (len - 1f) else 1f
+            val x = ox + (c % cols) * cell + half
+            val y = oy + (c / cols) * cell + half
+            g.rect(x, y, half * 0.9f, half * 0.9f, palette.at(0.15f + 0.8f * t))
+        }
+        // Joints, so it reads as one body and not beads.
+        for (i in 1 until len) {
+            val a = body[(start + i - 1) % cells]; val b = body[(start + i) % cells]
+            val ax = ox + (a % cols) * cell + half; val ay = oy + (a / cols) * cell + half
+            val bx = ox + (b % cols) * cell + half; val by = oy + (b / cols) * cell + half
+            val t = i / max(1f, len - 1f)
+            g.rect((ax + bx) * 0.5f, (ay + by) * 0.5f, if (ax != bx) half * 0.5f else half * 0.9f, if (ay != by) half * 0.5f else half * 0.9f, palette.at(0.15f + 0.8f * t))
+        }
+        if (len > 0) {
+            val hd = head()
+            val x = ox + (hd % cols) * cell + half
+            val y = oy + (hd / cols) * cell + half
+            g.glow(x, y, cell * (1.5f + 2f * eatFlash), palette.at(0.95f), 0.4f + 0.4f * eatFlash)
+        }
+        if (apple >= 0) {
+            val x = ox + (apple % cols) * cell + half
+            val y = oy + (apple / cols) * cell + half
+            val pulse = 0.85f + 0.15f * kotlin.math.sin(elapsed * 8f)
+            g.glow(x, y, cell * 1.4f, Palette.DANGER, 0.5f)
+            g.disc(x, y, half * 0.75f * pulse, Palette.DANGER)
+        }
+        if (doneAt >= 0f && len >= cells) {
+            val k = ((elapsed - doneAt) * 1.5f).coerceIn(0f, 1f)
+            g.glow(0f, oy + rows * cell * 0.5f, cols * cell * k, Palette.SUCCESS, 0.3f * k)
+        }
+    }
+
+    override fun frameHalfWidth(env: SimEnv): Float = 0f
+
+    override fun payoff(): Boolean = payoffFrame
+
+    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+
+    override fun counters(): List<Pair<String, String>> = listOf(
+        "length" to len.toString(),
+        "board" to "${len * 100 / max(1, cells)}%"
+    )
+
+    companion object {
+        const val MAX_COLS = 40
+        const val INITIAL_LENGTH = 3
+        const val GROW_PER_APPLE = 1
+        const val SLACK = 3
+        const val CUT_UNTIL = 0.55f
+        const val MIN_RATE = 9f
+        /** Seconds for the speed to grow e-fold. */
+        const val DOUBLING = 3.2f
+        const val MAX_RATE = 1_000_000f
+        const val MAX_MOVES_PER_STEP = 20000
+        val DX = intArrayOf(1, -1, 0, 0)
+        val DY = intArrayOf(0, 0, 1, -1)
+
+        fun def(): SimDef = SimDef(
+            id = "algorithms/snake",
+            title = "Perfect snake",
+            shelf = Shelf.ALGORITHMS,
+            family = "Games",
+            blurb = "Snake, played without a mistake, until it is the whole board.",
+            formats = listOf(TrapFormat.FILL, TrapFormat.NUMBER_UP, TrapFormat.SONG),
+            heroLabel = "New game",
+            defaultPalette = "Spectrum",
+            typicalSeconds = 17f,
+            params = listOf(
+                Param.int("cols", "Board width", 4, MAX_COLS, 10, card = Card.DATA),
+                Param.float("pace", "Pace", 0.2f, 5f, 1f, card = Card.MOTION)
+            ),
+            create = { SnakeSim() }
+        )
+    }
+}
