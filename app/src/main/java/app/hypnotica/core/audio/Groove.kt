@@ -44,6 +44,8 @@ data class Groove(
         private val SAD = intArrayOf(9, 5, 0, 7)
         /** I–bVII–IV–I: open, a little rock. */
         private val OPEN = intArrayOf(0, 10, 5, 0)
+        /** i–VI–III–VII: the minor loop under most of what trends. */
+        private val MINOR = intArrayOf(0, 8, 3, 10)
 
         val FOUR = Groove(
             "Four on the floor", 118f, POP,
@@ -66,7 +68,21 @@ data class Groove(
             bass = setOf(0, 8)
         )
 
-        val ALL = listOf(FOUR, HALF, BREAK, DRIFT)
+        /** Half-time kick and snare under hats on every sixteenth; the bass follows the kick. */
+        val TRAP = Groove(
+            "Trap", 140f, MINOR,
+            kick = setOf(0, 7, 10), snare = setOf(8),
+            hat = (0 until 16).toSet(),
+            bass = setOf(0, 7, 10)
+        )
+        /** The dembow: kick on the four, the snare's tresillo pull against it. */
+        val DEMBOW = Groove(
+            "Dembow", 96f, SAD,
+            kick = setOf(0, 4, 8, 12), snare = setOf(3, 6, 11, 14), hat = setOf(2, 10),
+            bass = setOf(0, 3, 8, 11)
+        )
+
+        val ALL = listOf(FOUR, HALF, BREAK, DRIFT, TRAP, DEMBOW)
         val NAMES = listOf("Off") + ALL.map { it.name }
 
         fun byName(name: String): Groove? = ALL.firstOrNull { it.name == name }
