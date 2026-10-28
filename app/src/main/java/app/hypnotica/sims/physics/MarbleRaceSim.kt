@@ -2,6 +2,7 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -54,6 +55,12 @@ class MarbleRaceSim : Sim {
     private var lastHitStep = IntArray(0)
     private var stillFor = FloatArray(0)
     private var steps = 0
+    private var course = 0
+    private var rampDrop = 0.1f
+    private var rampX1 = FloatArray(0)
+    private var rampY1 = FloatArray(0)
+    private var rampX2 = FloatArray(0)
+    private var rampY2 = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -61,6 +68,8 @@ class MarbleRaceSim : Sim {
         length = p.f("length", 9f).coerceIn(4f, 40f)
         halfW = env.halfWidth * 0.94f
         val rows = (length / ROW_GAP).toInt()
+        course = p.choiceIndex("course").coerceIn(0, 2)
+        buildRamps(rows)
         val perRow = max(2, (2f * halfW / PEG_SPACING).toInt())
         val px = ArrayList<Float>(); val py = ArrayList<Float>()
         rowStart = IntArray(rows + 1)
@@ -75,6 +84,10 @@ class MarbleRaceSim : Sim {
                 // that made a slot a marble fell into and never left.
                 if (xx < -halfW + WALL_CLEAR || xx > halfW - WALL_CLEAR) continue
                 if (env.rng.nextFloat() < GAP_CHANCE) continue
+                // On a ramp course, only a few pegs, kept off the ramps: a
+                // peg on a ramp's line made a pocket a marble sat in.
+                if (course == RAMPS && env.rng.nextFloat() < 0.8f) continue
+                if (course != PEGS && nearRamp(xx, yy)) continue
                 px.add(xx); py.add(yy)
             }
         }
@@ -84,6 +97,14 @@ class MarbleRaceSim : Sim {
         paddleY = FloatArray(paddles) { -1.2f - (it * PADDLE_EVERY + PADDLE_EVERY / 2 + 0.5f) * ROW_GAP }
         paddleX = FloatArray(paddles) { env.rng.range(-halfW * 0.4f, halfW * 0.4f) }
         paddleSpin = FloatArray(paddles) { (if (env.rng.bool()) 1f else -1f) * env.rng.range(1.5f, 3f) }
+        // No paddle near a ramp: one at a ramp's low end batted the marbles
+        // back up it, over and over, and the race never finished.
+        if (rampX1.isNotEmpty()) {
+            val keep = paddleY.indices.filter { k -> rampY1.indices.none { r -> abs(paddleY[k] - (rampY1[r] + rampY2[r]) * 0.5f) < PADDLE_LEN + 0.2f } }
+            paddleY = FloatArray(keep.size) { paddleY[keep[it]] }
+            paddleX = FloatArray(keep.size) { paddleX[keep[it]] }
+            paddleSpin = FloatArray(keep.size) { paddleSpin[keep[it]] }
+        }
 
         x = FloatArray(count) { -halfW * 0.6f + 1.2f * halfW * it / max(1, count - 1) + env.rng.range(-0.01f, 0.01f) }
         y = FloatArray(count) { -0.6f + env.rng.range(-0.05f, 0.05f) }
@@ -123,6 +144,7 @@ class MarbleRaceSim : Sim {
             if (x[i] < -halfW + R) { x[i] = -halfW + R; vx[i] = abs(vx[i]) * bounce + 0.08f; vy[i] *= WALL_DRAG }
             if (x[i] > halfW - R) { x[i] = halfW - R; vx[i] = -abs(vx[i]) * bounce - 0.08f; vy[i] *= WALL_DRAG }
             pegs(env, i, bounce)
+            ramps(i)
             paddles(i, bounce)
             // A marble wedged between two pegs is nudged free, as a real one
             // would be by the board's vibration.
@@ -196,6 +218,69 @@ class MarbleRaceSim : Sim {
         }
     }
 
+    /**
+     * The ramps: a zigzag down the course, each from one wall most of the way
+     * across, sloping down to its open end, the next from the other wall.
+     * Every ramp on the Ramps course, every fourth row's worth on Mixed.
+     */
+    private fun buildRamps(rows: Int) {
+        if (course == PEGS) { rampX1 = FloatArray(0); rampY1 = FloatArray(0); rampX2 = FloatArray(0); rampY2 = FloatArray(0); return }
+        // A set slope, however wide the screen: a fixed drop over a long ramp
+        // was too gentle to roll down against the drag, and marbles sat at
+        // the end. The rows between ramps make room for the drop.
+        val drop = RAMP_SLOPE * 2f * halfW * RAMP_SPAN
+        val room = kotlin.math.ceil((drop + 0.22f) / ROW_GAP).toInt()
+        val every = if (course == RAMPS) max(3, room) else max(6, room * 2)
+        rampDrop = drop
+        // No more than about six screen-widths of rolling in all: on a wide
+        // screen every ramp is a long way across, and the race dragged.
+        val n = max(1, min(rows / every, (RAMP_TOTAL / (2f * halfW * RAMP_SPAN)).toInt().coerceAtLeast(3)))
+        rampX1 = FloatArray(n); rampY1 = FloatArray(n); rampX2 = FloatArray(n); rampY2 = FloatArray(n)
+        for (k in 0 until n) {
+            val y = -1.2f - (k * every + every * 0.5f) * ROW_GAP
+            // Most of the way across: the gap at the open end is the way down.
+            val reach = halfW * RAMP_SPAN
+            if (k % 2 == 0) {
+                rampX1[k] = -halfW; rampY1[k] = y + rampDrop * 0.5f
+                rampX2[k] = -halfW + 2f * reach; rampY2[k] = y - rampDrop * 0.5f
+            } else {
+                rampX1[k] = halfW; rampY1[k] = y + rampDrop * 0.5f
+                rampX2[k] = halfW - 2f * reach; rampY2[k] = y - rampDrop * 0.5f
+            }
+        }
+    }
+
+    private fun nearRamp(px: Float, py: Float): Boolean {
+        for (k in rampX1.indices) if (segDist(px, py, k) < RAMP_CLEAR) return true
+        return false
+    }
+
+    /** Distance from a point to ramp [k], and the closest point on it, kept. */
+    private var cx = 0f
+    private var cy = 0f
+    private fun segDist(px: Float, py: Float, k: Int): Float {
+        val ax = rampX1[k]; val ay = rampY1[k]; val bx = rampX2[k]; val by = rampY2[k]
+        val ex = bx - ax; val ey = by - ay
+        val t = (((px - ax) * ex + (py - ay) * ey) / (ex * ex + ey * ey)).coerceIn(0f, 1f)
+        cx = ax + ex * t; cy = ay + ey * t
+        val dx = px - cx; val dy = py - cy
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private fun ramps(i: Int) {
+        for (k in rampX1.indices) {
+            val d = segDist(x[i], y[i], k)
+            val reach = R + RAMP_THICK
+            if (d >= reach || d < 1e-6f) continue
+            val nx = (x[i] - cx) / d; val ny = (y[i] - cy) / d
+            x[i] = cx + nx * reach; y[i] = cy + ny * reach
+            val vn = vx[i] * nx + vy[i] * ny
+            // Rolls along it rather than bouncing off: a small bounce, and
+            // almost all the speed along the ramp kept.
+            if (vn < 0f) { vx[i] -= 1.2f * vn * nx; vy[i] -= 1.2f * vn * ny }
+        }
+    }
+
     private fun paddles(i: Int, bounce: Float) {
         for (k in paddleY.indices) {
             if (abs(y[i] - paddleY[k]) > PADDLE_LEN + R) continue
@@ -234,6 +319,10 @@ class MarbleRaceSim : Sim {
             else Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
             g.disc(pegX[k], py - camY, PEG_R, c)
             if (lit) g.glow(pegX[k], py - camY, PEG_R * 4f, c, 0.4f)
+        }
+        for (k in rampX1.indices) {
+            if (min(rampY1[k], rampY2[k]) > top + 0.2f || max(rampY1[k], rampY2[k]) < bottom - 0.2f) continue
+            g.line(rampX1[k], rampY1[k] - camY, rampX2[k], rampY2[k] - camY, RAMP_THICK * 2f, palette.at((k * 0.37f) % 1f))
         }
         for (k in paddleY.indices) {
             if (paddleY[k] > top + PADDLE_LEN || paddleY[k] < bottom - PADDLE_LEN) continue
@@ -282,6 +371,14 @@ class MarbleRaceSim : Sim {
         const val PEG_R = 0.014f
         const val PEG_SPACING = 0.15f
         const val ROW_GAP = 0.17f
+        const val PEGS = 0
+        const val RAMPS = 1
+        const val RAMP_SPAN = 0.78f
+        const val RAMP_SLOPE = 0.16f
+        const val RAMP_TOTAL = 7f
+        const val RAMP_THICK = 0.008f
+        /** Pegs kept this far off a ramp: past a rolling marble's whole height. */
+        const val RAMP_CLEAR = 0.13f
         const val GAP_CHANCE = 0.18f
         const val PADDLE_EVERY = 7
         const val PADDLE_LEN = 0.14f
@@ -305,6 +402,7 @@ class MarbleRaceSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 15f,
             params = listOf(
+                Param.choice("course", "Course", listOf("Pegs", "Ramps", "Mixed"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("marbles", "Marbles", 2, MAX_MARBLES, 8, card = Card.DATA),
                 Param.float("length", "Course length", 4f, 40f, 9f, card = Card.DATA)
             ),
