@@ -368,6 +368,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
                     )
                 )
             }
+            list.add(SortRaceSim.def())
             return list
         }
     }
