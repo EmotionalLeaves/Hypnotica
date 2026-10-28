@@ -919,6 +919,7 @@ object PhysicsSims {
         DoublePendulumSim.def(),
         NewtonsCradleSim.def(),
         GaltonBoardSim.def(),
-        SandpileSim.def()
+        SandpileSim.def(),
+        WaveTankSim.def()
     )
 }

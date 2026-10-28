@@ -27,6 +27,13 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: the ripple tank.** Straight waves roll down onto a wall with slits and
+  fan out beyond it; a screen along the bottom keeps the running total, and the
+  bright and dark stripes of the double-slit pattern build up on it. The payoff
+  is the pattern forming, measured from the waves' arrival. A soft-edged sponge
+  round the tank keeps reflections from striping the screen with a pattern
+  that is not the slits'. A tap drops a stone in.
+
 - **New: sandpile avalanches.** Grains dropped one at a time on the centre of a
   grid; four in a cell spill one to each neighbour, and a four-fold fractal
   grows out of a rule that mentions none. Every avalanche worth hearing is a
