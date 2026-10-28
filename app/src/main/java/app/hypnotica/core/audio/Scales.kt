@@ -76,6 +76,9 @@ data class SoundPreset(
         val ALL = listOf(MUSIC_BOX, CLASSIC, MARIMBA, AMBIENT, EIGHT_BIT, TICKS, SILENT)
         val NAMES: List<String> = ALL.map { it.name }
 
+        /** The musical ones, for a remix to choose among: never silence or ticks. */
+        val MUSICAL: List<String> = listOf(MUSIC_BOX, MARIMBA, AMBIENT, EIGHT_BIT).map { it.name }
+
         fun byName(n: String): SoundPreset = ALL.firstOrNull { it.name == n } ?: EIGHT_BIT
         fun byIndex(i: Int): SoundPreset = ALL[i.coerceIn(0, ALL.size - 1)]
     }

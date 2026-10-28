@@ -927,6 +927,12 @@ class AppState(
             paletteName = palette
             engine.setPalette(palette)
         }
+        if (chosenSound == null) {
+            val sound = director.remixSound(def)
+            soundPresetName = sound
+            engine.setSoundPreset(sound)
+            soundChanged()
+        }
         engine.applyParams(params, System.nanoTime())
         paramVersion++
     }

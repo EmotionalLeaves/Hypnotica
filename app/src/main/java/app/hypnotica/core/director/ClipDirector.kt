@@ -258,7 +258,8 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             format = format,
             caption = format.hooks[rng.int(0, format.hooks.size)],
             palette = palette,
-            soundPreset = def.defaultSound,
+            // Its own sound most of the time, now and then another voice.
+            soundPreset = if (rng.bool(0.65f)) def.defaultSound else app.hypnotica.core.audio.SoundPreset.MUSICAL[rng.int(0, app.hypnotica.core.audio.SoundPreset.MUSICAL.size)],
             // Most clips crisp, some smeared: the smear is part of the variety
             // rather than whatever the player happened to be left on.
             trails = if (rng.bool(0.3f)) rng.range(0.55f, 0.9f) else 0f,
@@ -286,6 +287,12 @@ class ClipDirector(seed: Long = System.nanoTime()) {
     /** A palette for a remix: the sim's own half the time, else any. */
     fun remixPalette(def: SimDef): String = synchronized(remixLock) {
         if (remixRng.bool(0.5f)) def.defaultPalette else Palette.NAMES[remixRng.int(0, Palette.NAMES.size)]
+    }
+
+    /** A sound for a remix: the sim's own most of the time, else another. */
+    fun remixSound(def: SimDef): String = synchronized(remixLock) {
+        if (remixRng.bool(0.65f)) def.defaultSound
+        else app.hypnotica.core.audio.SoundPreset.MUSICAL[remixRng.int(0, app.hypnotica.core.audio.SoundPreset.MUSICAL.size)]
     }
 
     private val remixLock = Any()
