@@ -1,6 +1,16 @@
 package app.hypnotica.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -62,6 +72,31 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     var showTimeCheck by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    /**
+     * Clips already watched, newest last: a swipe down goes back to one, as it
+     * does on the feeds this is named after. It used to leave TickTock — the
+     * clip you had just skipped past by accident was gone for good.
+     */
+    val history = remember { ArrayList<Clip>() }
+
+    // The swipe follows the finger, as on the feed: the chrome travels with
+    // it, the picture dims, and the next clip comes up out of the dark.
+    val drag = remember { Animatable(0f) }
+    var height by remember { mutableIntStateOf(1) }
+
+    // How far through the clip, for the line along the bottom.
+    var progress by remember { mutableFloatStateOf(0f) }
+    val shownProgress by animateFloatAsState(progress, tween(260, easing = LinearEasing), label = "clipProgress")
+
+    // The like: a star that blooms where the double-tap landed and fades.
+    val pop = remember { Animatable(0f) }
+
+    // A clip that arrived some other way — the timer, a finished run — while
+    // a swipe's animation had been cancelled part-way: put the chrome back.
+    LaunchedEffect(current) {
+        if (drag.value != 0f && !drag.isRunning) drag.animateTo(0f, spring())
+    }
 
     // Rule 1: the chrome fades after 2.6 s with no touch, as it does on the
     // feed and in the player. Here it sat over every clip for good. Each new
@@ -126,7 +161,15 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     fun play(clip: Clip) {
         current = clip
         liked = false
+        progress = 0f
         state.playClip(clip)
+    }
+
+    /** Bring the chrome back in from the side it leaves by. */
+    suspend fun arrive(fromBelow: Boolean) {
+        val out = height * LEAVE
+        drag.snapTo(if (fromBelow) out * ARRIVE else -out * ARRIVE)
+        drag.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
     }
 
     suspend fun advance() {
@@ -139,6 +182,10 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             return
         }
         notice = null
+        current?.let {
+            history.add(it)
+            if (history.size > HISTORY) history.removeAt(0)
+        }
         play(next)
         watched++
         // Behind the clip that is already playing, so the next swipe is instant
@@ -166,8 +213,9 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         while (true) {
             val elapsed = kotlin.math.abs(state.engine.core.env.time)
             if (!started && elapsed < 1f) started = true
+            if (started) progress = (elapsed / end).coerceIn(0f, 1f)
             if (started && elapsed >= end) break
-            delay(250)
+            delay(120)
         }
         if (current !== clip) return@LaunchedEffect
         generating?.cancel()
@@ -214,6 +262,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         Modifier
             .fillMaxSize()
             .background(Tokens.Bg)
+            .onSizeChanged { height = it.height.coerceAtLeast(1) }
             .pointerInput(Unit) {
                 // The whole flick is one decision: acting per drag delta used to
                 // throw away several generated clips, and teach the feed that the
@@ -221,18 +270,45 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 var travelled = 0f
                 detectVerticalDragGestures(
                     onDragStart = { travelled = 0f },
-                    onDragCancel = { travelled = 0f },
+                    onDragCancel = {
+                        travelled = 0f
+                        scope.launch { drag.animateTo(0f, spring()) }
+                    },
                     onDragEnd = {
+                        val out = height * LEAVE
                         if (travelled <= -SWIPE_PIXELS) {
                             current?.let { state.skipClip(it) }
                             generating?.cancel()
-                            generating = scope.launch { advance() }
+                            generating = scope.launch {
+                                drag.animateTo(-out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
+                                advance()
+                                arrive(fromBelow = true)
+                            }
+                        } else if (travelled >= SWIPE_PIXELS && history.isNotEmpty()) {
+                            // Back to the clip before, which goes to the front
+                            // of the queue so a swipe up returns here.
+                            generating?.cancel()
+                            generating = scope.launch {
+                                drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
+                                current?.let { queue.addFirst(it) }
+                                play(history.removeAt(history.size - 1))
+                                arrive(fromBelow = false)
+                            }
                         } else if (travelled >= SWIPE_PIXELS) {
-                            state.goBack()
+                            scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                            notice = "This is the first one. ‹ to leave."
+                        } else {
+                            scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.7f)) }
                         }
                         travelled = 0f
                     }
-                ) { _, drag -> travelled += drag }
+                ) { change, amount ->
+                    change.consume()
+                    travelled += amount
+                    val limit = height * LEAVE
+                    val follow = limit * kotlin.math.tanh(travelled / limit)
+                    scope.launch { drag.snapTo(follow) }
+                }
             }
     ) {
         // The taps go to the surface, not to an ancestor of it. The surface
@@ -245,11 +321,64 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             surface = surface,
             modifier = Modifier.fillMaxSize(),
             onTap = { showChrome = !showChrome },
-            onDoubleTap = { current?.let { state.likeClip(it); liked = true } },
+            onDoubleTap = {
+                current?.let { state.likeClip(it); liked = true }
+                scope.launch {
+                    pop.snapTo(1f)
+                    pop.animateTo(0f, tween(LIKE_POP_MS, easing = LinearEasing))
+                }
+            },
             onLongPress = { current?.let { state.openClipInPlayer(it) } }
         )
 
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
+        // The dark the next clip comes up out of.
+        val through = (kotlin.math.abs(drag.value) / (height * LEAVE)).coerceIn(0f, 1f)
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = through * DIM }
+                .background(Tokens.Bg)
+        )
+
+        // The like, blooming in the middle and fading.
+        if (pop.value > 0f) {
+            Text(
+                "★",
+                color = Tokens.Accent,
+                fontSize = 120.sp,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .graphicsLayer {
+                        val v = pop.value
+                        alpha = (v * 1.6f).coerceAtMost(1f)
+                        val scale = 0.7f + 0.5f * (1f - v) * (1f - v) + 0.3f * (1f - v)
+                        scaleX = scale
+                        scaleY = scale
+                    }
+            )
+        }
+
+        // How far through the clip: a hairline along the bottom, there even
+        // when the rest has faded, as on the feeds this is named after.
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .safeDrawingPadding()
+                .fillMaxWidth(shownProgress)
+                .height(2.dp)
+                .background(Tokens.Accent.copy(alpha = 0.7f))
+        )
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(20.dp)
+                .graphicsLayer {
+                    translationY = drag.value
+                    alpha = 1f - through * 0.7f
+                }
+        ) {
             AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
                 Text(
                     current?.caption ?: "Finding something…",
@@ -315,7 +444,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                             // characters against 272 dp of column, so it always
                             // wrapped and left one word alone on a second line.
                             Text(
-                                (if (watched == 1) "1 clip" else "$watched clips") + "  ·  hold to open",
+                                (if (watched == 1) "1 clip" else "$watched clips") + "  ·  hold to open  ·  ↓ back",
                                 color = Tokens.TextSecondary.copy(alpha = 0.7f),
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
@@ -333,6 +462,21 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE_PIXELS = 90f
+
+/** Clips a swipe down can go back through. */
+private const val HISTORY = 30
+
+/** Share of the screen the chrome travels before the next clip comes in. */
+private const val LEAVE = 0.32f
+
+/** Where the arriving chrome starts, as a share of [LEAVE], on the far side. */
+private const val ARRIVE = 0.45f
+
+/** How dark the picture goes at the swap. */
+private const val DIM = 0.92f
+
+/** How long the like's star takes to bloom and fade. */
+private const val LIKE_POP_MS = 700
 
 /** How long a line like "Nothing came up" stays before fading. */
 private const val NOTICE_MS = 3500L

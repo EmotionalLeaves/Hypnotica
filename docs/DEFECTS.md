@@ -27,6 +27,15 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **TickTock, made to feel like the feeds it is named after.** The swipe now
+  follows the finger — the caption and buttons travel with it, the clip dims,
+  and the next one comes up out of the dark — where it used to be a dead
+  ninety pixels and then a cut. Swiping down goes back to the clip before
+  (thirty deep) instead of leaving TickTock and losing it; swiping up again
+  returns. A hairline along the bottom shows how far through the clip you
+  are, there even when the rest has faded. A double-tap like blooms a star
+  in the middle of the screen.
+
 - **New: plants from rules.** An L-system — a short string rewritten by a rule a
   few times over — read as turtle moves draws a fern, a bush, a weed, a tree or
   grass. It grows outward from the root, every branch at once, climbing a scale
