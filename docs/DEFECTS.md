@@ -27,6 +27,12 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: sandpile avalanches.** Grains dropped one at a time on the centre of a
+  grid; four in a cell spill one to each neighbour, and a four-fold fractal
+  grows out of a rule that mentions none. Every avalanche worth hearing is a
+  note pitched by its size. Toppling is budgeted per step, so a long avalanche
+  runs on across frames instead of stalling one.
+
 - **Some finished pictures got one second.** Sims that report finished on the
   frame of their payoff — the spirograph, circle packing — were restarted a
   second later, while others held a second and a half first. Every screen now
