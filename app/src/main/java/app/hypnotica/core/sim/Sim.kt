@@ -191,6 +191,14 @@ interface Sim {
      * times, and pulls back as it grows: the zoom-out reveal, for free. Zero,
      * the default, never zooms in.
      */
+    /**
+     * How long this run takes to come back to where it started, at its
+     * current settings, or null to use the definition's [SimDef.loopSeconds].
+     * The definition's figure is for the defaults; a sim whose loop follows a
+     * slider says so here, or Studio's perfect loop cuts it mid-cycle.
+     */
+    fun loopSeconds(env: SimEnv): Float? = null
+
     fun focus(env: SimEnv): Float = 0f
 
     /**

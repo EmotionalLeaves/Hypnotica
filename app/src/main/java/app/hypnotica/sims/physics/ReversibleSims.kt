@@ -30,6 +30,9 @@ import kotlin.math.min
  */
 class TowerSim : Sim {
 
+    /** Up and down again: twice the build time. */
+    override fun loopSeconds(env: SimEnv): Float = 2f * env.params.f("build", 9f).coerceIn(2f, 60f)
+
     private var bricks = 400
     private var perRow = 12
     private var buildSeconds = 9f

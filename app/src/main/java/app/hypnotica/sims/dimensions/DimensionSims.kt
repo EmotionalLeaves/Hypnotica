@@ -287,6 +287,10 @@ class HypercubeSim : Sim {
  */
 class SlicingSim : Sim {
 
+    /** There and back: four sweeps of the reach, at the speed set. */
+    override fun loopSeconds(env: SimEnv): Float =
+        4f * SWEEP / env.params.f("speed", 0.42f).coerceAtLeast(0.01f)
+
     private var dims = 3
     private var shape = 0
     private var position = -1f

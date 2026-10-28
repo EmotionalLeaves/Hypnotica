@@ -669,7 +669,11 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 confirmTemplate = -1
                 val fresh = Project.template(
                     templates[index], state.currentDef.id, state.engine.core.seed,
-                    state.currentDef.typicalSeconds, state.currentDef.loopSeconds
+                    state.currentDef.typicalSeconds,
+                    // At the settings in use, not the defaults: a tower built
+                    // in twenty seconds does not loop in eighteen.
+                    runCatching { state.engine.core.sim.loopSeconds(state.engine.core.env) }.getOrNull()
+                        ?: state.currentDef.loopSeconds
                 )
                 state.project = fresh
                 state.engine.project = fresh

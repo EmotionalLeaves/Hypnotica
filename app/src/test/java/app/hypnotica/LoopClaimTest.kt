@@ -130,4 +130,52 @@ class LoopClaimTest {
         }
         assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
     }
+
+    /**
+     * The period at the settings in use is the period.
+     *
+     * Studio lays out a perfect loop from it, and a slider that sets a cycle
+     * length — the tower's build time, the polyrhythm's cycle — used to leave
+     * the loop at the default's eighteen or twenty-four seconds whatever it
+     * said. The hypercube is left out: its spin and tilt are two independent
+     * turns, which come back together only near the shipped pair.
+     */
+    @Test
+    fun thePeriodFollowsTheSettings() {
+        val wrong = ArrayList<String>()
+        for (def in SimRegistry.all) {
+            if (def.loopSeconds == null || def.id in QUASI_PERIODIC) continue
+            for (p in def.params) {
+                if (p.type != app.hypnotica.core.recipe.ParamType.FLOAT || p.advancedOnly) continue
+                for (f in listOf(0.6f, 1.5f)) {
+                    val v = (p.default * f).coerceIn(p.min, p.max)
+                    if (v == p.default) continue
+                    val core = SimCore(def)
+                    core.setAspect(0.56f)
+                    core.params.set(p.key, v)
+                    core.restart(5L)
+                    repeat(6) { core.advance(1f / 60f) }
+                    val start = snapshot(core)
+                    val t0 = core.env.time
+                    val period = core.sim.loopSeconds(core.env) ?: def.loopSeconds!!
+                    repeat(60) { core.advance(1f / 60f) }
+                    val perSecond = distance(snapshot(core), start).coerceAtLeast(1e-6f)
+                    var best = Float.MAX_VALUE
+                    while (core.env.time - t0 < period + 0.35f) {
+                        core.advance(1f / 60f)
+                        if (core.env.time - t0 > period - 0.35f) {
+                            val d = distance(snapshot(core), start)
+                            if (d < best) best = d
+                        }
+                    }
+                    if (best >= perSecond * 0.1f) wrong.add("${def.id} with ${p.key}=$v is not back at ${period}s")
+                }
+            }
+        }
+        assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
+    }
+
+    private companion object {
+        val QUASI_PERIODIC = setOf("dimensions/hypercube")
+    }
 }

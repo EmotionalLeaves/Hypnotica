@@ -30,6 +30,8 @@ import kotlin.math.sqrt
  */
 class PolyrhythmSim : Sim {
 
+    override fun loopSeconds(env: SimEnv): Float = env.params.f("cycle", 24f).coerceIn(4f, 120f)
+
     private var count = 12
     private var baseLoops = 24
     private var cycleSeconds = 24f

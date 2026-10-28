@@ -618,6 +618,9 @@ class LangtonsAntSim : Sim {
 /**
  * Falling sand: grains settle, pile and slide. Cheap rules, endlessly watchable.
  */
+/** Grains a full box holds at the shipped 140 by 220. */
+private const val SAND_SHIPPED_CAPACITY = 140f * 220f * 0.32f
+
 class FallingSandSim : Sim {
 
     /** The payoff fires once; without this the bell retriggers every step. */
@@ -656,7 +659,11 @@ class FallingSandSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        val pourRate = env.params.f("pour", 420f)
+        // In proportion to the box: the same rate filled a 20-by-20 box in a
+        // third of a second and a 400-by-600 one in three minutes. The slider
+        // is grains a second at the shipped size, and the fill takes the same
+        // time whatever the size.
+        val pourRate = env.params.f("pour", 420f) * (capacity / SAND_SHIPPED_CAPACITY).coerceAtLeast(0.05f)
         pourTimer += abs(dt) * pourRate
         while (pourTimer >= 1f && filled < capacity) {
             pourTimer -= 1f

@@ -413,6 +413,9 @@ class BallEscapeSim : Sim {
  */
 class PendulumWaveSim : Sim {
 
+    /** The cycle as the pendulums really keep it, under this world's gravity and swing. */
+    override fun loopSeconds(env: SimEnv): Float = realCycle(env)
+
     private var count = 15
     private var angles = FloatArray(0)
     private var omegas = FloatArray(0)
