@@ -185,6 +185,15 @@ interface Sim {
     fun frameHalfHeight(env: SimEnv): Float = 0f
 
     /**
+     * For a sim whose action starts small and spreads — an ant's trail, a
+     * walk from the origin — the half-size of the part worth seeing right
+     * now, round the centre. The view closes in on it, up to [SimCore.MAX_ZOOM]
+     * times, and pulls back as it grows: the zoom-out reveal, for free. Zero,
+     * the default, never zooms in.
+     */
+    fun focus(env: SimEnv): Float = 0f
+
+    /**
      * The sides someone watching could bet on, as the colours they are drawn
      * in — empty when there is nothing to pick. A handful at most: TickTock
      * puts one chip per side under the clip.

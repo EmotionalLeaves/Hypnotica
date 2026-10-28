@@ -500,6 +500,16 @@ class LangtonsAntSim : Sim {
         highwayAt = -1
         blackCount = 0
         turnIndex = 0
+        reach = 0
+    }
+
+    /** How far from the start, in cells, the ant has been: the view follows it out. */
+    private var reach = 0
+
+    override fun focus(env: SimEnv): Float {
+        val size = min(2f * env.halfWidth / w, 2f / h)
+        // Square round the start; past the grid's own size there is nothing to close in on.
+        return (reach + FOCUS_MARGIN) * size
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -525,6 +535,8 @@ class LangtonsAntSim : Sim {
                 ay = ((ay % h) + h) % h
             }
             steps++
+            val far = max(abs(ax - w / 2), abs(ay - h / 2))
+            if (far > reach) reach = far
             if (steps % 97L == 0L) {
                 env.emit(EventKind.STEP, (blackCount.toFloat() / (w * h)).coerceIn(0f, 1f), 0f, 0.3f)
             }
@@ -576,6 +588,7 @@ class LangtonsAntSim : Sim {
     )
 
     companion object {
+        const val FOCUS_MARGIN = 10
         fun def(): SimDef = SimDef(
             id = "life/langtons-ant",
             title = "Langton's ant",

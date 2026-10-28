@@ -722,7 +722,8 @@ class FourierSim : Sim {
         freqs = IntArray(terms)
         phases = FloatArray(terms)
         val shape = p.choiceIndex("shape")
-        for (k in 0 until terms) {
+        if (shape >= FIRST_PICTURE) picture(shape)
+        else for (k in 0 until terms) {
             val n = 2 * k + 1
             when (shape) {
                 0 -> { freqs[k] = n; amps[k] = 4f / (PI.toFloat() * n); phases[k] = 0f }          // square
@@ -759,6 +760,78 @@ class FourierSim : Sim {
             reach = max(reach, max(abs(x), abs(y)))
         }
         extent = reach * 0.55f + 0.05f
+    }
+
+    /**
+     * A closed picture drawn by circles: the path sampled round its length,
+     * its discrete Fourier transform taken, and the [terms] biggest circles
+     * kept, biggest first — so the arm draws the shape, and with few circles
+     * a soft blob of it.
+     */
+    private fun picture(shape: Int) {
+        val n = PICTURE_SAMPLES
+        val px = FloatArray(n); val py = FloatArray(n)
+        for (i in 0 until n) {
+            val t = i.toFloat() / n
+            val pt = pathAt(shape, t)
+            px[i] = pt.first; py[i] = pt.second
+        }
+        val count = n
+        val re = FloatArray(count); val im = FloatArray(count); val fr = IntArray(count)
+        for (k in 0 until count) {
+            val f = if (k <= count / 2) k else k - count
+            var sr = 0.0; var si = 0.0
+            for (i in 0 until n) {
+                val a = -2.0 * PI * f * i / n
+                val c = kotlin.math.cos(a); val sn = kotlin.math.sin(a)
+                sr += px[i] * c - py[i] * sn
+                si += px[i] * sn + py[i] * c
+            }
+            re[k] = (sr / n).toFloat(); im[k] = (si / n).toFloat(); fr[k] = f
+        }
+        val byAmp = (0 until count).sortedByDescending { re[it] * re[it] + im[it] * im[it] }
+        for (j in 0 until terms) {
+            val k = byAmp[j]
+            freqs[j] = fr[k]
+            amps[j] = kotlin.math.sqrt(re[k] * re[k] + im[k] * im[k])
+            phases[j] = kotlin.math.atan2(im[k], re[k])
+        }
+    }
+
+    /** A point round each picture, [t] from 0 to 1, about two units across. */
+    private fun pathAt(shape: Int, t: Float): Pair<Float, Float> {
+        val a = t * 2f * PI.toFloat()
+        return when (shape) {
+            FIRST_PICTURE -> {
+                // The heart curve.
+                val sn = sin(a)
+                val x = 16f * sn * sn * sn
+                val y = 13f * cos(a) - 5f * cos(2f * a) - 2f * cos(3f * a) - cos(4f * a)
+                (x / 13f) to (y / 13f + 0.1f)
+            }
+            FIRST_PICTURE + 1 -> {
+                // A five-pointed star, walked evenly along its edges.
+                val e = t * 10f
+                val i = e.toInt() % 10
+                val f = e - kotlin.math.floor(e)
+                fun corner(k: Int): Pair<Float, Float> {
+                    val r = if (k % 2 == 0) 1.2f else 0.5f
+                    val ang = PI.toFloat() / 2f + k * PI.toFloat() / 5f
+                    return (r * cos(ang)) to (r * sin(ang))
+                }
+                val (x0, y0) = corner(i); val (x1, y1) = corner((i + 1) % 10)
+                (x0 + (x1 - x0) * f) to (y0 + (y1 - y0) * f)
+            }
+            FIRST_PICTURE + 2 -> {
+                val r = 0.75f + 0.4f * cos(5f * a)
+                (r * cos(a)) to (r * sin(a))
+            }
+            else -> {
+                // A figure of eight.
+                val d = 1f + sin(a) * sin(a)
+                (1.3f * cos(a) / d) to (1.3f * sin(a) * cos(a) / d)
+            }
+        }
     }
 
     private var extent = 1f
@@ -810,7 +883,7 @@ class FourierSim : Sim {
             val idx = (head - 1 - k + traceX.size * 2) % traceX.size
             val age = k.toFloat() / traceCount
             g.point(traceX[idx], traceY[idx], 0.006f * (1.1f - age * 0.5f),
-                Palette.withAlpha(Palette.SUCCESS, (1f - age) * 0.9f + 0.1f))
+                Palette.withAlpha(palette.at(0.1f + 0.85f * (1f - age)), (1f - age) * 0.9f + 0.1f))
         }
         g.glow(x * 0.55f, y * 0.55f, 0.06f, Palette.SUCCESS, 0.8f)
     }
@@ -823,18 +896,21 @@ class FourierSim : Sim {
     )
 
     companion object {
+        /** The first of the shapes that are pictures rather than waves. */
+        const val FIRST_PICTURE = 4
+        const val PICTURE_SAMPLES = 256
         fun def(): SimDef = SimDef(
             id = "math/fourier",
             title = "Fourier epicycles",
             shelf = Shelf.MATH,
             family = "Waves & fields",
-            blurb = "Spinning circles that add up to a square wave.",
+            blurb = "Spinning circles, each riding the last, that add up to a heart.",
             formats = listOf(TrapFormat.SONG),
             heroLabel = "New shape",
             defaultPalette = "Aurora",
             typicalSeconds = 22f,
             params = listOf(
-                Param.choice("shape", "Target wave", listOf("Square", "Triangle", "Sawtooth", "Random"), 0, card = Card.DATA, input = ParamInput.TILES),
+                Param.choice("shape", "Shape", listOf("Square", "Triangle", "Sawtooth", "Random", "Heart", "Star", "Flower", "Infinity"), FIRST_PICTURE, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("terms", "Circles", 1, 120, 24, card = Card.DATA, logScale = true),
                 Param.int("trail", "Trail", 100, 20000, 1400, card = Card.LOOK, logScale = true),
                 Param.float("speed", "Speed", 0.1f, 4f, 0.9f, card = Card.MOTION)

@@ -124,7 +124,12 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         if (w.isFinite() && w > env.halfWidth && env.halfWidth > 0f) f = kotlin.math.min(f, env.halfWidth / w)
         val h = sim.frameHalfHeight(env)
         if (h.isFinite() && h > 1f) f = kotlin.math.min(f, 1f / h)
-        return f.coerceIn(MIN_FIT, 1f)
+        // Closing in, only for a sim that asks and needs no pulling back.
+        val focus = sim.focus(env)
+        if (f >= 1f && focus.isFinite() && focus > 0f) {
+            f = (kotlin.math.min(env.halfWidth, 1f) / focus).coerceIn(1f, MAX_ZOOM)
+        }
+        return f.coerceIn(MIN_FIT, MAX_ZOOM)
     }
 
     /** Swap in a different sim, keeping the player's speed and laws. */
@@ -309,6 +314,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         const val HOLD_SECONDS = 1.5f
         /** No sim is pulled back further than this, whatever it asks for. */
         const val MIN_FIT = 0.2f
+        /** The closest a sim's [Sim.focus] can bring the view. */
+        const val MAX_ZOOM = 4f
         /**
          * How long the slow motion lasts, in simulated seconds.
          *
