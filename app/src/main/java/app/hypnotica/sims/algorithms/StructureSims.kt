@@ -1066,6 +1066,7 @@ object StructureSims {
         GradientDescentSim.def(),
         GraphLayoutSim.def(),
         SnakeSim.def(),
-        PackSim.def()
+        PackSim.def(),
+        MazeRaceSim.def()
     )
 }
