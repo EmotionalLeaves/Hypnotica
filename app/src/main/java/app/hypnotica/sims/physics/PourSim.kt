@@ -48,11 +48,18 @@ class PourSim : Sim {
     private var share = 0f
     private val level = IntArray(80)
 
-    // The glass: an open box, walls and a floor, in world units.
-    private var glassL = -0.3f
-    private var glassR = 0.3f
+    // The glasses: open boxes, walls and a floor, in world units, filled in
+    // turn from left to right by a tap that glides between them.
+    private var glasses = 1
+    private var gL = FloatArray(1)
+    private var gR = FloatArray(1)
+    private var gTop = FloatArray(1)
+    private var gFull = BooleanArray(1)
+    private var gShare = FloatArray(1)
+    private var current = 0
+    private var tapX = 0f
     private var glassBottom = -0.85f
-    private var glassTop = 0.1f
+    private var flowScale = 1f
 
     // Neighbour grid.
     private var cellsX = 1
@@ -64,15 +71,31 @@ class PourSim : Sim {
         val p = env.params
         cap = MAX_DROPS
         halfW = env.halfWidth
-        // The glass is sized so this many drops fill it to the brim.
-        val w = min(halfW * 0.42f, 0.36f)
-        glassL = -w; glassR = w
+        glasses = p.i("glasses", 1).coerceIn(1, MAX_GLASSES)
+        // Each glass in its own slot across the screen; one alone is a third
+        // of the width, as it always was.
+        val slot = 2f * halfW * 0.92f / glasses
+        // Glass-sized however wide the screen: on a wide one a glass the
+        // third of the width it is upright was a bathtub, and took a minute.
+        val w = min(if (glasses == 1) halfW * 0.42f else slot * 0.34f, MAX_HALF_WIDTH)
+        gL = FloatArray(glasses); gR = FloatArray(glasses); gTop = FloatArray(glasses)
+        gFull = BooleanArray(glasses); gShare = FloatArray(glasses)
         // Standing on the floor, so nothing that splashes out can run under it.
         glassBottom = -1f + FLOOR_GAP
-        // The tap runs until the water line reaches the brim, however many
-        // drops that takes: deep water squashes a little, so a count chosen
-        // in advance never quite fills it.
-        glassTop = glassBottom + p.f("glass", 0.8f).coerceIn(0.2f, 1.3f)
+        val base = p.f("glass", 0.8f).coerceIn(0.2f, 1.3f)
+        for (k in 0 until glasses) {
+            val c = if (glasses == 1) 0f else -halfW * 0.92f + slot * (k + 0.5f)
+            gL[k] = c - w; gR[k] = c + w
+            // The tap runs until the water line reaches the brim, however many
+            // drops that takes: deep water squashes a little, so a count chosen
+            // in advance never quite fills it. A row of them, of different heights.
+            gTop[k] = glassBottom + if (glasses == 1) base else base * env.rng.range(0.6f, 1f)
+        }
+        current = 0
+        tapX = (gL[0] + gR[0]) * 0.5f
+        var area = 0f
+        for (k in 0 until glasses) area += (gR[k] - gL[k]) * (gTop[k] - glassBottom)
+        flowScale = (area / REF_AREA).coerceIn(0.5f, 4f)
         x = FloatArray(cap); y = FloatArray(cap); vx = FloatArray(cap); vy = FloatArray(cap)
         px = FloatArray(cap); py = FloatArray(cap); dvx = FloatArray(cap); dvy = FloatArray(cap)
         n = 0
@@ -94,9 +117,16 @@ class PourSim : Sim {
         payoffFrame = false
         val h = abs(dt)
         elapsed += h
+        // The tap glides to the next glass, and pours only once it's there.
+        val target = if (current < glasses) (gL[current] + gR[current]) * 0.5f else tapX
+        val toGo = target - tapX
+        tapX += toGo.coerceIn(-TAP_GLIDE * h, TAP_GLIDE * h)
+        if (abs(toGo) > 0.005f) carry = 0f
         // The tap.
-        if (!full) {
-            val flow = env.params.f("flow", 75f)
+        if (!full && abs(toGo) <= 0.005f) {
+            // Scaled with how much glass there is to fill, so two or three, or
+            // a wide one, fill in about the time one upright glass does.
+            val flow = env.params.f("flow", 75f) * flowScale
             carry += h * flow
             // As many lanes as keep each one's drops a drop apart.
             val lanes = kotlin.math.ceil(flow * D * 1.2f / TAP_SPEED).toInt().coerceIn(1, 9)
@@ -108,7 +138,7 @@ class PourSim : Sim {
                 // left — spaced past the push-apart distance, or the stream
                 // blows itself sideways in mid-air.
                 val lane = n % lanes
-                x[n] = (lane - (lanes - 1) * 0.5f) * D * 1.05f + env.rng.range(-0.001f, 0.001f)
+                x[n] = tapX + (lane - (lanes - 1) * 0.5f) * D * 1.05f + env.rng.range(-0.001f, 0.001f)
                 y[n] = 0.95f - carry / flow * TAP_SPEED
                 vx[n] = 0f
                 vy[n] = -TAP_SPEED
@@ -202,32 +232,47 @@ class PourSim : Sim {
         if (landed > 0) env.emit(EventKind.HIT, 0.6f + 0.3f * env.rng.nextFloat(), env.rng.range(-0.4f, 0.4f), min(1f, 0.2f + landed * 0.05f))
 
         // How full, the way an eye judges it: where the water line is. Rows
-        // up the glass, and the highest one that's at least half water.
-        val rows = ((glassTop - glassBottom) / D).toInt().coerceIn(4, level.size)
+        // up each glass, and the highest one that's at least half water.
+        for (k in 0 until glasses) gShare[k] = levelOf(k)
+        if (current < glasses) {
+            share = gShare[current]
+            while (tenths < 10 && share >= (tenths + 1) / 10f) {
+                tenths++
+                env.emit(EventKind.STEP, (current * 10 + tenths) / (glasses * 10f), 0f, 0.5f)
+            }
+            if (share >= FULL_SHARE) {
+                gFull[current] = true
+                current++
+                tenths = 0
+                if (current >= glasses) {
+                    full = true
+                    fullAt = elapsed
+                    payoffFrame = true
+                    env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+                } else {
+                    // One down: a chord, and on to the next.
+                    env.emit(EventKind.HIT, 0.8f, 0f, 0.8f)
+                }
+            }
+        }
+    }
+
+    private fun levelOf(k: Int): Float {
+        val rows = ((gTop[k] - glassBottom) / D).toInt().coerceIn(4, level.size)
         java.util.Arrays.fill(level, 0)
-        val rowH = (glassTop - glassBottom) / rows
+        val rowH = (gTop[k] - glassBottom) / rows
         for (i in 0 until n) {
-            if (x[i] <= glassL || x[i] >= glassR || y[i] < glassBottom) continue
+            if (x[i] <= gL[k] || x[i] >= gR[k] || y[i] < glassBottom) continue
             // Only water that has settled: the stream and the splash are
             // not the water line, and counting them called the brim early.
             if (vx[i] * vx[i] + vy[i] * vy[i] > SETTLED * SETTLED) continue
             val r = ((y[i] - glassBottom) / rowH).toInt()
             if (r in 0 until rows) level[r]++
         }
-        val perRow = (glassR - glassL) * rowH / DROP_AREA
+        val perRow = (gR[k] - gL[k]) * rowH / DROP_AREA
         var top = 0
         for (r in 0 until rows) if (level[r] >= perRow * 0.5f) top = r + 1
-        share = top.toFloat() / rows
-        while (tenths < 10 && share >= (tenths + 1) / 10f) {
-            tenths++
-            env.emit(EventKind.STEP, tenths / 10f, 0f, 0.5f)
-        }
-        if (!full && share >= FULL_SHARE) {
-            full = true
-            fullAt = elapsed
-            payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
-        }
+        return top.toFloat() / rows
     }
 
     private fun cellOf(px: Float, py: Float): Int {
@@ -242,6 +287,15 @@ class PourSim : Sim {
      * shoved hard by the crowd can't step clean through a wall in one frame.
      */
     private fun collide(i: Int, ox: Float, oy: Float) {
+        for (k in 0 until glasses) collideGlass(i, ox, oy, gL[k], gR[k], gTop[k])
+        val r = SPACING * 0.5f
+        // What spills runs off the screen's floor and edges.
+        if (y[i] < -1f + r) { y[i] = -1f + r; vy[i] = abs(vy[i]) * BOUNCE }
+        if (x[i] < -halfW + r) { x[i] = -halfW + r; vx[i] = abs(vx[i]) * BOUNCE }
+        if (x[i] > halfW - r) { x[i] = halfW - r; vx[i] = -abs(vx[i]) * BOUNCE }
+    }
+
+    private fun collideGlass(i: Int, ox: Float, oy: Float, glassL: Float, glassR: Float, glassTop: Float) {
         val r = SPACING * 0.5f
         val wasIn = ox > glassL && ox < glassR
         val below = oy < glassTop
@@ -262,21 +316,21 @@ class PourSim : Sim {
             vy[i] = abs(vy[i]) * BOUNCE
             vx[i] += if (abs(x[i] - glassL) < abs(x[i] - glassR)) (if (x[i] < glassL) -0.1f else 0.1f) else (if (x[i] > glassR) 0.1f else -0.1f)
         }
-        // What spills runs off the screen's floor and edges.
-        if (y[i] < -1f + r) { y[i] = -1f + r; vy[i] = abs(vy[i]) * BOUNCE }
-        if (x[i] < -halfW + r) { x[i] = -halfW + r; vx[i] = abs(vx[i]) * BOUNCE }
-        if (x[i] > halfW - r) { x[i] = halfW - r; vx[i] = -abs(vx[i]) * BOUNCE }
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val wallC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.8f)
-        g.line(glassL, glassBottom, glassL, glassTop, 0.008f, wallC)
-        g.line(glassR, glassBottom, glassR, glassTop, 0.008f, wallC)
-        g.line(glassL, glassBottom, glassR, glassBottom, 0.008f, wallC)
-        // The brim, marked, so the target is there to be watched.
-        g.line(glassL - 0.02f, glassTop, glassL + 0.04f, glassTop, 0.004f, Palette.SUCCESS, 0.7f)
-        g.line(glassR - 0.04f, glassTop, glassR + 0.02f, glassTop, 0.004f, Palette.SUCCESS, 0.7f)
+        for (k in 0 until glasses) {
+            val glassL = gL[k]; val glassR = gR[k]; val glassTop = gTop[k]
+            if (gFull[k]) g.glow((glassL + glassR) * 0.5f, glassTop, (glassR - glassL) * 1.2f, Palette.SUCCESS, 0.35f)
+            g.line(glassL, glassBottom, glassL, glassTop, 0.008f, wallC)
+            g.line(glassR, glassBottom, glassR, glassTop, 0.008f, wallC)
+            g.line(glassL, glassBottom, glassR, glassBottom, 0.008f, wallC)
+            // The brim, marked, so the target is there to be watched.
+            g.line(glassL - 0.02f, glassTop, glassL + 0.04f, glassTop, 0.004f, Palette.SUCCESS, 0.7f)
+            g.line(glassR - 0.04f, glassTop, glassR + 0.02f, glassTop, 0.004f, Palette.SUCCESS, 0.7f)
+        }
         g.reservePoints(n)
         for (i in 0 until n) {
             val sp = sqrt(vx[i] * vx[i] + vy[i] * vy[i])
@@ -284,7 +338,7 @@ class PourSim : Sim {
             // splash read against the pool.
             g.point(x[i], y[i], SPACING * 1.5f, palette.at((0.25f + sp * 0.35f).coerceIn(0f, 1f)))
         }
-        if (!full) g.rect(0f, 0.97f, TAP_WIDTH * 2f, 0.02f, Palette.TEXT_SECONDARY, alpha = 0.8f)
+        if (!full) g.rect(tapX, 0.97f, TAP_WIDTH * 2f, 0.02f, Palette.TEXT_SECONDARY, alpha = 0.8f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -295,7 +349,7 @@ class PourSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "drops" to n.toString(),
-        "full" to if (full) "brim" else "${(share * 100f).toInt()}%"
+        "full" to if (full) "brim" else if (glasses > 1) "glass ${current + 1} of $glasses · ${(share * 100f).toInt()}%" else "${(share * 100f).toInt()}%"
     )
 
     companion object {
@@ -312,7 +366,13 @@ class PourSim : Sim {
         const val TAP_WIDTH = 0.04f
         const val TAP_SPEED = 2.2f
         const val FULL_SHARE = 0.975f
-        const val MAX_DROPS = 3500
+        const val MAX_DROPS = 4500
+        const val MAX_GLASSES = 3
+        const val MAX_HALF_WIDTH = 0.2f
+        /** One glass on an upright phone at the default height: what the flow was tuned on. */
+        const val REF_AREA = 2f * 0.193f * 0.8f
+        /** How fast the tap glides to the next glass. */
+        const val TAP_GLIDE = 0.5f
         const val MIN_FALL = 0.8f
         const val SETTLED = 0.5f
         const val FLOOR_GAP = 0.01f
@@ -332,6 +392,7 @@ class PourSim : Sim {
             typicalSeconds = 14f,
             params = listOf(
                 Param.float("glass", "Glass height", 0.2f, 1.3f, 0.8f, card = Card.DATA),
+                Param.int("glasses", "Glasses", 1, MAX_GLASSES, 1, card = Card.DATA),
                 Param.float("flow", "Flow", 20f, 800f, 75f, card = Card.MOTION, logScale = true),
                 Param.float("thick", "Thickness", 0f, 0.9f, VISCOSITY, card = Card.MOTION)
             ),
