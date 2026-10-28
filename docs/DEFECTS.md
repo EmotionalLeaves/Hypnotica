@@ -27,6 +27,10 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **Ball escape in a triangle, a square or a hexagon**, spinning, as well as
+  the ring: the side the ball faces stands in for the ring, so every rule the
+  ring had — gaps, growth, splitting, nesting — works the same.
+
 - **New: pump the balloon.** Each pump a little bigger and a note higher, the
   confetti inside jostling, the skin trembling near its limit — and it pops at
   a size drawn fresh for every balloon, so nobody knows which pump it will be.

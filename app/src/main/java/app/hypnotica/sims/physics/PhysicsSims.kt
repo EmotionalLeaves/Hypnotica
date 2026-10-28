@@ -3,6 +3,7 @@ package app.hypnotica.sims.physics
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.LawKnob
@@ -45,6 +46,8 @@ class BallEscapeSim : Sim {
     private var ringAngle = FloatArray(1)
     private var ringSpin = FloatArray(1)
     private var gapWidth = 0.5f
+    /** 0 for round rings, else the number of sides of each polygon. */
+    private var sides = 0
 
     private var escaped = 0
     private var hits = 0L
@@ -69,6 +72,7 @@ class BallEscapeSim : Sim {
         balls.clear()
         spawned.clear()
         rings = p.i("rings", 1).coerceIn(1, 12)
+        sides = SHAPE_SIDES[p.choiceIndex("shape").coerceIn(0, SHAPE_SIDES.size - 1)]
         gapWidth = p.f("gap", 0.42f)
         growth = 1f + p.f("growth", 1.1f) * 0.01f
         speedUp = 1f + p.f("speedup", 3f) * 0.01f
@@ -148,8 +152,22 @@ class BallEscapeSim : Sim {
             // Rings are checked outside in; the ball normally sits inside the
             // smallest one and works its way out through the gaps.
             for (ri in ringRadii.indices) {
-                val rr = ringRadii[ri]
-                val d = hypot(b.x, b.y)
+                var rr = ringRadii[ri]
+                var d = hypot(b.x, b.y)
+                // A polygon: the side the ball is facing stands in for the
+                // ring — its distance along that side's normal for the ball's
+                // distance, the polygon's inner radius for the ring's.
+                var nx = Float.NaN
+                var ny = Float.NaN
+                if (sides >= 3) {
+                    val seg = TWO_PI / sides
+                    var rel0 = atan2(b.y, b.x) - ringAngle[ri]
+                    rel0 = ((rel0 % TWO_PI) + TWO_PI) % TWO_PI
+                    val nAng = ringAngle[ri] + (kotlin.math.floor(rel0 / seg) + 0.5f) * seg
+                    nx = cos(nAng); ny = sin(nAng)
+                    d = b.x * nx + b.y * ny
+                    rr *= cos(PI.toFloat() / sides)
+                }
                 if (d + b.r < rr) continue
                 if (d < rr) {
                     // Touching from inside.
@@ -160,7 +178,7 @@ class BallEscapeSim : Sim {
                         // Through the gap: this ring is spent for this ball.
                         continue
                     }
-                    bounce(env, b, rr, d)
+                    bounce(env, b, rr, d, nx, ny)
                     break
                 } else if (ri == 0) {
                     // Outside the outer ring: escaped.
@@ -182,11 +200,11 @@ class BallEscapeSim : Sim {
         }
     }
 
-    private fun bounce(env: SimEnv, b: Ball, rr: Float, d: Float) {
+    private fun bounce(env: SimEnv, b: Ball, rr: Float, d: Float, nxIn: Float = Float.NaN, nyIn: Float = Float.NaN) {
         // Ghosts: the rings are there to be looked at, not to stop anything.
         if (env.laws.passThrough) return
-        val nx = if (d > 1e-6f) b.x / d else 1f
-        val ny = if (d > 1e-6f) b.y / d else 0f
+        val nx = if (!nxIn.isNaN()) nxIn else if (d > 1e-6f) b.x / d else 1f
+        val ny = if (!nyIn.isNaN()) nyIn else if (d > 1e-6f) b.y / d else 0f
         val dot = b.vx * nx + b.vy * ny
         if (dot > 0f) {
             // Sticky: the ball gives up rather than bouncing.
@@ -234,7 +252,24 @@ class BallEscapeSim : Sim {
         val palette = env.palette
         for (ri in ringRadii.indices) {
             val c = palette.at(ri.toFloat() / max(1, rings - 1))
-            g.ring(0f, 0f, ringRadii[ri], 0.012f, c, gapWidth, ringAngle[ri], 0.95f)
+            if (sides < 3) {
+                g.ring(0f, 0f, ringRadii[ri], 0.012f, c, gapWidth, ringAngle[ri], 0.95f)
+            } else {
+                // Each side in short pieces, leaving out the ones in the gap.
+                val seg = TWO_PI / sides
+                for (e in 0 until sides) for (k in 0 until EDGE_PIECES) {
+                    val a0 = ringAngle[ri] + e * seg
+                    val a1 = a0 + seg
+                    val t0 = k / EDGE_PIECES.toFloat(); val t1 = (k + 1) / EDGE_PIECES.toFloat()
+                    val x0 = cos(a0) + (cos(a1) - cos(a0)) * t0; val y0 = sin(a0) + (sin(a1) - sin(a0)) * t0
+                    val x1 = cos(a0) + (cos(a1) - cos(a0)) * t1; val y1 = sin(a0) + (sin(a1) - sin(a0)) * t1
+                    var rel = atan2((y0 + y1) * 0.5f, (x0 + x1) * 0.5f) - ringAngle[ri]
+                    rel = ((rel % TWO_PI) + TWO_PI) % TWO_PI
+                    if (rel < gapWidth) continue
+                    val r = ringRadii[ri]
+                    g.line(x0 * r, y0 * r, x1 * r, y1 * r, 0.012f, c, 0.95f)
+                }
+            }
         }
         for (b in balls) {
             if (!b.alive) continue
@@ -273,6 +308,9 @@ class BallEscapeSim : Sim {
     companion object {
         private const val TWO_PI = (PI * 2.0).toFloat()
         private const val MAX_SPEED = 7.5f
+        /** Sides for each Shape choice; 0 is a round ring. */
+        private val SHAPE_SIDES = intArrayOf(0, 3, 4, 6)
+        private const val EDGE_PIECES = 10
         private const val GRAVITY_SCALE = 0.06f
 
         fun def(): SimDef = SimDef(
@@ -288,6 +326,8 @@ class BallEscapeSim : Sim {
             heroRestarts = false,
             typicalSeconds = 11f,
             params = listOf(
+                Param.choice("shape", "Shape", listOf("Ring", "Triangle", "Square", "Hexagon"), 0,
+                    card = Card.DATA, input = ParamInput.TILES),
                 Param.int("balls", "Balls", 1, 64, 1, card = Card.DATA),
                 Param.float("size", "Ball size", 0.012f, 0.14f, 0.045f, card = Card.DATA),
                 // Defaults chosen by sweeping seeds offline: one ring with this
