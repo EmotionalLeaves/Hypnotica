@@ -970,6 +970,7 @@ object PhysicsSims {
         WheelSim.def(),
         PressSim.def(),
         ArenaSim.def(),
-        LastOutSim.def()
+        LastOutSim.def(),
+        SoapCutSim.def()
     )
 }
