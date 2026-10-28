@@ -1,3 +1,5 @@
+@file:kotlin.OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package app.hypnotica.ui
 
 import androidx.compose.foundation.layout.size
