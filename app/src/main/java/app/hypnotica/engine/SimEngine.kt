@@ -104,6 +104,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     /** The zoom bump on the beat's kick, 1 on the hit and easing to 0. */
     private var beat = 0f
+    private var sizedOnce = false
     private var kicksSeen = 0L
     private var baseZoom = 1f
     /**
@@ -349,7 +350,19 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         scene.surfaceChanged(width, height)
-        core.setAspect(width.toFloat() / max(1, height).toFloat())
+        val aspect = width.toFloat() / max(1, height).toFloat()
+        val before = core.env.aspect
+        core.setAspect(aspect)
+        // Turned on its side, or back: most sims lay themselves out for the
+        // screen once, at setup, and carried on in the old shape — a box
+        // running off the side, bars bunched in the middle. The same run
+        // again, laid out afresh. Not in the studio, where the timeline owns
+        // the run.
+        if (sizedOnce && project == null && before > 0f && kotlin.math.abs(aspect / before - 1f) > RELAYOUT_CHANGE) {
+            core.restart(core.seed)
+            resetRunState()
+        }
+        sizedOnce = true
         GLES30.glViewport(0, 0, width, height)
     }
 
@@ -760,6 +773,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
          * to settle as the slow motion eases out rather than after it.
          */
         const val PUNCH_SECONDS = 0.8f
+        /** A change of screen shape this big lays the run out again. */
+        const val RELAYOUT_CHANGE = 0.15f
         /** The beat bump: a percent and a half, gone in a fifth of a second. */
         const val BEAT_DEPTH = 0.015f
         const val BEAT_SECONDS = 0.2f
