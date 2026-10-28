@@ -27,6 +27,11 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: pump the balloon.** Each pump a little bigger and a note higher, the
+  confetti inside jostling, the skin trembling near its limit — and it pops at
+  a size drawn fresh for every balloon, so nobody knows which pump it will be.
+  The confetti bursts out and patters down.
+
 - **New: dominoes.** A snake or a spiral of dominoes, seen from above, and one
   push. Each tips as an upturned pendulum, starts the next when it leans far
   enough to reach it, and lands as the next note up the scale, so the chain
