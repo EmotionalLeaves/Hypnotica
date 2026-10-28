@@ -224,6 +224,10 @@ class RpsBattleSim : Sim {
         }
     }
 
+    override fun contenders(env: SimEnv): IntArray = IntArray(3) { env.palette.at(0.12f + 0.38f * it) }
+
+    override fun winner(): Int = winner
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = (winner >= 0 && elapsed - doneAt > 3f) || elapsed > GIVE_UP_SECONDS

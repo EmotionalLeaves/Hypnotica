@@ -259,6 +259,20 @@ class AppState(
             prefs?.gestureTipsLeft = gestureTipsState
         }
 
+    /** Winners called in a row in TickTock, and the best run; kept on the phone. */
+    var guessStreak by mutableIntStateOf(prefs?.guessStreak ?: 0)
+        private set
+    var guessBest by mutableIntStateOf(prefs?.guessBest ?: 0)
+        private set
+
+    /** A pick settled: extend the run or end it. */
+    fun recordGuess(right: Boolean) {
+        guessStreak = if (right) guessStreak + 1 else 0
+        if (guessStreak > guessBest) guessBest = guessStreak
+        prefs?.guessStreak = guessStreak
+        prefs?.guessBest = guessBest
+    }
+
     /** Swipes on the feed this session, which varies each sim's headline. */
     var feedVisits by mutableIntStateOf(0)
 

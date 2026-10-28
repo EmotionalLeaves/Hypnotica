@@ -117,6 +117,14 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         private set
     private var sinceCounters = 0f
 
+    /** The sim's contenders and winner, snapshotted with the counters. */
+    @Volatile
+    var contenders: IntArray = app.hypnotica.core.sim.NO_CONTENDERS
+        private set
+    @Volatile
+    var winner: Int = -1
+        private set
+
     /**
      * Set by a pinch. The feed and TickTock lean the camera in on their own;
      * once the person has zoomed, the camera is theirs until the next sim.
@@ -552,6 +560,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (sinceCounters >= COUNTERS_EVERY) {
             sinceCounters = 0f
             counters = core.sim.counters()
+            contenders = core.sim.contenders(core.env)
+            winner = core.sim.winner()
         }
 
         g.reset()

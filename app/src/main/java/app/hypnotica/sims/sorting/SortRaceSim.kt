@@ -178,6 +178,10 @@ class SortRaceSim : Sim {
     override fun finished(): Boolean =
         (allDoneAt >= 0f && elapsed - allDoneAt > 2f) || (placed > 0 && elapsed > MAX_SECONDS)
 
+    override fun contenders(env: SimEnv): IntArray = IntArray(LANES) { env.palette.at(0.08f + 0.84f * it / (LANES - 1f)) }
+
+    override fun winner(): Int = place.indexOfFirst { it == 1 }
+
     override fun counters(): List<Pair<String, String>> {
         val order = (0 until LANES).sortedWith(compareBy({ if (place[it] == 0) 99 else place[it] }, { it }))
         return order.map { k ->

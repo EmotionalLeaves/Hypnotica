@@ -45,6 +45,7 @@ class ColourWarSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var decided = false
+    private var winnerTeam = -1
     private var decidedAt = -1f
     private var taken = 0L
     private var halfW = 0.46f
@@ -80,6 +81,7 @@ class ColourWarSim : Sim {
         elapsed = 0f
         payoffFrame = false
         decided = false
+        winnerTeam = -1
         decidedAt = -1f
         taken = 0L
     }
@@ -194,6 +196,8 @@ class ColourWarSim : Sim {
 
     private fun decide(env: SimEnv) {
         decided = true
+        // Whoever holds the most ground when it is settled.
+        winnerTeam = (0 until teams).maxByOrNull { counts[it] } ?: -1
         decidedAt = elapsed
         payoffFrame = true
         env.emit(EventKind.DONE, 0.9f, 0f, 1f)
@@ -254,6 +258,11 @@ class ColourWarSim : Sim {
     /** A while after the first one goes out, or someone takes the whole board. */
     override fun finished(): Boolean =
         (decided && elapsed - decidedAt > AFTER_SECONDS) || counts.any { it == owner.size }
+
+    override fun contenders(env: SimEnv): IntArray =
+        IntArray(teams) { env.palette.at(0.08f + 0.84f * it / max(1f, teams - 1f)) }
+
+    override fun winner(): Int = winnerTeam
 
     override fun counters(): List<Pair<String, String>> = (0 until teams).map { t ->
         val share = counts[t] * 100f / max(1, owner.size)

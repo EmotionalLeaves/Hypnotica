@@ -51,7 +51,7 @@ class WheelSim : Sim {
     private var ctint = FloatArray(0)
 
     override fun setup(env: SimEnv) {
-        segments = env.params.i("segments", 12).coerceIn(MIN_SEGMENTS, MAX_SEGMENTS)
+        segments = env.params.i("segments", 8).coerceIn(MIN_SEGMENTS, MAX_SEGMENTS)
         radius = min(env.halfWidth, 1f) * 0.86f
         halfW = env.halfWidth
         angle = env.rng.range(0f, 2f * PI.toFloat())
@@ -196,6 +196,15 @@ class WheelSim : Sim {
         }
     }
 
+    override fun contenders(env: SimEnv): IntArray =
+        if (segments > MAX_PICKS) app.hypnotica.core.sim.NO_CONTENDERS
+        else IntArray(segments) { k ->
+            val base = env.palette.at((k + 0.5f) / segments)
+            if (k % 2 == 0) base else Palette.brighten(base, 0.25f)
+        }
+
+    override fun winner(): Int = if (segments > MAX_PICKS) -1 else winner
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = stoppedAt >= 0f && elapsed - stoppedAt > 3f
@@ -219,6 +228,7 @@ class WheelSim : Sim {
         const val ROCK_SPEED = 2.5f
         const val STOP_SPEED = 0.02f
         const val CONFETTI = 400
+        const val MAX_PICKS = 8
 
         fun def(): SimDef = SimDef(
             id = "physics/wheel",
@@ -232,7 +242,7 @@ class WheelSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 11f,
             params = listOf(
-                Param.int("segments", "Segments", MIN_SEGMENTS, MAX_SEGMENTS, 12, card = Card.DATA),
+                Param.int("segments", "Segments", MIN_SEGMENTS, MAX_SEGMENTS, 8, card = Card.DATA),
                 Param.float("spin", "Spin length", 0.3f, 3f, 1f, card = Card.MOTION)
             ),
             create = { WheelSim() }

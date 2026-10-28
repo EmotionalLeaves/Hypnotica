@@ -19,6 +19,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -109,6 +115,41 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         if (clip.format != TrapFormat.NUMBER_UP) return@LaunchedEffect
         while (true) {
             bigNumber = state.engine.counters.firstOrNull()
+            delay(100)
+        }
+    }
+
+    // Picking the winner: a chip per side the clip has, tapped before it is
+    // settled, and the verdict when it is. A run of right calls is kept.
+    var sides by remember { mutableStateOf(IntArray(0)) }
+    var winnerSide by remember { mutableIntStateOf(-1) }
+    var pick by remember { mutableIntStateOf(-1) }
+    var verdict by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(current) {
+        sides = IntArray(0)
+        winnerSide = -1
+        pick = -1
+        verdict = null
+        if (current == null) return@LaunchedEffect
+        // The engine swaps the run in a frame or two later, and its snapshot
+        // a tenth of a second after that: until it has been seen undecided,
+        // what it says is the last clip's result.
+        var open = false
+        while (true) {
+            val w = state.engine.winner
+            if (w < 0) open = true
+            if (open) {
+                val c = state.engine.contenders
+                if (!c.contentEquals(sides)) sides = c.copyOf()
+                if (w != winnerSide) {
+                    winnerSide = w
+                    if (w >= 0 && pick >= 0 && verdict == null) {
+                        val right = pick == w
+                        verdict = right
+                        state.recordGuess(right)
+                    }
+                }
+            }
             delay(100)
         }
     }
@@ -549,6 +590,18 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     Spacer(Modifier.height(12.dp))
                 }
             }
+            // Shown while there is still a pick to make, and with the verdict.
+            if (sides.isNotEmpty() && (winnerSide < 0 || pick >= 0)) {
+                PickRow(
+                    sides = sides,
+                    pick = pick,
+                    winner = winnerSide,
+                    verdict = verdict,
+                    streak = state.guessStreak,
+                    best = state.guessBest
+                ) { i -> if (pick < 0 && winnerSide < 0) pick = i }
+                Spacer(Modifier.height(16.dp))
+            }
             AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
@@ -588,6 +641,56 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     Spacer(Modifier.width(12.dp))
                     GlyphButton("‹") { state.goBack() }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * One chip per side, in the colour it is drawn in. Before a pick: "Pick one".
+ * After: the pick stays lit and the rest fade. When it is settled: the winner
+ * gets a ring, and the line says whether it was called.
+ */
+@Composable
+private fun PickRow(
+    sides: IntArray,
+    pick: Int,
+    winner: Int,
+    verdict: Boolean?,
+    streak: Int,
+    best: Int,
+    onPick: (Int) -> Unit
+) {
+    Column {
+        val line = when (verdict) {
+            true -> if (streak > 1) "Called it  ·  $streak in a row" else "Called it"
+            false -> if (best > 1) "Not this time  ·  best $best" else "Not this time"
+            null -> if (pick >= 0) "Your pick" else if (streak > 0) "Pick the winner  ·  $streak in a row" else "Pick the winner"
+        }
+        Text(
+            line,
+            color = when (verdict) { true -> Tokens.Accent; else -> Tokens.TextPrimary },
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            for (i in sides.indices) {
+                val c = Color(sides[i])
+                val faded = (pick >= 0 && i != pick && i != winner)
+                val ring = when {
+                    i == winner -> Tokens.Accent
+                    i == pick -> Tokens.TextPrimary
+                    else -> Color.Transparent
+                }
+                Box(
+                    Modifier
+                        .size(if (i == winner || i == pick) 40.dp else 32.dp)
+                        .graphicsLayer { alpha = if (faded) 0.3f else 1f }
+                        .border(3.dp, ring, CircleShape)
+                        .padding(4.dp)
+                        .background(c, CircleShape)
+                        .clickable(enabled = pick < 0 && winner < 0, role = Role.Button) { onPick(i) }
+                )
             }
         }
     }

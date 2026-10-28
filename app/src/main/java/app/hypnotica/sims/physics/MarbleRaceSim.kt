@@ -261,6 +261,11 @@ class MarbleRaceSim : Sim {
             // A race nobody can finish — no gravity to fall by — is let go.
             (winnerAt < 0f && elapsed > GIVE_UP_SECONDS)
 
+    override fun contenders(env: SimEnv): IntArray =
+        if (count > 8) app.hypnotica.core.sim.NO_CONTENDERS else IntArray(count) { env.palette.at(it / max(1f, count - 1f)) }
+
+    override fun winner(): Int = if (count > 8) -1 else place.indexOfFirst { it == 1 }
+
     override fun counters(): List<Pair<String, String>> {
         var lead = 0
         for (i in 0 until count) if (y[i] < y[lead] && !done[i]) lead = i

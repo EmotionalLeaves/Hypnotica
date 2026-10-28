@@ -209,6 +209,11 @@ class ArenaSim : Sim {
 
     override fun frameHalfWidth(env: SimEnv): Float = 0f
 
+    override fun contenders(env: SimEnv): IntArray =
+        if (n > MAX_PICKS) app.hypnotica.core.sim.NO_CONTENDERS else IntArray(n) { env.palette.at(tint[it]) }
+
+    override fun winner(): Int = if (n > MAX_PICKS) -1 else winner
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = (doneAt >= 0f && elapsed - doneAt > 3f) || elapsed > GIVE_UP_SECONDS
@@ -229,6 +234,7 @@ class ArenaSim : Sim {
         const val DEBRIS_PER_KO = 40
         const val GIVE_UP_SECONDS = 90f
         const val ZONE_DAMAGE = 0.012f
+        const val MAX_PICKS = 8
 
         fun def(): SimDef = SimDef(
             id = "physics/arena",

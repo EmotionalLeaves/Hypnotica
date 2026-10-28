@@ -135,6 +135,14 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_GESTURE_TIPS, 3)
         set(value) = sp.edit().putInt(KEY_GESTURE_TIPS, value).apply()
 
+    /** Winners called in a row in TickTock, and the best run of them. */
+    var guessStreak: Int
+        get() = sp.getInt(KEY_GUESS_STREAK, 0)
+        set(value) = sp.edit().putInt(KEY_GUESS_STREAK, value).apply()
+    var guessBest: Int
+        get() = sp.getInt(KEY_GUESS_BEST, 0)
+        set(value) = sp.edit().putInt(KEY_GUESS_BEST, value).apply()
+
     var mutedFormats: Set<String>
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
@@ -160,6 +168,8 @@ class Prefs(context: Context) {
         const val KEY_SCHEMA = "schema"
         const val KEY_PROJECT = "studio_project"
         const val KEY_GESTURE_TIPS = "gesture_tips_left"
+        const val KEY_GUESS_STREAK = "guess_streak"
+        const val KEY_GUESS_BEST = "guess_best"
 
         /** Bump with a step in [migrate] whenever a default changes for people already using the app. */
         const val SCHEMA = 2

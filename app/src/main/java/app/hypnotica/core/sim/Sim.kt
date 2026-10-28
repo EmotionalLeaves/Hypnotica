@@ -183,6 +183,16 @@ interface Sim {
 
     /** The same, upwards and downwards from the centre. Zero means one unit. */
     fun frameHalfHeight(env: SimEnv): Float = 0f
+
+    /**
+     * The sides someone watching could bet on, as the colours they are drawn
+     * in — empty when there is nothing to pick. A handful at most: TickTock
+     * puts one chip per side under the clip.
+     */
+    fun contenders(env: SimEnv): IntArray = NO_CONTENDERS
+
+    /** Which of [contenders] won, once that is settled; -1 until then. */
+    fun winner(): Int = -1
 }
 
 /** Metadata plus the factory for one sim. */
@@ -245,3 +255,6 @@ data class SimDef(
     fun simpleParams(card: Card): List<Param> =
         params.filter { !it.advancedOnly && it.card == card }
 }
+
+/** Shared, so a sim with nothing to bet on allocates nothing. */
+val NO_CONTENDERS = IntArray(0)
