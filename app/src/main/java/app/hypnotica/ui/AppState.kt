@@ -273,7 +273,7 @@ class AppState(
     /** A pick settled: extend the run or end it. */
     fun recordGuess(right: Boolean) {
         // Felt as well as read: a thump for a right call.
-        if (right && haptics) engine.haptics?.heavy()
+        if (right && haptics) engine.haptics?.verdict()
         guessStreak = if (right) guessStreak + 1 else 0
         if (guessStreak > guessBest) guessBest = guessStreak
         prefs?.guessStreak = guessStreak

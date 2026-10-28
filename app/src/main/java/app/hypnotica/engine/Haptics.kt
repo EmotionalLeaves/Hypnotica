@@ -30,6 +30,7 @@ class Haptics(context: Context) {
 
     var enabled: Boolean = true
 
+    @Volatile
     private var lastAt = 0L
 
     val available: Boolean get() = vibrator?.hasVibrator() == true
@@ -42,6 +43,12 @@ class Haptics(context: Context) {
 
     /** The payoff. */
     fun heavy() = buzz(34, 220, 220)
+
+    /**
+     * A verdict: felt even straight after the payoff's own buzz, which comes
+     * a moment before it and would otherwise swallow it.
+     */
+    fun verdict() = buzz(45, 255, 0)
 
     private fun buzz(millis: Long, amplitude: Int, minGapMs: Long) {
         val v = vibrator ?: return

@@ -102,6 +102,9 @@ class SoapCutSim : Sim {
         // However many slices, the block is gone in about the same time.
         val pace = env.params.f("pace", 1f) * max(1f, slices * (DOWN + UP) / TARGET_SECONDS)
         if (cut < slices) {
+            // The last slice is what's left of the block: nothing to cut, it
+            // just goes over. The knife used to come down its outside edge.
+            if (cut == slices - 1 && phase < DOWN) phase = DOWN - 1e-4f
             val before = phase
             phase += h * pace
             val depth = knifeDepth(phase)
@@ -180,7 +183,9 @@ class SoapCutSim : Sim {
         val ch = blockH / gridY
         val perSlice = gridX / slices
         // What's left of the block: every column left of the next cut.
-        val standing = (slices - cut) * perSlice
+        // Not counting a slice the knife is through: it is drawn tipping,
+        // and was drawn upright as well until the knife came back up.
+        val standing = (slices - cut - (if (cut < slices && phase >= DOWN) 1 else 0)) * perSlice
         g.reserveInstances(gridX * gridY)
         for (c in 0 until standing.coerceAtMost(gridX)) for (r in 0 until gridY) {
             g.rect(left + (c + 0.5f) * cw, FLOOR + (r + 0.5f) * ch, cw * 0.5f + 0.0005f, ch * 0.5f + 0.0005f, colors[r * gridX + c])
@@ -203,7 +208,7 @@ class SoapCutSim : Sim {
             for (i in 0 until cn) g.point(cx[i], cy[i], 0.008f, ccol[i])
         }
         // The knife.
-        if (cut < slices) {
+        if (cut < slices - 1) {
             val d = knifeDepth(phase)
             val x = cutX(cut)
             val tip = FLOOR + blockH * (1f - d)

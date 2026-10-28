@@ -193,7 +193,11 @@ class VideoExporter(
 
                 GLES30.glViewport(0, 0, settings.width, settings.height)
                 // The same pull-back the preview had, at the file's own shape.
-                scene.fit = core.fit()
+                // Eased as the live view eases it, so a sim that zooms (the
+                // ant pulling back) glides in the file too rather than steps.
+                val wantFit = core.fit()
+                scene.fit = if (time <= frameSeconds * 1.5f || kotlin.math.abs(wantFit - scene.fit) < 0.002f) wantFit
+                else scene.fit + (wantFit - scene.fit) * kotlin.math.min(1f, frameSeconds * EXPORT_FIT_RATE)
                 // The export's own frame time, so a 30 fps file gets the
                 // same trail length as the 60 fps preview rather than double.
                 scene.render(g, camera, allowed, frameSeconds)
@@ -452,3 +456,6 @@ class VideoExporter(
         const val AUDIO_SECONDS_PER_SECOND = 2f
     }
 }
+
+/** How fast an export's zoom follows a sim's, as the live view's does. */
+private const val EXPORT_FIT_RATE = 5f

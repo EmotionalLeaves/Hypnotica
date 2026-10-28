@@ -93,8 +93,9 @@ class PowerWashSim : Sim {
         // wall across. Tied to the cells, at high detail it shrank to a pin
         // and swept past too fast to shift anything.
         radius = gx * cell / JETS_ACROSS
-        // Strips a little narrower than the spray, so the sweep overlaps.
-        val stripH = radius * 1.5f
+        // Strips a little narrower than the spray as it is set, so the sweep
+        // overlaps: spaced for the default jet, a narrow one left whole bands.
+        val stripH = radius * env.params.f("spray", 1f).coerceIn(0.3f, 3f) * 1.5f
         strips = max(1, kotlin.math.ceil(gy * cell / stripH).toInt())
         // Paced for the sweep to take about this long.
         val path = strips * gx * cell
@@ -195,6 +196,10 @@ class PowerWashSim : Sim {
         val r1 = ((ny + r - oy) / cell).toInt().coerceIn(0, gy - 1)
         var cleaned = 0
         var tone = 0
+        // A narrower jet means more strips, so a faster sweep as well as a
+        // smaller spot: time over each cell goes with the square of the width.
+        val narrow = env.params.f("spray", 1f).coerceIn(0.3f, 1f)
+        val boost = env.params.f("pace", 1f).coerceAtLeast(1f) / (narrow * narrow)
         for (row in r0..r1) for (c in c0..c1) {
             val k = row * gx + c
             if (dirt[k] <= 0f) continue
@@ -202,7 +207,10 @@ class PowerWashSim : Sim {
             val d = sqrt(dx * dx + dy * dy)
             if (d > r) continue
             // Hardest at the middle of the jet.
-            dirt[k] -= h * BLAST * (1f - d / r * 0.6f)
+            // Faster passes blast harder, so each sweep shifts the same dirt
+            // whatever the pace: at four times the speed it shifted none.
+            // And a narrower jet blasts harder for the shorter time it's over a cell.
+            dirt[k] -= h * BLAST * boost * (1f - d / r * 0.6f)
             if (env.rng.nextFloat() < h * 25f) spray(env, ox + (c + 0.5f) * cell, oy + (row + 0.5f) * cell, GRIME)
             if (dirt[k] <= 0f) {
                 dirt[k] = 0f

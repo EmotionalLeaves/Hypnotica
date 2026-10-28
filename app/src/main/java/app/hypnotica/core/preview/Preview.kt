@@ -169,7 +169,8 @@ object Previews {
             index++
             i++
         }
-        if (fit < 1f) {
+        // Pulled back or closed in, as the player shows it; the card clips.
+        if (fit != 1f) {
             for (k in 0 until written) {
                 val base = k * Preview.STRIDE
                 for (f in 0 until 4) out[base + f] *= fit

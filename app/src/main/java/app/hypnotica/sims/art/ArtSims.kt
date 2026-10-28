@@ -90,7 +90,10 @@ class PolyrhythmSim : Sim {
                 val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
                 val r = inner + (outer - inner) * (i + 1f) / count
                 val c = palette.at(t)
-                g.ring(0f, 0f, r, 0.0022f, Palette.withAlpha(c, 0.35f), alpha = 0.6f)
+                val flash = hitFlash[i]
+                // The orbit lights up as its dot strikes the line; at rest a
+                // fifth of the way there it vanished on a phone.
+                g.ring(0f, 0f, r, 0.004f, Palette.withAlpha(c, 0.45f + 0.5f * flash), alpha = 0.55f + 0.45f * flash)
                 val phase = (elapsed / cycleSeconds) * loopsFor(i)
                 // Phase zero is the top, where the trigger line is drawn, and
                 // the wheels turn like clock hands.
@@ -104,9 +107,15 @@ class PolyrhythmSim : Sim {
                 val a = PI.toFloat() / 2f - (phase % 1f) * 2f * PI.toFloat()
                 val x = cos(a) * r
                 val y = sin(a) * r
-                val flash = hitFlash[i]
+                // A comet's tail behind it, back along the orbit.
+                for (k in 1..TAIL) {
+                    // Spaced by angle, not time: a fast orbit's tail came out
+                    // as a row of separate dots.
+                    val back = a + k * TAIL_STEP
+                    g.point(cos(back) * r, sin(back) * r, 0.028f * (1f - k / (TAIL + 1f)), Palette.withAlpha(c, 0.55f * (1f - k / (TAIL + 1f))))
+                }
                 g.glow(x, y, 0.05f + flash * 0.09f, c, 0.4f + flash * 0.5f)
-                g.disc(x, y, 0.016f + flash * 0.012f, Palette.brighten(c, flash * 0.5f))
+                g.disc(x, y, 0.024f + flash * 0.014f, Palette.brighten(c, flash * 0.5f))
             }
             g.line(0f, 0f, 0f, outer + 0.04f, 0.0025f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
         } else {
@@ -138,6 +147,9 @@ class PolyrhythmSim : Sim {
     )
 
     companion object {
+        const val TAIL = 10
+        /** Radians between the tail's dots, which overlap into a streak. */
+        const val TAIL_STEP = 0.035f
         fun def(): SimDef = SimDef(
             id = "art/polyrhythm",
             title = "Polyrhythm wheels",

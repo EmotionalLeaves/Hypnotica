@@ -647,14 +647,16 @@ class RandomWalkSim : Sim {
             val age = k.toFloat() / trailFill
             g.point(
                 trailX[idx] * viewScale, trailY[idx] * viewScale,
-                0.006f * (1.1f - age),
+                0.012f * (1.1f - age),
                 Palette.withAlpha(palette.at(0.2f + age * 0.6f), 1f - age * 0.85f)
             )
         }
         for (w in 0 until walkers) {
             Nd.project(pos, w * dims, dims, viewer, proj)
             val c = if (home[w]) Palette.SUCCESS else palette.at(w.toFloat() / max(1, walkers))
-            g.point(proj[0] * viewScale, proj[1] * viewScale, 0.011f, c)
+            // Big enough to follow on a phone: at a hundredth of the screen
+            // they were specks in an empty frame.
+            g.point(proj[0] * viewScale, proj[1] * viewScale, WALKER_SIZE, c)
         }
         // Home, at the same scale as everything else.
         g.ring(0f, 0f, (0.035f * viewScale).coerceIn(0.012f, 0.1f), 0.004f, Palette.SUCCESS, alpha = 0.8f)
@@ -669,6 +671,7 @@ class RandomWalkSim : Sim {
     )
 
     companion object {
+        const val WALKER_SIZE = 0.024f
         /**
          * Far enough back that a projection never divides by nearly zero. The
          * walk is scaled into view separately, so this only sets how strong the

@@ -753,6 +753,9 @@ class FourierSim : Sim {
             var x = 0f
             var y = 0f
             for (k in 0 until terms) {
+                // The circles too, not only the path: each reaches its own
+                // radius past where the arm has got to.
+                reach = max(reach, max(abs(x), abs(y)) + abs(amps[k]))
                 val a = freqs[k] * th + phases[k]
                 x += amps[k] * cos(a)
                 y += amps[k] * sin(a)
