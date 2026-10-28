@@ -27,6 +27,22 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **A beat under the sound.** The clips this app is modelled on always have a
+  track under them, and the thing on screen lands on its beat; here every sim
+  was one instrument with nothing under it, its notes at whatever moments the
+  algorithm happened to make them. Now a groove — four on the floor, half-time,
+  breakbeat or a slow drift — quantises the sim's notes to sixteenths, plays at
+  most a three-note chord per step, moves the whole scale through a four-chord
+  loop bar by bar, and plays a quiet kick, snare, hats and bass under it while
+  the sim is making sound. "Auto" gives each sim its own groove and tempo and
+  each TickTock clip a fresh one; Settings can pin one or turn it off. Exports
+  carry the same beat. Measured, the busiest sims went from all sixty-four
+  voices stolen and restolen to under thirty-five.
+- **Jam out of nowhere** (new): phantom traffic jams on a stadium track, cars
+  following the intelligent driver model, a jam wave rolling backwards with
+  brake lights; tap a car, or the big button, to stamp on the brakes.
+- The feed's time check is gone again: the app is meant to be hard to put down.
+
 - **A UX pass over the feed, player, Library and Settings.**
   - The feed was a hook, a title, three round buttons and two big ones over
     the sim. The big ones are gone: hold the sim for its controls (long-press

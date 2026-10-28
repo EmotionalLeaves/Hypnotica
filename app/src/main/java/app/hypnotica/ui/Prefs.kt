@@ -61,6 +61,11 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_SOUND, null)
         set(value) = sp.edit().putString(KEY_SOUND, value).apply()
 
+    /** The beat under the sound: "Auto", "Off" or a groove's name. */
+    var beat: String
+        get() = sp.getString(KEY_BEAT, BEAT_AUTO) ?: BEAT_AUTO
+        set(value) = sp.edit().putString(KEY_BEAT, value).apply()
+
     var volume: Float
         get() = sp.getFloat(KEY_VOLUME, 0.8f)
         set(value) = sp.edit().putFloat(KEY_VOLUME, value).apply()
@@ -138,6 +143,8 @@ class Prefs(context: Context) {
         const val KEY_FAVOURITES = "favourites"
         const val KEY_PALETTE = "palette"
         const val KEY_SOUND = "sound"
+        const val KEY_BEAT = "beat"
+        const val BEAT_AUTO = "Auto"
         const val KEY_VOLUME = "volume"
         const val KEY_CAMERA_DRAG = "cameraDrag"
         const val KEY_REDUCE_FLASH = "reduce_flashing"

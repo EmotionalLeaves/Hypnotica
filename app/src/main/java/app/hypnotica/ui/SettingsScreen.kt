@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import app.hypnotica.core.audio.Groove
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.withContext
@@ -81,6 +82,10 @@ fun SettingsScreen(state: AppState, versionName: String) {
         ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
             state.setSoundPreset(SoundPreset.NAMES[it])
         }
+        SectionLabel("Beat")
+        // Auto gives each sim its own groove; the names pin one everywhere.
+        val beats = listOf(Prefs.BEAT_AUTO) + Groove.NAMES
+        ChipRow(beats, beats.indexOf(state.beatName).coerceAtLeast(0)) { state.setBeat(beats[it]) }
         ValueSlider(
             label = "Volume",
             value = state.volume,

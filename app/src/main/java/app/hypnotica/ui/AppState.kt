@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import app.hypnotica.core.audio.Groove
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -267,6 +268,9 @@ class AppState(
      */
     var halted by mutableStateOf<String?>(null)
     var soundPresetName by mutableStateOf("8-bit")
+    /** The beat under the sound; see [setBeat]. */
+    var beatName by mutableStateOf(prefs?.beat ?: Prefs.BEAT_AUTO)
+        private set
     var songIndex by mutableIntStateOf(0)
     // These three write themselves through. Three screens changed them without
     // calling applySafety(), which is the only thing that saved them, so they
@@ -558,6 +562,7 @@ class AppState(
         val sound = chosenSound ?: def.defaultSound
         paletteName = palette
         soundPresetName = sound
+        applyBeat(def.id.hashCode().toLong())
         // keepLook stops the engine re-applying the sim's own defaults on the
         // next GL frame, which is what used to undo the person's choice.
         engine.loadSim(def, restartSeed, keepLook = true)
@@ -588,6 +593,33 @@ class AppState(
         engine.setPalette(name)
         chosenPalette = name
         prefs?.paletteName = name
+    }
+
+    /**
+     * The beat under the sound. "Auto" gives each sim a groove of its own —
+     * the same one every time you meet it, its tempo nudged so no two feel
+     * alike — and TickTock a fresh one per clip. Every sim used to sound like
+     * one instrument with nothing under it, which is a lot of sameness for an
+     * endless feed.
+     */
+    fun setBeat(name: String) {
+        beatName = name
+        prefs?.beat = name
+        applyBeat(currentDef.id.hashCode().toLong())
+    }
+
+    /** Pick the groove for what is about to play; [key] varies it under Auto. */
+    private fun applyBeat(key: Long) {
+        engine.mapping.groove = when (beatName) {
+            "Off" -> null
+            Prefs.BEAT_AUTO -> {
+                val mix = (key xor (key ushr 29)) * 0x9E3779B97F4A7C15uL.toLong()
+                val pick = Groove.ALL[((mix ushr 33) % Groove.ALL.size).toInt()]
+                val nudge = (((mix ushr 13) and 0xFF).toInt() / 255f - 0.5f) * 0.16f
+                pick.withTempo(pick.bpm * (1f + nudge))
+            }
+            else -> Groove.byName(beatName)
+        }
     }
 
     fun setSoundPreset(name: String) {
@@ -833,6 +865,7 @@ class AppState(
     /** Load and start a generated clip exactly as the director checked it. */
     fun playClip(clip: Clip) {
         currentDef = clip.def
+        applyBeat(clip.seed)
         paletteName = clip.palette
         soundPresetName = clip.soundPreset
         laws = clip.laws

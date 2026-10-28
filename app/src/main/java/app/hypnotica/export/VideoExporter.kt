@@ -57,6 +57,8 @@ class VideoExporter(
     private val paletteName: String,
     private val soundPresetName: String,
     private val params: Map<String, Float>,
+    /** The beat the preview played under the sound, or null for none. */
+    private val groove: app.hypnotica.core.audio.Groove? = null,
     private val settings: ExportSettings = ExportSettings.VERTICAL,
     /** The look the player had, used wherever a track has nothing to say. */
     private val trails: Float = 0f,
@@ -131,6 +133,7 @@ class VideoExporter(
             val synth = Synth()
             val mapping = SoundMapping(synth)
             mapping.applyPreset(SoundPreset.byName(soundPresetName))
+            mapping.groove = groove
 
             val camera = Camera()
             val overlay = TextOverlay().also { it.prepare() }

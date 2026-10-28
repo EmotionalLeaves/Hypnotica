@@ -210,6 +210,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             laws = state.laws,
                             paletteName = state.paletteName,
                             soundPresetName = state.soundPresetName,
+                            groove = state.engine.mapping.groove,
                             params = state.engine.core.params.snapshot(),
                             settings = settings,
                             trails = state.trails,

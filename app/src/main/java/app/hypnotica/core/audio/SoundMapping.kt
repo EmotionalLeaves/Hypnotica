@@ -54,6 +54,31 @@ class SoundMapping(private val synth: Synth) {
     @Volatile
     var onHaptic: ((Float) -> Unit)? = null
 
+    /**
+     * The beat under the sim, or null for none. See [Groove]. Written from the
+     * UI thread, read here; a reference swap, so volatile is enough.
+     */
+    @Volatile
+    var groove: Groove? = Groove.FOUR
+
+    // The groove's clock and the notes waiting for the next sixteenth.
+    private var clock = 0.0
+    private var nextStep = 0L
+    private var activity = 0f
+    private var quietFor = 10f
+    private val heldHz = FloatArray(MAX_HELD)
+    private val heldPan = FloatArray(MAX_HELD)
+    private val heldStrength = FloatArray(MAX_HELD)
+    private val heldType = arrayOfNulls<VoiceType>(MAX_HELD)
+    private var held = 0
+
+    /** Start the groove's bar over, as a new run starts. */
+    fun resetGroove() {
+        clock = 0.0
+        nextStep = 0L
+        held = 0
+    }
+
     /** Optional melody: when set, each event plays the next note of the tune. */
     var song: Song? = null
     private var songIndex = 0
@@ -134,6 +159,81 @@ class SoundMapping(private val synth: Synth) {
             budget -= 1f
             flushMerged()
         }
+
+        val g = groove
+        if (g != null) {
+            // The kit plays while the sim does: in within a third of a second
+            // of the first note, out over a couple once the notes stop.
+            if (seen > 0) quietFor = 0f else quietFor += frameSeconds
+            val target = if (quietFor < QUIET_AFTER) 1f else 0f
+            val rate = if (target > activity) 3f else 0.6f
+            activity += (target - activity) * min(1f, frameSeconds * rate)
+            clock += frameSeconds
+            val due = (clock / g.stepSeconds).toLong()
+            var guard = 0
+            while (nextStep <= due && guard < 4) {
+                onStep(g, nextStep)
+                nextStep++
+                guard++
+            }
+            if (nextStep <= due) nextStep = due + 1
+        } else if (held > 0) {
+            releaseHeld(0)
+        }
+    }
+
+    /** One sixteenth of the groove: the kit, the bass, and the notes that waited for it. */
+    private fun onStep(g: Groove, step: Long) {
+        val inBar = (step % 16).toInt()
+        val bar = step / 16
+        val root = g.rootAt(bar)
+        releaseHeld(root)
+        val level = activity * preset.gain * GROOVE_LEVEL
+        if (level < 0.002f || preset.silent) return
+        if (inBar in g.kick) synth.note(KICK_HZ, 0.55f * level, 0f, VoiceType.SINE, 0.11f)
+        if (inBar in g.snare) synth.note(SNARE_HZ, 0.22f * level, 0f, VoiceType.NOISE, 0.07f)
+        if (inBar in g.hat) synth.note(HAT_HZ, 0.08f * level, if (inBar % 4 == 2) 0.3f else -0.3f, VoiceType.NOISE, 0.022f)
+        if (inBar in g.bass) {
+            var hz = baseHz * 0.5f * Math.pow(2.0, root / 12.0).toFloat()
+            while (hz > BASS_CEILING) hz *= 0.5f
+            while (hz < MIN_HZ * 1.5f) hz *= 2f
+            synth.note(hz, 0.30f * level, 0f, VoiceType.TRIANGLE, if (inBar == 0) 0.32f else 0.16f)
+        }
+    }
+
+    /**
+     * Play what was held for this step, a chord of at most [PER_STEP] notes: the
+     * strongest, with the rest folded into their loudness rather than lost.
+     */
+    private fun releaseHeld(root: Int) {
+        if (held == 0) return
+        val shift = Math.pow(2.0, root / 12.0).toFloat()
+        var spare = 0f
+        var played = 0
+        while (played < PER_STEP && played < held) {
+            var best = played
+            for (i in played + 1 until held) if (heldStrength[i] > heldStrength[best]) best = i
+            swapHeld(played, best)
+            played++
+        }
+        for (i in played until held) spare += heldStrength[i] * 0.15f
+        for (i in 0 until played) {
+            var hz = heldHz[i] * shift
+            while (hz > safety.maxHz) hz *= 0.5f
+            if (hz < MIN_HZ) hz = MIN_HZ
+            val strength = (heldStrength[i] + spare / played).coerceAtMost(1f)
+            val amp = (0.10f + 0.28f * strength) * preset.gain
+            synth.note(hz, amp.coerceAtMost(0.75f), heldPan[i], heldType[i] ?: preset.voice, decay)
+        }
+        held = 0
+    }
+
+    private fun swapHeld(a: Int, b: Int) {
+        if (a == b) return
+        val h = heldHz[a]; heldHz[a] = heldHz[b]; heldHz[b] = h
+        val p = heldPan[a]; heldPan[a] = heldPan[b]; heldPan[b] = p
+        val s = heldStrength[a]; heldStrength[a] = heldStrength[b]; heldStrength[b] = s
+        val t = heldType[a]; heldType[a] = heldType[b]; heldType[b] = t
     }
 
     /** Nothing below this is a note; the transposer stops here. */
@@ -198,6 +298,21 @@ class SoundMapping(private val synth: Synth) {
             EventKind.DEATH -> VoiceType.CLICK
             else -> preset.voice
         }
+        if (groove != null) {
+            // Held for the next sixteenth. A full hand folds into its loudest.
+            if (held < MAX_HELD) {
+                heldHz[held] = hz
+                heldPan[held] = pan
+                heldStrength[held] = strength.coerceIn(0f, 1f)
+                heldType[held] = type
+                held++
+            } else {
+                var loudest = 0
+                for (i in 1 until held) if (heldStrength[i] > heldStrength[loudest]) loudest = i
+                heldStrength[loudest] = (heldStrength[loudest] + 0.05f).coerceAtMost(1f)
+            }
+            return
+        }
         val amp = (0.10f + 0.28f * strength.coerceIn(0f, 1f)) * preset.gain
         val dec = decay
         synth.note(hz, amp.coerceAtMost(0.75f), pan, type, dec)
@@ -215,6 +330,20 @@ class SoundMapping(private val synth: Synth) {
     private fun fittedOctaves(): Float {
         val room = ln(safety.maxHz / baseHz.coerceAtLeast(MIN_HZ)) / LN2
         return octaves.coerceAtMost(room.coerceAtLeast(1f))
+    }
+
+    private companion object {
+        const val MAX_HELD = 32
+        /** Notes released on one sixteenth, at most: a chord, not a cluster. */
+        const val PER_STEP = 3
+        /** The kit's level against the sim's own notes. */
+        const val GROOVE_LEVEL = 0.55f
+        /** Seconds without a note before the kit starts to fade. */
+        const val QUIET_AFTER = 1.5f
+        const val KICK_HZ = 58f
+        const val SNARE_HZ = 1800f
+        const val HAT_HZ = 6000f
+        const val BASS_CEILING = 220f
     }
 }
 

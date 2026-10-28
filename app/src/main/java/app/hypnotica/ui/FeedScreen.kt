@@ -137,18 +137,6 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     var height by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
 
-    // The time check, if it is on. It only ran in TickTock, and the feed is
-    // the app's main endless scroll — the one the setting is for.
-    var minutesHere by remember { mutableIntStateOf(0) }
-    var showTimeCheck by remember { mutableStateOf(false) }
-    LaunchedEffect(state.timeCheckMinutes) {
-        if (state.timeCheckMinutes <= 0) return@LaunchedEffect
-        while (true) {
-            delay(60_000)
-            minutesHere++
-            if (minutesHere % state.timeCheckMinutes == 0) showTimeCheck = true
-        }
-    }
 
     fun go(step: Int) {
         hint = false
@@ -322,31 +310,6 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // is the sim, a title and four glyphs.
         }
 
-        // Over everything, faded chrome or not.
-        AnimatedVisibility(
-            visible = showTimeCheck,
-            enter = fadeIn(tween(Tokens.Base)),
-            exit = fadeOut(tween(Tokens.Slow)),
-            modifier = Modifier.align(Alignment.Center).padding(24.dp)
-        ) {
-            GlassCard {
-                Column {
-                    Text(
-                        "You have been watching for $minutesHere minutes.",
-                        color = Tokens.TextPrimary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Pill("Keep going") { showTimeCheck = false }
-                        Pill("Take a break") {
-                            showTimeCheck = false
-                            if (!state.paused) state.togglePause()
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
