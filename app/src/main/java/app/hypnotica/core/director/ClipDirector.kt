@@ -256,7 +256,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             params = params,
             laws = laws,
             format = format,
-            caption = format.hook,
+            caption = format.hooks[rng.int(0, format.hooks.size)],
             palette = palette,
             soundPreset = def.defaultSound,
             // Most clips crisp, some smeared: the smear is part of the variety

@@ -63,7 +63,32 @@ enum class TrapFormat(val title: String, val hook: String) {
     LAST_STANDING("Last one standing", "Last one standing"),
     LOOP("Perfect loop", "It never restarts"),
     GUESS("Guess the winner", "Guess before it ends"),
-    SNAP("Slow build, sudden snap", "Wait for it")
+    SNAP("Slow build, sudden snap", "Wait for it");
+
+    /**
+     * Every line this format may be captioned with: [hook] first, then a few
+     * more, each as true of every sim in the format as the hook is. One line
+     * per format meant TickTock's headline repeated every time a format came
+     * round, which in an endless feed is every few swipes.
+     */
+    val hooks: List<String>
+        get() = listOf(hook) + when (this) {
+            ESCAPE -> listOf("Is it getting out?", "Find the gap")
+            RACE -> listOf("Who gets there first?", "Choose one now")
+            COLOR_BATTLE -> listOf("Pick a side", "Who takes the screen?")
+            NUMBER_UP -> listOf("Watch the number", "Guess where it ends up")
+            CHAIN -> listOf("Watch it spread", "It only takes one")
+            PERFECT_FIT -> listOf("Will it fit?", "Everything in its place")
+            CUT -> listOf("Something is about to give", "Hold on")
+            REVEAL -> listOf("Keep watching", "It is hiding something")
+            FILL -> listOf("Almost full", "Fill it up")
+            GROW -> listOf("From nothing", "Keep watching it grow")
+            SONG -> listOf("Sound on", "Listen to it")
+            LAST_STANDING -> listOf("Who survives?", "Pick the survivor")
+            LOOP -> listOf("It never starts over", "Watch the loop")
+            GUESS -> listOf("Call it now", "What happens next?")
+            SNAP -> listOf("Not yet…", "Any second now")
+        }
 }
 
 /** Touch input handed to a sim. */
