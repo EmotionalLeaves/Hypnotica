@@ -27,6 +27,13 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **Tunes.** Song mode had three scale walks. It now has six melodies everyone
+  knows, all long out of copyright — Ode to Joy, Twinkle Twinkle, Für Elise,
+  Korobeiniki, Greensleeves, Pachelbel's Canon — and on a beat a tune moves on
+  one note an eighth, in its own key, whatever the sim is doing: a sort makes
+  dozens of events a step and used to blur through a melody in a second.
+  TickTock's song clips each get a tune.
+
 - **Kaleidoscope clips.** About a third of TickTock's clips of sims drawn round
   their centre — the spirograph, the chaos game, the pendulum fan — are folded
   three, four or six ways. The fold is applied to the finished draw list, so

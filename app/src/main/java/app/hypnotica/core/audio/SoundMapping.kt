@@ -4,6 +4,7 @@ import app.hypnotica.core.safety.SafetySettings
 import app.hypnotica.core.sim.EventKind
 import app.hypnotica.core.sim.EventQueue
 import kotlin.math.ln
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -187,7 +188,7 @@ class SoundMapping(private val synth: Synth) {
         val inBar = (step % 16).toInt()
         val bar = step / 16
         val root = g.rootAt(bar)
-        releaseHeld(root)
+        releaseHeld(root, step)
         val level = activity * preset.gain * GROOVE_LEVEL
         if (level < 0.002f || preset.silent) return
         if (inBar in g.kick) synth.note(KICK_HZ, 0.55f * level, 0f, VoiceType.SINE, 0.11f)
@@ -205,8 +206,25 @@ class SoundMapping(private val synth: Synth) {
      * Play what was held for this step, a chord of at most [PER_STEP] notes: the
      * strongest, with the rest folded into their loudness rather than lost.
      */
-    private fun releaseHeld(root: Int) {
+    private fun releaseHeld(root: Int, step: Long = 0L) {
         if (held == 0) return
+        val tune = song
+        if (tune != null && tune.notes.isNotEmpty() && heldHz[0] == SONG_NOTE) {
+            // A tune is one note an eighth, its own key — the chord loop would
+            // bend a melody everyone knows into one nobody does.
+            if (step % 2L != 0L) return
+            var strength = 0f
+            var pan = 0f
+            for (i in 0 until held) { strength = max(strength, heldStrength[i]); pan += heldPan[i] }
+            val n = tune.notes[songIndex % tune.notes.size]
+            songIndex++
+            var hz = 440f * Math.pow(2.0, ((n - 69) / 12.0)).toFloat()
+            while (hz > safety.maxHz) hz *= 0.5f
+            val amp = (0.14f + 0.3f * strength) * preset.gain
+            synth.note(hz, amp.coerceAtMost(0.75f), pan / held, preset.voice, max(decay, 0.18f))
+            held = 0
+            return
+        }
         val shift = Math.pow(2.0, root / 12.0).toFloat()
         var spare = 0f
         var played = 0
@@ -226,6 +244,21 @@ class SoundMapping(private val synth: Synth) {
             synth.note(hz, amp.coerceAtMost(0.75f), heldPan[i], heldType[i] ?: preset.voice, decay)
         }
         held = 0
+    }
+
+    /** Held for the next sixteenth. A full hand folds into its loudest. */
+    private fun hold(hz: Float, pan: Float, strength: Float, type: VoiceType) {
+        if (held < MAX_HELD) {
+            heldHz[held] = hz
+            heldPan[held] = pan
+            heldStrength[held] = strength.coerceIn(0f, 1f)
+            heldType[held] = type
+            held++
+        } else {
+            var loudest = 0
+            for (i in 1 until held) if (heldStrength[i] > heldStrength[loudest]) loudest = i
+            heldStrength[loudest] = (heldStrength[loudest] + 0.05f).coerceAtMost(1f)
+        }
     }
 
     private fun swapHeld(a: Int, b: Int) {
@@ -274,6 +307,13 @@ class SoundMapping(private val synth: Synth) {
         advanceSong: Boolean = true
     ) {
         val tune = song
+        if (groove != null && tune != null && tune.notes.isNotEmpty()) {
+            // On a beat, a tune advances once per step it sounds on, not once
+            // per event: a sort makes dozens of events a step, and the melody
+            // ran through itself in a blur. The event only says "a note now".
+            hold(SONG_NOTE, pan, strength, preset.voice)
+            return
+        }
         var hz = if (tune != null && tune.notes.isNotEmpty()) {
             val n = tune.notes[songIndex % tune.notes.size]
             // A merged burst is one note, not one per event it swallowed: the
@@ -299,18 +339,7 @@ class SoundMapping(private val synth: Synth) {
             else -> preset.voice
         }
         if (groove != null) {
-            // Held for the next sixteenth. A full hand folds into its loudest.
-            if (held < MAX_HELD) {
-                heldHz[held] = hz
-                heldPan[held] = pan
-                heldStrength[held] = strength.coerceIn(0f, 1f)
-                heldType[held] = type
-                held++
-            } else {
-                var loudest = 0
-                for (i in 1 until held) if (heldStrength[i] > heldStrength[loudest]) loudest = i
-                heldStrength[loudest] = (heldStrength[loudest] + 0.05f).coerceAtMost(1f)
-            }
+            hold(hz, pan, strength, type)
             return
         }
         val amp = (0.10f + 0.28f * strength.coerceIn(0f, 1f)) * preset.gain
@@ -334,6 +363,8 @@ class SoundMapping(private val synth: Synth) {
 
     private companion object {
         const val MAX_HELD = 32
+        /** A held note that stands for "the tune's next note". */
+        const val SONG_NOTE = -1f
         /** Notes released on one sixteenth, at most: a chord, not a cluster. */
         const val PER_STEP = 3
         /** The kit's level against the sim's own notes. */
@@ -373,7 +404,53 @@ data class Song(val name: String, val notes: IntArray) {
             intArrayOf(60, 63, 65, 67, 70, 72, 70, 67, 65, 63)
         )
 
-        val ALL = listOf(NONE, ASCENDING, ARPEGGIO, PENTATONIC_WALK)
+        // Tunes everyone knows, all long out of copyright: a sim playing one
+        // note per event is the oldest trick in the clips this app is built
+        // on, and a melody the ear recognises is what makes it land.
+        val ODE_TO_JOY = Song(
+            "Ode to Joy",
+            intArrayOf(
+                64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62,
+                64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 62, 60, 60,
+                62, 62, 64, 60, 62, 64, 65, 64, 60, 62, 64, 65, 64, 62, 60, 62, 55,
+                64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 62, 60, 60
+            )
+        )
+        val TWINKLE = Song(
+            "Twinkle twinkle",
+            intArrayOf(
+                60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60,
+                67, 67, 65, 65, 64, 64, 62, 67, 67, 65, 65, 64, 64, 62,
+                60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60
+            )
+        )
+        val FUR_ELISE = Song(
+            "Für Elise",
+            intArrayOf(
+                76, 75, 76, 75, 76, 71, 74, 72, 69, 60, 64, 69, 71, 64, 68, 71, 72, 64,
+                76, 75, 76, 75, 76, 71, 74, 72, 69, 60, 64, 69, 71, 64, 72, 71, 69
+            )
+        )
+        val KOROBEINIKI = Song(
+            "Korobeiniki",
+            intArrayOf(
+                76, 71, 72, 74, 72, 71, 69, 69, 72, 76, 74, 72, 71, 72, 74, 76, 72, 69, 69,
+                74, 77, 81, 79, 77, 76, 72, 76, 74, 72, 71, 71, 72, 74, 76, 72, 69, 69
+            )
+        )
+        val GREENSLEEVES = Song(
+            "Greensleeves",
+            intArrayOf(69, 72, 74, 76, 77, 76, 74, 71, 67, 69, 71, 72, 69, 69, 68, 69, 71, 68, 64)
+        )
+        val CANON = Song(
+            "Canon",
+            intArrayOf(78, 76, 74, 73, 71, 69, 71, 73, 74, 73, 71, 69, 67, 66, 67, 64)
+        )
+
+        /** The tunes a clip may be given, not counting the scale walks. */
+        val TUNES = listOf(ODE_TO_JOY, TWINKLE, FUR_ELISE, KOROBEINIKI, GREENSLEEVES, CANON)
+
+        val ALL = listOf(NONE, ASCENDING, ARPEGGIO, PENTATONIC_WALK) + TUNES
         val NAMES: List<String> = ALL.map { it.name }
         fun byIndex(i: Int): Song = ALL[i.coerceIn(0, ALL.size - 1)]
     }

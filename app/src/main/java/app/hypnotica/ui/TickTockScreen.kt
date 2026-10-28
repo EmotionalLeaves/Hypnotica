@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import app.hypnotica.core.audio.Song
 import app.hypnotica.core.sim.TrapFormat
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedContent
@@ -185,6 +186,11 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         // Some clips are folded into a kaleidoscope: three, four or six ways,
         // from the clip's seed. The engine only folds sims drawn round their
         // centre, so a sort or a grid is never turned into confetti.
+        // A song clip plays a tune everyone knows, one note per hit.
+        state.engine.setSong(
+            if (clip.format == TrapFormat.SONG) Song.TUNES[((clip.seed ushr 23) and 0xFFFF).toInt() % Song.TUNES.size]
+            else Song.NONE
+        )
         val roll = ((clip.seed ushr 17) and 0xFF).toInt()
         state.engine.kaleido = when {
             roll < 40 -> 6
@@ -316,6 +322,8 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     DisposableEffect(Unit) {
         onDispose {
             state.engine.kaleido = 1
+            // Back to whatever song the person had chosen, usually none.
+            state.engine.setSong(Song.byIndex(state.songIndex))
             state.engine.onFinished = null
             // Generation is a long CPU burn on the shared dispatcher, and
             // leaving the screen used not to stop it: the work carried on
