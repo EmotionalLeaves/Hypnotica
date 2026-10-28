@@ -418,28 +418,33 @@ class CurvedSpaceSim : Sim {
         for (r in 0 until rays) {
             var x = -halfW * 1.02f
             var y = -RAY_SPAN + r * (2f * RAY_SPAN / max(1, rays - 1))
-            var dx = 1f
-            var dy = 0f
+            var vx = 1f
+            var vy = 0f
             var n = 0
             val step = 0.012f
-            while (n < pathX[r].size && x < halfW * 1.02f) {
-                // Light bends twice as much as Newton would say: a sideways
-                // pull of rs/r² per unit of path, which summed along a
-                // passing ray is Einstein's 2·rs/b. It used to fall off as
-                // 1/r, so far rays bent as if the mass were everywhere.
+            // The path of light past a mass, exactly as general relativity
+            // has it. Its shape obeys u'' + u = (3/2)·rs·u² (u = 1/r), and a
+            // particle pulled by (3/2)·rs·h²/r⁴ towards the mass, h its
+            // angular momentum, traces that same shape: so it is pushed by
+            // that, and only the shape of its path is kept. Far out this is
+            // Einstein's 2·rs/b; close in it is the real thing, and a ray
+            // aimed within 3√3/2·rs spirals in for good.
+            val h = abs((x - massX) * vy - (y - massY) * vx)
+            val k = 1.5f * rs * h * h
+            while (n < pathX[r].size && x < halfW * 1.02f && abs(y) < 2f) {
                 val ddx = massX - x
                 val ddy = massY - y
                 val d = sqrt(ddx * ddx + ddy * ddy)
                 // Inside the photon sphere, 1.5 rs, light can't get out again.
                 if (d < 1.5f * rs) { captured++; break }
-                val pull = rs * step / (d * d * d)
-                dx += ddx * pull
-                dy += ddy * pull
-                val len = hypot(dx, dy)
-                dx /= len
-                dy /= len
-                x += dx * step
-                y += dy * step
+                // A step of fixed length along the path, whatever the speed.
+                val speed = hypot(vx, vy)
+                val dt = step / speed
+                val a = k / (d * d * d * d * d)
+                vx += ddx * a * dt
+                vy += ddy * a * dt
+                x += vx * dt
+                y += vy * dt
                 pathX[r][n] = x
                 pathY[r][n] = y
                 n++
@@ -522,8 +527,9 @@ class CurvedSpaceSim : Sim {
     override fun onInput(env: SimEnv, e: TouchEvent) {
         if (e.kind == TouchEvent.Kind.DRAG || e.kind == TouchEvent.Kind.TAP) {
             massX = e.x
-            // The screen shows the surface tilted: undo it to find the spot.
-            massY = e.y / COS_TILT
+            // The screen shows the surface tilted, with the mass at the
+            // bottom of its well: undo both to put it under the finger.
+            massY = (e.y + zFar * SIN_TILT) / COS_TILT
         }
     }
 

@@ -158,8 +158,13 @@ class HypercubeSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val n = nv
-        val scale = 0.62f
-        val viewer = env.params.f("viewer", 3f)
+        // The slider is how far back the viewer sits, in units of the
+        // distance that keeps this many nested perspectives tame: a raw
+        // distance of 3 was fine for a tesseract and threw a 6-cube's
+        // corners off the screen, and to infinity at the slider's end.
+        val radius = 0.5f * sqrt(dims.toFloat())
+        val viewer = Nd.viewerFor(radius, dims) * env.params.f("viewer", 3f) / 3f
+        val scale = SCREEN_REACH / radius
         for (i in 0 until n) {
             Nd.project(verts, i * dims, dims, viewer, proj)
             screenX[i] = proj[0] * scale
@@ -226,6 +231,8 @@ class HypercubeSim : Sim {
          */
         const val SLOW_TURN_SECONDS = 14f
         val SHAPES = listOf("Hypercube", "Cross-polytope", "Simplex", "24-cell")
+        /** The shape's corners reach about this far on screen, at their widest. */
+        const val SCREEN_REACH = 0.52f
 
         fun def(): SimDef = SimDef(
             id = "dimensions/hypercube",
@@ -252,7 +259,7 @@ class HypercubeSim : Sim {
                 Param.int("planeB", "Spin plane, second axis", 0, Nd.MAX_DIMS - 1, 3, card = Card.MOTION),
                 Param.float("spin", "Spin", 0.05f, 2f, 0.55f, card = Card.MOTION),
                 Param.float("tilt", "Tilt", 0f, 1.5f, 0.22f, card = Card.MOTION),
-                Param.float("viewer", "Viewer distance", 1.6f, 8f, 3f, card = Card.LOOK)
+                Param.float("viewer", "Viewer distance", 2.4f, 8f, 3f, card = Card.LOOK)
             ),
             create = { HypercubeSim() }
         )
@@ -304,6 +311,20 @@ class SlicingSim : Sim {
     private var lastCorners = -1
     private var sliceEdges = IntArray(0)
     private var sliceEdgeN = 0
+    // For each slice corner, the edge it lies on and how far along (a vertex
+    // on the plane is its own edge, a to a): so the side view can put it on
+    // the edge as drawn.
+    private var sliceA = IntArray(0)
+    private var sliceB = IntArray(0)
+    private var sliceT = FloatArray(0)
+    private var vertSlice = IntArray(0)
+    private val seen = HashSet<Long>()
+    /** The sweep's ends and middle, along w. */
+    private var lo = -1f
+    private var hi = 1f
+    private var mid = 0f
+    /** Where the cut is drawn this frame: the plane's height, or exactly the middle on the frame nearest it. */
+    private var cutPos = 0f
     private var tmp = FloatArray(0)
     private val proj = FloatArray(3)
     private var sx = FloatArray(0)
@@ -334,22 +355,26 @@ class SlicingSim : Sim {
             }
         }
         val ne = edges.size / 2
-        crossAt = IntArray(ne)
-        slice = FloatArray(max(1, ne) * dims)
-        sideX = FloatArray(max(1, ne))
-        sliceEdges = IntArray(max(2, faces.size / faceSize * 2))
-        tmp = FloatArray(dims)
         val nv = if (dims > 0) verts.size / dims else 0
+        crossAt = IntArray(ne)
+        val most = max(1, ne + nv)
+        slice = FloatArray(most * dims)
+        sideX = FloatArray(most)
+        sliceA = IntArray(most); sliceB = IntArray(most); sliceT = FloatArray(most)
+        vertSlice = IntArray(max(1, nv))
+        sliceEdges = IntArray(max(2, faces.size / faceSize * 2 + ne * 2))
+        tmp = FloatArray(dims)
         sx = FloatArray(max(1, nv)); sy = FloatArray(max(1, nv)); sd = FloatArray(max(1, nv))
-        extent = when (shape) {
-            0, 4 -> radius
-            else -> {
-                var m = 0f
-                for (i in 0 until nv) m = max(m, abs(verts[i * dims + dims - 1]))
-                m
-            }
+        // From the object's lowest point to its highest along w — not
+        // symmetric for a simplex standing on its point.
+        if (shape == 0 || shape == 4) { lo = -radius; hi = radius } else {
+            lo = Float.MAX_VALUE; hi = -Float.MAX_VALUE
+            for (i in 0 until nv) { val w = verts[i * dims + dims - 1]; lo = min(lo, w); hi = max(hi, w) }
         }
-        position = -extent * SWEEP
+        mid = (lo + hi) * 0.5f
+        extent = (hi - lo) * 0.5f
+        position = mid - extent * SWEEP
+        cutPos = position
         direction = 1f
         payoffFrame = false
         passes = 0
@@ -357,7 +382,7 @@ class SlicingSim : Sim {
         elapsed = 0f
         viewAngle = 0f
         lastCorners = -1
-        cut()
+        cut(cutPos)
     }
 
     /** Every square face of the N-cube, as the four edges round it. */
@@ -421,8 +446,13 @@ class SlicingSim : Sim {
         // time to pass whatever its size along w.
         position += direction * speed * extent * dt
         val reach = extent * SWEEP
-        if (position > reach) { position = reach; direction = -1f; passes++ }
-        if (position < -reach) { position = -reach; direction = 1f; passes++ }
+        if (position > mid + reach) { position = mid + reach; direction = -1f; passes++ }
+        if (position < mid - reach) { position = mid - reach; direction = 1f; passes++ }
+        // On the one frame nearest the middle, the cut is drawn exactly
+        // there, so the slice it promises — the octahedron in a 4-cube
+        // going corner first — is the one seen, not one a hair off it.
+        val half = speed * extent * h * 0.5f
+        cutPos = if (abs(position - mid) <= half) mid else position
         // Tumbling: the object turns through planes that take in w, so the
         // slice changes shape as well as size.
         if (shape == 4) {
@@ -430,7 +460,7 @@ class SlicingSim : Sim {
             Nd.rotatePlane(verts, nv, dims, 0, dims - 1, h * 0.23f)
             if (dims >= 3) Nd.rotatePlane(verts, nv, dims, 1, dims - 1, h * 0.17f)
         }
-        cut()
+        cut(cutPos)
         // Each corner passing through the flat world is a note: the slice
         // gaining or losing a corner is an event the flat world sees.
         if (shape != 0 && sliceN != lastCorners) {
@@ -447,48 +477,82 @@ class SlicingSim : Sim {
             }
         }
         // The payoff: the middle of the object passing through.
-        if (!peaked && abs(position) < extent * 0.02f + 0.004f) {
+        if (!peaked && cutPos == mid) {
             peaked = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
-        if (abs(position) > extent * 0.6f) peaked = false
+        if (abs(position - mid) > extent * 0.6f) peaked = false
     }
 
-    /** The slice at the current height, corners and edges, worked out exactly. */
-    private fun cut() {
+    /**
+     * The slice at height [at], corners and edges, worked out exactly. A
+     * corner of the object lying on the plane is one corner of the slice,
+     * however many edges meet there; it used to count once per edge, and the
+     * octahedron came out as twelve corners with six edges of no length.
+     */
+    private fun cut(at: Float) {
         sliceN = 0
         sliceEdgeN = 0
         if (shape == 0) return
         val d = dims
         val w = d - 1
         val ne = edges.size / 2
+        val nv = verts.size / d
+        val eps = 1e-5f * radius
+        for (v in 0 until nv) {
+            vertSlice[v] = -1
+            if (abs(verts[v * d + w] - at) < eps) {
+                for (k in 0 until d) slice[sliceN * d + k] = verts[v * d + k]
+                sliceA[sliceN] = v; sliceB[sliceN] = v; sliceT[sliceN] = 0f
+                vertSlice[v] = sliceN++
+            }
+        }
         for (e in 0 until ne) {
             crossAt[e] = -1
             val a = edges[2 * e]; val b = edges[2 * e + 1]
-            val wa = verts[a * d + w] - position; val wb = verts[b * d + w] - position
+            val onA = vertSlice[a]; val onB = vertSlice[b]
+            if (onA >= 0 && onB >= 0) { crossAt[e] = IN_PLANE; continue }
+            if (onA >= 0) { crossAt[e] = onA; continue }
+            if (onB >= 0) { crossAt[e] = onB; continue }
+            val wa = verts[a * d + w] - at; val wb = verts[b * d + w] - at
             if ((wa < 0f) == (wb < 0f)) continue
             val t = wa / (wa - wb)
             for (k in 0 until d) slice[sliceN * d + k] = verts[a * d + k] + (verts[b * d + k] - verts[a * d + k]) * t
+            sliceA[sliceN] = a; sliceB[sliceN] = b; sliceT[sliceN] = t
             crossAt[e] = sliceN
             sliceN++
         }
-        // A face the plane crosses is cut in one segment, between the two of
-        // its edges that cross.
+        // A face the plane cuts across meets it in one segment, between its
+        // two distinct crossing corners; a face's edge lying in the plane is
+        // an edge of the slice outright.
+        seen.clear()
         var f = 0
         while (f < faces.size) {
             var p = -1; var q = -1
             for (k in 0 until faceSize) {
-                val c = crossAt[faces[f + k]]
+                val e = faces[f + k]
+                val c = crossAt[e]
+                if (c == IN_PLANE) {
+                    addEdge(vertSlice[edges[2 * e]], vertSlice[edges[2 * e + 1]])
+                    continue
+                }
                 if (c < 0) continue
-                if (p < 0) p = c else if (q < 0) q = c
+                if (p < 0) p = c else if (c != p && q < 0) q = c
             }
-            if (p >= 0 && q >= 0) { sliceEdges[2 * sliceEdgeN] = p; sliceEdges[2 * sliceEdgeN + 1] = q; sliceEdgeN++ }
+            if (p >= 0 && q >= 0) addEdge(p, q)
             f += faceSize
         }
     }
 
-    private fun sliceRadius(): Float = Nd.sliceRadius(radius, position)
+    private fun addEdge(p: Int, q: Int) {
+        if (p == q || p < 0 || q < 0) return
+        if (!seen.add(min(p, q).toLong() * 100000L + max(p, q))) return
+        sliceEdges[2 * sliceEdgeN] = p; sliceEdges[2 * sliceEdgeN + 1] = q
+        sliceEdgeN++
+    }
+
+    private fun sliceRadius(): Float = Nd.sliceRadius(radius, cutPos)
 
     /**
      * What the flat world would measure of a ball's slice, as a share of the
@@ -507,7 +571,7 @@ class SlicingSim : Sim {
         val palette = env.palette
         val lineColour = palette.at(0.75f)
         val sideScale = PANEL / radius
-        val worldY = SIDE_Y + position * sideScale
+        val worldY = SIDE_Y + cutPos * sideScale
         // ---- Outside: the object with its true height, and the flat world.
         val ghost = Palette.withAlpha(palette.at(0.3f), 0.5f)
         if (shape == 0) {
@@ -537,12 +601,12 @@ class SlicingSim : Sim {
             val r = sliceRadius()
             if (r > 0f) g.line(-r * sideScale, worldY, r * sideScale, worldY, 0.008f, lineColour)
         } else {
-            val d = dims
-            val sideViewer = Nd.viewerFor(radius, max(2, d - 1))
+            // On its edge as drawn: the side view's mapping doesn't keep
+            // lines straight, so the corner goes where the drawn edge
+            // meets the line, the same share of the way along.
             for (i in 0 until sliceN) {
-                for (k in 0 until d - 1) tmp[k] = slice[i * d + k]
-                Nd.project(tmp, 0, max(1, d - 1), sideViewer, proj)
-                g.disc(proj[0] * sideScale, worldY, 0.009f, lineColour)
+                val a = sliceA[i]; val b = sliceB[i]
+                g.disc(sx[a] + (sx[b] - sx[a]) * sliceT[i], worldY, 0.009f, lineColour)
             }
         }
         // ---- Inside: what the flat world sees, in its own dimensions.
@@ -603,7 +667,7 @@ class SlicingSim : Sim {
         ) else listOf(
             "slice" to "${d}D, $sliceN corners",
             "edges" to sliceEdgeN.toString(),
-            "cut at w" to String.format(java.util.Locale.US, "%+.2f", position),
+            "cut at w" to String.format(java.util.Locale.US, "%+.2f", cutPos),
             "passes" to passes.toString()
         )
     }
@@ -618,6 +682,7 @@ class SlicingSim : Sim {
         const val SWEEP = 1.12f
         const val VIEW_TURN = 0.3f
         const val TILT = 0.4f
+        private const val IN_PLANE = -2
 
         fun def(): SimDef = SimDef(
             id = "dimensions/slicing",
@@ -1221,19 +1286,21 @@ class BallVolumeSim : Sim {
     private var top = 1.0
 
     override fun setup(env: SimEnv) {
-        upTo = env.params.i("upto", 20).coerceIn(4, 40)
+        upTo = env.params.i("upto", 20).coerceIn(4, MAX_UP_TO)
         measure = env.params.choiceIndex("measure").coerceIn(0, MEASURES.size - 1)
         shown = 0f
         payoffFrame = false
         peakAnnounced = false
         top = (1..upTo).maxOf { value(it) }
+        // Found over the whole range, not just the bars shown: counting only
+        // to four, the last bar is the tallest, and it is no peak.
         milestone = when (measure) {
             // The peaks, found, not assumed.
-            0, 1 -> (1..upTo).maxByOrNull { value(it) } ?: 5
+            0, 1 -> (1..MAX_UP_TO).maxByOrNull { value(it) } ?: 5
             // The first dimension under one percent of the cube.
-            2 -> (1..upTo).firstOrNull { value(it) < 0.01 } ?: upTo
+            2 -> (1..MAX_UP_TO).firstOrNull { value(it) < 0.01 } ?: MAX_UP_TO
             // The first with over half of it in the peel.
-            else -> (1..upTo).firstOrNull { value(it) > 0.5 } ?: upTo
+            else -> (1..MAX_UP_TO).firstOrNull { value(it) > 0.5 } ?: MAX_UP_TO
         }
     }
 
@@ -1252,7 +1319,7 @@ class BallVolumeSim : Sim {
         if (after > before) {
             val t = (value(after) / top).toFloat().coerceIn(0f, 1f)
             env.emit(EventKind.WRITE, t, 0f, 0.6f)
-            if (!peakAnnounced && after >= milestone) {
+            if (!peakAnnounced && after >= min(milestone, upTo)) {
                 peakAnnounced = true
                 payoffFrame = true
                 env.emit(EventKind.DONE, 1f, 0f, 1f)
@@ -1302,6 +1369,7 @@ class BallVolumeSim : Sim {
 
     companion object {
         val MEASURES = listOf("Volume", "Surface", "Share of the cube", "Share in the peel")
+        const val MAX_UP_TO = 40
         val NAMES = listOf("volume", "surface", "of the cube", "in the outer tenth")
 
         fun def(): SimDef = SimDef(
@@ -1338,7 +1406,7 @@ class BallVolumeSim : Sim {
  * between each pair. Each new dimension gives every point one more random
  * coordinate, so it is the same pairs all along, in more and more room. The
  * histogram is of distance over the average distance: on a line it is spread
- * from nothing to double; by a hundred dimensions it is a spike at one, the
+ * from nothing to three times; by a hundred dimensions it is a spike at one, the
  * nearest and the farthest pair nearly the same. For many dimensions its
  * width falls as 0.59/√d — 3·√(7/180) — and the counters show it doing so.
  */
@@ -1471,11 +1539,14 @@ class ConcentrationSim : Sim {
 
     companion object {
         const val BINS = 48
-        /** The histogram covers distance from zero to this many times the average. */
-        const val RANGE = 2f
+        /**
+         * The histogram covers distance from zero to this many times the
+         * average: on a line the farthest pair is three times it.
+         */
+        const val RANGE = 3f
         const val TICK = 0.45f
         const val GROWTH = 0.12f
-        /** Spread under ten percent: every pair within a tenth of the average. */
+        /** Spread (one standard deviation) under a tenth of the average. */
         const val PAYOFF_SPREAD = 0.1f
 
         fun def(): SimDef = SimDef(
@@ -1505,6 +1576,8 @@ object DimensionSims {
         RandomWalkSim.def(),
         NdBounceSim.def(),
         BallVolumeSim.def(),
-        ConcentrationSim.def()
+        ConcentrationSim.def(),
+        TesseractUnfoldSim.def(),
+        GrayWalkSim.def()
     )
 }

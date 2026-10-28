@@ -75,12 +75,24 @@ class ColourWarSim : Sim {
         // starting with half the board had won before anything moved.
         var tries = 0
         do {
-            seedC = FloatArray(teams * ISLANDS) { env.rng.range(0f, cols.toFloat()) }
-            seedR = FloatArray(teams * ISLANDS) { env.rng.range(0f, rows.toFloat()) }
+            // At square centres, so the square a home is in is decided by
+            // that home's own island: off-centre, a neighbour could own it
+            // and the colour's balls began on enemy ground.
+            seedC = FloatArray(teams * ISLANDS) { env.rng.int(0, cols) + 0.5f }
+            seedR = FloatArray(teams * ISLANDS) { env.rng.int(0, rows) + 0.5f }
             for (r in 0 until rows) for (c in 0 until cols) owner[r * cols + c] = startOwner(c, r).toByte()
             val share = IntArray(teams); for (o in owner) share[o.toInt()]++
             val fair = owner.size / teams.toFloat()
-        } while (layout == 2 && tries++ < 30 && share.any { it < fair * 0.7f || it > fair * 1.3f })
+            // And a little room round it: two homes a square apart had one
+            // colour's balls taking the other's ground in the first frame.
+            val homesOwn = (0 until teams).all { t ->
+                val hc = seedC[t].toInt(); val hr = seedR[t].toInt()
+                (-1..1).all { dr -> (-1..1).all { dc ->
+                    val rr = (hr + dr).coerceIn(0, rows - 1); val cc = (hc + dc).coerceIn(0, cols - 1)
+                    owner[rr * cols + cc].toInt() == t
+                } }
+            }
+        } while (layout == 2 && tries++ < 80 && (!homesOwn || share.any { it < fair * 0.7f || it > fair * 1.3f }))
         val per = p.i("balls", 2).coerceIn(1, 6)
         val n = teams * per
         bx = FloatArray(n); by = FloatArray(n); bvx = FloatArray(n); bvy = FloatArray(n)
