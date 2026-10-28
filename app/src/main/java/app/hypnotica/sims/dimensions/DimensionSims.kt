@@ -629,7 +629,8 @@ class SlicingSim : Sim {
             heroLabel = "Send it through",
             defaultPalette = "Ocean",
             typicalSeconds = 8f,
-            loopSeconds = 13.25f,
+            // There and back at the default speed: 4 × SWEEP / 0.42.
+            loopSeconds = 10.6667f,
             params = listOf(
                 Param.choice("shape", "Object", SHAPES, 0, card = Card.DATA, input = ParamInput.CHIPS),
                 Param.int("dims", "Dimensions", 2, Nd.MAX_DIMS, 3, card = Card.DATA),
