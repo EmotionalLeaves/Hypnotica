@@ -86,10 +86,13 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     // holds the finished picture for the resolve beat and goes again, the same
     // as the player; the swipe is how you leave.
     var finishedAt by remember { mutableStateOf(0L) }
+    var payoffAt by remember { mutableStateOf(0L) }
     DisposableEffect(Unit) {
         state.engine.onFinished = { finishedAt = System.nanoTime() }
+        state.engine.onPayoff = { payoffAt = System.nanoTime() }
         onDispose {
             state.engine.onFinished = null
+            state.engine.onPayoff = null
             // The remix's look stays with the feed: the player and the
             // library show a sim as it is.
             state.engine.kaleido = 1
@@ -215,6 +218,18 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             drag.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
         }
     }
+
+    // Hands-free: after each payoff and its resolve, on to the next sim —
+    // unless a finger has been on the screen since, which means someone is
+    // playing with this one.
+    LaunchedEffect(payoffAt) {
+        if (payoffAt == 0L || !state.feedAutoAdvance) return@LaunchedEffect
+        val run = state.loadCount
+        val since = payoffAt
+        delay(resolveDelayMs(state.engine) + FEED_AUTO_HOLD_MS)
+        if (state.feedAutoAdvance && state.loadCount == run && touchedAt < since) go(1)
+    }
+
 
     Box(
         Modifier
@@ -473,3 +488,6 @@ private const val ARRIVE = 0.45f
 
 /** How dark the picture gets at the swap, so the cut happens unseen. */
 private const val DIM = 0.92f
+
+/** How long a payoff is held before the feed moves on by itself. */
+private const val FEED_AUTO_HOLD_MS = 2500L

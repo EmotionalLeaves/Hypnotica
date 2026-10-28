@@ -234,6 +234,10 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             ) {
                 ControlDrawer(state)
             }
+            // The first few visits: the gestures that make the sim yours. It
+            // was inside the drawer, so anyone who never opened the drawer —
+            // most people — never saw it.
+            GestureTip(state)
             val barsShown = remember { MutableTransitionState(false) }
             barsShown.targetState = overlayVisible
             AnimatedVisibility(
@@ -397,9 +401,6 @@ private fun ControlDrawer(state: AppState) {
                     .background(Tokens.TextSecondary.copy(alpha = 0.5f), RoundedCornerShape(percent = 50))
             )
         }
-        // The first few visits: the gestures that make the sim yours, which
-        // were only written down near the bottom of Settings.
-        GestureTip(state)
         if (state.struggling) {
             NoticeLine("More than this phone draws smoothly. A smaller size will help.")
         }
@@ -868,9 +869,10 @@ private fun GestureTip(state: AppState) {
     AnimatedVisibility(visible = show, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
         Text(
             "Pinch to zoom · twist to turn · drag to poke",
-            color = Tokens.TextSecondary,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 8.dp)
+            color = Tokens.TextPrimary,
+            style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
         )
     }
 }

@@ -338,6 +338,19 @@ class AppState(
             applySafety()
         }
 
+    /**
+     * Whether the feed moves on by itself a few seconds after each payoff.
+     * Off by default: the feed loops a sim for as long as it is watched, and
+     * the swipe is how you leave — this is for watching hands-free.
+     */
+    private var feedAutoState by mutableStateOf(false)
+    var feedAutoAdvance: Boolean
+        get() = feedAutoState
+        set(value) {
+            feedAutoState = value
+            prefs?.feedAutoAdvance = value
+        }
+
     /** 0 = off. Minutes between TickTock's "you have been scrolling" card. */
     private var timeCheckState by mutableIntStateOf(0)
     var timeCheckMinutes: Int
@@ -656,6 +669,7 @@ class AppState(
             reduceMotion = p.reduceMotion
             haptics = p.haptics
             showCountersState = p.showCounters
+            feedAutoState = p.feedAutoAdvance
             timeCheckState = p.timeCheckMinutes
             advancedState = p.advanced
             // Through the property, so the slider shows the restored value;

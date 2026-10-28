@@ -88,6 +88,10 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_HAPTICS, false)
         set(value) = sp.edit().putBoolean(KEY_HAPTICS, value).apply()
 
+    var feedAutoAdvance: Boolean
+        get() = sp.getBoolean(KEY_FEED_AUTO, false)
+        set(value) = sp.edit().putBoolean(KEY_FEED_AUTO, value).apply()
+
     var showCounters: Boolean
         get() = sp.getBoolean(KEY_COUNTERS, true)
         set(value) = sp.edit().putBoolean(KEY_COUNTERS, value).apply()
@@ -163,6 +167,7 @@ class Prefs(context: Context) {
         const val KEY_REDUCE_MOTION = "reduce_motion"
         const val KEY_HAPTICS = "haptics"
         const val KEY_COUNTERS = "counters"
+        const val KEY_FEED_AUTO = "feed_auto"
         const val KEY_TIME_CHECK = "time_check"
         const val KEY_ADVANCED = "advanced"
         const val KEY_LAST_SIM = "last_sim"

@@ -141,6 +141,16 @@ fun SettingsScreen(state: AppState, versionName: String) {
         )
         }
 
+        SectionLabel("Feed")
+        SettingsGroup {
+            ToggleRow("Move on after each payoff", state.feedAutoAdvance) { state.feedAutoAdvance = it }
+            Text(
+                "For watching hands-free. Touch the screen to stay on a sim.",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
         SectionLabel("Time check")
         SettingsGroup {
         ChipRow(
