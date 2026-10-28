@@ -82,7 +82,26 @@ data class Groove(
             bass = setOf(0, 3, 8, 11)
         )
 
-        val ALL = listOf(FOUR, HALF, BREAK, DRIFT, TRAP, DEMBOW)
+        /**
+         * Drum and bass: the two-step — kick on one and the and of three,
+         * snare on two and four — at 160, its hats on the eighths.
+         */
+        val DNB = Groove(
+            "Drum & bass", 160f, MINOR,
+            kick = setOf(0, 10), snare = setOf(4, 12), hat = setOf(0, 2, 4, 6, 8, 10, 12, 14),
+            bass = setOf(0, 10)
+        )
+        /**
+         * Bossa nova: the son clave's 3–2 on the rim (steps 0, 3, 6 · 10, 12)
+         * over a kick on one and three, round ii–V–I–vi.
+         */
+        val BOSSA = Groove(
+            "Bossa", 128f, intArrayOf(2, 7, 0, 9),
+            kick = setOf(0, 8), snare = setOf(0, 3, 6, 10, 12), hat = setOf(2, 6, 10, 14),
+            bass = setOf(0, 6, 8, 14)
+        )
+
+        val ALL = listOf(FOUR, HALF, BREAK, DRIFT, TRAP, DEMBOW, DNB, BOSSA)
         val NAMES = listOf("Off") + ALL.map { it.name }
 
         fun byName(name: String): Groove? = ALL.firstOrNull { it.name == name }

@@ -166,7 +166,7 @@ class MarbleMusicSim : Sim {
             defaultSound = "Music box",
             typicalSeconds = 17f,
             params = listOf(
-                Param.choice("tune", "Tune", Song.TUNES.map { it.name }, 1, card = Card.DATA, input = ParamInput.TILES),
+                Param.choice("tune", "Tune", Song.TUNES.map { it.name }, 1, card = Card.DATA, input = ParamInput.CHIPS),
                 Param.float("tempo", "Tempo", 0.5f, 2f, 1f, card = Card.MOTION),
                 Param.float("bounce", "Bounce", 0.3f, 2f, 1f, card = Card.MOTION)
             ),

@@ -507,9 +507,34 @@ data class Song(val name: String, val notes: IntArray) {
             intArrayOf(76, 76, 76, 76, 76, 76, 76, 79, 72, 74, 76, 77, 77, 77, 77, 77, 76, 76, 76, 76, 74, 74, 76, 74, 79)
         )
 
+        // Minuet in G, from the Anna Magdalena notebook, 1725.
+        val MINUET = Song(
+            "Minuet in G",
+            intArrayOf(
+                74, 67, 69, 71, 72, 74, 67, 67, 76, 72, 74, 76, 78, 79, 67, 67,
+                72, 74, 72, 71, 69, 71, 72, 71, 69, 67, 66, 67, 69, 71, 67, 69
+            )
+        )
+        // Brahms, 1868.
+        val LULLABY = Song(
+            "Lullaby",
+            intArrayOf(64, 64, 67, 64, 64, 67, 64, 67, 72, 71, 69, 69, 67, 62, 64, 65, 62, 62, 64, 65, 62, 65, 71, 69, 67, 71, 72)
+        )
+        // Hill sisters, 1893; public domain.
+        val BIRTHDAY = Song(
+            "Happy Birthday",
+            intArrayOf(67, 67, 69, 67, 72, 71, 67, 67, 69, 67, 74, 72, 67, 67, 79, 76, 72, 71, 69, 77, 77, 76, 72, 74, 72)
+        )
+        // Bach, Toccata in D minor: the opening every organ is asked for.
+        val TOCCATA = Song(
+            "Toccata",
+            intArrayOf(81, 79, 81, 79, 77, 76, 74, 73, 74, 69, 67, 69, 67, 65, 64, 62, 61, 62)
+        )
+
         val TUNES = listOf(
             ODE_TO_JOY, TWINKLE, FUR_ELISE, KOROBEINIKI, GREENSLEEVES, CANON,
-            MOUNTAIN_KING, TURKISH_MARCH, ENTERTAINER, JINGLE_BELLS
+            MOUNTAIN_KING, TURKISH_MARCH, ENTERTAINER, JINGLE_BELLS,
+            MINUET, LULLABY, BIRTHDAY, TOCCATA
         )
 
         val ALL = listOf(NONE, ASCENDING, ARPEGGIO, PENTATONIC_WALK) + TUNES
