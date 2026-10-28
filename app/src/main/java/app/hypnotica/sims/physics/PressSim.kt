@@ -68,24 +68,36 @@ class PressSim : Sim {
         // Harder things are squeezed slower: glass gives after a little, so
         // the little is drawn out.
         bite = MATERIAL_BITE[material.coerceIn(0, MATERIAL_BITE.size - 1)]
-        n = side * side
+        // The lattice, cut to the object's shape: a block, a ball, a pyramid.
+        val shape = p.choiceIndex("object")
+        val index = IntArray(side * side) { -1 }
+        var kept = 0
+        for (r in 0 until side) for (c in 0 until side) {
+            if (inShape(shape, c, r)) index[r * side + c] = kept++
+        }
+        n = kept
         x = FloatArray(n); y = FloatArray(n)
         val step = size / (side - 1)
         val floor = FLOOR + PARTICLE
+        // A ball rests on its lowest point, not on the lattice's bottom row.
+        var lowest = side
+        for (r in 0 until side) for (c in 0 until side) if (index[r * side + c] >= 0) lowest = min(lowest, r)
         for (r in 0 until side) for (c in 0 until side) {
-            val i = r * side + c
+            val i = index[r * side + c]
+            if (i < 0) continue
             x[i] = -size * 0.5f + c * step
-            y[i] = floor + r * step
+            y[i] = floor + (r - lowest) * step
         }
         px = x.copyOf(); py = y.copyOf()
         // Along rows and columns, and both diagonals, so it holds its shape.
         val links = ArrayList<IntArray>()
+        fun link(a: Int, b: Int) { val ia = index[a]; val ib = index[b]; if (ia >= 0 && ib >= 0) links.add(intArrayOf(ia, ib)) }
         for (r in 0 until side) for (c in 0 until side) {
             val i = r * side + c
-            if (c + 1 < side) links.add(intArrayOf(i, i + 1))
-            if (r + 1 < side) links.add(intArrayOf(i, i + side))
-            if (c + 1 < side && r + 1 < side) links.add(intArrayOf(i, i + side + 1))
-            if (c > 0 && r + 1 < side) links.add(intArrayOf(i, i + side - 1))
+            if (c + 1 < side) link(i, i + 1)
+            if (r + 1 < side) link(i, i + side)
+            if (c + 1 < side && r + 1 < side) link(i, i + side + 1)
+            if (c > 0 && r + 1 < side) link(i, i + side - 1)
         }
         springs = links.size
         sa = IntArray(springs) { links[it][0] }
@@ -96,7 +108,9 @@ class PressSim : Sim {
         }
         alive = BooleanArray(springs) { true }
         broken = 0
-        plateStart = floor + size + GAP
+        var top = floor
+        for (i in 0 until n) top = max(top, y[i])
+        plateStart = top + GAP
         plate = plateStart
         plateStop = FLOOR + PLATE_STOP
         touched = false
@@ -205,6 +219,17 @@ class PressSim : Sim {
         }
     }
 
+    private fun inShape(shape: Int, c: Int, r: Int): Boolean {
+        val m = (side - 1) * 0.5f
+        return when (shape) {
+            // A ball: the lattice inside a circle.
+            1 -> { val dx = c - m; val dy = r - m; dx * dx + dy * dy <= (m + 0.3f) * (m + 0.3f) }
+            // A pyramid: narrowing to a point at the top.
+            2 -> abs(c - m) <= (side - 1 - r) * 0.5f + 0.3f
+            else -> true
+        }
+    }
+
     /** Hit the block from above: the press slams down a step. */
     override fun hero(env: SimEnv) {
         if (bottomAt >= 0f) return
@@ -282,6 +307,7 @@ class PressSim : Sim {
             typicalSeconds = 12f,
             params = listOf(
                 Param.choice("material", "Material", listOf("Glass", "Wood", "Jelly"), 1, card = Card.DATA, input = ParamInput.TILES),
+                Param.choice("object", "Object", listOf("Block", "Ball", "Pyramid"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("detail", "Detail", 4, MAX_SIDE, 14, card = Card.DATA),
                 Param.float("speed", "Press speed", 0.2f, 5f, 1f, card = Card.MOTION)
             ),
