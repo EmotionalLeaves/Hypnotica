@@ -259,6 +259,9 @@ class AppState(
             prefs?.gestureTipsLeft = gestureTipsState
         }
 
+    /** Swipes on the feed this session, which varies each sim's headline. */
+    var feedVisits by mutableIntStateOf(0)
+
     /** True until the first swipe on the feed this session. */
     var feedHint by mutableStateOf(true)
 

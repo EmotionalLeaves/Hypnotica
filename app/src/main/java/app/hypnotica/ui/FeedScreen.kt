@@ -137,6 +137,33 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     var height by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
 
+    // The camera leans in through the build, as TickTock's does, and eases
+    // back after the payoff. Steered by the run's own clock and its own
+    // payoff, so it follows every restart; a pinch takes the camera back.
+    LaunchedEffect(state.currentDef.id) {
+        val engine = state.engine
+        engine.setBaseZoom(1f)
+        var mine = 1f
+        var after = 0f
+        val build = state.currentDef.typicalSeconds * 0.7f
+        while (true) {
+            delay(100)
+            if (kotlin.math.abs(engine.baseZoom() - mine) > 0.01f) break
+            val core = engine.core
+            val t = kotlin.math.abs(core.env.time)
+            val lean = if (!core.payoffFired) {
+                after = 0f
+                val x = (t / build).coerceIn(0f, 1f)
+                x * x * (3f - 2f * x)
+            } else {
+                after += 0.1f
+                (1f - after / FEED_LEAN_BACK).coerceIn(0f, 1f)
+            }
+            mine = 1f + FEED_LEAN * lean
+            engine.setBaseZoom(mine)
+        }
+    }
+
 
     fun go(step: Int) {
         hint = false
@@ -148,6 +175,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // first computed "next" from the sim the feed opened on — and the
             // second swipe landed on the sim already showing.
             state.feedIndex = (state.feedIndex + step + order.size) % order.size
+            state.feedVisits++
             drag.snapTo(-out * ARRIVE)
             drag.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
         }
@@ -249,7 +277,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     modifier = Modifier.weight(1f)
                 ) { _ ->
                     Text(
-                        hookFor(state),
+                        hookFor(state, state.feedVisits),
                         color = Tokens.TextPrimary,
                         style = MaterialTheme.typography.displaySmall,
                         maxLines = 3,
@@ -313,9 +341,16 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     }
 }
 
-private fun hookFor(state: AppState): String {
-    val format = state.currentDef.formats.firstOrNull()
-    return format?.hook ?: state.currentDef.blurb
+/**
+ * The headline over the sim: one of the hooks of any of its formats, chosen
+ * afresh each time the feed comes round to it. It was always the first
+ * format's first hook, so a sim said the same thing every time it was met.
+ */
+private fun hookFor(state: AppState, visit: Int): String {
+    val hooks = state.currentDef.formats.flatMap { it.hooks }
+    if (hooks.isEmpty()) return state.currentDef.blurb
+    val key = (state.currentDef.id.hashCode().toLong() * 31L + visit) and 0x7FFFFFFF
+    return hooks[(key % hooks.size).toInt()]
 }
 
 /** Pixels of travel that count as a deliberate swipe. */
@@ -323,6 +358,12 @@ private const val SWIPE = 90f
 
 /** Rule 1's figure: chrome fades after this long with no touch. */
 internal const val CHROME_IDLE_MS = 2600L
+
+/** How much closer the feed's camera is at a run's payoff. */
+private const val FEED_LEAN = 0.08f
+
+/** Seconds to ease back out after it. */
+private const val FEED_LEAN_BACK = 1.5f
 
 /** How far the chrome travels, as a share of the screen, before the swap. */
 private const val LEAVE = 0.32f
