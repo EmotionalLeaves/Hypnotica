@@ -923,6 +923,7 @@ object PhysicsSims {
         WaveTankSim.def(),
         TrafficSim.def(),
         MarbleRaceSim.def(),
-        ShatterSim.def()
+        ShatterSim.def(),
+        DominoSim.def()
     )
 }

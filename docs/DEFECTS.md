@@ -27,6 +27,12 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: dominoes.** A snake or a spiral of dominoes, seen from above, and one
+  push. Each tips as an upturned pendulum, starts the next when it leans far
+  enough to reach it, and lands as the next note up the scale, so the chain
+  plays a run. Paced so a chain of thirty or of four thousand runs in ten to
+  fifteen seconds — true to scale, a thousand took three minutes.
+
 - **Tunes.** Song mode had three scale walks. It now has six melodies everyone
   knows, all long out of copyright — Ode to Joy, Twinkle Twinkle, Für Elise,
   Korobeiniki, Greensleeves, Pachelbel's Canon — and on a beat a tune moves on
