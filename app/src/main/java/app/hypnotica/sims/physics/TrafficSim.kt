@@ -53,7 +53,9 @@ class TrafficSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         n = p.i("cars", 30).coerceIn(4, MAX_CARS)
-        road = n * p.f("room", 10f).coerceIn(6f, 30f).toDouble()
+        // Under seven and a half metres a car the traffic is at a standstill
+        // before it starts, and "a jam from nowhere" is a jam from the start.
+        road = n * p.f("room", 10f).coerceIn(7.5f, 30f).toDouble()
         pos = DoubleArray(n) { road * it / n }
         // Everyone at the steady speed for this spacing, so nothing is jammed
         // to begin with: the jam has to come out of the flow.
@@ -261,7 +263,7 @@ class TrafficSim : Sim {
             typicalSeconds = 20f,
             params = listOf(
                 Param.int("cars", "Cars", 4, MAX_CARS, 30, card = Card.DATA, logScale = true),
-                Param.float("room", "Road per car", 6f, 30f, 10f, card = Card.DATA, unit = "m"),
+                Param.float("room", "Road per car", 7.5f, 30f, 10f, card = Card.DATA, unit = "m"),
                 Param.float("jitter", "Nervous drivers", 0f, 1f, 0.8f, card = Card.MOTION)
             ),
             create = { TrafficSim() }

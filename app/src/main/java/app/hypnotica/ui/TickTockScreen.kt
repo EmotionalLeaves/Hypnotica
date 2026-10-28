@@ -87,6 +87,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     // The swipe follows the finger, as on the feed: the chrome travels with
     // it, the picture dims, and the next clip comes up out of the dark.
     val drag = remember { Animatable(0f) }
+    var swiping by remember { mutableStateOf(false) }
     var height by remember { mutableIntStateOf(1) }
 
     // How far through the clip, for the line along the bottom.
@@ -107,7 +108,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         val clip = current ?: return@LaunchedEffect
         if (clip.format != TrapFormat.NUMBER_UP) return@LaunchedEffect
         while (true) {
-            bigNumber = state.engine.core.sim.counters().firstOrNull()
+            bigNumber = state.engine.counters.firstOrNull()
             delay(100)
         }
     }
@@ -262,7 +263,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 val toward = (elapsed / payoff).coerceIn(0f, 1f)
                 val lean = if (elapsed <= payoff) toward * toward * (3f - 2f * toward)
                 else (1f - (elapsed - payoff) / LEAN_BACK_SECONDS).coerceIn(0f, 1f)
-                state.engine.setBaseZoom(1f + LEAN * lean)
+                if (!state.engine.userZoomed) state.engine.setBaseZoom(1f + LEAN * lean)
 
                 // The twist: a moment in the build where the clip changes gear.
                 val (from, until) = twist.window(payoff)
@@ -291,6 +292,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     // Whatever a clip leaned or sped up, the next one starts level.
     LaunchedEffect(current) {
         state.engine.setBaseZoom(1f)
+        state.engine.userZoomed = false
         state.engine.core.speed = 1f
     }
 
@@ -322,6 +324,11 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     DisposableEffect(Unit) {
         onDispose {
             state.engine.kaleido = 1
+            // A twist or a lean in progress does not follow the person out:
+            // the feed ran at 1.9x under a slider reading 1x.
+            state.engine.core.speed = state.speed
+            state.engine.setBaseZoom(1f)
+            state.engine.setPalette(state.paletteName)
             // Back to whatever song the person had chosen, usually none.
             state.engine.setSong(Song.byIndex(state.songIndex))
             state.engine.onFinished = null
@@ -351,23 +358,39 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     },
                     onDragEnd = {
                         val out = height * LEAVE
-                        if (travelled <= -SWIPE_PIXELS) {
-                            current?.let { state.skipClip(it) }
+                        if (swiping) {
+                            // One swipe at a time: a second touch during the
+                            // first's animation used to cancel it, after the
+                            // skip had already been counted against the clip.
+                        } else if (travelled <= -SWIPE_PIXELS) {
+                            val skipped = current
+                            swiping = true
                             generating?.cancel()
                             generating = scope.launch {
-                                drag.animateTo(-out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
-                                advance()
-                                arrive(fromBelow = true)
+                                try {
+                                    drag.animateTo(-out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
+                                    advance()
+                                    // Counted once it has really been left.
+                                    if (skipped != null && current !== skipped) state.skipClip(skipped)
+                                    arrive(fromBelow = true)
+                                } finally {
+                                    swiping = false
+                                }
                             }
                         } else if (travelled >= SWIPE_PIXELS && history.isNotEmpty()) {
                             // Back to the clip before, which goes to the front
                             // of the queue so a swipe up returns here.
+                            swiping = true
                             generating?.cancel()
                             generating = scope.launch {
-                                drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
-                                current?.let { queue.addFirst(it) }
-                                play(history.removeAt(history.size - 1))
-                                arrive(fromBelow = false)
+                                try {
+                                    drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
+                                    current?.let { queue.addFirst(it) }
+                                    play(history.removeAt(history.size - 1))
+                                    arrive(fromBelow = false)
+                                } finally {
+                                    swiping = false
+                                }
                             }
                         } else if (travelled >= SWIPE_PIXELS) {
                             scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.7f)) }
@@ -379,6 +402,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     }
                 ) { change, amount ->
                     change.consume()
+                    if (swiping) return@detectVerticalDragGestures
                     travelled += amount
                     val limit = height * LEAVE
                     val follow = limit * kotlin.math.tanh(travelled / limit)

@@ -63,7 +63,13 @@ class SoundMapping(private val synth: Synth) {
     var groove: Groove? = Groove.FOUR
 
     // The groove's clock and the notes waiting for the next sixteenth.
-    private var clock = 0.0
+    /**
+     * Where the groove is, in sixteenths. Counted in steps, not seconds: a
+     * clock in seconds divided by the step length jumped backwards whenever
+     * the tempo slowed — every new sim under Auto — and nothing played until
+     * it caught up, minutes later.
+     */
+    private var stepPos = 0.0
     private var nextStep = 0L
     private var activity = 0f
     private var quietFor = 10f
@@ -75,12 +81,18 @@ class SoundMapping(private val synth: Synth) {
 
     /** Start the groove's bar over, as a new run starts. */
     fun resetGroove() {
-        clock = 0.0
+        stepPos = 0.0
         nextStep = 0L
         held = 0
     }
 
+    /** Drop notes waiting for the beat, as a new run starts: they belong to the old one. */
+    fun clearHeld() {
+        held = 0
+    }
+
     /** Optional melody: when set, each event plays the next note of the tune. */
+    @Volatile
     var song: Song? = null
     private var songIndex = 0
 
@@ -169,8 +181,8 @@ class SoundMapping(private val synth: Synth) {
             val target = if (quietFor < QUIET_AFTER) 1f else 0f
             val rate = if (target > activity) 3f else 0.6f
             activity += (target - activity) * min(1f, frameSeconds * rate)
-            clock += frameSeconds
-            val due = (clock / g.stepSeconds).toLong()
+            stepPos += frameSeconds / g.stepSeconds
+            val due = stepPos.toLong()
             var guard = 0
             while (nextStep <= due && guard < 4) {
                 onStep(g, nextStep)
@@ -236,6 +248,9 @@ class SoundMapping(private val synth: Synth) {
         }
         for (i in played until held) spare += heldStrength[i] * 0.15f
         for (i in 0 until played) {
+            // A tune's placeholder, left over from a song switched off between
+            // steps, is not a pitch.
+            if (heldHz[i] < 0f) continue
             var hz = heldHz[i] * shift
             while (hz > safety.maxHz) hz *= 0.5f
             if (hz < MIN_HZ) hz = MIN_HZ

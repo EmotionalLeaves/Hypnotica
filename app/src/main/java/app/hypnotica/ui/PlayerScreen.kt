@@ -192,7 +192,7 @@ private fun TopBar(state: AppState, uiTick: Int) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            val counters = remember(uiTick) { state.engine.core.sim.counters() }
+            val counters = remember(uiTick) { state.engine.counters }
             // A recipe that fails at run time reports through this same counter
             // list, which meant two things: it was hidden entirely when "Show
             // live counters" was off — the default is on, but it is a setting —

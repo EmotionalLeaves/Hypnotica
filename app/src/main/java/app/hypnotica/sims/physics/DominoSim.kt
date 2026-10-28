@@ -198,7 +198,10 @@ class DominoSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean =
-        (doneAt >= 0f && elapsed - doneAt > 2f) || (fallen < n && elapsed > STALL_SECONDS && (0 until n).none { started[it] && !down[it] })
+        (doneAt >= 0f && elapsed - doneAt > 2f) || (fallen < n && elapsed > STALL_SECONDS && (0 until n).none { started[it] && !down[it] && abs(spin[it]) > 0.02f }) ||
+            // Without gravity a domino can come to rest half-tipped and the
+            // chain stops dead; after long enough the run goes round again.
+            (fallen < n && elapsed > STALL_SECONDS * 1.5f)
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "fallen" to "$fallen / $n"

@@ -66,8 +66,12 @@ class WaveTankSim : Sim {
 
         // The wall, with its slits, centred and evenly spaced.
         val slits = p.i("slits", 2).coerceIn(1, 5)
-        val spacing = p.f("gap", 0.3f).coerceIn(0.08f, 0.7f) * w
-        val width = max(3, (p.f("wavelength", 7f) * 0.6f).roundToInt())
+        // Every slit inside the tank's calm middle, and narrower than the wall
+        // between them: at the ends of the sliders the outer slits landed in
+        // the sponge, and wide slits merged into one opening.
+        val usable = w - 2f * SPONGE
+        val spacing = min(p.f("gap", 0.3f).coerceIn(0.08f, 0.7f) * w, if (slits > 1) usable * 0.9f / (slits - 1) else usable)
+        val width = max(3, min((p.f("wavelength", 7f) * 0.6f).roundToInt(), (spacing * 0.6f).toInt().coerceAtLeast(3)))
         for (row in wallRow until wallRow + WALL_ROWS) {
             for (x in 0 until w) wall[row * w + x] = true
         }

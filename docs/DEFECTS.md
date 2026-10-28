@@ -27,6 +27,29 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **A review of the last thirty commits found eleven bugs, all fixed.**
+  - The beat's clock was seconds over step length, so a slower tempo — every
+    new sim under Auto — sent it backwards and silenced everything until it
+    caught up, minutes later. It counts steps now; `GrooveTest` fails on the
+    old code. Notes waiting for the beat are dropped when a run restarts.
+  - TickTock and the player read a sim's counters from the UI thread while the
+    GL thread stepped it; Ball escape's walks a list the step adds to, which
+    could throw on the UI thread and end the app. The engine takes a snapshot
+    on its own thread and the screens read that.
+  - A TickTock twist left the feed at 1.9x or 0.45x under a slider reading 1x,
+    and a colour drop outlived the clip. Leaving TickTock puts them back.
+  - With no gravity, dominoes stopped half-tipped and never finished, and the
+    marble race's unsticking nudge sent marbles up off the course for good.
+  - The feed's and TickTock's lean overwrote a pinch every tenth of a second.
+    A pinch now takes the camera until the next sim.
+  - A second touch during a TickTock swipe cancelled it after the skip had been
+    counted; one swipe at a time now, and the skip counted once it is real.
+  - A song switched off between beats played its placeholders as 40 Hz thuds.
+  - Traffic below 7.5 m a car was jammed from the first step; the ripple tank's
+    outer slits fell into the sponge at the ends of the sliders; a recipe with
+    no length gave the feed a NaN zoom and a blank frame.
+- **Studio undo**: every edit can be stepped back, forty deep.
+
 - **Ball escape in a triangle, a square or a hexagon**, spinning, as well as
   the ring: the side the ball faces stands in for the ring, so every rule the
   ring had — gaps, growth, splitting, nesting — works the same.

@@ -125,6 +125,7 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                 if (pinching && event.pointerCount >= 2) {
                     val d = pinchDistance(event)
                     if (lastPinchDist > 1f) {
+                        engine.userZoomed = true
                         engine.setBaseZoom(engine.baseZoom() * (d / lastPinchDist))
                     }
                     lastPinchDist = d

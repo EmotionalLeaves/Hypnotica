@@ -117,6 +117,8 @@ class MarbleRaceSim : Sim {
             x[i] += vx[i] * h
             y[i] += vy[i] * h
             // Walls.
+            // A lid on the course, so nothing floats off the top of it.
+            if (y[i] > -0.4f) { y[i] = -0.4f; vy[i] = -abs(vy[i]) * 0.5f }
             // The walls drag, so hugging one is not an express lane past the pegs.
             if (x[i] < -halfW + R) { x[i] = -halfW + R; vx[i] = abs(vx[i]) * bounce + 0.08f; vy[i] *= WALL_DRAG }
             if (x[i] > halfW - R) { x[i] = halfW - R; vx[i] = -abs(vx[i]) * bounce - 0.08f; vy[i] *= WALL_DRAG }
@@ -127,8 +129,10 @@ class MarbleRaceSim : Sim {
             if (vx[i] * vx[i] + vy[i] * vy[i] < STUCK_SPEED * STUCK_SPEED) stillFor[i] += h else stillFor[i] = 0f
             if (stillFor[i] > STUCK_SECONDS) {
                 stillFor[i] = 0f
+                // Sideways and down the course, never up it: upward, with no
+                // gravity to bring it back, a marble left the course for good.
                 vx[i] += if (env.rng.bool()) 0.5f else -0.5f
-                vy[i] += 0.3f
+                vy[i] -= 0.3f
             }
             if (y[i] < finishY) {
                 done[i] = true
@@ -253,7 +257,9 @@ class MarbleRaceSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean =
-        (placed == count && winnerAt >= 0f && elapsed - winnerAt > 2.5f) || (winnerAt >= 0f && elapsed - winnerAt > 10f)
+        (placed == count && winnerAt >= 0f && elapsed - winnerAt > 2.5f) || (winnerAt >= 0f && elapsed - winnerAt > 10f) ||
+            // A race nobody can finish — no gravity to fall by — is let go.
+            (winnerAt < 0f && elapsed > GIVE_UP_SECONDS)
 
     override fun counters(): List<Pair<String, String>> {
         var lead = 0
@@ -277,6 +283,7 @@ class MarbleRaceSim : Sim {
         const val PADDLE_THICK = 0.012f
         const val GRAVITY_SCALE = 0.5f
         const val STUCK_SPEED = 0.06f
+        const val GIVE_UP_SECONDS = 60f
         const val WALL_DRAG = 0.8f
         const val WALL_CLEAR = R * 2f + PEG_R * 2f
         const val STUCK_SECONDS = 0.6f

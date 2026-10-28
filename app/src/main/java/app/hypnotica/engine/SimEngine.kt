@@ -102,6 +102,24 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** Extra zoom applied around the payoff, the "punch-in". */
     private var punch = 0f
     private var baseZoom = 1f
+    /**
+     * The sim's counters, taken on this thread a few times a second for the
+     * screens to read. They read them straight off the sim from the UI
+     * thread, while this thread stepped it — and a counter that walks a list
+     * the step is adding to throws on the UI thread, which ends the app.
+     */
+    @Volatile
+    var counters: List<Pair<String, String>> = emptyList()
+        private set
+    private var sinceCounters = 0f
+
+    /**
+     * Set by a pinch. The feed and TickTock lean the camera in on their own;
+     * once the person has zoomed, the camera is theirs until the next sim.
+     */
+    @Volatile
+    var userZoomed = false
+
     /** Kaleidoscope folds for what is drawn; 1 for none. Set by TickTock per clip. */
     @Volatile
     var kaleido: Int = 1
@@ -518,6 +536,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         scene.fit = if (!sameSim || kotlin.math.abs(wantFit - scene.fit) < 0.002f) wantFit
         else scene.fit + (wantFit - scene.fit) * kotlin.math.min(1f, dt * FIT_RATE)
 
+        sinceCounters += dt
+        if (sinceCounters >= COUNTERS_EVERY) {
+            sinceCounters = 0f
+            counters = core.sim.counters()
+        }
+
         g.reset()
         g.background = Palette.BG
         core.draw(g)
@@ -619,9 +643,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         shakeOffsetY = 0f
         flashLimiter.reset()
         synth.allOff()
+        mapping.clearHeld()
     }
 
     fun setBaseZoom(z: Float) {
+        // coerceIn lets a NaN straight through.
+        if (!z.isFinite()) return
         baseZoom = z.coerceIn(0.2f, 40f)
         // With a project attached the breathing path below is skipped, so the
         // pinch would never reach the camera and zoom could not be posed.
@@ -686,6 +713,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         const val SHAKE_WORLD = 0.012f
         /** How fast the view glides to a new sim's fit, per second. */
         const val FIT_RATE = 5f
+        /** Seconds between counter snapshots. */
+        const val COUNTERS_EVERY = 0.1f
 
         /** A flick can produce a lot of moves; a frame need not apply all of them. */
         const val MAX_PENDING_TOUCHES = 64

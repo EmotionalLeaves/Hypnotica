@@ -143,12 +143,15 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     LaunchedEffect(state.currentDef.id) {
         val engine = state.engine
         engine.setBaseZoom(1f)
+        engine.userZoomed = false
         var mine = 1f
         var after = 0f
-        val build = state.currentDef.typicalSeconds * 0.7f
+        // At least a second: a recipe may declare no length at all, and 0/0
+        // here was a NaN zoom and a blank frame.
+        val build = (state.currentDef.typicalSeconds * 0.7f).coerceAtLeast(1f)
         while (true) {
             delay(100)
-            if (kotlin.math.abs(engine.baseZoom() - mine) > 0.01f) break
+            if (engine.userZoomed || kotlin.math.abs(engine.baseZoom() - mine) > 0.01f) break
             val core = engine.core
             val t = kotlin.math.abs(core.env.time)
             val lean = if (!core.payoffFired) {
