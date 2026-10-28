@@ -141,7 +141,7 @@ fun LibraryScreen(state: AppState) {
             .padding(horizontal = 16.dp)
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = HEADER_HEIGHT),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // ‹ like every other panel, rather than a ▶ that had to be guessed.

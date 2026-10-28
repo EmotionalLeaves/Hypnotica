@@ -215,9 +215,9 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             .safeDrawingPadding()
             .padding(horizontal = 16.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
             GlyphButton("‹") { state.goBack() }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             Text("Studio", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
             // Undo the last edit. There was none: a slip of the thumb on the
@@ -900,7 +900,7 @@ private fun CaptionEditor(
                 value = text,
                 onValueChange = onText,
                 singleLine = true,
-                textStyle = TextStyle(color = Tokens.TextPrimary, fontSize = 15.sp),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Tokens.TextPrimary),
                 cursorBrush = SolidColor(Tokens.Accent),
                 modifier = Modifier.fillMaxWidth()
             )

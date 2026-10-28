@@ -83,11 +83,7 @@ fun ExprParamField(state: AppState, p: Param) {
                     commit()
                     keyboard?.hide()
                 }),
-                textStyle = TextStyle(
-                    color = if (ok.value) Tokens.TextPrimary else Tokens.Danger,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp
-                ),
+                textStyle = Tokens.Mono.copy(color = if (ok.value) Tokens.TextPrimary else Tokens.Danger),
                 cursorBrush = SolidColor(Tokens.Accent),
                 modifier = Modifier
                     .fillMaxWidth()

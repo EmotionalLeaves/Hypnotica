@@ -1,5 +1,10 @@
 package app.hypnotica.ui
 
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.heightIn
 import app.hypnotica.core.audio.Groove
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
@@ -66,13 +71,14 @@ fun SettingsScreen(state: AppState, versionName: String) {
             .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
             GlyphButton("‹") { state.goBack() }
             Spacer(Modifier.width(12.dp))
             Text("Settings", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
         }
 
         SectionLabel("Sound")
+        SettingsGroup {
         if (!state.engine.synth.available) {
             Text(
                 "No sound right now. Replug headphones or restart the app.",
@@ -100,15 +106,19 @@ fun SettingsScreen(state: AppState, versionName: String) {
             // drag: a hundred writes to disk for one gesture is not free.
             onCommit = { state.applySafety() }
         ) { state.volume = it }
+        }
 
         SectionLabel("Look")
+        SettingsGroup {
         val palettes = listOf(LOOK_AUTO) + Palette.NAMES
         ChipRow(palettes, if (state.paletteAuto) 0 else palettes.indexOf(state.paletteName)) {
             state.setPalette(palettes[it])
         }
         PaletteStrip(state.paletteName)
+        }
 
         SectionLabel("Comfort and safety")
+        SettingsGroup {
         ToggleRow("Reduce flashing", state.reduceFlashing) {
             state.reduceFlashing = it
             state.applySafety()
@@ -129,8 +139,10 @@ fun SettingsScreen(state: AppState, versionName: String) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 8.dp)
         )
+        }
 
         SectionLabel("Time check")
+        SettingsGroup {
         ChipRow(
             listOf("Off", "Every 15 min", "Every 30 min", "Every hour"),
             when (state.timeCheckMinutes) {
@@ -150,24 +162,27 @@ fun SettingsScreen(state: AppState, versionName: String) {
 
         // What every gesture does, any time it is wanted, rather than on a card
         // pushed at the person on first launch.
+        }
+
         SectionLabel("Gestures")
+        SettingsGroup {
+        // A row that opens, not a pill: a pill lit "selected" read as an
+        // option chosen rather than a section unfolded.
+        Disclosure("What the gestures do", showGestures) { showGestures = !showGestures }
         if (showGestures) {
             GestureList()
-            Spacer(Modifier.height(8.dp))
         }
-        Pill(if (showGestures) "Hide" else "What the gestures do", selected = showGestures) {
-            showGestures = !showGestures
         }
 
         SectionLabel("TickTock formats")
+        SettingsGroup {
         // Folded, as Gestures is: fifteen pills in eight rows for a hidden
         // feature pushed everything after them half a screen down.
         var showFormats by remember { mutableStateOf(false) }
         val on = TrapFormat.entries.size - state.mutedFormats.size
-        Pill(
-            if (showFormats) "Hide" else "Choose formats ($on of ${TrapFormat.entries.size} on)",
-            selected = showFormats
-        ) { showFormats = !showFormats }
+        Disclosure("Choose formats ($on of ${TrapFormat.entries.size} on)", showFormats) {
+            showFormats = !showFormats
+        }
         if (showFormats) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -204,8 +219,10 @@ fun SettingsScreen(state: AppState, versionName: String) {
             }
         }
         NoticeLine(state.notice)
+        }
 
         SectionLabel("Your own sims")
+        SettingsGroup {
         BigButton("Write a sim") { state.screen = Screen.RECIPES }
         Text(
             "A few lines of Lua becomes a sim on your shelf, with its own sliders.",
@@ -221,6 +238,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 2.dp)
             )
+        }
         }
 
         // The version number sits at the foot of the page, and below it,
@@ -340,5 +358,34 @@ private fun FormatMutes(state: AppState) {
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+/** One section of settings, on its own card, so the page reads as groups. */
+@Composable
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Tokens.Surface, RoundedCornerShape(12.dp))
+            .padding(16.dp)
+    ) { content() }
+}
+
+/** A full-width row that unfolds what is under it, with a turning caret. */
+@Composable
+private fun Disclosure(label: String, open: Boolean, onToggle: () -> Unit) {
+    val turn by animateFloatAsState(if (open) 180f else 0f, tween(Tokens.Base), label = "caret")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onToggle() }
+            .semantics { stateDescription = if (open) "open" else "closed" },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text("▾", color = Tokens.TextSecondary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.rotate(turn))
     }
 }

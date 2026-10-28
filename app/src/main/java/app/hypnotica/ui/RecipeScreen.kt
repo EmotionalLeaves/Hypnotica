@@ -62,12 +62,12 @@ fun RecipeScreen(state: AppState) {
             .safeDrawingPadding()
             .padding(horizontal = 16.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
             // Back to where you came from: both routes into this screen are
             // from Settings ("Write a sim", and the Code tab's button), and the
             // Library has no route here at all.
             GlyphButton("‹") { state.goBack() }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             Text("Recipes", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
             Text(
@@ -122,7 +122,7 @@ fun RecipeScreen(state: AppState) {
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = Tokens.TextPrimary, fontSize = 14.sp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Tokens.TextPrimary),
                     cursorBrush = SolidColor(Tokens.Accent),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -140,12 +140,7 @@ fun RecipeScreen(state: AppState) {
                 BasicTextField(
                     value = source,
                     onValueChange = { source = it },
-                    textStyle = TextStyle(
-                        color = Tokens.TextPrimary,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
-                    ),
+                    textStyle = Tokens.Mono.copy(color = Tokens.TextPrimary),
                     cursorBrush = SolidColor(Tokens.Accent),
                     modifier = Modifier.fillMaxSize()
                 )

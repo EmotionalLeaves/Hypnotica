@@ -1,5 +1,9 @@
 package app.hypnotica.ui
 
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.clickable
@@ -879,13 +883,39 @@ private const val GESTURE_TIP_MS = 5000L
 @Composable
 private fun ModeRow(state: AppState, chips: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) { chips() }
+        // The chips scroll under a soft edge rather than being cut off hard
+        // against the switch, which made the last one look broken.
+        val fadeWidth = with(LocalDensity.current) { CHIP_FADE_DP.dp.toPx() }
+        Box(
+            Modifier
+                .weight(1f)
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            0f to Color.Black,
+                            1f to Color.Transparent,
+                            startX = size.width - fadeWidth,
+                            endX = size.width
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+        ) { chips() }
+        Spacer(Modifier.width(8.dp))
+        // A rule between the tabs and the switch, so the switch does not read
+        // as one more tab.
+        Box(Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.12f)))
         Spacer(Modifier.width(8.dp))
         // Says where you are, lit when on: "Advanced" while in Simple read
         // like a tab already chosen.
         Pill("Advanced", selected = state.advanced) { state.advanced = !state.advanced }
     }
 }
+
+/** The soft edge the drawer's chips scroll under. */
+private const val CHIP_FADE_DP = 24
 
 /** How long the remix's note stays up. */
 private const val REMIX_NOTE_MS = 1400L

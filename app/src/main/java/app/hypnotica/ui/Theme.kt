@@ -17,7 +17,9 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
@@ -59,6 +61,9 @@ object Tokens {
      * the chrome; a bright frame behind a white hook then left it unreadable.
      */
     val OverlayShadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 2f), blurRadius = 12f)
+
+    /** Fixed code and formulas: one size, so an input never changes height as it is typed in. */
+    val Mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp)
 
     /** Chrome arrives quickly and leaves slowly, on every screen. */
     val chromeIn: EnterTransition get() = fadeIn(tween(Fast, easing = LinearOutSlowInEasing))
@@ -118,3 +123,10 @@ fun HypnoticaTheme(forceDark: Boolean = true, content: @Composable () -> Unit) {
         content = content
     )
 }
+
+/**
+ * Every full-screen panel's header is this tall, with ‹ then 12 dp then the
+ * title. They were 8, 12 and 16 dp of padding with 8 or 12 dp gaps, so the back
+ * button and title moved a few dp each time a screen changed.
+ */
+val HEADER_HEIGHT = 64.dp

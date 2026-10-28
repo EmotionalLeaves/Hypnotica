@@ -267,11 +267,7 @@ private fun FormulaField(state: AppState, p: Param) {
                     ok = state.setParamFormula(p, next)
                 },
                 singleLine = true,
-                textStyle = TextStyle(
-                    color = if (ok) Tokens.TextPrimary else Tokens.Danger,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp
-                ),
+                textStyle = Tokens.Mono.copy(color = if (ok) Tokens.TextPrimary else Tokens.Danger),
                 cursorBrush = SolidColor(Tokens.Accent),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -494,11 +490,7 @@ fun LawsControls(state: AppState, advanced: Boolean) {
                 }
             },
             singleLine = true,
-            textStyle = TextStyle(
-                color = if (forceOk) Tokens.TextPrimary else Tokens.Danger,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp
-            ),
+            textStyle = Tokens.Mono.copy(color = if (forceOk) Tokens.TextPrimary else Tokens.Danger),
             cursorBrush = SolidColor(Tokens.Accent),
             modifier = Modifier.fillMaxWidth()
         )

@@ -582,9 +582,15 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 }
         ) {
             AnimatedVisibility(visible = showChrome, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
+              // ‹ top-left, where it is on every other screen; it sat at the
+              // foot of the right-hand rail, under the like and share.
+              Row(verticalAlignment = Alignment.Top) {
+                GlyphButton("‹") { state.goBack() }
+                Spacer(Modifier.width(12.dp))
                 // Crossfaded from one clip's hook to the next, as the feed's is,
                 // rather than swapped in a frame.
                 AnimatedContent(
+                    modifier = Modifier.weight(1f),
                     targetState = current?.caption ?: "Finding something…",
                     transitionSpec = { fadeIn(tween(Tokens.Base)) togetherWith fadeOut(tween(Tokens.Fast)) },
                     label = "tickTockHook"
@@ -595,6 +601,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                         style = MaterialTheme.typography.displaySmall.copy(shadow = Tokens.OverlayShadow)
                     )
                 }
+              }
             }
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(visible = liked, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
@@ -689,8 +696,6 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                         }
                         Spacer(Modifier.height(8.dp))
                         GlyphButton("⤴", selected = state.quickExporting) { state.quickExport(context) }
-                        Spacer(Modifier.height(8.dp))
-                        GlyphButton("‹") { state.goBack() }
                     }
                 }
             }
