@@ -610,7 +610,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                clip.def.family,
+                                clip.variant?.let { "${clip.def.family}  ·  $it" } ?: clip.def.family,
                                 color = Tokens.TextSecondary,
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,

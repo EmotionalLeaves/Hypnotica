@@ -2,6 +2,7 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -119,7 +120,9 @@ class PowerWashSim : Sim {
     /** One of a few murals, coloured from the palette, laid out from the seed. */
     private fun paintMural(env: SimEnv) {
         val palette = env.palette
-        val kind = env.rng.int(0, 4)
+        // A mural chosen, or (by default) a different one each run.
+        val pick = env.params.choiceIndex("mural").coerceIn(0, MURALS.size - 1)
+        val kind = if (pick == 0) env.rng.int(0, MURALS.size - 1) else pick - 1
         val cx = gx * 0.5f; val cy = gy * 0.5f
         val f1 = env.rng.range(0.15f, 0.35f); val turn = env.rng.range(0f, 6.28f)
         val bands = env.rng.range(1.6f, 3.2f)
@@ -134,7 +137,15 @@ class PowerWashSim : Sim {
                 // Diamonds.
                 2 -> (abs(u * cos(turn) - v * sin(turn)) + abs(u * sin(turn) + v * cos(turn))) * bands
                 // Waves.
-                else -> v * bands * 0.6f + 0.25f * sin(u * 30f * f1 + turn)
+                3 -> v * bands * 0.6f + 0.25f * sin(u * 30f * f1 + turn)
+                // Tiles, like a bathroom wall.
+                4 -> {
+                    val n = (bands * 2.5f)
+                    val a = kotlin.math.floor((u + 1f) * n).toInt() + kotlin.math.floor((v + 1f) * n).toInt()
+                    if (a % 2 == 0) 0.2f else 0.7f + 0.1f * sin(turn + a)
+                }
+                // A sunburst of rays from the middle.
+                else -> kotlin.math.floor((kotlin.math.atan2(v, u) / (2f * PI.toFloat()) + 0.5f) * (6f + 6f * f1 * 4f)) / 7f + turn
             }
             val tone = ((t % 1f) + 1f) % 1f
             mural[k] = palette.at(tone)
@@ -289,6 +300,7 @@ class PowerWashSim : Sim {
     )
 
     companion object {
+        val MURALS = listOf("Surprise", "Rings", "Spiral", "Diamonds", "Waves", "Tiles", "Sunburst")
         const val MAX_DETAIL = 120
         const val SWEEP_SECONDS = 12f
         const val BLAST = 22f
@@ -310,6 +322,7 @@ class PowerWashSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 16f,
             params = listOf(
+                Param.choice("mural", "Under the dirt", MURALS, 0, card = Card.DATA, input = ParamInput.CHIPS),
                 Param.int("detail", "Detail", 10, MAX_DETAIL, 40, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION),
                 Param.float("spray", "Spray width", 0.5f, 2.5f, 1f, card = Card.MOTION)

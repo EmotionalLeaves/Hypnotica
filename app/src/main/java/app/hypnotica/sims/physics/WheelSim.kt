@@ -2,6 +2,7 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -31,6 +32,11 @@ import kotlin.math.sqrt
 class WheelSim : Sim {
 
     private var segments = 12
+    // Where each slice starts round the wheel, and how wide it is: all the
+    // same, or one thin gold jackpot, or lopsided at random.
+    private var starts = FloatArray(0)
+    private var widths = FloatArray(0)
+    private var jackpot = -1
     private var angle = 0f
     private var omega = 0f
     private var friction = 0.3f
@@ -52,6 +58,20 @@ class WheelSim : Sim {
 
     override fun setup(env: SimEnv) {
         segments = env.params.i("segments", 8).coerceIn(MIN_SEGMENTS, MAX_SEGMENTS)
+        val twoPi = 2f * PI.toFloat()
+        val kind = env.params.choiceIndex("wheel").coerceIn(0, 2)
+        val weight = FloatArray(segments) { 1f }
+        jackpot = -1
+        if (kind == 1) {
+            jackpot = env.rng.int(0, segments)
+            weight[jackpot] = JACKPOT_SHARE
+        } else if (kind == 2) {
+            for (k in 0 until segments) weight[k] = env.rng.range(0.35f, 1.8f)
+        }
+        val total = weight.sum()
+        widths = FloatArray(segments) { weight[it] / total * twoPi }
+        starts = FloatArray(segments)
+        for (k in 1 until segments) starts[k] = starts[k - 1] + widths[k - 1]
         radius = min(env.halfWidth, 1f) * 0.86f
         halfW = env.halfWidth
         angle = env.rng.range(0f, 2f * PI.toFloat())
@@ -70,10 +90,19 @@ class WheelSim : Sim {
         cx = FloatArray(0); cy = FloatArray(0); cvx = FloatArray(0); cvy = FloatArray(0); ctint = FloatArray(0)
     }
 
-    private val seg get() = (2.0 * PI / segments).toFloat()
-
-    /** Which gap between pegs is under the pointer, the pointer being straight up. */
-    private fun pegIndex(a: Float): Int = floor((POINTER - a) / seg).toInt()
+    /**
+     * Which gap between pegs is under the pointer, the pointer being straight
+     * up — counted on from lap to lap, so a change means a peg went by.
+     */
+    private fun pegIndex(a: Float): Int {
+        val twoPi = 2f * PI.toFloat()
+        val rel = POINTER - a
+        val lap = floor(rel / twoPi)
+        val within = rel - lap * twoPi
+        var k = segments - 1
+        for (i in 1 until segments) if (within < starts[i]) { k = i - 1; break }
+        return lap.toInt() * segments + k
+    }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -119,12 +148,14 @@ class WheelSim : Sim {
             payoffFrame = true
             winner = ((pegIndex(angle) % segments) + segments) % segments
             env.emit(EventKind.DONE, 0.4f + 0.5f * winner / segments, 0f, 1f)
+            if (winner == jackpot) repeat(8) { env.emit(EventKind.HIT, env.rng.range(0.6f, 1f), env.rng.range(-0.8f, 0.8f), 0.7f) }
             burst(env)
         }
     }
 
     private fun burst(env: SimEnv) {
-        val n = CONFETTI
+        // The jackpot pays out three times the confetti, all of it gold.
+        val n = if (winner == jackpot) CONFETTI * 3 else CONFETTI
         cx = FloatArray(n); cy = FloatArray(n); cvx = FloatArray(n); cvy = FloatArray(n); ctint = FloatArray(n)
         for (i in 0 until n) {
             cx[i] = env.rng.range(-0.1f, 0.1f)
@@ -132,7 +163,7 @@ class WheelSim : Sim {
             val a = env.rng.range(0.2f, PI.toFloat() - 0.2f)
             val v = env.rng.range(0.6f, 1.8f)
             cvx[i] = cos(a) * v; cvy[i] = sin(a) * v
-            ctint[i] = env.rng.nextFloat()
+            ctint[i] = if (winner == jackpot) -1f else env.rng.nextFloat()
         }
     }
 
@@ -157,14 +188,12 @@ class WheelSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val s = seg
         val twoPi = 2f * PI.toFloat()
         g.glow(0f, 0f, radius * 1.15f, palette.at(0.5f), 0.18f)
         for (k in 0 until segments) {
-            val a0 = angle + k * s
-            // Alternate light and dark so neighbours never blur together.
-            val base = palette.at((k + 0.5f) / segments)
-            val c = if (k % 2 == 0) base else Palette.brighten(base, 0.25f)
+            val a0 = angle + starts[k]
+            val s = widths[k]
+            val c = sliceColour(palette, k)
             val won = k == winner
             val pulse = if (won) 0.5f + 0.5f * sin((elapsed - stoppedAt) * 10f) else 0f
             val col = if (won) Palette.brighten(c, 0.3f + 0.3f * pulse) else if (winner >= 0) Palette.withAlpha(c, 0.45f) else c
@@ -172,13 +201,32 @@ class WheelSim : Sim {
             // segment's arc cut away.
             g.ring(0f, 0f, radius, radius, col, twoPi - s, a0 + s)
         }
+        if (jackpot >= 0) {
+            // The jackpot glints, so the eye keeps going back to it.
+            val mid = angle + starts[jackpot] + widths[jackpot] * 0.5f
+            val glint = 0.25f + 0.2f * sin(elapsed * 6f)
+            g.glow(cos(mid) * radius * 0.75f, sin(mid) * radius * 0.75f, radius * 0.22f, GOLD, glint)
+            // Edged in white, with a star at the rim: it can't be mistaken for
+            // a yellow slice.
+            for (e in 0..1) {
+                val a = angle + starts[jackpot] + e * widths[jackpot]
+                g.line(cos(a) * radius * 0.12f, sin(a) * radius * 0.12f, cos(a) * radius, sin(a) * radius, 0.007f, Palette.TEXT_PRIMARY)
+            }
+            val sx = cos(mid) * radius * 0.82f; val sy = sin(mid) * radius * 0.82f
+            val star = radius * 0.08f * (1f + 0.15f * sin(elapsed * 6f))
+            g.rect(sx, sy, star, star * 0.3f, Palette.TEXT_PRIMARY, mid)
+            g.rect(sx, sy, star, star * 0.3f, Palette.TEXT_PRIMARY, mid + PI.toFloat() / 2f)
+            g.rect(sx, sy, star * 0.7f, star * 0.21f, Palette.TEXT_PRIMARY, mid + PI.toFloat() / 4f)
+            g.rect(sx, sy, star * 0.7f, star * 0.21f, Palette.TEXT_PRIMARY, mid - PI.toFloat() / 4f)
+        }
         if (winner >= 0) {
-            val mid = angle + (winner + 0.5f) * s
-            g.glow(cos(mid) * radius * 0.6f, sin(mid) * radius * 0.6f, radius * 0.5f, palette.at((winner + 0.5f) / segments), 0.5f)
+            val mid = angle + starts[winner] + widths[winner] * 0.5f
+            val big = winner == jackpot
+            g.glow(cos(mid) * radius * 0.6f, sin(mid) * radius * 0.6f, radius * (if (big) 1.1f else 0.5f), sliceColour(palette, winner), if (big) 0.8f else 0.5f)
         }
         // The pegs round the rim.
         for (k in 0 until segments) {
-            val a = angle + k * s
+            val a = angle + starts[k]
             g.disc(cos(a) * radius * 0.97f, sin(a) * radius * 0.97f, 0.012f, Palette.TEXT_PRIMARY)
         }
         g.ring(0f, 0f, radius, 0.01f, Palette.TEXT_PRIMARY, alpha = 0.7f)
@@ -192,16 +240,20 @@ class WheelSim : Sim {
         g.disc(0f, baseY, 0.018f, Palette.DANGER)
         if (cx.isNotEmpty()) {
             g.reservePoints(cx.size)
-            for (i in cx.indices) g.point(cx[i], cy[i], 0.012f, palette.at(ctint[i]))
+            for (i in cx.indices) g.point(cx[i], cy[i], 0.012f, if (ctint[i] < 0f) Palette.brighten(GOLD, 0.3f * sin(i + elapsed * 9f)) else palette.at(ctint[i]))
         }
     }
 
     override fun contenders(env: SimEnv): IntArray =
         if (segments > MAX_PICKS) app.hypnotica.core.sim.NO_CONTENDERS
-        else IntArray(segments) { k ->
-            val base = env.palette.at((k + 0.5f) / segments)
-            if (k % 2 == 0) base else Palette.brighten(base, 0.25f)
-        }
+        else IntArray(segments) { sliceColour(env.palette, it) }
+
+    /** Alternate light and dark so neighbours never blur together; the jackpot is gold. */
+    private fun sliceColour(palette: Palette, k: Int): Int {
+        if (k == jackpot) return GOLD
+        val base = palette.at((k + 0.5f) / segments)
+        return if (k % 2 == 0) base else Palette.brighten(base, 0.25f)
+    }
 
     override fun winner(): Int = if (segments > MAX_PICKS) -1 else winner
 
@@ -210,7 +262,7 @@ class WheelSim : Sim {
     override fun finished(): Boolean = stoppedAt >= 0f && elapsed - stoppedAt > 3f
 
     override fun counters(): List<Pair<String, String>> =
-        if (winner >= 0) listOf("landed on" to (winner + 1).toString(), "rocked back" to rocks.toString())
+        if (winner >= 0) listOf("landed on" to (if (winner == jackpot) "JACKPOT!" else (winner + 1).toString()), "rocked back" to rocks.toString())
         else listOf("speed" to String.format(java.util.Locale.US, "%.1f", abs(omega)), "rocked back" to rocks.toString())
 
     companion object {
@@ -229,19 +281,23 @@ class WheelSim : Sim {
         const val STOP_SPEED = 0.02f
         const val CONFETTI = 400
         const val MAX_PICKS = 8
+        /** The jackpot slice, against an ordinary one. */
+        const val JACKPOT_SHARE = 0.4f
+        const val GOLD = 0xFFFFC23A.toInt()
 
         fun def(): SimDef = SimDef(
             id = "physics/wheel",
             title = "Spin the wheel",
             shelf = Shelf.PHYSICS,
             family = "Chance",
-            blurb = "Click, click, click… click. Where does it stop?",
+            blurb = "Click, click, click… click. Where does it stop? Will it hit the jackpot?",
             formats = listOf(TrapFormat.GUESS, TrapFormat.SNAP),
             heroLabel = "Spin harder",
             heroRestarts = false,
             defaultPalette = "Spectrum",
             typicalSeconds = 11f,
             params = listOf(
+                Param.choice("wheel", "Wheel", listOf("Even", "Jackpot", "Lopsided"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("segments", "Segments", MIN_SEGMENTS, MAX_SEGMENTS, 8, card = Card.DATA),
                 Param.float("spin", "Spin length", 0.3f, 3f, 1f, card = Card.MOTION)
             ),

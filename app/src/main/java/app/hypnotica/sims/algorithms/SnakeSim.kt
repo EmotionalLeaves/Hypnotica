@@ -2,6 +2,7 @@ package app.hypnotica.sims.algorithms
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -33,7 +34,11 @@ class SnakeSim : Sim {
     private var start = 0
     private var len = 0
     private var occupied = BooleanArray(0)
-    private var apple = -1
+    // The apples on the board: one, or three at once for a feast.
+    private var apples = IntArray(1) { -1 }
+    private var golden = BooleanArray(1)
+    private var mode = 0
+    private var eaten = 0
     private var grow = 0
     private var carry = 0f
     private var elapsed = 0f
@@ -78,7 +83,12 @@ class SnakeSim : Sim {
         val first = idx(0, rows - 1)
         push(first)
         grow = INITIAL_LENGTH - 1
-        placeApple(env)
+        mode = env.params.choiceIndex("apples").coerceIn(0, 2)
+        val n = if (mode == 2) FEAST else 1
+        apples = IntArray(n) { -1 }
+        golden = BooleanArray(n)
+        eaten = 0
+        for (i in 0 until n) placeApple(env, i)
         carry = 0f
         elapsed = 0f
         doneAt = -1f
@@ -105,15 +115,21 @@ class SnakeSim : Sim {
 
     private fun dist(a: Int, b: Int): Int = (order[b] - order[a] + cells) % cells
 
-    private fun placeApple(env: SimEnv) = placeAppleCell(env)
-
-    private fun placeAppleCell(env: SimEnv) {
-        val free = cells - len
-        if (free <= 0) { apple = -1; return }
+    private fun placeApple(env: SimEnv, i: Int) {
+        apples[i] = -1
+        golden[i] = false
+        // Not under the snake, nor on another apple.
+        val free = cells - len - apples.count { it >= 0 }
+        if (free <= 0) return
         var pick = env.rng.int(0, free)
         for (c in 0 until cells) {
-            if (occupied[c]) continue
-            if (pick == 0) { apple = c; return }
+            if (occupied[c] || c in apples) continue
+            if (pick == 0) {
+                apples[i] = c
+                // In golden mode, every so often one is gold: worth five.
+                golden[i] = mode == 1 && env.rng.nextFloat() < GOLD_CHANCE
+                return
+            }
             pick--
         }
     }
@@ -146,7 +162,8 @@ class SnakeSim : Sim {
         var best = -1
         var bestGain = -1
         val toTail = if (len > 1) dist(hd, tail()) else cells
-        val toApple = if (apple >= 0) dist(hd, apple) else cells
+        var toApple = cells
+        for (a in apples) if (a >= 0) toApple = min(toApple, dist(hd, a))
         // Short cuts only while there is room to spare.
         val cutting = len + grow < cells * CUT_UNTIL
         for (d in 0 until 4) {
@@ -159,7 +176,8 @@ class SnakeSim : Sim {
             if (!cutting) continue
             // A cut must land before the tail, with the growth still owed as
             // margin, and not past the apple.
-            if (gain >= toTail - grow - SLACK) continue
+            // Golden apples owe five at once, so in that game keep five spare.
+            if (gain >= toTail - grow - SLACK - (if (mode == 1) GOLD_GROWTH else 0)) continue
             if (gain > toApple) continue
             if (gain > bestGain) { best = n; bestGain = gain }
         }
@@ -170,12 +188,18 @@ class SnakeSim : Sim {
         }
         if (grow > 0) grow-- else popTail()
         push(best)
-        if (best == apple) {
-            grow += GROW_PER_APPLE
-            eatFlash = 1f
-            // Each apple the next note up the scale.
-            env.emit(EventKind.HIT, ((len / GROW_PER_APPLE) % 15) / 15f, ((best % cols) / max(1f, cols - 1f)) * 2f - 1f, 0.55f)
-            placeApple(env)
+        val ate = apples.indexOf(best)
+        if (ate >= 0) {
+            val gold = golden[ate]
+            // Never owed more than the board has room for.
+            grow = min(grow + (if (gold) GOLD_GROWTH else GROW_PER_APPLE), cells - len)
+            eatFlash = if (gold) 2f else 1f
+            eaten++
+            val pan = ((best % cols) / max(1f, cols - 1f)) * 2f - 1f
+            // Each apple the next note up the scale; gold, a chord.
+            env.emit(EventKind.HIT, (eaten % 15) / 15f, pan, 0.55f)
+            if (gold) for (k in 1..3) env.emit(EventKind.HIT, ((eaten + 2 * k) % 15) / 15f, pan, 0.45f)
+            placeApple(env, ate)
         }
         if (len >= cells) {
             doneAt = elapsed
@@ -213,12 +237,15 @@ class SnakeSim : Sim {
             val y = oy + (hd / cols) * cell + half
             g.glow(x, y, cell * (1.5f + 2f * eatFlash), palette.at(0.95f), 0.4f + 0.4f * eatFlash)
         }
-        if (apple >= 0) {
+        for (i in apples.indices) {
+            val apple = apples[i]
+            if (apple < 0) continue
             val x = ox + (apple % cols) * cell + half
             val y = oy + (apple / cols) * cell + half
-            val pulse = 0.85f + 0.15f * kotlin.math.sin(elapsed * 8f)
-            g.glow(x, y, cell * 1.4f, Palette.DANGER, 0.5f)
-            g.disc(x, y, half * 0.75f * pulse, Palette.DANGER)
+            val pulse = 0.85f + 0.15f * kotlin.math.sin(elapsed * 8f + i)
+            val col = if (golden[i]) GOLD else Palette.DANGER
+            g.glow(x, y, cell * (if (golden[i]) 2.4f else 1.4f), col, 0.5f)
+            g.disc(x, y, half * 0.75f * pulse, col)
         }
         if (doneAt >= 0f && len >= cells) {
             val k = ((elapsed - doneAt) * 1.5f).coerceIn(0f, 1f)
@@ -239,6 +266,10 @@ class SnakeSim : Sim {
 
     companion object {
         const val MAX_COLS = 40
+        const val FEAST = 3
+        const val GOLD_CHANCE = 0.2f
+        const val GOLD_GROWTH = 5
+        const val GOLD = 0xFFFFC23A.toInt()
         const val INITIAL_LENGTH = 3
         const val GROW_PER_APPLE = 1
         const val SLACK = 3
@@ -262,6 +293,7 @@ class SnakeSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 17f,
             params = listOf(
+                Param.choice("apples", "Apples", listOf("Classic", "Golden", "Feast"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("cols", "Board width", 4, MAX_COLS, 10, card = Card.DATA),
                 Param.float("pace", "Pace", 0.2f, 5f, 1f, card = Card.MOTION)
             ),

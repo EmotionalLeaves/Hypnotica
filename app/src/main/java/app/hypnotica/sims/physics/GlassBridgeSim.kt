@@ -2,6 +2,7 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -28,9 +29,10 @@ class GlassBridgeSim : Sim {
 
     private var rows = 12
     private var marbles = 8
-    private var safe = IntArray(0)        // which side holds, per row: 0 left, 1 right
-    private var known = BooleanArray(0)   // revealed by someone before
-    private var broken = IntArray(0)      // -1, or the side that shattered
+    private var lanes = 2
+    private var safe = IntArray(0)        // which pane holds, per row, counted from the left
+    private var known = BooleanArray(0)   // the safe pane is known: stood on, or the only one left
+    private var broken = IntArray(0)      // a bit for each pane that has shattered
     private var current = 0
     private var row = -1                  // -1: on the start platform
     private var side = 0
@@ -62,9 +64,13 @@ class GlassBridgeSim : Sim {
         halfW = env.halfWidth
         rows = env.params.i("rows", 12).coerceIn(3, MAX_ROWS)
         marbles = env.params.i("marbles", 8).coerceIn(1, MAX_MARBLES)
-        safe = IntArray(rows) { env.rng.int(0, 2) }
+        lanes = if (env.params.choiceIndex("panes") == 1) 3 else 2
+        // A row of three costs a fall each on average, twice a pair's: half
+        // the bridge, so someone still has a chance of getting across.
+        if (lanes == 3) rows = max(3, rows / 2)
+        safe = IntArray(rows) { env.rng.int(0, lanes) }
         known = BooleanArray(rows)
-        broken = IntArray(rows) { -1 }
+        broken = IntArray(rows)
         crossed = BooleanArray(marbles)
         fell = BooleanArray(marbles)
         current = 0
@@ -81,8 +87,10 @@ class GlassBridgeSim : Sim {
     }
 
     private fun rowY(r: Int) = BOTTOM + (TOP - BOTTOM) * (r + 1f) / (rows + 1f)
-    private fun sideX(s: Int) = (if (s == 0) -1f else 1f) * min(halfW, 1f) * 0.32f
-    private val paneHalf get() = min(halfW, 1f) * 0.26f
+    private fun sideX(s: Int) =
+        if (lanes == 2) (if (s == 0) -1f else 1f) * min(halfW, 1f) * 0.32f
+        else (s - 1) * min(halfW, 1f) * 0.6f
+    private val paneHalf get() = min(halfW, 1f) * (if (lanes == 2) 0.26f else 0.25f)
     private val paneH get() = (TOP - BOTTOM) / (rows + 1f) * 0.32f
 
     override fun step(env: SimEnv, dt: Float) {
@@ -124,7 +132,11 @@ class GlassBridgeSim : Sim {
             }
             // Choose the next pane: the known one if somebody found it, else a guess.
             val next = row + 1
-            side = if (known[next]) safe[next] else env.rng.int(0, 2)
+            side = if (known[next]) safe[next] else {
+                // A guess among the panes nobody has broken yet.
+                val open = (0 until lanes).filter { broken[next] and (1 shl it) == 0 }
+                open[env.rng.int(0, open.size)]
+            }
             fromX = if (row < 0) 0f else sideX(sideOf(row))
             fromY = if (row < 0) BOTTOM else rowY(row)
             hop = 0f
@@ -136,19 +148,20 @@ class GlassBridgeSim : Sim {
         if (hop >= 1f) {
             hopping = false
             row++
-            this.known[row] = true
             if (side != safe[row]) {
                 // Wrong pane.
-                broken[row] = side
+                broken[row] = broken[row] or (1 shl side)
+                // Known once only one is left whole.
+                if (Integer.bitCount(broken[row]) == lanes - 1) this.known[row] = true
                 shatter(env, sideX(side), rowY(row))
                 fell[current] = true
                 falling = true
                 fallingX = sideX(side)
                 fallingY = rowY(row)
                 fallingV = 0.3f
-                // The other one, then, for everyone after.
                 return
             }
+            this.known[row] = true
             lastSide = side
             env.emit(EventKind.HIT, 0.2f + 0.7f * row / rows, (sideX(side) / max(0.1f, halfW)).coerceIn(-1f, 1f), if (known) 0.25f else 0.5f)
             wait = if (known) 0f else GUESS_PAUSE
@@ -190,8 +203,8 @@ class GlassBridgeSim : Sim {
         g.rect(0f, TOP + 0.04f, min(halfW, 1f) * 0.7f, 0.035f, if (firstAcross >= 0) Palette.SUCCESS else 0xFF2A2E38.toInt())
         for (r in 0 until rows) {
             val y = rowY(r)
-            for (s in 0..1) {
-                if (broken[r] == s) continue
+            for (s in 0 until lanes) {
+                if (broken[r] and (1 shl s) != 0) continue
                 val x = sideX(s)
                 // Known safe panes are lit; the rest are just glass.
                 val glass = if (known[r] && safe[r] == s) Palette.withAlpha(Palette.SUCCESS, 0.45f) else 0x55A8D8FF
@@ -241,7 +254,7 @@ class GlassBridgeSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "fallen" to fell.count { it }.toString(),
-        if (firstAcross >= 0) "across first" to "#${firstAcross + 1}" else "furthest" to "row ${known.count { it }}"
+        if (firstAcross >= 0) "across first" to "#${firstAcross + 1}" else "furthest" to "row ${(0 until rows).count { known[it] || broken[it] != 0 }}"
     )
 
     companion object {
@@ -261,12 +274,13 @@ class GlassBridgeSim : Sim {
             title = "Glass bridge",
             shelf = Shelf.PHYSICS,
             family = "Chance",
-            blurb = "One pane in each pair holds. Each fall shows the next the way. Who gets across?",
+            blurb = "One pane in each pair holds — or one in three. Each fall shows the next the way. Who gets across?",
             formats = listOf(TrapFormat.GUESS, TrapFormat.LAST_STANDING, TrapFormat.ESCAPE),
             heroLabel = "New bridge",
             defaultPalette = "Spectrum",
             typicalSeconds = 18f,
             params = listOf(
+                Param.choice("panes", "Panes", listOf("Pairs", "Threes"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("rows", "Rows", 3, MAX_ROWS, 12, card = Card.DATA),
                 Param.int("marbles", "Marbles", 1, MAX_MARBLES, 8, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION)

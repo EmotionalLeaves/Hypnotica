@@ -2,6 +2,7 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -75,11 +76,22 @@ class SoapCutSim : Sim {
         fx = env.rng.range(2f, 6f); fy = env.rng.range(1.5f, 4f)
         ph = env.rng.range(0f, 6.28f); warp = env.rng.range(0.3f, 1.1f)
         val palette = env.palette
+        val pattern = env.params.choiceIndex("pattern").coerceIn(0, 3)
+        val layers = env.rng.int(4, 8)
+        val base = env.rng.nextFloat()
         colors = IntArray(gridX * gridY) { k ->
             val u = (k % gridX + 0.5f) / gridX; val v = (k / gridX + 0.5f) / gridY
-            // Layers bent by a sine swirl: marbled, and never the same twice.
-            val swirl = v + warp * 0.18f * sin(u * fx * 6.28f + ph + sin(v * fy * 6.28f) * warp)
-            palette.at(((swirl * 1.3f) % 1f + 1f) % 1f)
+            val t = when (pattern) {
+                // Layers bent by a sine swirl: marbled, and never the same twice.
+                0 -> v + warp * 0.18f * sin(u * fx * 6.28f + ph + sin(v * fy * 6.28f) * warp)
+                // Flat layers poured one on another, each its own colour.
+                1 -> floor(v * layers) / layers + 0.04f * sin(u * fx * 6.28f + ph)
+                // One colour, flecked with bits of the others.
+                2 -> if (env.rng.nextFloat() < 0.12f) env.rng.nextFloat() else base + 0.05f * v
+                // Fading from one colour at the bottom to another at the top.
+                else -> base + v * 0.6f + 0.02f * sin(u * 40f + ph)
+            }
+            palette.at(((t * 1.3f) % 1f + 1f) % 1f)
         }
         phase = 0f
         cut = 0
@@ -247,6 +259,7 @@ class SoapCutSim : Sim {
             defaultPalette = "Candy",
             typicalSeconds = 15f,
             params = listOf(
+                Param.choice("pattern", "Soap", listOf("Marbled", "Layered", "Speckled", "Ombré"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("slices", "Slices", 3, MAX_SLICES, 10, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION),
                 Param.float("crumble", "Crumble", 0f, 4f, 1f, card = Card.MOTION)

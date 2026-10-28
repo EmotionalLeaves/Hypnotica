@@ -25,7 +25,22 @@ data class Clip(
     /** Trail smear for this clip, 0 for none. Part of the variety, not a leftover. */
     val trails: Float,
     val payoffSeconds: Float
-)
+) {
+    /**
+     * The variant this clip plays, in words — "Jackpot", "Threes · Golden" —
+     * from the picked choices that aren't the sim's usual one; null when it
+     * is the usual. Swiping onto the same sim twice, this is what says it is
+     * not the same.
+     */
+    val variant: String? get() {
+        val names = def.params.filter { it.type == ParamType.CHOICE && it.card == app.hypnotica.core.recipe.Card.DATA }
+            .mapNotNull { p ->
+                val i = (params[p.key] ?: p.default).toInt()
+                if (i == p.default.toInt() || i !in p.choices.indices) null else p.choices[i]
+            }
+        return if (names.isEmpty()) null else names.joinToString("  ·  ")
+    }
+}
 
 /**
  * TickTock's generator.
