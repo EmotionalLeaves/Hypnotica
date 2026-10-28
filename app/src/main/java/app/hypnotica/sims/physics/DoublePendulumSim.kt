@@ -51,6 +51,8 @@ class DoublePendulumSim : Sim {
     private var flips = 0L
     private var spread = 0f
     private var leaderSide = true
+    private var lastHeight = 0f
+    private var rising = false
 
     /** How scattered they were at the start: a coarse nudge starts as a fan. */
     private var startSpread = 0f
@@ -72,7 +74,9 @@ class DoublePendulumSim : Sim {
         splitAt = 0f
         flips = 0L
         spread = 0f
-        leaderSide = true
+        leaderSide = a1.isEmpty() || a1[0] >= 0.0
+        lastHeight = if (a1.isEmpty()) 0f else (-cos(a1[0]) - cos(a2[0])).toFloat()
+        rising = false
         startSpread = bobSpread()
     }
 
@@ -118,6 +122,15 @@ class DoublePendulumSim : Sim {
 
         // The leader's upper arm passing the bottom: a steady beat under the
         // flips, so the fan is never silent while it swings.
+        // The top of each of the leader's swings, too — the moment it hangs
+        // before falling back — so the first slow swing from high up is not
+        // two silent seconds.
+        val height = (-cos(a1[0]) - cos(a2[0])).toFloat()
+        if (height < lastHeight && rising) {
+            env.emit(EventKind.STEP, ((height + 2f) / 4f).coerceIn(0f, 1f), 0f, 0.3f)
+        }
+        rising = height > lastHeight
+        lastHeight = height
         val side = a1[0] >= 0.0
         if (side != leaderSide) {
             leaderSide = side

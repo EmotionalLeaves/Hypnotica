@@ -44,6 +44,7 @@ class LSystemSim : Sim {
     private var fullAt = -1f
     private var payoffFrame = false
     private var nextNote = 0
+    private var gustSide = true
 
     private class Plant(
         val name: String, val axiom: String, val rules: Map<Char, String>,
@@ -61,6 +62,7 @@ class LSystemSim : Sim {
         fullAt = -1f
         payoffFrame = false
         nextNote = 0
+        gustSide = true
     }
 
     /** Rewrite the axiom [depth] times, stopping early if it would grow past reason. */
@@ -141,6 +143,14 @@ class LSystemSim : Sim {
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.9f, 0f, 1f)
             }
+        } else if (env.params.f("sway", 0.35f) > 0.01f) {
+            // Grown, it was silent for six seconds while it swayed. Each turn
+            // of the wind rustles: a soft note as the gust changes side.
+            val side = gust(elapsed) >= 0f
+            if (side != gustSide) {
+                gustSide = side
+                env.emit(EventKind.STEP, if (side) 0.75f else 0.55f, if (side) 0.4f else -0.4f, 0.25f)
+            }
         }
     }
 
@@ -150,7 +160,7 @@ class LSystemSim : Sim {
         val t = elapsed
         // Wind: every point leans by an amount growing with its height above
         // the ground, so the trunk barely moves and the tips wave.
-        val gust = sin(t * 0.8f) * 0.6f + sin(t * 1.9f + 1.3f) * 0.25f
+        val gust = gust(t)
         val lean = sway * gust * SWAY
         for (i in 0 until segments) {
             if (reach[i] - 1f > grown) continue
@@ -167,6 +177,8 @@ class LSystemSim : Sim {
             g.line(ax, y1[i], ex, ey, width, palette.at(0.15f + 0.8f * share), 0.9f)
         }
     }
+
+    private fun gust(t: Float): Float = sin(t * 0.8f) * 0.6f + sin(t * 1.9f + 1.3f) * 0.25f
 
     override fun payoff(): Boolean = payoffFrame
 
