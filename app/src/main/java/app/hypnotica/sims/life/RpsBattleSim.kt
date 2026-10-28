@@ -41,12 +41,16 @@ class RpsBattleSim : Sim {
     private var winner = -1
     private val out = BooleanArray(3)
     private var size = 0.025f
+    private var grip = 0.025f
 
     override fun setup(env: SimEnv) {
         val per = env.params.i("each", 40).coerceIn(3, MAX_EACH)
         n = per * 3
         halfW = env.halfWidth
-        size = (0.025f * sqrt(40f / per)).coerceIn(0.008f, 0.04f)
+        size = (0.035f * sqrt(40f / per)).coerceIn(0.01f, 0.055f)
+        // How close a catch is, kept as it was tuned: drawing them bigger
+        // shouldn't make the battle shorter.
+        grip = (0.025f * sqrt(40f / per)).coerceIn(0.008f, 0.04f)
         x = FloatArray(n); y = FloatArray(n); vx = FloatArray(n); vy = FloatArray(n)
         side = IntArray(n); flashT = FloatArray(n)
         // Some are quicker than others, or a chase at equal speed never ends.
@@ -89,7 +93,7 @@ class RpsBattleSim : Sim {
         val speed = BASE_SPEED * pace
         // And as it drags on, fear fades and reach grows: sudden death.
         val late = elapsed / RAMP_SECONDS
-        val reach = size * 1.6f * (1f + 0.5f * late)
+        val reach = grip * 1.6f * (1f + 0.5f * late)
         val fearNow = FEAR / (1f + late)
         var converted = 0
         var convertedSide = 0
