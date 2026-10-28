@@ -341,6 +341,22 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // is the sim, a title and four glyphs.
         }
 
+        // Pick the winner, for sims with sides. Outside the chrome, which
+        // fades: a pick made and then faded out with it lost its verdict.
+        // Above the column of buttons, so the chips never sit under them.
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .safeDrawingPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 248.dp)
+                .graphicsLayer {
+                    translationY = drag.value
+                    alpha = 1f - through * 0.7f
+                }
+        ) {
+            Column { WinnerPick(state, state.currentDef.id) }
+        }
+
     }
 }
 
