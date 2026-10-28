@@ -177,7 +177,7 @@ class ArenaSim : Sim {
                     val sj = vx[j] * vx[j] + vy[j] * vy[j]
                     val (att, def) = if (si >= sj) i to j else j to i
                     // Bumpers speed everyone up, and speed is damage: softer blows there.
-                    val dmg = (DAMAGE * rel * env.params.f("damage", 1f) * (if (bx.isEmpty()) 1f else BUMPER_DAMAGE)).coerceIn(0.02f, 0.6f)
+                    val dmg = (DAMAGE * rel * env.params.f("damage", 1f) * (if (bx.isEmpty()) 1f else BUMPER_DAMAGE)).coerceIn(if (bx.isEmpty()) 0.03f else 0.02f, 0.6f)
                     // Once it's won, they only bounce.
                     if (doneAt >= 0f) continue
                     hp[def] -= dmg

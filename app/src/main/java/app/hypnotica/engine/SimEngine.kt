@@ -604,10 +604,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             // The slow turn, only for a sim drawn round its centre, and eased
             // back upright when it ends rather than left at an angle.
             val turn = spin
-            if (turn != 0f && fitFor === core.sim && scene.fit < 0.99f && !safety.reduceMotion) {
+            if (turn != 0f && scene.fit < 0.99f && !safety.reduceMotion) {
                 camera.rotation = ((camera.rotation + turn * dt) % TWO_PI)
                 spinning = true
             } else if (spinning) {
+                // When the spin is off, or the sim isn't drawn round its
+                // centre. (It used to test the sim object too, which is new on
+                // the first frame of every restart, and the view jerked back.)
                 var r = camera.rotation % TWO_PI
                 if (r > Math.PI) r -= TWO_PI.toFloat() else if (r < -Math.PI) r += TWO_PI.toFloat()
                 r *= (1f - kotlin.math.min(1f, dt * 4f))

@@ -34,6 +34,8 @@ class RpsBattleSim : Sim {
     private var flashT = FloatArray(0)
     private var legs = FloatArray(0)
     private var quiet = 0f
+    private var frenzy = 0f
+    private var frenzySide = 0
     private val count = IntArray(MAX_TEAMS)
     private var teams = 3
     private var halfW = 0.46f
@@ -79,6 +81,7 @@ class RpsBattleSim : Sim {
         payoffFrame = false
         winner = -1
         quiet = 0f
+        frenzy = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -100,7 +103,7 @@ class RpsBattleSim : Sim {
         // And as it drags on, fear fades and reach grows: sudden death.
         val late = elapsed / RAMP_SECONDS
         val reach = grip * 1.6f * (1f + 0.5f * late)
-        val fearNow = FEAR / (1f + late)
+        val fearNow = if (frenzy > 0f) 0f else FEAR / (1f + late)
         var converted = 0
         var convertedSide = 0
         for (i in 0 until n) {
@@ -130,7 +133,7 @@ class RpsBattleSim : Sim {
             ax += env.rng.range(-JITTER, JITTER)
             ay += env.rng.range(-JITTER, JITTER)
             val am = sqrt(ax * ax + ay * ay).coerceAtLeast(1e-4f)
-            val sp = speed * legs[i]
+            val sp = speed * legs[i] * (if (frenzy > 0f && s == frenzySide) FRENZY_SPEED else 1f)
             vx[i] += (ax / am * sp - vx[i]) * min(1f, h * 5f)
             vy[i] += (ay / am * sp - vy[i]) * min(1f, h * 5f)
             move(i, h)
@@ -157,7 +160,17 @@ class RpsBattleSim : Sim {
         // the speed its prey flees, and nobody is ever caught. A few quiet
         // seconds and a stampede breaks the ring up.
         quiet = if (converted > 0) 0f else quiet + h
-        if (quiet > QUIET_SECONDS) { quiet = 0f; hero(env) }
+        if (quiet > QUIET_SECONDS) {
+            quiet = 0f
+            hero(env)
+            // And for a moment nobody flees, only chases: five sides in a
+            // ring re-formed the ring after a stampede and circled for good.
+            frenzy = FRENZY_SECONDS
+            // And one side, at random, is quicker for it: with everyone
+            // chasing at the same speed the ring only turned faster.
+            frenzySide = env.rng.int(0, teams)
+        }
+        frenzy = max(0f, frenzy - h)
         if (converted > 0) {
             // Each side has its own note; a burst is louder, not more notes.
             env.emit(EventKind.HIT, note(convertedSide), 0f, min(1f, 0.3f + 0.12f * converted))
@@ -277,6 +290,8 @@ class RpsBattleSim : Sim {
         const val RAMP_SECONDS = 20f
         const val GIVE_UP_SECONDS = 60f
         const val QUIET_SECONDS = 3f
+        const val FRENZY_SECONDS = 2.5f
+        const val FRENZY_SPEED = 1.7f
         const val MAX_TEAMS = 5
         val NAMES = arrayOf("rock", "paper", "scissors", "lizard", "Spock")
         /** Sides 0 to 4 as kinds: rock, Spock, paper, lizard, scissors. */

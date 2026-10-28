@@ -61,9 +61,14 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     // Start wherever the player actually is, so arriving here does not yank the
     // sim out from under the person, and so the sim restored at launch is the
     // one they were watching.
-    LaunchedEffect(Unit) {
+    //
+    // Resolved before anything else in this composition runs: as an effect it
+    // ran after the load below, which then replaced (and remixed) the sim the
+    // person had come from.
+    remember {
         val here = order.indexOfFirst { it.id == state.currentDef.id }
         if (here >= 0 && here != state.feedIndex) state.feedIndex = here
+        true
     }
     val index = state.feedIndex
     // Until the first swipe of the session, not of each visit: kept on the
@@ -105,7 +110,9 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // A look of its own as well, sometimes: folded into a
             // kaleidoscope, or turning slowly. Only sims drawn round their
             // centre take either; the engine sees to that.
-            val roll = ((state.feedVisits * 2654435761L) ushr 8 and 0xFF).toInt()
+            // Mixed from the sim and the visit: from the visit alone, the
+            // first of every session (visit 0) always came out a kaleidoscope.
+            val roll = (((state.feedVisits + 1L) * 2654435761L xor order[index].id.hashCode().toLong()) ushr 8 and 0xFF).toInt()
             state.engine.kaleido = if (roll < 40) (if (roll < 20) 6 else 4) else 1
             state.engine.spin = if (roll in 40 until 80) (if (roll % 2 == 0) SPIN else -SPIN) else 0f
         }

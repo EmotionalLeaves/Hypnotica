@@ -100,7 +100,11 @@ class MarbleRaceSim : Sim {
         // No paddle near a ramp: one at a ramp's low end batted the marbles
         // back up it, over and over, and the race never finished.
         if (rampX1.isNotEmpty()) {
-            val keep = paddleY.indices.filter { k -> rampY1.indices.none { r -> abs(paddleY[k] - (rampY1[r] + rampY2[r]) * 0.5f) < PADDLE_LEN + 0.2f } }
+            val keep = paddleY.indices.filter { k ->
+                rampY1.indices.none { r ->
+                    paddleY[k] > min(rampY1[r], rampY2[r]) - PADDLE_LEN - R * 3f && paddleY[k] < max(rampY1[r], rampY2[r]) + PADDLE_LEN + R * 3f
+                }
+            }
             paddleY = FloatArray(keep.size) { paddleY[keep[it]] }
             paddleX = FloatArray(keep.size) { paddleX[keep[it]] }
             paddleSpin = FloatArray(keep.size) { paddleSpin[keep[it]] }
@@ -135,6 +139,7 @@ class MarbleRaceSim : Sim {
             if (done[i]) continue
             vy[i] -= g * h
             vx[i] *= 1f - 0.15f * h
+            val ox = x[i]; val oy = y[i]
             x[i] += vx[i] * h
             y[i] += vy[i] * h
             // Walls.
@@ -144,7 +149,7 @@ class MarbleRaceSim : Sim {
             if (x[i] < -halfW + R) { x[i] = -halfW + R; vx[i] = abs(vx[i]) * bounce + 0.08f; vy[i] *= WALL_DRAG }
             if (x[i] > halfW - R) { x[i] = halfW - R; vx[i] = -abs(vx[i]) * bounce - 0.08f; vy[i] *= WALL_DRAG }
             pegs(env, i, bounce)
-            ramps(i)
+            ramps(i, ox, oy)
             paddles(i, bounce)
             // A marble wedged between two pegs is nudged free, as a real one
             // would be by the board's vibration.
@@ -267,10 +272,37 @@ class MarbleRaceSim : Sim {
         return sqrt(dx * dx + dy * dy)
     }
 
-    private fun ramps(i: Int) {
+    /** Which side of ramp [k]'s line a point is on: above is positive. */
+    private fun side(px: Float, py: Float, k: Int): Float {
+        val ex = rampX2[k] - rampX1[k]; val ey = rampY2[k] - rampY1[k]
+        val s = ex * (py - rampY1[k]) - ey * (px - rampX1[k])
+        return if (ex >= 0f) s else -s
+    }
+
+    private fun ramps(i: Int, ox: Float, oy: Float) {
         for (k in rampX1.indices) {
             val d = segDist(x[i], y[i], k)
             val reach = R + RAMP_THICK
+            // Swept: a marble that started above the ramp stays above it,
+            // however far it went this step. Resolved by where it is now, a
+            // fast or shoved marble came out underneath.
+            val wasAbove = side(ox, oy, k) > 0f
+            val isAbove = side(x[i], y[i], k) > 0f
+            val ex = rampX2[k] - rampX1[k]; val ey = rampY2[k] - rampY1[k]
+            val len2 = (ex * ex + ey * ey).coerceAtLeast(1e-9f)
+            // Along the ramp itself, not the line it lies on: past the open
+            // end is the way down.
+            val along = ((x[i] - rampX1[k]) * ex + (y[i] - rampY1[k]) * ey) / len2
+            if (wasAbove != isAbove && along in 0f..1f && d < reach * 4f) {
+                val len = sqrt(len2)
+                var nx = -ey / len; var ny = ex / len
+                if (ex < 0f) { nx = -nx; ny = -ny }
+                if (!wasAbove) { nx = -nx; ny = -ny }
+                x[i] = cx + nx * reach; y[i] = cy + ny * reach
+                val vn = vx[i] * nx + vy[i] * ny
+                if (vn < 0f) { vx[i] -= 1.2f * vn * nx; vy[i] -= 1.2f * vn * ny }
+                continue
+            }
             if (d >= reach || d < 1e-6f) continue
             val nx = (x[i] - cx) / d; val ny = (y[i] - cy) / d
             x[i] = cx + nx * reach; y[i] = cy + ny * reach
@@ -348,7 +380,7 @@ class MarbleRaceSim : Sim {
     override fun finished(): Boolean =
         (placed == count && winnerAt >= 0f && elapsed - winnerAt > 2.5f) || (winnerAt >= 0f && elapsed - winnerAt > 10f) ||
             // A race nobody can finish — no gravity to fall by — is let go.
-            (winnerAt < 0f && elapsed > GIVE_UP_SECONDS)
+            (winnerAt < 0f && elapsed > GIVE_UP_SECONDS + GIVE_UP_PER_LENGTH * length)
 
     override fun contenders(env: SimEnv): IntArray =
         if (count > 8) app.hypnotica.core.sim.NO_CONTENDERS else IntArray(count) { env.palette.at(it / max(1f, count - 1f)) }
@@ -385,7 +417,9 @@ class MarbleRaceSim : Sim {
         const val PADDLE_THICK = 0.012f
         const val GRAVITY_SCALE = 0.5f
         const val STUCK_SPEED = 0.06f
-        const val GIVE_UP_SECONDS = 60f
+        // With the course: a long course on a wide screen is still going at a minute.
+        const val GIVE_UP_SECONDS = 25f
+        const val GIVE_UP_PER_LENGTH = 3.5f
         const val WALL_DRAG = 0.8f
         const val WALL_CLEAR = R * 2f + PEG_R * 2f
         const val STUCK_SECONDS = 0.6f

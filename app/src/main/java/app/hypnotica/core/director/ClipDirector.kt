@@ -277,15 +277,21 @@ class ClipDirector(seed: Long = System.nanoTime()) {
      * Settings for one more run of [def], varied within the same watchable
      * band a clip gets: the feed's remix, so a sim met again isn't the same.
      */
-    @Synchronized
-    fun remix(def: SimDef): Map<String, Float> = randomiseParams(def)
+    //
+    // With its own random stream and its own lock: on the director's, a
+    // swipe on the feed waited — on the main thread — for whatever clip
+    // check TickTock or Settings had running, for up to most of a second.
+    fun remix(def: SimDef): Map<String, Float> = synchronized(remixLock) { randomiseParams(def, remixRng) }
 
     /** A palette for a remix: the sim's own half the time, else any. */
-    @Synchronized
-    fun remixPalette(def: SimDef): String =
-        if (rng.bool(0.5f)) def.defaultPalette else Palette.NAMES[rng.int(0, Palette.NAMES.size)]
+    fun remixPalette(def: SimDef): String = synchronized(remixLock) {
+        if (remixRng.bool(0.5f)) def.defaultPalette else Palette.NAMES[remixRng.int(0, Palette.NAMES.size)]
+    }
 
-    private fun randomiseParams(def: SimDef): Map<String, Float> {
+    private val remixLock = Any()
+    private val remixRng = app.hypnotica.core.sim.Rng(System.nanoTime())
+
+    private fun randomiseParams(def: SimDef, rng: app.hypnotica.core.sim.Rng = this.rng): Map<String, Float> {
         val out = HashMap<String, Float>()
         for (p in def.params) {
             if (p.advancedOnly) continue
