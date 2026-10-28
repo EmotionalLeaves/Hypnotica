@@ -608,6 +608,7 @@ object ArtSims {
         CirclePackingSim.def(),
         SpirographSim.def(),
         LSystemSim.def(),
-        MarbleMusicSim.def()
+        MarbleMusicSim.def(),
+        FireworksSim.def()
     )
 }
