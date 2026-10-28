@@ -32,6 +32,7 @@ class RpsBattleSim : Sim {
     private var side = IntArray(0)
     private var flashT = FloatArray(0)
     private var legs = FloatArray(0)
+    private var quiet = 0f
     private val count = IntArray(3)
     private var halfW = 0.46f
     private var elapsed = 0f
@@ -67,6 +68,7 @@ class RpsBattleSim : Sim {
         doneAt = -1f
         payoffFrame = false
         winner = -1
+        quiet = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -142,6 +144,11 @@ class RpsBattleSim : Sim {
             }
         }
         for (i in 0 until n) if (flashT[i] > 0f) flashT[i] = max(0f, flashT[i] - h * 3f)
+        // Three sides can fall into a ring, each chasing its prey round at
+        // the speed its prey flees, and nobody is ever caught. A few quiet
+        // seconds and a stampede breaks the ring up.
+        quiet = if (converted > 0) 0f else quiet + h
+        if (quiet > QUIET_SECONDS) { quiet = 0f; hero(env) }
         if (converted > 0) {
             // Each side has its own note; a burst is louder, not more notes.
             env.emit(EventKind.HIT, NOTE[convertedSide], 0f, min(1f, 0.3f + 0.12f * converted))
@@ -234,6 +241,7 @@ class RpsBattleSim : Sim {
         const val JITTER = 0.35f
         const val RAMP_SECONDS = 20f
         const val GIVE_UP_SECONDS = 60f
+        const val QUIET_SECONDS = 3f
         val NAMES = arrayOf("rock", "paper", "scissors")
         val NOTE = floatArrayOf(0.15f, 0.5f, 0.85f)
 

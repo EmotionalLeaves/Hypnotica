@@ -129,7 +129,7 @@ class SnakeSim : Sim {
         // a small board is done in seconds and the biggest in half a minute.
         val pace = env.params.f("pace", 1f)
         val rate = min(MAX_RATE, MIN_RATE * Math.exp((elapsed * pace / DOUBLING).toDouble()).toFloat())
-        carry += h * rate * pace
+        carry += h * rate
         var moves = 0
         while (carry >= 1f && doneAt < 0f && moves < MAX_MOVES_PER_STEP) {
             carry -= 1f

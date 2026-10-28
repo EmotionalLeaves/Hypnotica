@@ -42,10 +42,11 @@ class PourSim : Sim {
     private var payoffFrame = false
     private var full = false
     private var fullAt = -1f
+    private var capAt = -1f
     private var tenths = 0
     private var halfW = 0.46f
     private var share = 0f
-    private val level = IntArray(40)
+    private val level = IntArray(80)
 
     // The glass: an open box, walls and a floor, in world units.
     private var glassL = -0.3f
@@ -80,6 +81,7 @@ class PourSim : Sim {
         payoffFrame = false
         full = false
         fullAt = -1f
+        capAt = -1f
         tenths = 0
         share = 0f
         cellsX = max(1, (2f * halfW / D).toInt() + 2)
@@ -98,6 +100,7 @@ class PourSim : Sim {
             carry += h * flow
             // As many lanes as keep each one's drops a drop apart.
             val lanes = kotlin.math.ceil(flow * D * 1.2f / TAP_SPEED).toInt().coerceIn(1, 9)
+            if (n >= cap && capAt < 0f) capAt = elapsed
             while (carry >= 1f && n < cap) {
                 carry -= 1f
                 // In lanes across the tap, each drop set down a little below
@@ -106,13 +109,14 @@ class PourSim : Sim {
                 // blows itself sideways in mid-air.
                 val lane = n % lanes
                 x[n] = (lane - (lanes - 1) * 0.5f) * D * 1.05f + env.rng.range(-0.001f, 0.001f)
-                y[n] = 0.95f - carry * h * TAP_SPEED
+                y[n] = 0.95f - carry / flow * TAP_SPEED
                 vx[n] = 0f
                 vy[n] = -TAP_SPEED
                 n++
             }
         }
-        val g = env.laws.gravity * GRAVITY_SCALE
+        // Water pours down whatever the law says, or the glass never fills.
+        val g = (abs(env.laws.gravity) * GRAVITY_SCALE).coerceAtLeast(MIN_FALL)
         // Move every drop where its speed takes it...
         for (i in 0 until n) {
             vy[i] -= g * h
@@ -199,11 +203,14 @@ class PourSim : Sim {
 
         // How full, the way an eye judges it: where the water line is. Rows
         // up the glass, and the highest one that's at least half water.
-        val rows = level.size
+        val rows = ((glassTop - glassBottom) / D).toInt().coerceIn(4, level.size)
         java.util.Arrays.fill(level, 0)
         val rowH = (glassTop - glassBottom) / rows
         for (i in 0 until n) {
             if (x[i] <= glassL || x[i] >= glassR || y[i] < glassBottom) continue
+            // Only water that has settled: the stream and the splash are
+            // not the water line, and counting them called the brim early.
+            if (vx[i] * vx[i] + vy[i] * vy[i] > SETTLED * SETTLED) continue
             val r = ((y[i] - glassBottom) / rowH).toInt()
             if (r in 0 until rows) level[r]++
         }
@@ -282,7 +289,9 @@ class PourSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = full && elapsed - fullAt > 3f
+    override fun finished(): Boolean = (full && elapsed - fullAt > 3f) ||
+        // Out of water short of the brim: let the next run come.
+        (n >= cap && elapsed - capAt > 5f)
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "drops" to n.toString(),
@@ -304,6 +313,8 @@ class PourSim : Sim {
         const val TAP_SPEED = 2.2f
         const val FULL_SHARE = 0.975f
         const val MAX_DROPS = 3500
+        const val MIN_FALL = 0.8f
+        const val SETTLED = 0.5f
         const val FLOOR_GAP = 0.01f
         /** The area one drop takes up once settled, measured. */
         const val DROP_AREA = D * D * 0.95f
