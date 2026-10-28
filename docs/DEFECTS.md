@@ -27,6 +27,17 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **Some finished pictures got one second.** Sims that report finished on the
+  frame of their payoff — the spirograph, circle packing — were restarted a
+  second later, while others held a second and a half first. Every screen now
+  tops the hold up to the same length, counted from the payoff.
+- **Monte Carlo uses the tall screen.** On an upright phone the square moves up
+  and the estimate's history runs underneath it on a log scale, narrowing onto
+  a line at pi. Its notes come every 512 darts instead of in random clumps.
+- **TickTock opened on "Finding something…" every time.** Its clips are kept
+  between visits, and Settings — the only way in — finds the first one while
+  it is open.
+
 - **N-body threw a fifth of its bodies off the screen.** The disc was squashed
   to the screen's shape while each body kept the speed of a circular orbit at
   its unsquashed radius. The disc is round and fits the width, and the view

@@ -162,6 +162,10 @@ class ClipDirector(seed: Long = System.nanoTime()) {
      * Produce a clip that is known to pay off. Returns null only if nothing
      * worked in [tries] attempts, which should not happen with the stock set.
      */
+    // One at a time: Settings finds TickTock's first clip ahead of time, and
+    // a generation still unwinding from a cancel can overlap the next. They
+    // share the random stream, and two at once would interleave it.
+    @Synchronized
     fun generate(tries: Int = 12): Clip? {
         lastAttempts = 0
         var fallback: Clip? = null

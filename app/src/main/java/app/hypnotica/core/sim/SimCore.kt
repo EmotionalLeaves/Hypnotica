@@ -99,6 +99,22 @@ class SimCore(def: SimDef, seed: Long = 1L) {
     }
 
     /**
+     * How much longer a finished run should be left on screen than the usual
+     * resolve beat, in seconds.
+     *
+     * Most sims hold their finished picture for a second and a half before
+     * they report finished; some — the spirograph, circle packing — report it
+     * on the frame of their payoff, so their finished picture got a single
+     * second and was gone. This tops the hold up to the same length for every
+     * sim, counted from the payoff, and adds nothing to one that held already.
+     */
+    fun extraHoldSeconds(): Float {
+        if (!finished) return 0f
+        val since = if (payoffFired) kotlin.math.abs(env.time) - payoffAt else HOLD_SECONDS
+        return (HOLD_SECONDS - since).coerceIn(0f, HOLD_SECONDS)
+    }
+
+    /**
      * How far the view pulls back so the whole sim is on screen: 1 when it
      * already fits, less when it reaches past the edges. See [Sim.frameHalfWidth].
      */
@@ -289,6 +305,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
          * does not take every frame, and because draw() runs after advance().
          */
         const val WATCH_FRAMES = 30
+        /** The finished picture's time on screen, before the resolve beat. */
+        const val HOLD_SECONDS = 1.5f
         /** No sim is pulled back further than this, whatever it asks for. */
         const val MIN_FIT = 0.2f
         /**

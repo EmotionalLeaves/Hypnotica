@@ -55,6 +55,13 @@ enum class Screen { FEED, LIBRARY, PLAYER, SETTINGS, TICKTOCK, STUDIO, RECIPES }
  */
 internal const val RESOLVE_MS = 1000L
 
+/**
+ * The wait after a run finishes: the resolve beat, plus whatever the sim's own
+ * hold fell short of. See [app.hypnotica.core.sim.SimCore.extraHoldSeconds].
+ */
+internal fun resolveDelayMs(engine: SimEngine): Long =
+    RESOLVE_MS + (engine.core.extraHoldSeconds() * 1000f).toLong()
+
 /** How many screens Back remembers. */
 private const val MAX_TRAIL = 8
 
@@ -327,6 +334,15 @@ class AppState(
      * learned weighting survives leaving TickTock and coming back.
      */
     val director = ClipDirector()
+
+    /**
+     * Clips checked and ready, kept here rather than in TickTock so they
+     * survive leaving it — and so Settings, the only door to TickTock, can
+     * have one waiting before the clock is tapped. Finding a clip is a dozen
+     * headless payoff checks, seconds on a phone, and every visit used to open
+     * on "Finding something…".
+     */
+    val tickTockQueue = ArrayDeque<Clip>()
 
     /** What the benchmark found, shown in Settings. */
     var benchNote by mutableStateOf<String?>(null)

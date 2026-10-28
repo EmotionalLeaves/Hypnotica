@@ -91,7 +91,7 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
     }
     LaunchedEffect(finishedAt) {
         if (finishedAt == 0L) return@LaunchedEffect
-        delay(RESOLVE_MS)
+        delay(resolveDelayMs(state.engine))
         finishedAt = 0L
         state.restart(newSeed = true)
     }

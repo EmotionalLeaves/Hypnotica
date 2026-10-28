@@ -538,6 +538,16 @@ class MonteCarloPiSim : Sim {
     private var payoffFrame = false
     private var converged = false
 
+    /**
+     * The estimate as it went, sampled at counts spaced evenly on a log scale,
+     * for the trace under the square on a tall screen: the wobble narrowing
+     * onto pi is the whole story, and the square alone cannot show it.
+     */
+    private val historyAt = LongArray(HISTORY)
+    private val historyPi = FloatArray(HISTORY)
+    private var historyCount = 0
+    private var nextSample = 1L
+
     override fun setup(env: SimEnv) {
         capacity = env.params.i("dots", 60000).coerceIn(500, 400000)
         xs = FloatArray(capacity)
@@ -549,6 +559,8 @@ class MonteCarloPiSim : Sim {
         carry = 0f
         payoffFrame = false
         converged = false
+        historyCount = 0
+        nextSample = 1L
     }
 
     private fun estimate(): Float = if (total == 0L) 0f else (4.0 * inside / total).toFloat()
@@ -564,6 +576,7 @@ class MonteCarloPiSim : Sim {
         // oldest, so the square keeps glittering instead of freezing full.
         // It used to report finished the moment the buffer filled, and the
         // feed and TickTock threw it away at that instant — mid-convergence.
+        val before = total
         while (budget-- > 0) {
             val x = env.rng.range(-1f, 1f)
             val y = env.rng.range(-1f, 1f)
@@ -575,8 +588,16 @@ class MonteCarloPiSim : Sim {
             ys[slot] = y
             hit[slot] = isIn
             if (stored < capacity) stored++
+            if (total >= nextSample && historyCount < HISTORY) {
+                historyAt[historyCount] = total
+                historyPi[historyCount] = estimate()
+                historyCount++
+                nextSample = max(total + 1, (total * HISTORY_STEP).toLong())
+            }
         }
-        if (total % 512 < 24) {
+        // A note each time another block of darts lands; the old test caught
+        // a narrow window only when a frame's batch straddled it.
+        if (total / NOTE_EVERY != before / NOTE_EVERY) {
             env.emit(EventKind.STEP, (estimate() / 4f).coerceIn(0f, 1f), 0f, 0.3f)
         }
         // The estimate is only ever as good as the sample is large — the error
@@ -596,14 +617,41 @@ class MonteCarloPiSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val r = 0.86f
+        // On a tall screen the view pulls back to fit the square's width, and
+        // the room that leaves above and below goes to the trace: the square
+        // moves up, the estimate's history runs underneath.
+        val visibleHalf = max(1f, frameHalfWidth(env) / env.halfWidth)
+        val room = visibleHalf * 2f - 2f * r - GAP * 3f
+        val traced = room > MIN_TRACE
+        val cy = if (traced) visibleHalf - GAP - r else 0f
         g.reservePoints(stored)
         for (i in 0 until stored) {
             val c = if (hit[i]) palette.at(0.75f) else Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
-            g.point(xs[i] * r, ys[i] * r, 0.004f, c)
+            g.point(xs[i] * r, cy + ys[i] * r, 0.004f, c)
         }
-        g.ring(0f, 0f, r, 0.006f, Palette.ACCENT, alpha = 0.9f)
-        g.rect(0f, 0f, r, 0.004f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
-        g.rect(0f, 0f, 0.004f, r, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
+        g.ring(0f, cy, r, 0.006f, Palette.ACCENT, alpha = 0.9f)
+        g.rect(0f, cy, r, 0.004f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
+        g.rect(0f, cy, 0.004f, r, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
+        if (traced) drawTrace(g, palette, -visibleHalf + GAP, cy - r - GAP, r)
+    }
+
+    /** The estimate against the number of darts, on a log scale, with pi drawn across. */
+    private fun drawTrace(g: G, palette: Palette, bottom: Float, top: Float, halfW: Float) {
+        val mid = (bottom + top) * 0.5f
+        val half = (top - bottom) * 0.5f
+        g.line(-halfW, mid, halfW, mid, 0.004f, Palette.ACCENT, 0.6f)
+        if (historyCount < 2) return
+        val lo = kotlin.math.ln(historyAt[0].toFloat())
+        val hi = max(lo + 1f, kotlin.math.ln(max(total, TRACE_MIN_SPAN).toFloat()))
+        var px = 0f; var py = 0f
+        for (k in 0 until historyCount) {
+            val x = -halfW + 2f * halfW * (kotlin.math.ln(historyAt[k].toFloat()) - lo) / (hi - lo)
+            val off = ((historyPi[k] - PI.toFloat()) / TRACE_RANGE).coerceIn(-1f, 1f)
+            val y = mid + off * half
+            if (k > 0) g.line(px, py, x, y, 0.005f, palette.at(0.75f), 0.9f)
+            px = x; py = y
+        }
+        g.disc(px, py, 0.014f, Palette.brighten(palette.at(0.75f), 0.3f))
     }
 
     /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
@@ -619,6 +667,17 @@ class MonteCarloPiSim : Sim {
     )
 
     companion object {
+        private const val HISTORY = 600
+        private const val HISTORY_STEP = 1.04
+        private const val NOTE_EVERY = 512L
+        /** Space between the square, the trace and the screen's edges. */
+        private const val GAP = 0.08f
+        /** Below this much spare height the trace is not drawn. */
+        private const val MIN_TRACE = 0.3f
+        /** The trace spans pi plus or minus this. */
+        private const val TRACE_RANGE = 0.25f
+        /** The trace's time axis runs to at least this many darts. */
+        private const val TRACE_MIN_SPAN = 100_000L
         fun def(): SimDef = SimDef(
             id = "math/monte-carlo-pi",
             title = "Finding pi with darts",

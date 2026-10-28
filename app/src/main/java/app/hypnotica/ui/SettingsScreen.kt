@@ -1,5 +1,9 @@
 package app.hypnotica.ui
 
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.Dispatchers
 import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,6 +42,17 @@ import app.hypnotica.core.sim.TrapFormat
 
 @Composable
 fun SettingsScreen(state: AppState, versionName: String) {
+    // TickTock's only door is on this page, so this is where its first clip
+    // gets found: by the time the clock is tapped, one is usually waiting.
+    // Cancelled with the page, so it costs nothing to someone just passing.
+    LaunchedEffect(Unit) {
+        if (state.tickTockQueue.isNotEmpty()) return@LaunchedEffect
+        val clip = withContext(Dispatchers.Default) {
+            runInterruptible { state.director.generate() }
+        }
+        if (clip != null && state.tickTockQueue.isEmpty()) state.tickTockQueue.addLast(clip)
+    }
+
     var showGestures by remember { mutableStateOf(false) }
     Column(
         Modifier

@@ -53,7 +53,7 @@ import kotlinx.coroutines.withContext
 fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     // The director lives in the state, so taste survives leaving TickTock.
     val director = state.director
-    val queue = remember { ArrayDeque<Clip>() }
+    val queue = state.tickTockQueue
     var current by remember { mutableStateOf<Clip?>(null) }
     var showChrome by remember { mutableStateOf(true) }
     var liked by remember { mutableStateOf(false) }
@@ -182,7 +182,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             // After the resolve beat, not on the finishing frame: moving on
             // the instant a clip finished meant its ending was never seen.
             generating = scope.launch {
-                delay(RESOLVE_MS)
+                delay(resolveDelayMs(state.engine))
                 advance()
             }
         }
