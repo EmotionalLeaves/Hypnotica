@@ -1,5 +1,7 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -67,9 +69,11 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
     var finishedAt by remember { mutableStateOf(0L) }
 
     // Rule 1: the sim is the interface. Chrome fades out when nobody is touching.
-    LaunchedEffect(overlayVisible, state.controlsOpen) {
-        if (overlayVisible && !state.controlsOpen) {
-            delay(2600)
+    // Not while paused: a still picture with no Play button in sight is the
+    // one state that looks like the app has broken.
+    LaunchedEffect(overlayVisible, state.controlsOpen, state.paused) {
+        if (overlayVisible && !state.controlsOpen && !state.paused) {
+            delay(CHROME_IDLE_MS)
             overlayVisible = false
         }
     }
@@ -111,9 +115,12 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         SimCanvas(
             surface = surface,
             modifier = Modifier.fillMaxSize(),
+            // With the drawer open, a tap on the sim closes the drawer and
+            // nothing else, as tapping outside a sheet does. It used to hide
+            // the bars as well, so changing one more thing took two taps and ≡.
             onTap = {
-                overlayVisible = !overlayVisible
-                if (!overlayVisible) state.controlsOpen = false
+                if (state.controlsOpen) state.controlsOpen = false
+                else overlayVisible = !overlayVisible
             },
             // No double-tap here either. Holding the first tap back by a
             // double-tap window to find out whether a second is coming puts a
@@ -130,8 +137,10 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         )
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            val topShown = remember { MutableTransitionState(false) }
+            topShown.targetState = overlayVisible
             AnimatedVisibility(
-                visible = overlayVisible,
+                visibleState = topShown,
                 // Fade, not the default expand-and-shrink: growing the bar's
                 // height clips the title and squashes the buttons on the way.
                 enter = fadeIn(tween(Tokens.Base)),
@@ -140,8 +149,13 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
                 TopBar(state, uiTick)
             }
             Spacer(Modifier.weight(1f))
+            // Transition states that start hidden, so arriving here — from the
+            // feed, or holding the sim — fades the bars in and slides the
+            // drawer up, instead of both being there on the first frame.
+            val drawerShown = remember { MutableTransitionState(false) }
+            drawerShown.targetState = state.controlsOpen
             AnimatedVisibility(
-                visible = state.controlsOpen,
+                visibleState = drawerShown,
                 enter = slideInVertically(tween(Tokens.Sheet, easing = FastOutSlowInEasing)) { it } +
                     fadeIn(tween(Tokens.Sheet)),
                 exit = slideOutVertically(tween(Tokens.Sheet, easing = FastOutSlowInEasing)) { it } +
@@ -149,8 +163,10 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             ) {
                 ControlDrawer(state)
             }
+            val barsShown = remember { MutableTransitionState(false) }
+            barsShown.targetState = overlayVisible
             AnimatedVisibility(
-                visible = overlayVisible,
+                visibleState = barsShown,
                 enter = fadeIn(tween(Tokens.Base)),
                 exit = fadeOut(tween(Tokens.Base))
             ) {
@@ -195,7 +211,7 @@ private fun TopBar(state: AppState, uiTick: Int) {
                 // can invalidate it twice over.
                 val full = rec != null && rec.full
                 LaunchedEffect(full) { if (full) state.stopRecording() }
-                "\u25CF  recording  ${(rec?.seconds ?: 0f).toInt()}s"
+                "\u25CF  recording  ${(rec?.seconds ?: 0f).toInt()}s  ·  tap to stop"
             } else if (state.showCounters && counters.isNotEmpty()) {
                 counters.joinToString("   ") { "${it.second} ${it.first}" }
             } else {
@@ -203,6 +219,8 @@ private fun TopBar(state: AppState, uiTick: Int) {
             }
             Text(
                 line,
+                // While recording, the line itself is the stop button.
+                modifier = if (state.recording) Modifier.clickable { state.stopRecording() } else Modifier,
                 color = if (state.recording || recipeError != null) Tokens.Danger
                     else Tokens.TextSecondary,
                 // Tabular figures: a counter that changes every frame must not
@@ -217,7 +235,11 @@ private fun TopBar(state: AppState, uiTick: Int) {
         // The title column ran flush into the star, with 12 dp of air on its
         // other side.
         Spacer(Modifier.width(12.dp))
-        GlyphButton(if (state.isFavourite(state.currentDef.id)) "★" else "☆") {
+        GlyphButton(
+            if (state.isFavourite(state.currentDef.id)) "★" else "☆",
+            selected = state.isFavourite(state.currentDef.id),
+            pop = true
+        ) {
             state.toggleFavourite(state.currentDef.id)
         }
     }
@@ -264,6 +286,9 @@ private fun ControlDrawer(state: AppState) {
             Pill("Simple", selected = !state.advanced, Modifier.weight(1f)) { state.advanced = false }
             Pill("Advanced", selected = state.advanced, Modifier.weight(1f)) { state.advanced = true }
         }
+        // The first few visits: the gestures that make the sim yours, which
+        // were only written down near the bottom of Settings.
+        GestureTip(state)
         if (state.struggling) {
             NoticeLine("More than this phone draws smoothly. A smaller size will help.")
         }
@@ -503,12 +528,18 @@ private fun MotionCard(state: AppState) {
         min = 0.1f,
         max = 10f,
         logScale = true,
-        valueText = String.format(java.util.Locale.US, "%.2fx", state.speed)
-    ) { state.speed = it }
+        // "normal" at 1x, and a detent around it: on a log slider from a tenth
+        // to ten, landing on exactly 1x by thumb was nearly impossible, so one
+        // drag left the sim running at 1.07x for good.
+        valueText = if (state.speed == 1f) "normal"
+        else String.format(java.util.Locale.US, if (state.speed < 1f) "%.2fx" else "%.1fx", state.speed)
+    ) { v -> state.speed = if (v in SPEED_DETENT) 1f else v }
+    // The sim's own controls come first: each card leads with what is worth
+    // dragging. Reverse time was between Speed and them.
+    CardControls(state, Card.MOTION)
     // Simple mode's Laws card is gated on law knobs too, so these were
     // unreachable here for the same forty-seven sims.
     TimeControls(state)
-    CardControls(state, Card.MOTION)
     Spacer(Modifier.height(4.dp))
     ToggleRow("Evolve", state.evolve, enabled = state.canEvolve) { state.evolve = it }
     // One line, not both: a greyed-out switch was captioned "Nothing on this
@@ -524,7 +555,13 @@ private fun MotionCard(state: AppState) {
         if (state.recording) {
             Pill("Stop and edit", selected = true) { state.stopRecording() }
         } else {
-            Pill("Start recording") { state.notice = null; state.startRecording() }
+            // The drawer gets out of the way: it sat over the sim you are
+            // meant to pinch, and stopping meant opening it again.
+            Pill("Start recording") {
+                state.notice = null
+                state.startRecording()
+                state.controlsOpen = false
+            }
         }
     }
     NoticeLine(state.notice)
@@ -553,13 +590,15 @@ private fun LookCard(state: AppState) {
         // A share, as Advanced shows it, not "0.85".
         valueText = if (state.trails < 0.02f) "off" else "${(state.trails * 100f).toInt()}%"
     ) { state.trails = it }
+    // The sim's own look controls before the camera switch, which is rarely
+    // touched.
+    CardControls(state, Card.LOOK)
     ToggleRow("Drag pans the view", state.cameraDrag) { state.cameraDrag = it }
     Text(
         "One finger moves the camera instead of the sim.",
         color = Tokens.TextSecondary,
         style = MaterialTheme.typography.bodySmall
     )
-    CardControls(state, Card.LOOK)
 }
 
 /**
@@ -586,10 +625,49 @@ private fun SoundCard(state: AppState) {
     // SoundMapping holds plain fields for the audio thread, not snapshot state.
     val version = state.soundVersion
 
-    SectionLabel("Sound")
+    SectionLabel("Preset")
     ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
         state.setSoundPreset(SoundPreset.NAMES[it])
     }
+    // The two sliders straight after the preset: below three chip rows and
+    // nine pills they were off the bottom of the drawer.
+    // Two sliders over five values. The scale, the base pitch, the range, the
+    // decay and the note ceiling were Advanced-only, which left Simple mode
+    // with a preset and nothing else — and this is exactly the shape the brief
+    // asked for: more capability, controlled more simply.
+    val brightness = remember(version) {
+        Macro.positionOf(60f..880f, 523f, mapping.baseHz, log = true)
+    }
+    ValueSlider(
+        "Brightness", brightness, 0f, 1f,
+        // Words in Simple mode; the hertz are on the Advanced sound tab.
+        valueText = when {
+            brightness < 0.34f -> "deep"
+            brightness < 0.67f -> "middle"
+            else -> "bright"
+        }
+    ) { t ->
+        mapping.baseHz = Macro.valueAt(60f..880f, 523f, t, log = true)
+        mapping.octaves = Macro.valueAt(1f..6f, 3f, t)
+        state.soundChanged()
+    }
+    val busyness = remember(version) {
+        Macro.positionOf(4f..400f, 60f, mapping.maxNotesPerSecond, log = true)
+    }
+    ValueSlider(
+        "Busyness", busyness, 0f, 1f,
+        valueText = when {
+            busyness < 0.34f -> "sparse"
+            busyness < 0.67f -> "steady"
+            else -> "busy"
+        }
+    ) { t ->
+        mapping.maxNotesPerSecond = Macro.valueAt(4f..400f, 60f, t, log = true)
+        // Busier means shorter notes, or they pile into a drone.
+        mapping.decay = Macro.valueAt(2f..0.06f, 0.6f, t, log = true)
+        state.soundChanged()
+    }
+
     SectionLabel("Scale")
     // A chip row is as simple as a control gets, and the scale is the thing a
     // person is most likely to want to change about the sound: it was behind
@@ -642,43 +720,6 @@ private fun SoundCard(state: AppState) {
         }
     }
 
-    // Two sliders over five values. The scale, the base pitch, the range, the
-    // decay and the note ceiling were Advanced-only, which left Simple mode
-    // with a preset and nothing else — and this is exactly the shape the brief
-    // asked for: more capability, controlled more simply.
-    val brightness = remember(version) {
-        Macro.positionOf(60f..880f, 523f, mapping.baseHz, log = true)
-    }
-    ValueSlider(
-        "Brightness", brightness, 0f, 1f,
-        // Words in Simple mode; the hertz are on the Advanced sound tab.
-        valueText = when {
-            brightness < 0.34f -> "deep"
-            brightness < 0.67f -> "middle"
-            else -> "bright"
-        }
-    ) { t ->
-        mapping.baseHz = Macro.valueAt(60f..880f, 523f, t, log = true)
-        mapping.octaves = Macro.valueAt(1f..6f, 3f, t)
-        state.soundChanged()
-    }
-    val busyness = remember(version) {
-        Macro.positionOf(4f..400f, 60f, mapping.maxNotesPerSecond, log = true)
-    }
-    ValueSlider(
-        "Busyness", busyness, 0f, 1f,
-        valueText = when {
-            busyness < 0.34f -> "sparse"
-            busyness < 0.67f -> "steady"
-            else -> "busy"
-        }
-    ) { t ->
-        mapping.maxNotesPerSecond = Macro.valueAt(4f..400f, 60f, t, log = true)
-        // Busier means shorter notes, or they pile into a drone.
-        mapping.decay = Macro.valueAt(2f..0.06f, 0.6f, t, log = true)
-        state.soundChanged()
-    }
-
     CardControls(state, Card.SOUND, showEmpty = false)
 }
 
@@ -693,3 +734,32 @@ private fun LawsCard(state: AppState) {
     )
     CardControls(state, Card.LAWS, showEmpty = false)
 }
+
+/** Speeds this close to 1x snap to it. */
+private val SPEED_DETENT = 0.92f..1.08f
+
+/**
+ * One line, shown on the first few times the controls open, then never again:
+ * pinch, twist and drag are the most satisfying things the app does and the
+ * only place they were explained was a folded list in Settings.
+ */
+@Composable
+private fun GestureTip(state: AppState) {
+    var show by remember { mutableStateOf(state.gestureTipsLeft > 0) }
+    LaunchedEffect(Unit) {
+        if (!show) return@LaunchedEffect
+        state.gestureTipsLeft = state.gestureTipsLeft - 1
+        delay(GESTURE_TIP_MS)
+        show = false
+    }
+    AnimatedVisibility(visible = show, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
+        Text(
+            "Pinch to zoom · twist to turn · drag to poke",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+}
+
+private const val GESTURE_TIP_MS = 5000L

@@ -249,6 +249,18 @@ class AppState(
      */
     var feedIndex by mutableIntStateOf(0)
 
+    /** How many more times the drawer shows its gesture tip; kept on the phone. */
+    private var gestureTipsState = prefs?.gestureTipsLeft ?: 0
+    var gestureTipsLeft: Int
+        get() = gestureTipsState
+        set(value) {
+            gestureTipsState = value.coerceAtLeast(0)
+            prefs?.gestureTipsLeft = gestureTipsState
+        }
+
+    /** True until the first swipe on the feed this session. */
+    var feedHint by mutableStateOf(true)
+
     /**
      * Why the sim stopped, or null. Mirrored from the engine, which sets it
      * from the GL thread and cannot touch snapshot state itself.

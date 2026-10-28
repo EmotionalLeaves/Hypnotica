@@ -65,7 +65,10 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         if (here >= 0 && here != state.feedIndex) state.feedIndex = here
     }
     val index = state.feedIndex
-    var hint by remember { mutableStateOf(true) }
+    // Until the first swipe of the session, not of each visit: kept on the
+    // screen, it came back every time the feed was re-entered, and since the
+    // chrome does not fade while it shows, the buttons sat over the sim again.
+    var hint by state::feedHint
 
     // A sim you are watching runs for as long as you watch it.
     //
@@ -121,8 +124,12 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         delay(CHROME_IDLE_MS)
         chromeShown = false
     }
+    // Fades in on arrival rather than being there on the first frame: coming
+    // back from the player was a hard cut from one set of bars to another.
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
     val chromeAlpha by animateFloatAsState(
-        if (chromeShown) 1f else 0f,
+        if (chromeShown && entered) 1f else 0f,
         tween(if (chromeShown) Tokens.Fast else Tokens.Slow),
         label = "feedChrome"
     )
@@ -201,7 +208,13 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // Once the buttons have faded, the first tap only brings them
             // back. It used to open the player as well, so on the feed the
             // buttons could only be got back by starting a drag.
-            onTap = { if (!hiddenAtDown) state.screen = Screen.PLAYER }
+            onTap = { if (!hiddenAtDown) state.screen = Screen.PLAYER },
+            // Hold for the controls, as the gesture rules say: long-press
+            // opens more. It did nothing here.
+            onLongPress = {
+                state.screen = Screen.PLAYER
+                state.controlsOpen = true
+            }
         )
 
         // How far through the move, 0 at rest and 1 at the swap.
@@ -264,7 +277,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            if (hint) "${state.currentDef.shelf.title}  ·  swipe up or down"
+                            if (hint) "${state.currentDef.shelf.title}  ·  swipe up · hold for controls"
                             else state.currentDef.shelf.title,
                             color = Tokens.TextSecondary,
                             style = MaterialTheme.typography.bodySmall,
@@ -277,24 +290,22 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     GlyphButton(
                         if (state.isFavourite(state.currentDef.id)) "★" else "☆",
-                        selected = state.isFavourite(state.currentDef.id)
+                        selected = state.isFavourite(state.currentDef.id),
+                        pop = true
                     ) { state.toggleFavourite(state.currentDef.id) }
                     Spacer(Modifier.height(8.dp))
                     GlyphButton("↻") { state.restart(newSeed = true) }
                     Spacer(Modifier.height(8.dp))
-                    GlyphButton("≡") { state.screen = Screen.LIBRARY }
+                    // Not ≡, which in the player opens the controls drawer.
+                    GlyphButton("▦") { state.screen = Screen.LIBRARY }
+                    Spacer(Modifier.height(8.dp))
+                    GlyphButton("⚙") { state.screen = Screen.SETTINGS }
                 }
             }
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                BigButton("Open controls", Modifier.weight(1f), primary = true) {
-                    state.screen = Screen.PLAYER
-                    state.controlsOpen = true
-                }
-                BigButton("Settings") { state.screen = Screen.SETTINGS }
-            }
+            // The two big buttons that sat under all this — "Open controls"
+            // and "Settings" — are gone: holding the sim opens the controls,
+            // and Settings is the last of the small buttons. The home screen
+            // is the sim, a title and four glyphs.
         }
     }
 }

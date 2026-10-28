@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -82,10 +83,11 @@ fun LibraryScreen(state: AppState) {
             Modifier.fillMaxWidth().padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // ‹ like every other panel, rather than a ▶ that had to be guessed.
+            GlyphButton("‹") { state.goBack() }
+            Spacer(Modifier.width(12.dp))
             Text("Library", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
-            GlyphButton("▶") { state.screen = Screen.PLAYER }
-            Spacer(Modifier.width(8.dp))
             GlyphButton("⚙") { state.screen = Screen.SETTINGS }
         }
 
@@ -111,8 +113,20 @@ fun LibraryScreen(state: AppState) {
                 singleLine = true,
                 textStyle = TextStyle(color = Tokens.TextPrimary, fontSize = MaterialTheme.typography.bodyMedium.fontSize),
                 cursorBrush = SolidColor(Tokens.Accent),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(end = if (query.isEmpty()) 0.dp else 40.dp)
             )
+            // Clearing a search on a phone meant holding backspace.
+            if (query.isNotEmpty()) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .size(48.dp)
+                        .clickable { query = "" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("×", color = Tokens.TextSecondary, style = MaterialTheme.typography.titleMedium)
+                }
+            }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -130,7 +144,8 @@ fun LibraryScreen(state: AppState) {
                         // coming put a quarter-second lag on every tap.
                         "Nothing starred yet. Tap ★ on a sim to keep it here."
                     query.isNotBlank() ->
-                        "Nothing matches \"$query\". Try a shorter word, or tap All " +
+                        if (shelfIndex == 0) "Nothing matches \"$query\". Try a shorter word."
+                        else "Nothing matches \"$query\". Try a shorter word, or tap All " +
                             "to search every shelf."
                     else -> "Nothing on this shelf yet."
                 },
@@ -147,7 +162,8 @@ fun LibraryScreen(state: AppState) {
         ) {
             items(results, key = { it.id }) { def ->
                 SimTile(def, state.isFavourite(def.id)) {
-                    state.load(def)
+                    // The sim already playing carries on rather than restarting.
+                    if (def.id != state.currentDef.id) state.load(def)
                     state.screen = Screen.PLAYER
                 }
             }

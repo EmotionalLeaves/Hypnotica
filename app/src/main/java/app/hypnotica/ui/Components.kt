@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -401,10 +402,26 @@ fun GlyphButton(
     glyph: String,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    /** Bounce when [selected] turns on: for a "keep this" action like ★. */
+    pop: Boolean = false,
     onClick: () -> Unit
 ) {
+    // The swap from ☆ to ★ was a single frame with nothing to say it took.
+    val scale = remember { androidx.compose.animation.core.Animatable(1f) }
+    var seen by remember { mutableStateOf(selected) }
+    LaunchedEffect(selected) {
+        if (pop && selected && !seen) {
+            scale.animateTo(1.25f, androidx.compose.animation.core.tween(Tokens.Fast))
+            scale.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.45f))
+        }
+        seen = selected
+    }
     Box(
         modifier
+            .graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+            }
             .size(48.dp)
             .background(
                 if (selected) Tokens.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.06f),
@@ -415,7 +432,11 @@ fun GlyphButton(
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(glyph, color = Tokens.TextPrimary, style = MaterialTheme.typography.titleMedium)
+        Text(
+            glyph,
+            color = if (pop && selected) Tokens.Accent else Tokens.TextPrimary,
+            style = MaterialTheme.typography.titleMedium
+        )
     }
 }
 

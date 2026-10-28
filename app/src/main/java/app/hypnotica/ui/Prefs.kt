@@ -125,6 +125,11 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_PROJECT, null)
         set(value) = sp.edit().putString(KEY_PROJECT, value).apply()
 
+    /** How many more times the controls show the one-line gesture tip. */
+    var gestureTipsLeft: Int
+        get() = sp.getInt(KEY_GESTURE_TIPS, 3)
+        set(value) = sp.edit().putInt(KEY_GESTURE_TIPS, value).apply()
+
     var mutedFormats: Set<String>
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
@@ -148,6 +153,7 @@ class Prefs(context: Context) {
         const val KEY_MUTED = "muted_formats"
         const val KEY_SCHEMA = "schema"
         const val KEY_PROJECT = "studio_project"
+        const val KEY_GESTURE_TIPS = "gesture_tips_left"
 
         /** Bump with a step in [migrate] whenever a default changes for people already using the app. */
         const val SCHEMA = 2

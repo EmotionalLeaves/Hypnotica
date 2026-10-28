@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
@@ -137,17 +138,46 @@ fun SettingsScreen(state: AppState, versionName: String) {
             }
         }
 
+        // What every gesture does, any time it is wanted, rather than on a card
+        // pushed at the person on first launch.
+        SectionLabel("Gestures")
+        if (showGestures) {
+            GestureList()
+            Spacer(Modifier.height(8.dp))
+        }
+        Pill(if (showGestures) "Hide" else "What the gestures do", selected = showGestures) {
+            showGestures = !showGestures
+        }
+
         SectionLabel("TickTock formats")
-        Text(
-            "Hide the kinds of clip you don't want.",
-            color = Tokens.TextSecondary,
-            style = MaterialTheme.typography.bodySmall
-        )
+        // Folded, as Gestures is: fifteen pills in eight rows for a hidden
+        // feature pushed everything after them half a screen down.
+        var showFormats by remember { mutableStateOf(false) }
+        val on = TrapFormat.entries.size - state.mutedFormats.size
+        Pill(
+            if (showFormats) "Hide" else "Choose formats ($on of ${TrapFormat.entries.size} on)",
+            selected = showFormats
+        ) { showFormats = !showFormats }
+        if (showFormats) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Hide the kinds of clip you don't want.",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(8.dp))
+            FormatMutes(state)
+        }
         Spacer(Modifier.height(8.dp))
-        FormatMutes(state)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            var confirmReset by remember { mutableStateOf(false) }
+        var confirmReset by remember { mutableStateOf(false) }
+        // An armed "sure?" stands down by itself; left armed, a tap much later
+        // wiped what TickTock had learned.
+        LaunchedEffect(confirmReset) {
+            if (!confirmReset) return@LaunchedEffect
+            delay(4000)
+            confirmReset = false
+            state.notice = null
+        }
         Pill(
             if (confirmReset) "Forget it all — sure?" else "Reset what it learned",
             selected = confirmReset,
@@ -163,22 +193,7 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 state.notice = "Forgotten. TickTock starts fresh."
             }
         }
-        }
-        // One notice line for the section, under the row rather than beside
-        // the pill: there it was squeezed into a column six lines tall, and
-        // the format pills above printed the same message a second time.
         NoticeLine(state.notice)
-
-        // What every gesture does, any time it is wanted, rather than on a card
-        // pushed at the person on first launch.
-        SectionLabel("Gestures")
-        if (showGestures) {
-            GestureList()
-            Spacer(Modifier.height(8.dp))
-        }
-        Pill(if (showGestures) "Hide" else "What the gestures do", selected = showGestures) {
-            showGestures = !showGestures
-        }
 
         SectionLabel("Your own sims")
         BigButton("Write a sim") { state.screen = Screen.RECIPES }
