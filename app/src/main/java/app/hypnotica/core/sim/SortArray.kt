@@ -16,6 +16,13 @@ class SortArray(val values: FloatArray, private val env: SimEnv) {
     var writes = 0L
         private set
 
+    /** Reads that are not comparisons: a radix sort's digit look-ups. */
+    var reads = 0L
+        private set
+
+    /** Everything this array has been asked to do, for paying a race fairly. */
+    val operations: Long get() = comparisons + writes + reads
+
     /** Indices touched by the last operation; the renderer highlights them. */
     var lastA = -1
         private set
@@ -32,6 +39,7 @@ class SortArray(val values: FloatArray, private val env: SimEnv) {
 
     /** A read that is worth seeing and hearing but is not a comparison. */
     fun read(i: Int): Float {
+        reads++
         lastA = i
         env.emit(EventKind.COMPARE, values[i], pan(i), 0.25f)
         return values[i]

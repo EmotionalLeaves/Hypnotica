@@ -82,7 +82,8 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
                 DataShape.RANDOM -> rng.nextFloat()
                 DataShape.REVERSED -> 1f - t
                 DataShape.ALMOST -> t
-                DataShape.REPEATS -> ((t * 8f).toInt() / 8f) + 0.0625f
+                // Eight levels; t = 1 used to make a ninth, alone and taller than the rest.
+                DataShape.REPEATS -> (min(7, (t * 8f).toInt()) / 8f) + 0.0625f
                 DataShape.WAVE -> 0.5f + 0.45f * sin(t * PI.toFloat() * 4f)
                 DataShape.SAWTOOTH -> (t * 5f) % 1f
             }

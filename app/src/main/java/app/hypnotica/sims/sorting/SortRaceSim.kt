@@ -82,8 +82,8 @@ class SortRaceSim : Sim {
             var calls = 0L
             while (calls < OPS_CAP && a.advance(arr)) calls++
             quiet.events.clear()
-            // Counted the way the race is paid: compares and writes.
-            val ops = arr.comparisons + arr.writes
+            // Counted the way the race is paid: compares, writes and reads.
+            val ops = arr.operations
             if (ops < fastest) fastest = ops
         }
         opsPerSecond = max(20f, fastest / WINNER_SECONDS)
@@ -125,9 +125,11 @@ class SortRaceSim : Sim {
             // calls: one heap-sort call is a whole sift level and one merge
             // call a single copy, so counting calls rigged the race.
             val lane = lanes[k]
-            val goal = lane.comparisons + lane.writes + ops - debt[k]
+            // Reads count too: radix sort compares nothing and reads every
+            // digit, and with reads free it won every race it was drawn in.
+            val goal = lane.operations + ops - debt[k]
             var calls = 0
-            while (lane.comparisons + lane.writes < goal && calls++ < ops * 4 + 16) {
+            while (lane.operations < goal && calls++ < ops * 4 + 16) {
                 if (!algos[k].advance(lane)) {
                     running[k] = false
                     finishedAt[k] = elapsed
@@ -145,7 +147,7 @@ class SortRaceSim : Sim {
                 }
             }
             // Overshoot is owed from the next frame's share.
-            debt[k] = max(0L, lane.comparisons + lane.writes - goal)
+            debt[k] = max(0L, lane.operations - goal)
         }
         if (placed == LANES && allDoneAt < 0f) allDoneAt = elapsed
     }

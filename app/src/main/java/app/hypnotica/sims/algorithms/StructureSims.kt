@@ -244,7 +244,7 @@ class NQueensSim : Sim {
         // every position does something at every size.
         // And the search accelerates as it runs. No formula in n can set a
         // rate that suits every board: measured, the first solution costs about
-        // 13 tries at four queens, 200 at ten, and over fourteen thousand at
+        // 13 tries at four queens, 876 at eight, and about 160,000 at
         // sixteen, which is not any power of n. A rate that climbs covers the
         // range — small boards still solve in seconds, sixteen reaches an
         // answer instead of never — and it suits the sim, which should feel
@@ -611,7 +611,12 @@ class LogicGatesSim : Sim {
                 0f,
                 (0.3f + flips.toFloat() / bits * 0.6f).coerceAtMost(1f)
             )
-            // A carry all the way along the chain is the moment worth waiting for.
+            // The count rolling over — a carry out of the top bit — is the
+            // moment worth waiting for. Only with an addend of one is it always
+            // a carry run the whole length of the chain; with a bigger step the
+            // low bits may never carry at all (an even step never carries out
+            // of bit 0), so waiting for a full-length ripple would wait
+            // forever. Said as what it is.
             if (carryBits[bits]) {
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.9f, 0f, 1f)
@@ -924,15 +929,24 @@ class GraphLayoutSim : Sim {
         edgeB = IntArray(maxEdges)
         edges = 0
         // A spanning tree first, so the graph is always one connected piece.
+        // Each pair once: random extras with no check repeated pairs, so five
+        // nodes claimed fourteen edges when only ten exist, and a repeated
+        // pair pulled twice as hard.
+        val seen = HashSet<Long>()
+        fun key(a: Int, b: Int): Long = min(a, b).toLong() * n + max(a, b)
         for (i in 1 until n) {
             edgeA[edges] = i
             edgeB[edges] = env.rng.int(0, i)
+            seen.add(key(edgeA[edges], edgeB[edges]))
             edges++
         }
-        while (edges < maxEdges) {
+        val possible = n.toLong() * (n - 1) / 2
+        val target = min(maxEdges.toLong(), possible).toInt()
+        var tries = 0
+        while (edges < target && tries++ < target * 40 + 100) {
             val a = env.rng.int(0, n)
             val b = env.rng.int(0, n)
-            if (a != b) {
+            if (a != b && seen.add(key(a, b))) {
                 edgeA[edges] = a
                 edgeB[edges] = b
                 edges++

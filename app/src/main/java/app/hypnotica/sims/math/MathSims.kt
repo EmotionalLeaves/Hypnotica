@@ -256,6 +256,8 @@ class ChaosGameSim : Sim {
     private var payoffFrame = false
     private val cornerX = FloatArray(12)
     private val cornerY = FloatArray(12)
+    private var noRepeat = false
+    private var lastCorner = -1
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -264,7 +266,15 @@ class ChaosGameSim : Sim {
         // just fills in. The jump that makes an n-gon's copies touch without
         // overlapping is 1 − 1/(2·(1 + Σ cos(2πk/n), k = 1..⌊n/4⌋)) — a half
         // for three, the golden 0.618 for five, two thirds for six.
-        ratio = if (p.b("fit", true)) fittedRatio(corners) else p.f("ratio", 0.5f)
+        val fit = p.b("fit", true)
+        ratio = if (fit) fittedRatio(corners) else p.f("ratio", 0.5f)
+        // The square is the one shape the formula cannot help: its copies at a
+        // half tile it exactly, and the "fractal" was an evenly filled square.
+        // The classic fix is a rule rather than a ratio — never the same
+        // corner twice running — which carves the square into a fractal at
+        // the same half.
+        noRepeat = fit && corners == 4
+        lastCorner = -1
         capacity = p.i("dots", 120000).coerceIn(1000, 400000)
         points = FloatArray(capacity * 2)
         tints = FloatArray(capacity)
@@ -297,7 +307,9 @@ class ChaosGameSim : Sim {
         val r = ratio * (1f + BREATH_DEPTH * sin(breath))
         val before = count
         while (budget-- > 0) {
-            val c = env.rng.int(0, corners)
+            var c = env.rng.int(0, corners)
+            if (noRepeat && c == lastCorner) c = (c + 1 + env.rng.int(0, corners - 1)) % corners
+            lastCorner = c
             px += (cornerX[c] - px) * r
             py += (cornerY[c] - py) * r
             val slot = (count % capacity).toInt()

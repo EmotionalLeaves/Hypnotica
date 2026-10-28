@@ -498,7 +498,9 @@ class LorenzSim : Sim {
         payoffFrame = false
         runFor = 0f
         lobeSwaps = 0
-        lastLobe = 1
+        // The side it starts on: always 1 counted a swap on the first step for
+        // every run that began with x below zero, about half of them.
+        lastLobe = if (x > 0.0) 1 else -1
         prevZ = z
         rising = false
         settled = false
