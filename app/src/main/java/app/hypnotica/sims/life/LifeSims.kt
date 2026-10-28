@@ -1073,6 +1073,7 @@ object LifeSims {
         FallingSandSim.def(),
         PredatorPreySim.def(),
         ReactionDiffusionSim.def(),
-        ColourWarSim.def()
+        ColourWarSim.def(),
+        RpsBattleSim.def()
     )
 }
