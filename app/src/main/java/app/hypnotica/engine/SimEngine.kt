@@ -117,13 +117,16 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         private set
     private var sinceCounters = 0f
 
-    /** The sim's contenders and winner, snapshotted with the counters. */
+    /**
+     * The sim's sides and winner, snapshotted with the counters, together
+     * with which run they belong to: the run number goes up on every load
+     * and restart, so a pick made in one run is never settled by the next.
+     * One object, so the sides and the winner always come from one frame.
+     */
     @Volatile
-    var contenders: IntArray = app.hypnotica.core.sim.NO_CONTENDERS
+    var pick = PickSnapshot(0L, app.hypnotica.core.sim.NO_CONTENDERS, -1)
         private set
-    @Volatile
-    var winner: Int = -1
-        private set
+    private var runId = 0L
 
     /**
      * Set by a pinch. The feed and TickTock lean the camera in on their own;
@@ -560,8 +563,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (sinceCounters >= COUNTERS_EVERY) {
             sinceCounters = 0f
             counters = core.sim.counters()
-            contenders = core.sim.contenders(core.env)
-            winner = core.sim.winner()
+            pick = PickSnapshot(runId, core.sim.contenders(core.env), core.sim.winner())
         }
 
         g.reset()
@@ -656,6 +658,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     private fun resetRunState() {
+        runId++
+        pick = PickSnapshot(runId, app.hypnotica.core.sim.NO_CONTENDERS, -1)
         driftHold.clear()
         payoffNotified = false
         finishNotified = false
@@ -754,3 +758,6 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         fun clampSpeed(v: Float): Float = min(10f, max(0.1f, v))
     }
 }
+
+/** What a run offers to bet on, and how it came out; see [SimEngine.pick]. */
+class PickSnapshot(val run: Long, val sides: IntArray, val winner: Int)

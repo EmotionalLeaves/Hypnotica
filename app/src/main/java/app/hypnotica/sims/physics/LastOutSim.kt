@@ -99,11 +99,13 @@ class LastOutSim : Sim {
                 if (d + r <= ringR) continue
                 // At the wall: through the gap, or off it.
                 val a = atan2(y[i], x[i])
-                if (inGap(a) && d > ringR - r * 0.2f) {
+                // Once it's won, the gap is wall: the winner stays in.
+                val open = doneAt < 0f && inGap(a)
+                if (open && d > ringR - r * 0.2f) {
                     if (d > ringR + r) escape(env, i)
                     continue
                 }
-                if (inGap(a)) continue
+                if (open) continue
                 val nx = x[i] / d; val ny = y[i] / d
                 x[i] = nx * (ringR - r); y[i] = ny * (ringR - r)
                 val vn = vx[i] * nx + vy[i] * ny

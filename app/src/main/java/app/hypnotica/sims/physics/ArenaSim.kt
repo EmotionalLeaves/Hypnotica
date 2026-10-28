@@ -36,6 +36,7 @@ class ArenaSim : Sim {
     private var vy = FloatArray(0)
     private var hp = FloatArray(0)
     private var hit = FloatArray(0)
+    private var gone = BooleanArray(0)
     private var tint = FloatArray(0)
     private var aliveCount = 0
     private var radius = 0.05f
@@ -60,7 +61,7 @@ class ArenaSim : Sim {
         arena = arena0
         radius = (arena0 * 0.11f * sqrt(8f / n)).coerceIn(0.012f, 0.1f)
         x = FloatArray(n); y = FloatArray(n); vx = FloatArray(n); vy = FloatArray(n)
-        hp = FloatArray(n) { 1f }; hit = FloatArray(n)
+        hp = FloatArray(n) { 1f }; hit = FloatArray(n); gone = BooleanArray(n)
         tint = FloatArray(n) { (it + 0.5f) / n }
         for (i in 0 until n) {
             // Round the edge, facing in, so the first clashes come quickly.
@@ -121,6 +122,8 @@ class ArenaSim : Sim {
             for (i in 0 until n) {
                 if (hp[i] <= 0f) continue
                 for (j in i + 1 until n) {
+                    // Knocked out by an earlier pair this pass: out of the fight.
+                    if (hp[i] <= 0f) break
                     if (hp[j] <= 0f) continue
                     val ex = x[j] - x[i]; val ey = y[j] - y[i]
                     val d2 = ex * ex + ey * ey
@@ -140,6 +143,8 @@ class ArenaSim : Sim {
                     val sj = vx[j] * vx[j] + vy[j] * vy[j]
                     val (att, def) = if (si >= sj) i to j else j to i
                     val dmg = (DAMAGE * rel * env.params.f("damage", 1f)).coerceIn(0.03f, 0.6f)
+                    // Once it's won, they only bounce.
+                    if (doneAt >= 0f) continue
                     hp[def] -= dmg
                     hit[def] = 1f
                     env.emit(EventKind.HIT, 0.25f + 0.6f * tint[att], (x[def] / max(0.1f, arena0)).coerceIn(-1f, 1f), (0.3f + dmg).coerceAtMost(1f))
@@ -157,6 +162,9 @@ class ArenaSim : Sim {
     }
 
     private fun knockOut(env: SimEnv, i: Int) {
+        // Twice for one ball counted two out and crowned a winner early.
+        if (gone[i]) return
+        gone[i] = true
         hp[i] = 0f
         aliveCount--
         env.emit(EventKind.STEP, 0.1f, (x[i] / max(0.1f, arena0)).coerceIn(-1f, 1f), 0.9f)

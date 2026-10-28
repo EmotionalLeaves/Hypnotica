@@ -618,31 +618,28 @@ fun WinnerPick(state: AppState, key: Any?) {
         pick = -1
         verdict = null
         if (key == null) return@LaunchedEffect
-        // The engine swaps the run in a frame or two later, and its snapshot
-        // a tenth of a second after that: until it has been seen undecided,
-        // what it says is the last run's result.
-        var open = false
+        // Everything is keyed to the run the snapshot belongs to: a new run
+        // (a restart, a loop, a new sim) clears the pick, so it can only be
+        // settled by the run it was made in.
+        var run = -1L
         while (true) {
-            val w = state.engine.winner
-            if (w < 0) {
-                open = true
-                // Settled before and undecided now: the run started over.
-                if (winnerSide >= 0) {
-                    winnerSide = -1
-                    pick = -1
-                    verdict = null
-                }
+            val snap = state.engine.pick
+            if (snap.run != run) {
+                run = snap.run
+                pick = -1
+                verdict = null
+                winnerSide = -1
             }
-            if (open) {
-                val c = state.engine.contenders
-                if (!c.contentEquals(sides)) sides = c.copyOf()
-                if (w != winnerSide) {
-                    winnerSide = w
-                    if (w >= 0 && pick >= 0 && verdict == null) {
-                        val right = pick == w
-                        verdict = right
-                        state.recordGuess(right)
-                    }
+            if (!snap.sides.contentEquals(sides)) {
+                sides = snap.sides.copyOf()
+                if (pick >= sides.size) pick = -1
+            }
+            if (snap.winner != winnerSide) {
+                winnerSide = snap.winner
+                if (snap.winner >= 0 && pick >= 0 && verdict == null) {
+                    val right = pick == snap.winner
+                    verdict = right
+                    state.recordGuess(right)
                 }
             }
             delay(100)
