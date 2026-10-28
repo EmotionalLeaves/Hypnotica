@@ -145,7 +145,12 @@ class PowerWashSim : Sim {
                     if (a % 2 == 0) 0.2f else 0.7f + 0.1f * sin(turn + a)
                 }
                 // A sunburst of rays from the middle.
-                else -> kotlin.math.floor((kotlin.math.atan2(v, u) / (2f * PI.toFloat()) + 0.5f) * (6f + 6f * f1 * 4f)) / 7f + turn
+                else -> {
+                    // A whole number of rays, so none is cut short where the
+                    // angle wraps; each a step round the palette.
+                    val rays = 8 + 2 * (f1 * 20f).toInt()
+                    kotlin.math.floor((kotlin.math.atan2(v, u) / (2f * PI.toFloat()) + 0.5f) * rays) / rays + turn
+                }
             }
             val tone = ((t % 1f) + 1f) % 1f
             mural[k] = palette.at(tone)

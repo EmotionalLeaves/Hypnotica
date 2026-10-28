@@ -923,7 +923,7 @@ class AppState(
         // The same sim again (the player's dice): keep what is loaded, so a
         // formula the person typed and their advanced settings survive — a
         // fresh load would put every one back to its default first.
-        if (def.id != currentDef.id) load(def) else paused = false
+        if (def.id != currentDef.id) load(def) else { engine.core.paused = false; paused = false }
         val params = director.remix(def)
         if (chosenPalette == null) {
             val palette = director.remixPalette(def)

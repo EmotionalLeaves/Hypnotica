@@ -2,6 +2,7 @@ package app.hypnotica.sims.life
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -51,6 +52,12 @@ class ColourWarSim : Sim {
     private var halfW = 0.46f
     private var takenBy = IntArray(0)
     private var pendingSpawn = IntArray(0)
+    // How the board is split at the start: blocks, interleaved stripes, or
+    // islands round a few random points per colour.
+    private var layout = 0
+    private var stripeRounds = 2
+    private var seedC = FloatArray(0)
+    private var seedR = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -59,8 +66,21 @@ class ColourWarSim : Sim {
         halfW = env.halfWidth
         cell = 2f * halfW / cols
         rows = max(8, (2f / cell).toInt())
+        layout = p.choiceIndex("layout").coerceIn(0, 2)
+        // Each stripe at least a few squares deep, or its balls were
+        // swallowed before they'd moved: on a wide screen, fewer rounds.
+        stripeRounds = (rows / (teams * MIN_STRIPE)).coerceIn(1, 2)
         owner = ByteArray(cols * rows)
-        for (r in 0 until rows) for (c in 0 until cols) owner[r * cols + c] = startOwner(c, r).toByte()
+        // Islands drawn again until the split is roughly fair: a colour
+        // starting with half the board had won before anything moved.
+        var tries = 0
+        do {
+            seedC = FloatArray(teams * ISLANDS) { env.rng.range(0f, cols.toFloat()) }
+            seedR = FloatArray(teams * ISLANDS) { env.rng.range(0f, rows.toFloat()) }
+            for (r in 0 until rows) for (c in 0 until cols) owner[r * cols + c] = startOwner(c, r).toByte()
+            val share = IntArray(teams); for (o in owner) share[o.toInt()]++
+            val fair = owner.size / teams.toFloat()
+        } while (layout == 2 && tries++ < 30 && share.any { it < fair * 0.7f || it > fair * 1.3f })
         val per = p.i("balls", 2).coerceIn(1, 6)
         val n = teams * per
         bx = FloatArray(n); by = FloatArray(n); bvx = FloatArray(n); bvy = FloatArray(n)
@@ -68,8 +88,11 @@ class ColourWarSim : Sim {
         alive = BooleanArray(n) { true }
         for (i in 0 until n) {
             val (cx, cy) = homeOf(bteam[i])
-            bx[i] = cx + env.rng.range(-0.05f, 0.05f)
-            by[i] = cy + env.rng.range(-0.05f, 0.05f)
+            // Close in on an island's centre: a small one could leave a ball
+            // dropped just outside it, swallowed before it moved.
+            val j = if (layout == 2) cell * 0.3f else 0.05f
+            bx[i] = cx + env.rng.range(-j, j)
+            by[i] = cy + env.rng.range(-j, j)
             val a = env.rng.range(0f, 2f * PI.toFloat())
             bvx[i] = cos(a) * SPEED; bvy[i] = sin(a) * SPEED
         }
@@ -87,15 +110,31 @@ class ColourWarSim : Sim {
     }
 
     /** Halves, thirds or quarters of the board. */
-    private fun startOwner(c: Int, r: Int): Int = when (teams) {
-        2 -> if (r < rows / 2) 0 else 1
-        3 -> min(2, r * 3 / rows)
+    private fun startOwner(c: Int, r: Int): Int = when {
+        layout == 1 -> (r * teams * stripeRounds / rows) % teams
+        layout == 2 -> {
+            var best = 0; var bestD = Float.MAX_VALUE
+            for (k in seedC.indices) {
+                val dx = c + 0.5f - seedC[k]; val dy = r + 0.5f - seedR[k]
+                val d = dx * dx + dy * dy
+                if (d < bestD) { bestD = d; best = k }
+            }
+            best % teams
+        }
+        teams == 2 -> if (r < rows / 2) 0 else 1
+        teams == 3 -> min(2, r * 3 / rows)
         else -> (if (r < rows / 2) 0 else 2) + (if (c < cols / 2) 0 else 1)
     }
 
     /** The middle of a team's starting ground, in world units. */
     private fun homeOf(t: Int): Pair<Float, Float> {
-        val (c, r) = when (teams) {
+        val (c, r) = if (layout == 1) {
+            // The middle of the colour's first stripe.
+            cols / 2f to (t + 0.5f) * rows / (teams * stripeRounds).toFloat()
+        } else if (layout == 2) {
+            // Its first island's centre, which is always its own.
+            seedC[t] to seedR[t]
+        } else when (teams) {
             2 -> cols / 2f to (if (t == 0) rows * 0.25f else rows * 0.75f)
             3 -> cols / 2f to rows * (t + 0.5f) / 3f
             else -> (if (t % 2 == 0) cols * 0.25f else cols * 0.75f) to (if (t < 2) rows * 0.25f else rows * 0.75f)
@@ -170,11 +209,14 @@ class ColourWarSim : Sim {
                 env.emit(EventKind.DEATH, t / max(1f, teams - 1f), 0f, 0.9f)
                 // A colour with ground but no balls left keeps its ground: it
                 // just cannot win any more. The payoff is the first one out.
-                if (!decided) decide(env)
             }
         }
+        // But not in the opening seconds: stripes and islands put a colour's
+        // balls in narrow ground, and one swallowed at once ended the war
+        // before it was a war. Its ground stays on the board meanwhile.
+        if (!decided && elapsed > EARLIEST && out.any { it }) decide(env)
         // Or a colour holding over half the board.
-        if (!decided && elapsed > 3f) {
+        if (!decided && elapsed > EARLIEST) {
             // Twice a fair share: half the board of four, two thirds of three.
             val dominant = min(0.8f, 2f / teams)
             for (t in 0 until teams) if (counts[t] > owner.size * dominant) { decide(env); break }
@@ -270,6 +312,10 @@ class ColourWarSim : Sim {
     }
 
     companion object {
+        const val ISLANDS = 3
+        /** No verdict before this: the opening is the show. */
+        const val EARLIEST = 8f
+        const val MIN_STRIPE = 5
         const val BALL_R = 0.018f
         const val SPEED = 1.3f
         const val WOBBLE = 0.004f
@@ -288,6 +334,7 @@ class ColourWarSim : Sim {
             defaultPalette = "Candy",
             typicalSeconds = 24f,
             params = listOf(
+                Param.choice("layout", "Battlefield", listOf("Blocks", "Stripes", "Islands"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("colours", "Colours", 2, 4, 4, card = Card.DATA),
                 Param.int("squares", "Squares across", 12, 160, 28, card = Card.DATA),
                 Param.int("balls", "Balls each", 1, 6, 2, card = Card.DATA),

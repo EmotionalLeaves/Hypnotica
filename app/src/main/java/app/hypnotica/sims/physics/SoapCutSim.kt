@@ -77,8 +77,10 @@ class SoapCutSim : Sim {
         ph = env.rng.range(0f, 6.28f); warp = env.rng.range(0.3f, 1.1f)
         val palette = env.palette
         val pattern = env.params.choiceIndex("pattern").coerceIn(0, 3)
-        val layers = env.rng.int(4, 8)
-        val base = env.rng.nextFloat()
+        // Drawn only for the patterns that use them, so a marbled block's
+        // seed gives the same block it always did.
+        val layers = if (pattern == 1) env.rng.int(4, 8) else 5
+        val base = if (pattern >= 2) env.rng.nextFloat() else 0f
         colors = IntArray(gridX * gridY) { k ->
             val u = (k % gridX + 0.5f) / gridX; val v = (k / gridX + 0.5f) / gridY
             val t = when (pattern) {

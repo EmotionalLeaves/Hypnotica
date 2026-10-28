@@ -303,8 +303,10 @@ class PourSim : Sim {
         val rows = ((gTop[k] - glassBottom) / D).toInt().coerceIn(4, level.size)
         java.util.Arrays.fill(level, 0)
         val rowH = (gTop[k] - glassBottom) / rows
+        var inside = 0
         for (i in 0 until n) {
             if (x[i] <= gL[k] || x[i] >= gR[k] || y[i] < glassBottom) continue
+            if (y[i] < gTop[k]) inside++
             // Only water that has settled: the stream and the splash are
             // not the water line, and counting them called the brim early.
             // The falling stream is left out by its speed downward; the pool
@@ -318,8 +320,18 @@ class PourSim : Sim {
             if (r in 0 until rows) level[r]++
         }
         val perRow = (gR[k] - gL[k]) * rowH / DROP_AREA
+        // Up from the bottom, stopping at the first gap (one missing row
+        // forgiven): a band of spill sliding across the mouth of an empty
+        // glass read as a full one.
         var top = 0
-        for (r in 0 until rows) if (level[r] >= perRow * 0.5f) top = r + 1
+        var miss = 0
+        for (r in 0 until rows) {
+            if (level[r] >= perRow * 0.5f) { top = r + 1; miss = 0 } else if (++miss > 1) break
+        }
+        // Or by sheer amount: a glass holding more than its own volume of
+        // water below the rim is full, however hard it is churning — a fast
+        // thin stream kept hollows in the pool and the line never read whole.
+        if (inside * DROP_AREA >= (gR[k] - gL[k]) * (gTop[k] - glassBottom) * OVERFULL) return 1f
         return top.toFloat() / rows
     }
 
@@ -431,6 +443,7 @@ class PourSim : Sim {
         const val DRAIN = 0.6f
         const val GIVE_UP = 60f
         const val MIN_THICK = 0.03f
+        const val OVERFULL = 1.08f
         const val MAX_FALL = REF_FALL * 1.4f
         /** Falling faster than this many still-water speeds: the stream, not the pool. */
         const val STREAM_CUT = 2f

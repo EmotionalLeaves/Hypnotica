@@ -87,6 +87,10 @@ class CornerSim : Sim {
         for (k in 0 until count) {
             if (k == first) continue
             var tries = 0
+            // Its own corner too close behind the winner's reads as a tie:
+            // move its moment later as well.
+            if (cornerAt[k] - cornerAt[first] < TIE_GAP) cornerAt[k] = cornerAt[first] + TIE_GAP + env.rng.range(0f, 2f)
+            aim(env, k, speed)
             while (tries++ < 40 && grazesBefore(k, cornerAt[first])) aim(env, k, speed)
         }
         for (k in 0 until count) { lastCellX[k] = cellOf(x0[k], wx, vx[k]); lastCellY[k] = cellOf(y0[k], wy, vy[k]) }
@@ -255,6 +259,7 @@ class CornerSim : Sim {
         const val MAX_BADGES = 4
         /** Closer than this to a corner counts as touching it, to the eye. */
         const val GRAZE = 0.02f
+        const val TIE_GAP = 0.6f
 
         fun def(): SimDef = SimDef(
             id = "physics/corner",

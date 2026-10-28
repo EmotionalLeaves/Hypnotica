@@ -125,7 +125,8 @@ class WheelSim : Sim {
         if (peg != lastPeg) {
             // A peg reached the flapper. Getting past costs speed; without
             // enough, the wheel is thrown back into the gap it came from.
-            val need = PEG_COST * (2f * PI.toFloat() / segments)
+            // What it takes scales with the slice the wheel is moving into.
+            val need = PEG_COST * widths[((peg % segments) + segments) % segments]
             val energy = 0.5f * omega * omega
             if (energy < need && abs(omega) < ROCK_SPEED) {
                 angle = before

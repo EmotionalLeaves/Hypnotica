@@ -192,7 +192,10 @@ class SnakeSim : Sim {
         if (ate >= 0) {
             val gold = golden[ate]
             // Never owed more than the board has room for.
-            grow = min(grow + (if (gold) GOLD_GROWTH else GROW_PER_APPLE), cells - len)
+            // Only the free run of route ahead of the head counts as room:
+            // cells skipped by short cuts sit inside the body's span and can't
+            // be reached, and owing more than the run trapped the snake.
+            grow = min(grow + (if (gold) GOLD_GROWTH else GROW_PER_APPLE), max(0, dist(best, tail()) - 1))
             eatFlash = if (gold) 2f else 1f
             eaten++
             val pan = ((best % cols) / max(1f, cols - 1f)) * 2f - 1f
