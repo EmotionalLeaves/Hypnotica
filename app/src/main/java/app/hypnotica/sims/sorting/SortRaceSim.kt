@@ -22,17 +22,18 @@ import kotlin.math.min
  * Four sorts race on the same shuffled bars, one above the other, each in its
  * own colour. Pick one before it starts.
  *
- * Every lane gets the same number of operations a second, so the race is
- * between the algorithms and nothing else — and the order is often not the
- * one you would bet on: on bars that are nearly sorted, insertion sort beats
- * quicksort; on a few repeated values, radix sort is gone before the others
- * have started. Lanes are stacked, so the race fills an upright phone.
+ * Every lane gets the same number of operations a second — compares and
+ * writes, counted — so the race is between the algorithms and nothing else,
+ * and the order is often not the one you would bet on: on bars that are
+ * nearly sorted, insertion sort beats quicksort. Lanes are stacked, so the
+ * race fills an upright phone.
  */
 class SortRaceSim : Sim {
 
     private val lanes = ArrayList<SortArray>()
     private val algos = ArrayList<SortAlgorithm>()
     private var running = BooleanArray(0)
+    private var debt = LongArray(LANES)
     private var finishedAt = FloatArray(0)
     private var place = IntArray(0)
     private var placed = 0
@@ -47,6 +48,7 @@ class SortRaceSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         n = p.i("bars", 80).coerceIn(10, 400)
+        debt = LongArray(LANES)
         val data = p.choiceIndex("data")
         val start = FloatArray(n) { (it + 1f) / n }
         shape(start, data, env)
@@ -77,9 +79,11 @@ class SortRaceSim : Sim {
             val a = Algorithms.byTitle(algos[k].title)
             a.reset(n)
             val arr = SortArray(start.copyOf(), quiet)
-            var ops = 0L
-            while (ops < OPS_CAP && a.advance(arr)) ops++
+            var calls = 0L
+            while (calls < OPS_CAP && a.advance(arr)) calls++
             quiet.events.clear()
+            // Counted the way the race is paid: compares and writes.
+            val ops = arr.comparisons + arr.writes
             if (ops < fastest) fastest = ops
         }
         opsPerSecond = max(20f, fastest / WINNER_SECONDS)
@@ -117,9 +121,14 @@ class SortRaceSim : Sim {
         carry -= ops
         for (k in 0 until LANES) {
             if (!running[k]) continue
-            var left = ops
-            while (left-- > 0) {
-                if (!algos[k].advance(lanes[k])) {
+            // Paid in primitive operations — compares and writes — not in
+            // calls: one heap-sort call is a whole sift level and one merge
+            // call a single copy, so counting calls rigged the race.
+            val lane = lanes[k]
+            val goal = lane.comparisons + lane.writes + ops - debt[k]
+            var calls = 0
+            while (lane.comparisons + lane.writes < goal && calls++ < ops * 4 + 16) {
+                if (!algos[k].advance(lane)) {
                     running[k] = false
                     finishedAt[k] = elapsed
                     lanes[k].clearHighlight()
@@ -135,6 +144,8 @@ class SortRaceSim : Sim {
                     break
                 }
             }
+            // Overshoot is owed from the next frame's share.
+            debt[k] = max(0L, lane.comparisons + lane.writes - goal)
         }
         if (placed == LANES && allDoneAt < 0f) allDoneAt = elapsed
     }

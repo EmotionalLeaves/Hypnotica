@@ -20,6 +20,8 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -825,15 +827,23 @@ class PredatorPreySim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val h = (dt * env.params.f("rate", 2.2f)).toDouble()
-        // RK2 keeps the cycle closed; Euler spirals outwards and ruins the loop.
-        val k1x = a * prey - b * prey * predators
-        val k1y = c * prey * predators - d * predators
-        val mx = prey + k1x * h * 0.5
-        val my = predators + k1y * h * 0.5
-        val k2x = a * mx - b * mx * my
-        val k2y = c * mx * my - d * my
-        prey = (prey + k2x * h).coerceIn(0.0001, 40.0)
-        predators = (predators + k2y * h).coerceIn(0.0001, 40.0)
+        // In logarithms, u = ln prey and v = ln predators, where the
+        // equations are u' = a − b·e^v and v' = c·e^u − d: the populations can
+        // fall as close to zero as the model says (a millionth, at the
+        // defaults) without a floor. The floor that used to stand in put the
+        // system on a different, smaller orbit after the first crash, and the
+        // loop drawn wasn't the model's. RK4 keeps the orbit closed.
+        var u = ln(prey); var v = ln(predators)
+        fun du(vv: Double) = a - b * exp(vv)
+        fun dv(uu: Double) = c * exp(uu) - d
+        val k1u = du(v); val k1v = dv(u)
+        val k2u = du(v + k1v * h / 2); val k2v = dv(u + k1u * h / 2)
+        val k3u = du(v + k2v * h / 2); val k3v = dv(u + k2u * h / 2)
+        val k4u = du(v + k3v * h); val k4v = dv(u + k3u * h)
+        u += h / 6 * (k1u + 2 * k2u + 2 * k3u + k4u)
+        v += h / 6 * (k1v + 2 * k2v + 2 * k3v + k4v)
+        prey = exp(u).coerceIn(1e-300, 1e6)
+        predators = exp(v).coerceIn(1e-300, 1e6)
         if (prey > peakPrey) peakPrey = prey
         if (predators > peakPred) peakPred = predators
 
@@ -861,7 +871,8 @@ class PredatorPreySim : Sim {
             )
         }
 
-        val rising = k2x > 0
+        // Prey rising: u' = a − b·predators > 0.
+        val rising = a - b * predators > 0
         if (rising != lastRising) {
             lastRising = rising
             if (rising) {
@@ -903,8 +914,10 @@ class PredatorPreySim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "prey" to String.format(java.util.Locale.US, "%.2f", prey),
-        "predators" to String.format(java.util.Locale.US, "%.2f", predators),
+        // Three significant figures: in the crash the prey is a millionth,
+        // and two decimals read "0.00" for most of every cycle.
+        "prey" to String.format(java.util.Locale.US, "%.3g", prey),
+        "predators" to String.format(java.util.Locale.US, "%.3g", predators),
         "cycles" to cycles.toString()
     )
 
@@ -966,8 +979,12 @@ class ReactionDiffusionSim : Sim {
         b2 = FloatArray(n)
         when (p.choiceIndex("pattern")) {
             1 -> { feed = 0.0367f; kill = 0.0649f }   // mitosis
-            2 -> { feed = 0.0545f; kill = 0.062f }    // maze
-            3 -> { feed = 0.078f; kill = 0.061f }     // spots
+            // Measured, not copied: the old maze was coral's numbers to three
+            // places and drew the same picture; the old spots only swelled
+            // the seeds. These make one labyrinth, and a field of spots that
+            // keep dividing (88 → 117 in two minutes).
+            2 -> { feed = 0.029f; kill = 0.057f }     // maze
+            3 -> { feed = 0.03f; kill = 0.062f }      // spots
             else -> { feed = 0.055f; kill = 0.062f }  // coral
         }
         val seeds = p.i("seeds", 16).coerceIn(1, 200)

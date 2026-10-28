@@ -226,6 +226,9 @@ class AppState(
         }
 
     var paused by mutableStateOf(false)
+
+    /** The variant the last remix landed on, in words, for the feed's caption. */
+    var remixVariant by mutableStateOf<String?>(null)
     var paletteName by mutableStateOf("Spectrum")
 
     /**
@@ -578,6 +581,8 @@ class AppState(
 
     fun load(def: SimDef, restartSeed: Long = System.nanoTime()) {
         currentDef = def
+        // Loaded as it comes, not remixed: its usual self.
+        remixVariant = null
         // A new sim starts running, and says so.
         paused = false
         slowTicks = 0
@@ -843,6 +848,10 @@ class AppState(
 
     fun setParamChoice(p: Param, index: Int) {
         engine.core.params.set(p.key, index.toFloat())
+        // The caption names the variant as it now is, picked by hand or not.
+        val values = currentDef.params.filter { it.type == app.hypnotica.core.recipe.ParamType.CHOICE }
+            .associate { it.key to engine.core.params.choiceIndex(it.key).toFloat() }
+        remixVariant = app.hypnotica.core.director.variantOf(currentDef, values)
         paramVersion++
         if (needsRestart(p)) restart(newSeed = false)
     }
@@ -925,6 +934,7 @@ class AppState(
         // fresh load would put every one back to its default first.
         if (def.id != currentDef.id) load(def) else { engine.core.paused = false; paused = false }
         val params = director.remix(def)
+        remixVariant = app.hypnotica.core.director.variantOf(def, params)
         if (chosenPalette == null) {
             val palette = director.remixPalette(def)
             paletteName = palette

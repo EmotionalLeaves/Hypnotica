@@ -367,6 +367,23 @@ class PendulumWaveSim : Sim {
     /** Which pendulums crossed this step; sounded in order after the slices. */
     private var crossedThisStep = BooleanArray(0)
     private var cyclePeriod = 30f
+    private var swingAmplitude = 0.6f
+    private var cycleNow = 30f
+    /** A pendulum's period at this swing over its small-swing period. */
+    private var largeSwing = 1f
+
+    /** 2K(k)/π with k = sin(θ₀/2), K by the arithmetic–geometric mean. */
+    private fun periodFactor(theta0: Float): Float {
+        val k = sin(theta0 / 2.0).let { abs(it) }.coerceAtMost(0.999999)
+        var a = 1.0; var b = sqrt(1.0 - k * k)
+        repeat(12) { val an = (a + b) / 2; b = sqrt(a * b); a = an }
+        // K = π / (2·agm), so 2K/π = 1/agm.
+        return (1.0 / a).toFloat()
+    }
+
+    /** The cycle as it really runs: a weaker gravity than Earth's stretches every period. */
+    private fun realCycle(env: SimEnv): Float =
+        cyclePeriod * sqrt(9.81f / max(1e-3f, abs(env.laws.gravity)))
     private var elapsed = 0f
     private var payoffFrame = false
     private var crossings = 0L
@@ -383,6 +400,8 @@ class PendulumWaveSim : Sim {
         cyclePeriod = p.f("period", 30f).coerceIn(6f, 120f)
         val baseOscillations = p.f("oscillations", 13f)
         val amplitude = p.f("amplitude", 0.6f)
+        swingAmplitude = abs(amplitude)
+        largeSwing = periodFactor(swingAmplitude)
 
         angles = FloatArray(count)
         omegas = FloatArray(count)
@@ -402,7 +421,10 @@ class PendulumWaveSim : Sim {
             val osc = baseOscillations + i
             val period = cyclePeriod / osc
             val w = 2f * PI.toFloat() / period
-            val raw = GRAVITY_SIM / (w * w)
+            // Shortened for the swing: a pendulum let go at θ₀ is slower than
+            // the small-angle formula says, by 2K(sin(θ₀/2))/π — at the
+            // default swing the whole wave realigned 0.7 s late.
+            val raw = GRAVITY_SIM / (w * w) / (largeSwing * largeSwing)
             lengths[i] = raw
             if (raw > longest) longest = raw
         }
@@ -484,11 +506,14 @@ class PendulumWaveSim : Sim {
         swinging = fastest > STILL_OMEGA
         if (!swinging) stillSeconds += abs(dt) else stillSeconds = 0f
 
-        if (!aligned && swinging && elapsed > cyclePeriod * 0.25f) {
+        cycleNow = realCycle(env)
+        if (!aligned && swinging && elapsed > cycleNow * 0.25f) {
             var together = true
             val first = angles[0]
             for (i in 1 until count) {
-                if (abs(angles[i] - first) > ALIGN_RADIANS) {
+                // Relative to the swing: a fixed tenth of a radian counted a
+                // small swing as aligned all the time.
+                if (abs(angles[i] - first) > ALIGN_SHARE * swingAmplitude) {
                     together = false
                     break
                 }
@@ -557,7 +582,7 @@ class PendulumWaveSim : Sim {
     override fun counters(): List<Pair<String, String>> = listOf(
         "crossings" to crossings.toString(),
         if (swinging || stillSeconds <= 0f) {
-            "cycle" to String.format(java.util.Locale.US, "%.0f%%", (elapsed % cyclePeriod) / cyclePeriod * 100f)
+            "cycle" to String.format(java.util.Locale.US, "%.0f%%", (elapsed % cycleNow) / cycleNow * 100f)
         } else {
             "gravity" to "none — nothing to swing it"
         }
@@ -573,7 +598,8 @@ class PendulumWaveSim : Sim {
         const val STILL_SECONDS = 2.5f
 
         /** How close every pendulum must be for the wave to count as back in line. */
-        const val ALIGN_RADIANS = 0.12f
+        /** Every pendulum within this share of the swing of the first: realigned. */
+        const val ALIGN_SHARE = 0.2f
 
         /** The longest string on screen; every other length scales with it. */
         const val MAX_LENGTH = 1.42f
@@ -599,7 +625,7 @@ class PendulumWaveSim : Sim {
             lawKnobs = setOf(LawKnob.GRAVITY, LawKnob.FRICTION),
             heroLabel = "Drop again",
             typicalSeconds = 38f,
-            loopSeconds = 30.5f,
+            loopSeconds = 30f,
             params = listOf(
                 Param.int("count", "Pendulums", 3, 20000, 15, card = Card.DATA, logScale = true),
                 Param.float("period", "Cycle length", 6f, 120f, 30f, card = Card.MOTION, unit = "s"),
@@ -682,8 +708,14 @@ class NewtonsCradleSim : Sim {
                     vel[i] = shared
                     vel[i + 1] = shared
                 } else {
-                    vel[i] = vj * e
-                    vel[i + 1] = vi * e
+                    // Equal balls, restitution e: momentum is kept exactly and
+                    // only the bounce loses energy. Swapping the speeds and
+                    // scaling both by e lost 12% of the momentum at every
+                    // click; this way a less bouncy cradle ends, as a real one
+                    // does, with the balls swinging together.
+                    val share = (1f + e) * 0.5f * (vi - vj)
+                    vel[i] = vi - share
+                    vel[i + 1] = vj + share
                 }
                 clicks++
                 env.emit(EventKind.HIT, i.toFloat() / max(1, n - 1), 0f, 0.8f)
@@ -696,6 +728,13 @@ class NewtonsCradleSim : Sim {
             }
         }
     }
+
+    /**
+     * The row, plus the furthest a ball can swing out at either end: with
+     * momentum kept, the end balls go out as far as the first was lifted.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float =
+        (n - 1) * radius + radius + sin(abs(env.params.f("swing", 0.55f)).coerceAtMost(PI.toFloat() / 2f)) * 1.1f
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
@@ -762,7 +801,9 @@ class GaltonBoardSim : Sim {
         var vy: Float,
         var bin: Int,
         var colorT: Float,
-        var settled: Boolean
+        var settled: Boolean,
+        /** Its way down: bit k set means right at peg row k. */
+        var turns: Int = 0
     ) {
         /** Which peg row it has passed, so each one can be heard and seen. */
         var row = 0
@@ -825,8 +866,9 @@ class GaltonBoardSim : Sim {
         while (dropTimer >= 1f && dropped < total) {
             dropTimer -= 1f
             var bin = 0
-            for (r in 0 until rows) if (env.rng.bool()) bin++
-            beads.add(Bead(0f, 0.95f, 0f, bin, env.rng.nextFloat(), false))
+            var turns = 0
+            for (r in 0 until rows) if (env.rng.bool()) { bin++; turns = turns or (1 shl r) }
+            beads.add(Bead(0f, 0.95f, 0f, bin, env.rng.nextFloat(), false, turns))
             dropped++
         }
 
@@ -848,10 +890,17 @@ class GaltonBoardSim : Sim {
             // Drift sideways towards the chosen bin as it falls, one peg row at
             // a time: a bead that slid along a straight line never touched a peg,
             // which is the whole picture the board is meant to show.
-            val targetX = (b.bin - rows * 0.5f) * targetSpacing
-            val fall = ((0.95f - b.y) / 1.5f).coerceIn(0f, 1f)
-            val rowNow = (fall * rows).toInt().coerceIn(0, rows)
-            b.x = targetX * (rowNow.toFloat() / rows)
+            // A real walk: at each peg it goes half a gap left or right, as
+            // its coin said, so it passes between the pegs below. It used to
+            // slide straight at its bin, a fifth of a gap per row, and beads
+            // bound for the middle went through the pegs.
+            val fallRows = ((PEG_TOP - b.y) / (1.5f / rows)).coerceIn(0f, rows.toFloat())
+            val rowNow = fallRows.toInt().coerceIn(0, rows)
+            val frac = fallRows - rowNow
+            fun pegX(k: Int): Float = (Integer.bitCount(b.turns and ((1 shl k) - 1)) - k * 0.5f) * targetSpacing
+            val from = pegX(rowNow)
+            val to = if (rowNow < rows) pegX(rowNow + 1) else from
+            b.x = from + (to - from) * (frac * frac * (3f - 2f * frac))
             if (rowNow > b.row) {
                 b.row = rowNow
                 b.bounce = 1f
@@ -890,7 +939,7 @@ class GaltonBoardSim : Sim {
         val spacing = (1.7f * env.halfWidth) / (rows + 1)
         // Pegs
         for (r in 0 until rows) {
-            val y = 0.82f - r * (1.5f / rows)
+            val y = PEG_TOP - r * (1.5f / rows)
             for (c in 0..r) {
                 val x = (c - r * 0.5f) * spacing
                 g.disc(x, y, 0.006f, Palette.TEXT_SECONDARY, 0.5f)
@@ -929,6 +978,8 @@ class GaltonBoardSim : Sim {
     companion object {
         /** How long a still board is allowed to last before the run gives up. */
         const val STILL_SECONDS = 2.5f
+        /** The first row of pegs. */
+        const val PEG_TOP = 0.82f
 
         fun def(): SimDef = SimDef(
             id = "physics/galton-board",

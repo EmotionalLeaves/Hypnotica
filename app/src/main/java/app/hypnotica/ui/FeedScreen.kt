@@ -332,7 +332,8 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                         )
                         Text(
                             if (hint) "${state.currentDef.shelf.title}  ·  swipe up · hold for controls"
-                            else state.currentDef.shelf.title,
+                            // Which variant this visit landed on, when it isn't the usual.
+                            else state.remixVariant?.let { "${state.currentDef.shelf.title}  ·  $it" } ?: state.currentDef.shelf.title,
                             color = Tokens.TextSecondary,
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,

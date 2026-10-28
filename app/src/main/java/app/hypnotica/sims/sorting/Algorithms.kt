@@ -273,6 +273,7 @@ class QuickSort : SortAlgorithm {
     private var i = 0
     private var j = 0
     private var partitioning = false
+    private var ties = 0
 
     override fun reset(n: Int) {
         sp = 0
@@ -290,14 +291,28 @@ class QuickSort : SortAlgorithm {
             lo = stackLo[sp]
             hi = stackHi[sp]
             if (lo >= hi) return true
+            // Median of three for the pivot, moved to the end: the last
+            // element alone made already-sorted and reversed input quadratic,
+            // and "Almost sorted" took three minutes.
+            if (hi - lo >= 2) {
+                val mid = (lo + hi) ushr 1
+                if (a.compare(mid, lo) < 0) a.swap(mid, lo)
+                if (a.compare(hi, lo) < 0) a.swap(hi, lo)
+                if (a.compare(hi, mid) < 0) a.swap(hi, mid)
+                a.swap(mid, hi)
+            }
             i = lo - 1
             j = lo
+            ties = 0
             partitioning = true
             return true
         }
         if (j < hi) {
-            // Lomuto partition against the last element.
-            if (a.compare(j, hi) <= 0) {
+            // Lomuto partition against the last element. Keys equal to the
+            // pivot go left and right by turns, so a run of repeats is split
+            // in half rather than all piled on one side.
+            val c = a.compare(j, hi)
+            if (c < 0 || (c == 0 && (ties++ and 1) == 0)) {
                 i++
                 if (i != j) a.swap(i, j)
             }

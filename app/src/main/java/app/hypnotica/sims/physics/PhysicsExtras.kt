@@ -39,6 +39,8 @@ class NBodySim : Sim {
     private var vx = FloatArray(0)
     private var vy = FloatArray(0)
     private var mass = FloatArray(0)
+    private var accX = FloatArray(0)
+    private var accY = FloatArray(0)
     private var tint = FloatArray(0)
     private var trailX = FloatArray(0)
     private var trailY = FloatArray(0)
@@ -67,6 +69,7 @@ class NBodySim : Sim {
         px = FloatArray(n); py = FloatArray(n)
         vx = FloatArray(n); vy = FloatArray(n)
         mass = FloatArray(n); tint = FloatArray(n)
+        accX = FloatArray(n); accY = FloatArray(n)
         val trail = p.i("trail", 4000).coerceIn(0, 40000)
         trailX = FloatArray(max(1, trail))
         trailY = FloatArray(max(1, trail))
@@ -88,9 +91,9 @@ class NBodySim : Sim {
                 val a = env.rng.range(0f, 2f * PI.toFloat())
                 px[i] = cos(a) * r
                 py[i] = sin(a) * r
-                val orbital = sqrt(centralMass * 0.0016f / max(0.05f, r))
-                vx[i] = -sin(a) * orbital
-                vy[i] = cos(a) * orbital
+                // Speeds are set below, once every body is placed.
+                vx[i] = -sin(a)
+                vy[i] = cos(a)
             } else {
                 px[i] = env.rng.range(-env.halfWidth * 0.9f, env.halfWidth * 0.9f)
                 py[i] = env.rng.range(-0.9f, 0.9f)
@@ -99,6 +102,25 @@ class NBodySim : Sim {
             }
             mass[i] = env.rng.range(0.6f, 1.4f)
             tint[i] = env.rng.nextFloat()
+        }
+        if (disc) {
+            // Each body at the speed of a circle under the pull it actually
+            // feels: the centre's, softened as the force is, plus the disc's
+            // own mass inside its orbit — six times the centre's at the
+            // defaults. Given only √(GM/r) of the centre, the disc fell in.
+            val order = (0 until n).sortedBy { hypot(px[it], py[it]) }
+            var inside = 0f
+            for (i in order) {
+                val r = hypot(px[i], py[i])
+                val soft = sqrt(r * r + SOFTENING)
+                var pull = 0f
+                if (centralMass > 0f) pull += env.laws.pairForce(soft, centralMass, 1f) * G_SCALE * (r / soft)
+                if (n <= PAIRWISE_LIMIT) pull += env.laws.pairForce(soft, inside, 1f) * G_SCALE * (r / soft)
+                pull *= env.laws.massSign
+                val v = sqrt(max(0f, pull) * r)
+                vx[i] *= v; vy[i] *= v
+                inside += mass[i]
+            }
         }
         elapsed = 0f
         payoffFrame = false
@@ -132,9 +154,12 @@ class NBodySim : Sim {
             measureReach()
         }
         val laws = env.laws
-        val softening = 0.01f
+        val softening = SOFTENING
         val sign = laws.massSign
 
+        // Every pull worked out from where the bodies are now, then every
+        // body moved: updated in place, a body felt some of the others where
+        // they already were next step, and momentum leaked.
         Parallel.forRange(n) { from, to ->
             for (i in from until to) {
                 var ax = 0f
@@ -145,7 +170,9 @@ class NBodySim : Sim {
                     val dy = -py[i]
                     val r2 = dx * dx + dy * dy + softening
                     val r = sqrt(r2)
-                    val f = laws.pairForce(r, centralMass, mass[i]) * 0.0016f * sign
+                    // Acceleration is force over the body's own mass: it was
+                    // the force itself, so heavy bodies fell faster.
+                    val f = laws.pairForce(r, centralMass, mass[i]) * G_SCALE * sign / mass[i]
                     ax += f * dx / r
                     ay += f * dy / r
                 }
@@ -157,21 +184,25 @@ class NBodySim : Sim {
                         val dy = py[j] - py[i]
                         val r2 = dx * dx + dy * dy + softening
                         val r = sqrt(r2)
-                        val f = laws.pairForce(r, mass[j], mass[i]) * 0.0016f * sign
+                        val f = laws.pairForce(r, mass[j], mass[i]) * G_SCALE * sign / mass[i]
                         ax += f * dx / r
                         ay += f * dy / r
                     }
                 }
-                vx[i] += ax * dt
-                vy[i] += ay * dt
-                val sp = hypot(vx[i], vy[i])
-                if (sp > MAX_SPEED) {
-                    vx[i] *= MAX_SPEED / sp
-                    vy[i] *= MAX_SPEED / sp
-                }
-                px[i] += vx[i] * dt
-                py[i] += vy[i] * dt
+                accX[i] = ax
+                accY[i] = ay
             }
+        }
+        for (i in 0 until n) {
+            vx[i] += accX[i] * dt
+            vy[i] += accY[i] * dt
+            val sp = hypot(vx[i], vy[i])
+            if (sp > MAX_SPEED) {
+                vx[i] *= MAX_SPEED / sp
+                vy[i] *= MAX_SPEED / sp
+            }
+            px[i] += vx[i] * dt
+            py[i] += vy[i] * dt
         }
 
         if (trailX.size > 1) {
@@ -218,10 +249,16 @@ class NBodySim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun counters(): List<Pair<String, String>> =
-        listOf("bodies" to String.format(java.util.Locale.US, "%,d", n))
+    override fun counters(): List<Pair<String, String>> = listOf(
+        "bodies" to String.format(java.util.Locale.US, "%,d", n),
+        // Past the pairwise limit the bodies feel only the centre: said, not hidden.
+        "gravity" to if (n <= PAIRWISE_LIMIT) "every pair" else "centre only"
+    )
 
     companion object {
+        const val SOFTENING = 0.01f
+        /** The gravitational constant in this sim's units. */
+        const val G_SCALE = 0.0016f
         private const val REACH_SAMPLES = 512
         private const val REACH_SHARE = 0.85f
         private const val REACH_MARGIN = 1.12f
@@ -264,6 +301,8 @@ class GearsSim : Sim {
 
     private class Gear(val x: Float, val y: Float, val radius: Float, val teeth: Int, val dir: Float, val tint: Float) {
         var angle = 0f
+        /** Its turn at the start, set so its teeth sit in its neighbour's gaps. */
+        var base = 0f
     }
 
     private val gears = ArrayList<Gear>()
@@ -315,6 +354,19 @@ class GearsSim : Sim {
             gears.add(Gear((xs[i] - cx) * fit, (ys[i] - cy) * fit, radii[i] * fit, teethOf[i], dir, i.toFloat() / count))
             dir = -dir
         }
+        // Each gear turned at the start so its gaps meet its neighbour's
+        // teeth where they touch. All started at zero, three of four pairs
+        // ran tooth on tooth the whole way round.
+        val twoPi = 2f * PI.toFloat()
+        for (k in 1 until gears.size) {
+            val prev = gears[k - 1]; val gear = gears[k]
+            val contact = kotlin.math.atan2(gear.y - prev.y, gear.x - prev.x)
+            val pitchPrev = twoPi / prev.teeth
+            val pitch = twoPi / gear.teeth
+            val phase = (((contact - prev.base) / pitchPrev) % 1f + 1f) % 1f
+            gear.base = contact + PI.toFloat() + (phase + 0.5f) * pitch
+            gear.angle = gear.base
+        }
         elapsed = 0f
         payoffFrame = false
         clicks = 0
@@ -331,8 +383,9 @@ class GearsSim : Sim {
         for (i in 1 until gears.size) {
             val prev = gears[i - 1]
             val gear = gears[i]
-            // Meshed wheels turn in proportion to their tooth counts.
-            gear.angle = -prev.angle * prev.teeth / gear.teeth
+            // Meshed wheels turn in proportion to their tooth counts, the
+            // other way, from where each started.
+            gear.angle = gear.base - (prev.angle - prev.base) * prev.teeth / gear.teeth
         }
         val tooth = (first.angle / (2f * PI.toFloat()) * first.teeth).toInt()
         if (tooth != lastTooth) {
@@ -340,11 +393,11 @@ class GearsSim : Sim {
             clicks++
             env.emit(EventKind.HIT, (gears.size - 1).toFloat() / max(1, gears.size), 0f, 0.4f)
         }
-        // One full revolution of the slowest gear in the train: every tooth is
-         // back where it started, which is the moment a gear train is for.
-         // Timing it at fourteen seconds said nothing about the mechanism.
+        // One full revolution of the slowest gear in the train: the last
+        // wheel's every tooth back where it started (the whole train repeats
+        // only after the tooth counts' least common multiple).
         val slowest = gears.lastOrNull()
-        if (!cycled && slowest != null && abs(slowest.angle) >= 2f * PI.toFloat()) {
+        if (!cycled && slowest != null && abs(slowest.angle - slowest.base) >= 2f * PI.toFloat()) {
             cycled = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.7f, 0f, 1f)
@@ -418,7 +471,7 @@ class GearsSim : Sim {
 
 /**
  * A rope and a sheet of cloth, both run as a grid of points held together by
- * distance constraints. Verlet integration keeps it stable at any step size.
+ * distance constraints. Verlet integration keeps it stable at the steps a screen takes.
  */
 class ClothSim : Sim {
 
@@ -483,8 +536,13 @@ class ClothSim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val laws = env.laws
+        // Gravity along whichever way it points: only its downward part was
+        // read, so gravity turned sideways did nothing at all.
         val g = laws.gravity * 0.04f * laws.gravityDirY
-        val drag = 1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)
+        val gSide = laws.gravity * 0.04f * laws.gravityDirX
+        // Air drag per second, not per step, so a faster screen doesn't
+        // make the air thicker.
+        val drag = Math.pow((1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)).toDouble(), (abs(dt) * 60f).toDouble()).toFloat()
         val wind = env.params.f("wind", 0.2f) *
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
@@ -495,7 +553,7 @@ class ClothSim : Sim {
             val vy = (y[i] - oy[i]) * drag
             ox[i] = x[i]
             oy[i] = y[i]
-            x[i] += vx + wind * dt * dt * 40f
+            x[i] += vx + (wind + gSide) * dt * dt * 40f
             y[i] += vy - g * dt * dt * 40f
         }
 
@@ -715,16 +773,30 @@ class OpticsSim : Sim {
     private var startMeasure = Float.MAX_VALUE
     private var sourceY = 0.35f
     private var angle = -0.35f
+    /** The beam's direction as traced: the angle, or for the prism, about its best one. */
+    private var aim = -0.35f
     private var shape = 0
+    // The prism, scaled to fit the screen across: an equilateral one is
+    // wider than an upright phone.
+    private var pT = PRISM_TOP
+    private var pB = PRISM_BOTTOM
+    private var pH = PRISM_HALF
 
     override fun setup(env: SimEnv) {
         val p = env.params
         rays.clear()
         shape = p.choiceIndex("shape")
+        val ps = min(1f, env.halfWidth * 0.82f / PRISM_HALF)
+        pT = PRISM_TOP * ps; pB = PRISM_BOTTOM * ps; pH = PRISM_HALF * ps
         val count = p.i("rays", 9).coerceIn(1, 60)
         for (i in 0 until count) {
             val t = if (count == 1) 0.5f else i.toFloat() / (count - 1)
-            rays.add(Ray(t, 1f + 0.12f * t))
+            // Its refractive index: dense flint glass, which bends violet
+            // (t = 0) more than red (t = 1), as all glass does. It ran the
+            // other way, from 1.00 to 1.12, so violet went straight through.
+            // A lens is crown glass, as lenses are: weaker, and far less
+            // dispersive, so it focuses rather than splitting light.
+            rays.add(Ray(t, if (shape == 1) CROWN_RED + CROWN_DISPERSION * (1f - t) else N_RED + DISPERSION * (1f - t)))
         }
         sourceY = p.f("height", 0.35f)
         // Not read at all while the sweep owns it. Reading it and then
@@ -732,6 +804,7 @@ class OpticsSim : Sim {
         // frames and the moment the focus is found, so the drawer dimmed a
         // control that still did something — which is its own kind of lie.
         angle = if (p.b("sweep", true)) -0.35f else p.f("angle", -0.35f)
+        aim = if (shape == 0) angle * PRISM_SWEEP + PRISM_AIM else angle
         elapsed = 0f
         payoffFrame = false
         focused = false
@@ -741,12 +814,25 @@ class OpticsSim : Sim {
         startMeasure = focusMeasure()
     }
 
+    /** Where a prism's beam starts: on a straight line into the middle of the left face. */
+    private fun prismStartY(x0: Float, dir: Float): Float {
+        val faceDirX = pH; val faceDirY = pB - pT
+        val fl = hypot(faceDirX, faceDirY)
+        val along = (sourceY - 0.35f) * 0.8f
+        val hx = -pH * 0.5f - faceDirX / fl * along
+        val hy = (pT + pB) * 0.5f - faceDirY / fl * along
+        return hy + (x0 - hx) * kotlin.math.tan(dir)
+    }
+
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
         if (env.params.b("sweep", true)) {
             angle = -0.35f + sin(elapsed * 0.4f) * 0.55f
         }
+        // The prism is aimed about its angle of least deviation: up into
+        // the left face at 24°, where light crosses parallel to the base.
+        aim = if (shape == 0) angle * PRISM_SWEEP + PRISM_AIM else angle
         trace(env)
         env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), 0f, 0.25f)
         // The focus: the moment the rays are at their tightest on the far side
@@ -834,45 +920,69 @@ class OpticsSim : Sim {
         return best
     }
 
-    /** March each ray, refracting whenever it crosses into or out of the glass. */
+    /**
+     * March each ray, refracting wherever it meets the glass's surface. The
+     * crossing is pinned down by bisection and the surface's true normal is
+     * used there — the face of the prism, the radius of the lens's circle —
+     * and Snell's law is applied the right way round going in and coming out.
+     */
     private fun trace(env: SimEnv) {
         val halfW = env.halfWidth
+        val count = rays.size
         for ((index, ray) in rays.withIndex()) {
             var x = -halfW * 0.98f
-            var y = sourceY - index * 0.035f
-            var dx = cos(angle)
-            var dy = sin(angle)
+            // A lens is shown a parallel beam, to focus; a prism or a slab one
+            // narrow white beam, to split into its colours.
+            var y = when (shape) {
+                1 -> sourceY - (index - (count - 1) * 0.5f) * 0.035f
+                0 -> prismStartY(x, aim)
+                else -> sourceY
+            }
+            var dx = cos(aim)
+            var dy = sin(aim)
             ray.count = 0
             ray.xs[ray.count] = x
             ray.ys[ray.count] = y
             ray.count++
-            var inside = false
+            var inside = insideGlass(x, y)
             var guard = MAX_SEGMENTS - 2
             val stepLen = 0.012f
             while (guard-- > 0 && ray.count < MAX_SEGMENTS - 2 &&
                 x < halfW && x > -halfW * 1.02f && abs(y) < 1.05f
             ) {
-                val nx = x + dx * stepLen
-                val ny = y + dy * stepLen
-                val nowInside = insideGlass(nx, ny)
-                if (nowInside != inside) {
-                    val normal = glassNormal(nx, ny)
-                    val n1 = if (inside) ray.wavelength else 1f
-                    val n2 = if (inside) 1f else ray.wavelength
-                    val refracted = refract(dx, dy, normal[0], normal[1], n1 / n2)
-                    if (refracted == null) {
-                        // Total internal reflection.
-                        val dot = dx * normal[0] + dy * normal[1]
-                        dx -= 2f * dot * normal[0]
-                        dy -= 2f * dot * normal[1]
-                    } else {
-                        dx = refracted[0]
-                        dy = refracted[1]
-                        inside = nowInside
+                var nx = x + dx * stepLen
+                var ny = y + dy * stepLen
+                if (insideGlass(nx, ny) != inside) {
+                    // Where exactly it crosses.
+                    var lo = 0f; var hi = 1f
+                    repeat(18) {
+                        val m = (lo + hi) * 0.5f
+                        if (insideGlass(x + dx * stepLen * m, y + dy * stepLen * m) == inside) lo = m else hi = m
                     }
+                    val bx = x + dx * stepLen * hi; val by = y + dy * stepLen * hi
+                    val out = outwardNormal(bx, by)
+                    // Facing the ray: the outward normal going in, the inward one going out.
+                    val sign = if (inside) -1f else 1f
+                    val n0 = out[0] * sign; val n1 = out[1] * sign
+                    val eta = if (inside) ray.wavelength else 1f / ray.wavelength
+                    val cosI = -(dx * n0 + dy * n1)
+                    val sinT2 = eta * eta * (1f - cosI * cosI)
+                    if (sinT2 > 1f) {
+                        // Total internal reflection: it stays where it was.
+                        dx += 2f * cosI * n0
+                        dy += 2f * cosI * n1
+                    } else {
+                        val cosT = sqrt(1f - sinT2)
+                        dx = eta * dx + (eta * cosI - cosT) * n0
+                        dy = eta * dy + (eta * cosI - cosT) * n1
+                        inside = !inside
+                    }
+                    val len = hypot(dx, dy); dx /= len; dy /= len
+                    nx = bx + dx * 1e-4f
+                    ny = by + dy * 1e-4f
                     if (ray.count >= MAX_SEGMENTS) break
-                    ray.xs[ray.count] = nx
-                    ray.ys[ray.count] = ny
+                    ray.xs[ray.count] = bx
+                    ray.ys[ray.count] = by
                     ray.count++
                 }
                 x = nx
@@ -887,36 +997,40 @@ class OpticsSim : Sim {
 
     private fun insideGlass(x: Float, y: Float): Boolean = when (shape) {
         0 -> {  // prism: a triangle
-            val top = 0.52f
-            val bottom = -0.5f
-            if (y < bottom || y > top) false
+            if (y < pB || y > pT) false
             else {
-                val t = (top - y) / (top - bottom)
-                abs(x) < t * 0.42f
+                val t = (pT - y) / (pT - pB)
+                abs(x) < t * pH
             }
         }
-        1 -> {  // lens: two overlapping circles
-            val r = 0.75f
-            hypot(x + 0.45f, y) < r && hypot(x - 0.45f, y) < r
+        1 -> hypot(x + LENS_OFFSET, y) < LENS_R && hypot(x - LENS_OFFSET, y) < LENS_R
+        else -> abs(x) < SLAB_W && abs(y) < SLAB_H
+    }
+
+    /** The glass's outward normal at a point on its surface, exactly. */
+    private fun outwardNormal(x: Float, y: Float): FloatArray = when (shape) {
+        0 -> {
+            // Whichever face it is nearest: the two slopes, or the base.
+            val h = pT - pB
+            val len = hypot(h, pH)
+            val nx = h / len; val ny = pH / len
+            val dRight = (x * nx + (y - pT) * ny)
+            val dLeft = (-x * nx + (y - pT) * ny)
+            val dBase = pB - y
+            when {
+                abs(dBase) <= abs(dRight) && abs(dBase) <= abs(dLeft) -> floatArrayOf(0f, -1f)
+                abs(dRight) <= abs(dLeft) -> floatArrayOf(nx, ny)
+                else -> floatArrayOf(-nx, ny)
+            }
         }
-        else -> abs(x) < 0.35f && abs(y) < 0.55f  // slab
-    }
-
-    private fun glassNormal(x: Float, y: Float): FloatArray {
-        // Numerical normal: the gradient of "inside" over a small box.
-        val e = 0.01f
-        val dx = (if (insideGlass(x + e, y)) 1f else 0f) - (if (insideGlass(x - e, y)) 1f else 0f)
-        val dy = (if (insideGlass(x, y + e)) 1f else 0f) - (if (insideGlass(x, y - e)) 1f else 0f)
-        val len = hypot(dx, dy)
-        return if (len < 1e-6f) floatArrayOf(1f, 0f) else floatArrayOf(-dx / len, -dy / len)
-    }
-
-    private fun refract(dx: Float, dy: Float, nx: Float, ny: Float, eta: Float): FloatArray? {
-        val cosI = -(dx * nx + dy * ny)
-        val sinT2 = eta * eta * (1f - cosI * cosI)
-        if (sinT2 > 1f) return null
-        val cosT = sqrt(1f - sinT2)
-        return floatArrayOf(eta * dx + (eta * cosI - cosT) * nx, eta * dy + (eta * cosI - cosT) * ny)
+        1 -> {
+            // On the arc of whichever circle it sits on: away from that centre.
+            val dA = hypot(x + LENS_OFFSET, y); val dB = hypot(x - LENS_OFFSET, y)
+            if (abs(dA - LENS_R) <= abs(dB - LENS_R)) floatArrayOf((x + LENS_OFFSET) / dA, y / dA)
+            else floatArrayOf((x - LENS_OFFSET) / dB, y / dB)
+        }
+        else -> if (SLAB_W - abs(x) < SLAB_H - abs(y)) floatArrayOf(if (x > 0f) 1f else -1f, 0f)
+        else floatArrayOf(0f, if (y > 0f) 1f else -1f)
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -925,9 +1039,9 @@ class OpticsSim : Sim {
         val glassColour = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f)
         when (shape) {
             0 -> {
-                g.line(0f, 0.52f, -0.42f, -0.5f, 0.006f, glassColour)
-                g.line(0f, 0.52f, 0.42f, -0.5f, 0.006f, glassColour)
-                g.line(-0.42f, -0.5f, 0.42f, -0.5f, 0.006f, glassColour)
+                g.line(0f, pT, -pH, pB, 0.006f, glassColour)
+                g.line(0f, pT, pH, pB, 0.006f, glassColour)
+                g.line(-pH, pB, pH, pB, 0.006f, glassColour)
             }
             1 -> {
                 g.ring(-0.45f, 0f, 0.75f, 0.005f, glassColour, alpha = 0.5f)
@@ -947,7 +1061,7 @@ class OpticsSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rays" to rays.size.toString(),
-        "angle" to String.format(java.util.Locale.US, "%.0f°", angle * 180f / PI.toFloat())
+        "angle" to String.format(java.util.Locale.US, "%.0f°", aim * 180f / PI.toFloat())
     )
 
     companion object {
@@ -958,6 +1072,22 @@ class OpticsSim : Sim {
          * sixty.
          */
         const val FOCUS_RATIO = 0.4f
+        /** Dense flint glass: red, and how much more violet is bent. */
+        const val N_RED = 1.62f
+        /** Least deviation for a 60° prism at n ≈ 1.65: in at about 55° to the face. */
+        const val PRISM_AIM = 0.42f + 0.35f * 0.5f
+        const val PRISM_SWEEP = 0.5f
+        const val DISPERSION = 0.06f
+        const val CROWN_RED = 1.51f
+        const val CROWN_DISPERSION = 0.015f
+        const val PRISM_TOP = 0.52f
+        const val PRISM_BOTTOM = -0.5f
+        /** Equilateral: 60° at every corner, the classic prism. */
+        const val PRISM_HALF = (PRISM_TOP - PRISM_BOTTOM) * 0.57735f
+        const val LENS_R = 0.75f
+        const val LENS_OFFSET = 0.45f
+        const val SLAB_W = 0.35f
+        const val SLAB_H = 0.55f
 
         /**
          * A quarter of the sweep, which is where it first reaches an extreme.

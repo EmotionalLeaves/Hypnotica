@@ -37,6 +37,8 @@ class MandelbrotSim : Sim {
     private var rows = 0
     private var iterations = IntArray(0)
     private var maxIter = 220
+    /** The iterations the picture on screen was computed with. */
+    private var iterNow = 220
     private var zoom = 0.6
     private var targetZoom = 0.6
     private var centreX = -0.743643887037151
@@ -58,6 +60,7 @@ class MandelbrotSim : Sim {
         cols = max(8, (quality * env.aspect).toInt())
         iterations = IntArray(cols * rows)
         maxIter = p.i("detail", 220).coerceIn(40, 1200)
+        iterNow = maxIter
         zoom = 0.6
         computedZoom = 0.6
         doublings = 0
@@ -65,7 +68,10 @@ class MandelbrotSim : Sim {
         zoomRate = p.f("zoom", 0.22f)
         when (p.choiceIndex("target")) {
             1 -> { centreX = -0.16070135; centreY = 1.0375665 }
-            2 -> { centreX = -1.25066; centreY = 0.02012 }
+            // The antenna's period-3 mini-Mandelbrot, a whole copy of the set
+            // out on the spike. The old point was on the edge of the main
+            // bulb's neighbour, nowhere near the antenna.
+            2 -> { centreX = -1.7548776662466927; centreY = 0.0 }
             3 -> { centreX = 0.360240443437614; centreY = 0.641313061064803 }
             else -> { centreX = -0.743643887037151; centreY = 0.131825904205330 }
         }
@@ -104,7 +110,11 @@ class MandelbrotSim : Sim {
         val halfW = env.halfWidth
         val cs = cols
         val rs = rows
-        val mi = maxIter
+        // Deeper in, points take longer to escape: the detail grows with the
+        // zoom, or every deep view flattened into one blob.
+        val depth = kotlin.math.ln(max(1.0, zoom / 0.6)) / kotlin.math.ln(2.0)
+        val mi = (maxIter * (1.0 + 0.12 * depth)).toInt().coerceAtMost(MAX_ITER_DEEP)
+        iterNow = mi
         val cx = centreX
         val cy = centreY
 
@@ -163,8 +173,8 @@ class MandelbrotSim : Sim {
             val base = row * cols
             for (col in 0 until cols) {
                 val i = iterations[base + col]
-                if (i >= maxIter) continue
-                val t = (ln(1f + i.toFloat()) / ln(1f + maxIter.toFloat()))
+                if (i >= iterNow) continue
+                val t = (ln(1f + i.toFloat()) / ln(1f + iterNow.toFloat()))
                 g.point((-halfW + (col + 0.5f) * dx) * k, y, size, palette.at((t * 3f) % 1f))
             }
         }
@@ -182,10 +192,11 @@ class MandelbrotSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "zoom" to String.format(java.util.Locale.US, "%.0fx", zoom / 0.6),
-        "detail" to maxIter.toString()
+        "detail" to iterNow.toString()
     )
 
     companion object {
+        const val MAX_ITER_DEEP = 1500
         /**
          * How much finer the detail has to get before the zoom has arrived.
          * A thousandfold is plainly deeper than where it started and is reached
@@ -249,7 +260,11 @@ class ChaosGameSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         corners = p.i("corners", 3).coerceIn(3, 12)
-        ratio = p.f("ratio", 0.5f)
+        // Halfway suits a triangle and no other shape: a square at a half
+        // just fills in. The jump that makes an n-gon's copies touch without
+        // overlapping is 1 − 1/(2·(1 + Σ cos(2πk/n), k = 1..⌊n/4⌋)) — a half
+        // for three, the golden 0.618 for five, two thirds for six.
+        ratio = if (p.b("fit", true)) fittedRatio(corners) else p.f("ratio", 0.5f)
         capacity = p.i("dots", 120000).coerceIn(1000, 400000)
         points = FloatArray(capacity * 2)
         tints = FloatArray(capacity)
@@ -332,6 +347,12 @@ class ChaosGameSim : Sim {
     override fun counters(): List<Pair<String, String>> =
         listOf("dots" to String.format(java.util.Locale.US, "%,d", count))
 
+    private fun fittedRatio(n: Int): Float {
+        var sum = 0.0
+        for (k in 1..n / 4) sum += kotlin.math.cos(2.0 * PI * k / n)
+        return (1.0 - 1.0 / (2.0 * (1.0 + sum))).toFloat()
+    }
+
     companion object {
         /** One slow breath every twenty-five seconds. */
         private const val BREATH_HZ = 0.04f
@@ -345,14 +366,15 @@ class ChaosGameSim : Sim {
             title = "Chaos game",
             shelf = Shelf.MATH,
             family = "Fractals & iteration",
-            blurb = "Random jumps that draw a perfect triangle.",
+            blurb = "Random jumps that draw a fractal: Sierpinski's triangle, or any polygon's own snowflake.",
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "Start again",
             defaultPalette = "Candy",
             typicalSeconds = 20f,
             params = listOf(
                 Param.int("corners", "Corners", 3, 12, 3, card = Card.DATA),
-                Param.float("ratio", "Jump fraction", 0.2f, 0.8f, 0.5f, card = Card.DATA),
+                Param.bool("fit", "Fit the jump to the shape", true, card = Card.DATA),
+                Param.float("ratio", "Jump fraction", 0.2f, 0.8f, 0.5f, card = Card.DATA, mutedBy = "fit"),
                 Param.int("dots", "Dots", 20000, 400000, 120000, card = Card.DATA, logScale = true),
                 Param.float("rate", "Speed", 200f, 120000f, 6000f, card = Card.MOTION, logScale = true),
                 Param.float("dot", "Dot size", 0.001f, 0.012f, 0.0035f, card = Card.LOOK)
@@ -429,7 +451,11 @@ class PrimeSpiralSim : Sim {
             var segment = 1
             var stepsInSegment = 0
             var turns = 0
-            for (n in 0 until limit) {
+            // Ulam's spiral starts at 1 in the middle; 0, never prime, sits
+            // under it. It started at 0, which put every prime a square off
+            // its place in Ulam's picture.
+            xs[0] = 0f; ys[0] = 0f
+            for (n in 1 until limit) {
                 xs[n] = x.toFloat()
                 ys[n] = y.toFloat()
                 x += dx
@@ -504,7 +530,7 @@ class PrimeSpiralSim : Sim {
             title = "Prime spiral",
             shelf = Shelf.MATH,
             family = "Number theory",
-            blurb = "Primes on a spiral line up in streaks nobody can explain.",
+            blurb = "Primes on a spiral line up in diagonal streaks — prime-rich quadratics, still not fully explained.",
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "Draw again",
             defaultPalette = "Mono glow",
@@ -698,8 +724,8 @@ class MonteCarloPiSim : Sim {
 }
 
 /**
- * Fourier epicycles: a chain of spinning circles whose tip traces a shape. The
- * sum of the circles is also, exactly, the waveform you hear.
+ * Fourier epicycles: a chain of spinning circles whose tip traces a shape —
+ * the sum of the circles, term by term. The notes follow the tip's height.
  */
 class FourierSim : Sim {
 
@@ -848,7 +874,8 @@ class FourierSim : Sim {
         if (theta > 2f * PI.toFloat()) {
             theta -= 2f * PI.toFloat()
             loops++
-            // The payoff is the shape closing on itself for the first time.
+            // The payoff is the second time round: the shape traced once and
+            // then confirmed, closing on itself again.
             if (loops == 2) {
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.8f, 0f, 1f)
@@ -1022,7 +1049,8 @@ class CollatzSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "start" to start.toString(),
-        "steps" to length.toString(),
+        // Steps, not terms: 27 takes 111 steps to reach 1, and the run has 112 numbers.
+        "steps" to max(0, length - 1).toString(),
         "peak" to String.format(java.util.Locale.US, "%,d", peak)
     )
 

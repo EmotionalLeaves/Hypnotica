@@ -186,7 +186,7 @@ class LSystemSim : Sim {
     override fun finished(): Boolean = fullAt >= 0f && elapsed - fullAt > HOLD_SECONDS
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "branches" to String.format(java.util.Locale.US, "%,d", segments),
+        "strokes" to String.format(java.util.Locale.US, "%,d", segments),
         "grown" to String.format(java.util.Locale.US, "%.0f%%", grown / tallest * 100f)
     )
 
@@ -213,7 +213,7 @@ class LSystemSim : Sim {
             title = "Plants from rules",
             shelf = Shelf.ART,
             family = "Fractals & growth",
-            blurb = "A sentence rewritten six times becomes a fern.",
+            blurb = "A sentence rewritten again and again becomes a fern.",
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "Grow another",
             defaultPalette = "Aurora",

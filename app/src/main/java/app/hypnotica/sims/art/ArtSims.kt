@@ -34,6 +34,7 @@ class PolyrhythmSim : Sim {
     private var baseLoops = 24
     private var cycleSeconds = 24f
     private var elapsed = 0f
+    private var lastCycle = 0
     private var lastPhase = FloatArray(0)
     private var hitFlash = FloatArray(0)
     private var payoffFrame = false
@@ -48,6 +49,7 @@ class PolyrhythmSim : Sim {
         arcMode = p.choiceIndex("layout") == 0
         lastPhase = FloatArray(count)
         hitFlash = FloatArray(count)
+        lastCycle = 0
         elapsed = 0f
         payoffFrame = false
         hits = 0
@@ -74,10 +76,15 @@ class PolyrhythmSim : Sim {
             hitFlash[i] = max(0f, hitFlash[i] - abs(dt) * 3.4f)
         }
         // Everything back in line at once: the end of one full cycle.
-        val cyclePhase = elapsed % cycleSeconds
-        if (cyclePhase < abs(dt) * 2f && elapsed > abs(dt) * 4f) {
-            payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
+        // Counted in whole cycles, so it fires once per realignment: the
+        // old test, "within two steps of the cycle's start", could fire twice.
+        val cycle = (elapsed / cycleSeconds).toInt()
+        if (cycle > lastCycle) {
+            lastCycle = cycle
+            if (cycle >= 1) {
+                payoffFrame = true
+                env.emit(EventKind.DONE, 1f, 0f, 1f)
+            }
         }
     }
 
@@ -484,14 +491,31 @@ class SpirographSim : Sim {
 
     /** Seconds spent looking at the closed curve before the run ends. */
     private val REST_AFTER_CLOSE = 5f
+
+    private fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
     private var carry = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
         bigR = 0.9f
-        smallR = p.f("wheel", 0.27f)
+        // The wheel set to the nearest radius at which the pen comes home
+        // within a dozen turns: r/R = q/p in lowest terms closes after q
+        // turns, and a slider value taken as it was needed hundreds, so the
+        // ink ran out mid-figure four times in five and it never closed.
+        val wanted = (p.f("wheel", 0.27f) / bigR).coerceIn(0.02f, 0.98f)
+        var bestQ = 1; var bestP = 4; var bestErr = Float.MAX_VALUE
+        val most = p.i("turns", MAX_TURNS).coerceIn(1, 20)
+        for (q in 1..most) for (pp in q + 1..most * 8 + 8) {
+            if (gcd(q, pp) != 1) continue
+            val err = abs(q.toFloat() / pp - wanted)
+            if (err < bestErr - 1e-6f) { bestErr = err; bestQ = q; bestP = pp }
+        }
+        smallR = bigR * bestQ / bestP
         penOffset = p.f("pen", 0.2f)
-        val len = p.i("points", 30000).coerceIn(500, 300000)
+        // Exactly the ink the figure needs, every turn of it. An "Ink"
+        // slider ran out mid-figure below it and only retraced the closed
+        // curve above it, so it is gone.
+        val len = (bestQ * 2.0 * PI / STEP).toInt() + 2
         trailX = FloatArray(len)
         trailY = FloatArray(len)
         count = 0
@@ -501,17 +525,8 @@ class SpirographSim : Sim {
         restAfterClose = 0f
         carry = 0f
 
-        // R and r in lowest terms: the curve closes after r / gcd(R - r, r)
-        // revolutions. Scaled to whole numbers first, because the radii are
-        // slider values rather than integers.
-        val bigSteps = Math.round(bigR * 1000f).toInt()
-        val smallSteps = Math.round(smallR * 1000f).toInt().coerceAtLeast(1)
-        var a = bigSteps - smallSteps
-        var b = smallSteps
-        while (b != 0) { val t = b; b = a % b; a = t }
-        val gcd = if (a == 0) 1 else kotlin.math.abs(a)
-        val turns = (smallSteps / gcd).coerceIn(1, 400)
-        closingTheta = turns * 2.0 * PI
+        // r/R = q/p in lowest terms: the curve closes after q revolutions.
+        closingTheta = bestQ * 2.0 * PI
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -519,7 +534,7 @@ class SpirographSim : Sim {
         carry += abs(dt) * env.params.f("rate", 900f)
         var budget = min(carry.toInt(), 20000)
         carry -= budget
-        val step = 0.004
+        val step = STEP
         val k = ((bigR - smallR) / smallR).toDouble()
         while (budget-- > 0 && count < trailX.size) {
             // theta is a Double: a Float accumulated in 0.004 steps three
@@ -577,6 +592,8 @@ class SpirographSim : Sim {
         listOf("ink" to String.format(java.util.Locale.US, "%,d", count))
 
     companion object {
+        const val STEP = 0.004
+        const val MAX_TURNS = 12
         fun def(): SimDef = SimDef(
             id = "art/spirograph",
             title = "Spirograph",
@@ -590,10 +607,10 @@ class SpirographSim : Sim {
             params = listOf(
                 Param.float("wheel", "Inner wheel", 0.05f, 0.6f, 0.27f, card = Card.DATA),
                 Param.float("pen", "Pen offset", 0.02f, 0.5f, 0.2f, card = Card.DATA),
-                Param.int("points", "Ink", 500, 300000, 30000, card = Card.LOOK, logScale = true),
+                // How many times round the wheel may go before it closes: the
+                // fewer, the simpler the rosette the ratio is rounded to.
+                Param.int("turns", "Most turns", 1, 20, MAX_TURNS, card = Card.DATA),
                 Param.float("dot", "Line weight", 0.001f, 0.01f, 0.0032f, card = Card.LOOK),
-                // Reaches what the ink slider offers: three hundred thousand
-                // points at nine hundred a second is five and a half minutes.
                 Param.float("rate", "Speed", 100f, 20000f, 900f, card = Card.MOTION, logScale = true)
             ),
             create = { SpirographSim() }

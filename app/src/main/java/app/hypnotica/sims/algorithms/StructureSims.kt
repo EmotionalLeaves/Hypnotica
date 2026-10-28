@@ -545,8 +545,9 @@ class BinaryTreeSim : Sim {
 /**
  * A ripple-carry adder built from logic gates, counting upwards.
  *
- * Every wire is drawn in its real state, so the carry visibly travels along the
- * chain, which is the reason fast adders exist at all.
+ * Every wire is drawn in its real state, one gate delay per bit: within each
+ * tick the carry works its way up the chain and each sum bit changes only
+ * when it arrives — the wait that is the reason fast adders exist at all.
  */
 class LogicGatesSim : Sim {
 
@@ -555,6 +556,8 @@ class LogicGatesSim : Sim {
     private var b = 0
     private var carryBits = BooleanArray(0)
     private var sumBits = BooleanArray(0)
+    private var prevCarry = BooleanArray(0)
+    private var prevSum = BooleanArray(0)
     private var tick = 0f
     private var counting = 0
     private var payoffFrame = false
@@ -572,6 +575,10 @@ class LogicGatesSim : Sim {
     }
 
     private fun compute() {
+        // What the outputs read until the new carry reaches them: a ripple
+        // adder's sum bits hold their old values, then change in turn.
+        prevCarry = carryBits.copyOf()
+        prevSum = sumBits.copyOf()
         var c = false
         for (i in 0 until bits) {
             val ab = (a shr i) and 1 == 1
@@ -626,9 +633,15 @@ class LogicGatesSim : Sim {
                 )
             }
         }
+        // How far along the chain the carry has got in this tick: one gate
+        // delay per bit, so bit k's carry and sum settle after the k below
+        // it. Everything further up still shows what it showed before.
+        val stage = tick.coerceIn(0f, 1f) * (bits + 1)
+        fun carryAt(k: Int) = if (k <= stage) carryBits[k] else prevCarry.getOrElse(k) { false }
+        fun sumAt(k: Int) = if (k + 1 <= stage) sumBits[k] else prevSum.getOrElse(k) { false }
         // Carry chain.
         for (i in 0 until bits) {
-            val c = carryBits[bits - 1 - i]
+            val c = carryAt(bits - 1 - i)
             val x = -halfW + (i + 0.5f) * colW
             g.disc(x, rows[2], 0.02f, if (c) Palette.WARNING else off)
             if (i < bits - 1) {
@@ -638,7 +651,7 @@ class LogicGatesSim : Sim {
         }
         // Sum.
         for (i in 0 until bits) {
-            val bit = sumBits[bits - 1 - i]
+            val bit = sumAt(bits - 1 - i)
             val x = -halfW + (i + 0.5f) * colW
             if (bit) g.glow(x, rows[3], colW * 0.7f, on, 0.45f)
             g.rect(x, rows[3], colW * 0.35f, 0.07f, if (bit) on else off)

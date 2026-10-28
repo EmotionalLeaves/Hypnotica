@@ -331,8 +331,15 @@ class PourSim : Sim {
         // Or by sheer amount: a glass holding more than its own volume of
         // water below the rim is full, however hard it is churning — a fast
         // thin stream kept hollows in the pool and the line never read whole.
-        if (inside * DROP_AREA >= (gR[k] - gL[k]) * (gTop[k] - glassBottom) * OVERFULL) return 1f
-        return top.toFloat() / rows
+        val volume = inside * DROP_AREA / ((gR[k] - gL[k]) * (gTop[k] - glassBottom))
+        if (volume >= OVERFULL) return 1f
+        // A heap reaching the brim isn't a full glass: in a short glass the
+        // mound under the stream touched the top row with a third still
+        // empty. The line counts as the brim only once there's about a
+        // glassful of water under it.
+        val line = top.toFloat() / rows
+        if (line >= FULL_SHARE && volume < MIN_VOLUME) return min(line, FULL_SHARE - 0.01f)
+        return line
     }
 
     private fun cellOf(px: Float, py: Float): Int {
@@ -444,6 +451,7 @@ class PourSim : Sim {
         const val GIVE_UP = 60f
         const val MIN_THICK = 0.03f
         const val OVERFULL = 1.08f
+        const val MIN_VOLUME = 0.88f
         const val MAX_FALL = REF_FALL * 1.4f
         /** Falling faster than this many still-water speeds: the stream, not the pool. */
         const val STREAM_CUT = 2f

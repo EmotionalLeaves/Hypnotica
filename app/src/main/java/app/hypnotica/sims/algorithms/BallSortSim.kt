@@ -68,8 +68,8 @@ class BallSortSim : Sim {
             solution = solve()
         }
         if (solution == null) {
-            // Never seen, but certain: a sorted board stirred by a few legal
-            // moves always solves, so the run can't end on an unsorted board.
+            // Never seen: a sorted board stirred by a few moves, checked by
+            // the same search, shallower until it solves.
             var depth = 24
             while (solution == null && depth > 0) {
                 state = Array(tubes) { t -> IntArray(cap) { if (t < colors) t else 0 } }
@@ -172,7 +172,32 @@ class BallSortSim : Sim {
             }
             return false
         }
-        return if (dfs()) path.toIntArray() else null
+        return if (dfs()) tidy(path) else null
+    }
+
+    /**
+     * The search finds a way, not a short one: it would drop a ball in one
+     * tube and lift it straight out again next move. A ball moved a → b and
+     * then b → c is one move a → c (legal, since c and the ball are as they
+     * were), and a → b then b → a is no move at all.
+     */
+    private fun tidy(path: ArrayList<Int>): IntArray {
+        val m = ArrayList<Int>(path)
+        var changed = true
+        while (changed) {
+            changed = false
+            var i = 0
+            while (i + 3 < m.size) {
+                val a = m[i]; val b = m[i + 1]; val b2 = m[i + 2]; val c = m[i + 3]
+                if (b == b2) {
+                    repeat(4) { m.removeAt(i) }
+                    if (c != a) { m.add(i, c); m.add(i, a) }
+                    changed = true
+                    i = max(0, i - 2)
+                } else i += 2
+            }
+        }
+        return m.toIntArray()
     }
 
     private var layoutRows = 1
@@ -287,7 +312,7 @@ class BallSortSim : Sim {
             title = "Ball sort",
             shelf = Shelf.ALGORITHMS,
             family = "Puzzles",
-            blurb = "The puzzle from every game ad, solved without a wrong move.",
+            blurb = "The puzzle from every game ad, solved — every move planned before the first.",
             formats = listOf(TrapFormat.PERFECT_FIT, TrapFormat.FILL, TrapFormat.SNAP),
             heroLabel = "New puzzle",
             defaultPalette = "Candy",

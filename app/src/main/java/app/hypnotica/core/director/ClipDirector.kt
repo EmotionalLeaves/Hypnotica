@@ -32,14 +32,20 @@ data class Clip(
      * is the usual. Swiping onto the same sim twice, this is what says it is
      * not the same.
      */
-    val variant: String? get() {
-        val names = def.params.filter { it.type == ParamType.CHOICE && it.card == app.hypnotica.core.recipe.Card.DATA }
-            .mapNotNull { p ->
-                val i = (params[p.key] ?: p.default).toInt()
-                if (i == p.default.toInt() || i !in p.choices.indices) null else p.choices[i]
-            }
-        return if (names.isEmpty()) null else names.joinToString("  ·  ")
-    }
+    val variant: String? get() = variantOf(def, params)
+}
+
+/**
+ * A run's variant in words — "Jackpot", "Threes  ·  Golden" — from the
+ * picked choices that aren't the sim's usual ones; null when it is the usual.
+ */
+fun variantOf(def: SimDef, params: Map<String, Float>): String? {
+    val names = def.params.filter { it.type == ParamType.CHOICE && it.card == app.hypnotica.core.recipe.Card.DATA }
+        .mapNotNull { p ->
+            val i = (params[p.key] ?: p.default).toInt()
+            if (i == p.default.toInt() || i !in p.choices.indices) null else p.choices[i]
+        }
+    return if (names.isEmpty()) null else names.joinToString("  ·  ")
 }
 
 /**

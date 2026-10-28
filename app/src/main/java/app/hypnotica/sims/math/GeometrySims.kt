@@ -25,8 +25,8 @@ import kotlin.math.sqrt
 /**
  * Voronoi cells: colour every pixel by whichever seed is nearest.
  *
- * The seeds drift, so the cell walls slide about and occasionally a cell is
- * squeezed out of existence entirely.
+ * The seeds drift, so the cell walls slide about and the cells swell and
+ * shrink — though a cell can't vanish: every seed is nearest to itself.
  */
 class VoronoiSim : Sim {
 

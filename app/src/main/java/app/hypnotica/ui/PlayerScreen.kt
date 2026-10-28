@@ -215,7 +215,7 @@ private fun TopBar(state: AppState, uiTick: Int) {
             } else if (state.showCounters && counters.isNotEmpty()) {
                 counters.joinToString("   ") { "${it.second} ${it.first}" }
             } else {
-                state.currentDef.family
+                state.remixVariant?.let { "${state.currentDef.family}  ·  $it" } ?: state.currentDef.family
             }
             Text(
                 line,
