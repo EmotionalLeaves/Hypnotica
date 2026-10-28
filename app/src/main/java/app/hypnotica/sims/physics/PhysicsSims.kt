@@ -969,6 +969,7 @@ object PhysicsSims {
         PourSim.def(),
         WheelSim.def(),
         PressSim.def(),
-        ArenaSim.def()
+        ArenaSim.def(),
+        LastOutSim.def()
     )
 }
