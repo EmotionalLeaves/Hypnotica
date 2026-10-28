@@ -556,6 +556,21 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 }
             }
             WinnerPick(state, current)
+            // The next clip's hook, faintly, as this one winds down: the
+            // reason to stay is already on screen before this one ends.
+            // Read on each recomposition, which the progress line drives
+            // ten times a second.
+            val upNext = queue.firstOrNull()?.caption
+            AnimatedVisibility(visible = upNext != null && progress > UP_NEXT_AT, enter = fadeIn(tween(Tokens.Slow)), exit = fadeOut(tween(Tokens.Fast))) {
+                Text(
+                    "Up next  ·  ${upNext ?: ""}",
+                    color = Tokens.TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+            }
             AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
@@ -713,6 +728,9 @@ private fun PickRow(
         }
     }
 }
+
+/** How far through a clip the next one's hook appears. */
+private const val UP_NEXT_AT = 0.72f
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE_PIXELS = 90f
