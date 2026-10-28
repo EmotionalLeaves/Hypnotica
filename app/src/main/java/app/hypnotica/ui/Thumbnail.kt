@@ -1,5 +1,7 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,16 +59,18 @@ fun SimThumbnail(def: SimDef, modifier: Modifier = Modifier) {
         if (preview == null) preview = PreviewCache.load(def)
     }
     val shown = preview
+    val ready = shown != null && !shown.isEmpty
+    // Fades up from a faint placeholder. The placeholder used to be a fully
+    // saturated bar chart — it looked like a sort sim — swapped out in a frame.
+    // A preview already cached starts at full, so scrolling back is instant.
+    val fade by animateFloatAsState(if (ready) 1f else 0f, tween(Tokens.Base), label = "thumbFade")
     Canvas(modifier) {
-        if (shown == null || shown.isEmpty) {
-            drawFallback(def)
-        } else {
-            drawPreview(shown)
-        }
+        if (fade < 1f) drawFallback(def, FALLBACK_ALPHA * (1f - fade))
+        if (shown != null && !shown.isEmpty && fade > 0f) drawPreview(shown, fade)
     }
 }
 
-private fun DrawScope.drawPreview(p: Preview) {
+private fun DrawScope.drawPreview(p: Preview, fade: Float) {
     val scale = size.height * 0.5f
     val cx = size.width * 0.5f
     val cy = size.height * 0.5f
@@ -75,7 +79,7 @@ private fun DrawScope.drawPreview(p: Preview) {
             red = p.r(i).coerceIn(0f, 1f),
             green = p.g(i).coerceIn(0f, 1f),
             blue = p.b(i).coerceIn(0f, 1f),
-            alpha = p.a(i).coerceIn(0f, 1f)
+            alpha = p.a(i).coerceIn(0f, 1f) * fade
         )
         val x = cx + p.x(i) * scale
         val y = cy - p.y(i) * scale
@@ -119,7 +123,7 @@ private fun DrawScope.drawPreview(p: Preview) {
 }
 
 /** Shown for the moment before the real preview exists. */
-private fun DrawScope.drawFallback(def: SimDef) {
+private fun DrawScope.drawFallback(def: SimDef, alpha: Float) {
     val palette = app.hypnotica.core.render.Palette.byName(def.defaultPalette)
     val bars = 9
     val gap = size.width * 0.02f
@@ -128,7 +132,7 @@ private fun DrawScope.drawFallback(def: SimDef) {
     for (i in 0 until bars) {
         val h = (((seed shr i) and 7) / 7f * 0.62f + 0.16f) * size.height
         drawRect(
-            color = Color(palette.at(i / (bars - 1f))),
+            color = Color(palette.at(i / (bars - 1f))).copy(alpha = alpha),
             topLeft = Offset(gap + i * (barWidth + gap), size.height - h),
             size = Size(barWidth, h)
         )
@@ -136,3 +140,6 @@ private fun DrawScope.drawFallback(def: SimDef) {
 }
 
 private const val DEGREES = 57.29578f
+
+/** How strongly the placeholder shows: a hint of the palette, not a picture. */
+private const val FALLBACK_ALPHA = 0.18f

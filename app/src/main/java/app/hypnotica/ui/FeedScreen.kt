@@ -320,7 +320,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     Text(
                         hookFor(state, state.feedVisits),
                         color = Tokens.TextPrimary,
-                        style = MaterialTheme.typography.displaySmall,
+                        style = MaterialTheme.typography.displaySmall.copy(shadow = Tokens.OverlayShadow),
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -343,7 +343,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                         Text(
                             state.currentDef.title,
                             color = Tokens.TextPrimary,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleLarge.copy(shadow = Tokens.OverlayShadow),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -352,7 +352,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                             // Which variant this visit landed on, when it isn't the usual.
                             else state.remixVariant?.let { "${state.currentDef.shelf.title}  ·  $it" } ?: state.currentDef.shelf.title,
                             color = Tokens.TextSecondary,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

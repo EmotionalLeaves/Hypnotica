@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -506,13 +507,17 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         )
 
         // Shade under the words, so they read over a bright clip.
-        val scrim by animateFloatAsState(if (showChrome) 1f else 0f, tween(Tokens.Base), label = "tickScrim")
+        val scrim by animateFloatAsState(
+            if (showChrome) 1f else 0f,
+            tween(if (showChrome) Tokens.Fast else Tokens.Slow),
+            label = "tickScrim"
+        )
         if (scrim > 0f) Scrims(scrim * (1f - through * 0.7f))
 
         // The like, blooming in the middle and fading.
         if (pop.value > 0f) {
             Text(
-                "★",
+                "♥\uFE0E",
                 color = Tokens.Accent,
                 fontSize = 120.sp,
                 modifier = Modifier
@@ -532,24 +537,25 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             visible = twistLabel != null,
             enter = fadeIn(tween(Tokens.Fast)),
             exit = fadeOut(tween(Tokens.Slow)),
-            modifier = Modifier.align(Alignment.Center)
+            // Above centre, so the like blooming in the middle cannot sit on it.
+            modifier = Modifier.align(BiasAlignment(0f, -0.35f))
         ) {
             Text(
                 twistLabel ?: "",
-                color = Tokens.Accent,
-                style = MaterialTheme.typography.displaySmall
+                color = Tokens.AccentText,
+                style = MaterialTheme.typography.displaySmall.copy(shadow = Tokens.OverlayShadow)
             )
         }
 
         // The number a number clip is about.
         bigNumber?.let { (label, value) ->
             Column(
-                Modifier.align(Alignment.Center).padding(top = 160.dp),
+                Modifier.align(BiasAlignment(0f, 0.25f)),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(value, color = Tokens.TextPrimary, fontSize = 56.sp,
-                    style = MaterialTheme.typography.displaySmall.copy(fontFeatureSettings = "tnum"))
-                Text(label, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    style = MaterialTheme.typography.displaySmall.copy(fontFeatureSettings = "tnum", shadow = Tokens.OverlayShadow))
+                Text(label, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow))
             }
         }
 
@@ -568,13 +574,14 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
-                .padding(20.dp)
+                // 16, as on the feed: at 20 the words jumped sideways on the way in.
+                .padding(16.dp)
                 .graphicsLayer {
                     translationY = drag.value
                     alpha = 1f - through * 0.7f
                 }
         ) {
-            AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
+            AnimatedVisibility(visible = showChrome, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
                 // Crossfaded from one clip's hook to the next, as the feed's is,
                 // rather than swapped in a frame.
                 AnimatedContent(
@@ -585,21 +592,21 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     Text(
                         caption,
                         color = Tokens.TextPrimary,
-                        style = MaterialTheme.typography.displaySmall
+                        style = MaterialTheme.typography.displaySmall.copy(shadow = Tokens.OverlayShadow)
                     )
                 }
             }
             Spacer(Modifier.weight(1f))
-            AnimatedVisibility(visible = liked, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
-                Text("★ more like this", color = Tokens.AccentText, style = MaterialTheme.typography.titleMedium)
+            AnimatedVisibility(visible = liked, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
+                Text("♥ more like this", color = Tokens.AccentText, style = MaterialTheme.typography.titleMedium.copy(shadow = Tokens.OverlayShadow))
             }
             // Faded rather than cut: it used to appear and vanish in a frame.
-            AnimatedVisibility(visible = notice != null, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
-                Text(lastNotice, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            AnimatedVisibility(visible = notice != null, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
+                Text(lastNotice, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow))
             }
             AnimatedVisibility(visible = showTimeCheck) {
                 Column {
-                    GlassCard {
+                    GlassCard(sheet = false) {
                         Column {
                             Text(
                                 "You have been scrolling for ${secondsWatching / 60} minutes.",
@@ -629,13 +636,13 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 Text(
                     "Up next  ·  ${upNext ?: ""}",
                     color = Tokens.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(shadow = Tokens.OverlayShadow),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
-            AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
+            AnimatedVisibility(visible = showChrome, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
                         // Nothing is drawn until there is a clip. While the
@@ -648,14 +655,14 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                             Text(
                                 clip.def.title,
                                 color = Tokens.TextPrimary,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleLarge.copy(shadow = Tokens.OverlayShadow),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 clip.variant?.let { "${clip.def.family}  ·  $it" } ?: clip.def.family,
                                 color = Tokens.TextSecondary,
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -664,8 +671,8 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                             // wrapped and left one word alone on a second line.
                             Text(
                                 (if (watched == 1) "1 clip" else "$watched clips") + "  ·  hold to open  ·  ↓ back",
-                                color = Tokens.TextSecondary.copy(alpha = 0.7f),
-                                style = MaterialTheme.typography.bodySmall,
+                                color = Tokens.TextSecondary,
+                                style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )

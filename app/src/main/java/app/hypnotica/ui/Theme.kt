@@ -1,6 +1,15 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -45,6 +54,16 @@ object Tokens {
     val Warning = Color(0xFFFFB020)
     val Danger = Color(0xFFFF5470)
 
+    /**
+     * Under every word drawn straight over the simulation. The scrims fade with
+     * the chrome; a bright frame behind a white hook then left it unreadable.
+     */
+    val OverlayShadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 2f), blurRadius = 12f)
+
+    /** Chrome arrives quickly and leaves slowly, on every screen. */
+    val chromeIn: EnterTransition get() = fadeIn(tween(Fast, easing = LinearOutSlowInEasing))
+    val chromeOut: ExitTransition get() = fadeOut(tween(Slow, easing = FastOutLinearInEasing))
+
     val PaperBg = Color(0xFFF7F8FA)
     val PaperSurface = Color(0xFFFFFFFF)
     val PaperText = Color(0xFF14161C)
@@ -60,6 +79,13 @@ private val DarkScheme = darkColorScheme(
     onSurface = Tokens.TextPrimary,
     surfaceVariant = Tokens.SurfaceStrong,
     onSurfaceVariant = Tokens.TextSecondary,
+    // Left unset, these fall back to Material's baseline purple-greys, which
+    // showed up in switches and dividers.
+    outline = Color.White.copy(alpha = 0.2f),
+    outlineVariant = Color.White.copy(alpha = 0.08f),
+    surfaceContainerHighest = Tokens.SurfaceStrong,
+    surfaceContainerHigh = Tokens.SurfaceStrong,
+    surfaceContainer = Tokens.Surface,
     error = Tokens.Danger
 )
 

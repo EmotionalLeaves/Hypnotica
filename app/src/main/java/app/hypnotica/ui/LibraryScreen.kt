@@ -2,6 +2,11 @@
 
 package app.hypnotica.ui
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,11 +63,7 @@ private const val SAVED_SHELF = 2
 private fun SavedClips(state: AppState) {
     val runs = state.savedClips
     if (runs.isEmpty()) {
-        Text(
-            "Nothing saved yet. Double-tap or ♡ a clip in TickTock to keep it here.",
-            color = Tokens.TextSecondary,
-            style = MaterialTheme.typography.bodySmall
-        )
+        EmptyState("♡", "Nothing saved yet. Double-tap or ♡ a clip in TickTock to keep it here.")
         return
     }
     androidx.compose.foundation.lazy.LazyColumn(
@@ -78,6 +79,8 @@ private fun SavedClips(state: AppState) {
                     .fillMaxWidth()
                     .heightIn(min = 56.dp)
                     .background(Tokens.Surface, RoundedCornerShape(12.dp))
+                    // Clipped first, so the press ripple has the row's corners.
+                    .clip(RoundedCornerShape(12.dp))
                     .combinedClickable(
                         onClick = {
                             val problem = state.applyRun(run)
@@ -153,11 +156,18 @@ fun LibraryScreen(state: AppState) {
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(24.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp))
-                .padding(horizontal = 16.dp),
+                // 12, as every other input is.
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                .padding(start = 44.dp, end = 16.dp),
             contentAlignment = Alignment.CenterStart
         ) {
+            Text(
+                "⌕",
+                color = Tokens.TextSecondary,
+                fontSize = 20.sp,
+                modifier = Modifier.align(Alignment.CenterStart).offset(x = (-32).dp)
+            )
             if (query.isEmpty()) {
                 Text(
                     "Search ${SimRegistry.all.size} sims",
@@ -169,7 +179,8 @@ fun LibraryScreen(state: AppState) {
                 value = query,
                 onValueChange = { query = it },
                 singleLine = true,
-                textStyle = TextStyle(color = Tokens.TextPrimary, fontSize = MaterialTheme.typography.bodyMedium.fontSize),
+                // The whole style, so typed text sits on the placeholder's baseline.
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Tokens.TextPrimary),
                 cursorBrush = SolidColor(Tokens.Accent),
                 modifier = Modifier.fillMaxWidth().padding(end = if (query.isEmpty()) 0.dp else 40.dp)
             )
@@ -187,9 +198,9 @@ fun LibraryScreen(state: AppState) {
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         ChipRow(shelfNames, shelfIndex) { shelfIndex = it }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         // A search that matched nothing used to render an empty grid and
         // nothing else — a blank dark page under a field still offering to
         // "Search 61 sims", which reads as a fault rather than a result.
@@ -198,7 +209,8 @@ fun LibraryScreen(state: AppState) {
             return@Column
         }
         if (results.isEmpty()) {
-            Text(
+            EmptyState(
+                if (shelfIndex == FAVOURITES_SHELF) "☆" else "⌕",
                 when {
                     shelfIndex == FAVOURITES_SHELF ->
                         // Not "double-tap a sim": double-tap left the player and
@@ -210,9 +222,7 @@ fun LibraryScreen(state: AppState) {
                         else "Nothing matches \"$query\". Try a shorter word, or tap All " +
                             "to search every shelf."
                     else -> "Nothing on this shelf yet."
-                },
-                color = Tokens.TextSecondary,
-                style = MaterialTheme.typography.bodySmall
+                }
             )
         }
 
@@ -238,6 +248,9 @@ private fun SimTile(def: SimDef, favourite: Boolean, onLongClick: () -> Unit = {
     Column(
         Modifier
             .fillMaxWidth()
+            // Clipped first, so the press ripple has the card's corners rather
+            // than a sharp rectangle over the title too.
+            .clip(RoundedCornerShape(12.dp))
             // Hold to star it, without opening it and coming back.
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
@@ -245,30 +258,36 @@ private fun SimTile(def: SimDef, favourite: Boolean, onLongClick: () -> Unit = {
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(1.25f)
-                .background(Tokens.Surface, RoundedCornerShape(12.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp)),
+                .background(Tokens.Surface, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
             // The sim's own first second, simulated and painted on the card.
             SimThumbnail(def, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
+            // The edge goes on top: drawn first, the thumbnail painted over it.
+            Box(Modifier.matchParentSize().border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp)))
             if (favourite) {
-                Text(
-                    "★",
-                    color = Tokens.Accent,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
-                    style = MaterialTheme.typography.labelMedium
-                )
+                // On a dark disc, so it reads on the brightest preview.
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .size(24.dp)
+                        .background(Tokens.Bg.copy(alpha = 0.6f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("★", color = Tokens.AccentText, fontSize = 12.sp)
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(
             def.title,
             color = Tokens.TextPrimary,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
             maxLines = 2,
-            minLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+        Spacer(Modifier.height(4.dp))
         Text(
             def.family,
             color = Tokens.TextSecondary,
@@ -279,3 +298,21 @@ private fun SimTile(def: SimDef, favourite: Boolean, onLongClick: () -> Unit = {
     }
 }
 
+
+/** What a list says when it has nothing in it: a mark and a sentence, centred. */
+@Composable
+private fun EmptyState(glyph: String, message: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 48.dp, start = 16.dp, end = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(glyph, color = Tokens.TextSecondary.copy(alpha = 0.5f), fontSize = 32.sp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            message,
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
+    }
+}

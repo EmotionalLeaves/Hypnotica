@@ -1,5 +1,6 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedContent
@@ -168,7 +169,11 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             cameraMode = state.cameraDrag
         )
 
-        val scrim by animateFloatAsState(if (overlayVisible) 1f else 0f, tween(Tokens.Base), label = "playerScrim")
+        val scrim by animateFloatAsState(
+            if (overlayVisible) 1f else 0f,
+            tween(if (overlayVisible) Tokens.Fast else Tokens.Slow),
+            label = "playerScrim"
+        )
         if (scrim > 0f) Scrims(scrim)
 
         // What ⚄ landed on, said in the middle for a moment: with the
@@ -203,8 +208,8 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
                 visibleState = topShown,
                 // Fade, not the default expand-and-shrink: growing the bar's
                 // height clips the title and squashes the buttons on the way.
-                enter = fadeIn(tween(Tokens.Base)),
-                exit = fadeOut(tween(Tokens.Base))
+                enter = Tokens.chromeIn,
+                exit = Tokens.chromeOut
             ) {
                 TopBar(state, uiTick)
             }
@@ -227,8 +232,8 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             barsShown.targetState = overlayVisible
             AnimatedVisibility(
                 visibleState = barsShown,
-                enter = fadeIn(tween(Tokens.Base)),
-                exit = fadeOut(tween(Tokens.Base))
+                enter = Tokens.chromeIn,
+                exit = Tokens.chromeOut
             ) {
                 ActionBar(state, surface)
             }
@@ -314,8 +319,16 @@ private fun TopBar(state: AppState, uiTick: Int) {
 
 @Composable
 private fun ActionBar(state: AppState, surface: SimSurfaceView) {
+    // With the drawer open the bar takes the drawer's surface, so the two read
+    // as one sheet: the drawer used to end in a hard edge with the sim showing
+    // through the bar beneath it.
+    val sheet by animateColorAsState(
+        if (state.controlsOpen) Tokens.Surface.copy(alpha = 0.96f) else Color.Transparent,
+        tween(Tokens.Sheet),
+        label = "actionSheet"
+    )
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+        Modifier.fillMaxWidth().background(sheet).padding(horizontal = 16.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -323,20 +336,21 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
         // design calls "whatever this sim's one big action is" — and five of
         // the hero labels ("Restart the cycle", "Drop them again") did not fit
         // the share it had on a 360 dp phone and were cut mid-word.
-        BigButton(if (state.paused) "Play" else "Pause", Modifier.weight(0.8f)) {
+        // Play and pause as a glyph: the word took eighty dp the hero label needed.
+        GlyphButton(if (state.paused) "▶" else "⏸", size = 52.dp, selected = state.paused) {
             state.togglePause()
         }
-        BigButton(state.currentDef.heroLabel, Modifier.weight(1.4f), primary = true) {
+        BigButton(state.currentDef.heroLabel, Modifier.weight(1f), primary = true) {
             if (state.currentDef.heroRestarts) state.restart(newSeed = true)
             else state.engine.hero()
         }
         // Surprise me: the same sim, its settings and look shuffled, as the
         // feed does each time it lands on one.
-        GlyphButton("⚄") {
+        GlyphButton("⚄", size = 52.dp) {
             state.tick()
             state.loadRemixed(state.currentDef)
         }
-        GlyphButton("≡", selected = state.controlsOpen) {
+        GlyphButton("≡", size = 52.dp, selected = state.controlsOpen) {
             state.controlsOpen = !state.controlsOpen
         }
     }
@@ -845,7 +859,7 @@ private fun GestureTip(state: AppState) {
         delay(GESTURE_TIP_MS)
         show = false
     }
-    AnimatedVisibility(visible = show, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
+    AnimatedVisibility(visible = show, enter = Tokens.chromeIn, exit = Tokens.chromeOut) {
         Text(
             "Pinch to zoom · twist to turn · drag to poke",
             color = Tokens.TextSecondary,

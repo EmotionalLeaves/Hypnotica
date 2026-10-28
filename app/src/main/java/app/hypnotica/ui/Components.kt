@@ -4,7 +4,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -60,12 +62,15 @@ import kotlin.math.pow
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
+    /** 24 for a sheet, 12 for a card: the contract's two radii. */
+    sheet: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val shape = if (sheet) RoundedCornerShape(24.dp) else RoundedCornerShape(12.dp)
     Box(
         modifier
-            .background(Tokens.Surface.copy(alpha = 0.92f), RoundedCornerShape(24.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(24.dp))
+            .background(Tokens.Surface.copy(alpha = 0.92f), shape)
+            .border(1.dp, Color.White.copy(alpha = 0.07f), shape)
             .padding(16.dp)
     ) { content() }
 }
@@ -122,15 +127,18 @@ fun Pill(
     )
     Box(
         modifier
+            // First, so a disabled pill dims its fill and outline too: last in
+            // the chain it dimmed only the label, and a disabled but selected
+            // chip kept a full-strength accent ring.
+            .alpha(if (enabled) 1f else 0.38f)
             .heightIn(min = 48.dp)
             .background(background, CircleShape)
-            .border(1.5.dp, outline, CircleShape)
+            .border(1.dp, outline, CircleShape)
             // Clipped before the click, so the press ripple is a pill rather
             // than a rectangle drawn over one.
             .clip(CircleShape)
             .clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .alpha(if (enabled) 1f else 0.4f),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -151,26 +159,35 @@ fun BigButton(
     primary: Boolean = false,
     onClick: () -> Unit
 ) {
+    // The hero is a solid accent block. At a fifth-strength fill with an accent
+    // ring it was indistinguishable from a selected chip beside it.
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val squash by animateFloatAsState(if (pressed) 0.97f else 1f, tween(Tokens.Fast), label = "bigPress")
     Box(
         modifier
+            .graphicsLayer {
+                scaleX = squash
+                scaleY = squash
+            }
             .heightIn(min = 52.dp)
             .background(
-                if (primary) Tokens.Accent.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.06f),
+                if (primary) Tokens.Accent else Color.White.copy(alpha = 0.06f),
                 RoundedCornerShape(12.dp)
             )
             .border(
-                if (primary) 2.dp else 1.dp,
-                if (primary) Tokens.Accent else Color.White.copy(alpha = 0.12f),
+                1.dp,
+                if (primary) Color.Transparent else Color.White.copy(alpha = 0.12f),
                 RoundedCornerShape(12.dp)
             )
             .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 16.dp),
+            .clickable(interactionSource = press, indication = LocalIndication.current) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            color = Tokens.TextPrimary,
+            color = if (primary) Color.White else Tokens.TextPrimary,
             style = MaterialTheme.typography.titleMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -395,7 +412,11 @@ fun ToggleRow(
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
-                checkedTrackColor = Tokens.Accent
+                checkedTrackColor = Tokens.Accent,
+                // Material's own unchecked greys are purple-tinted and off the palette.
+                uncheckedThumbColor = Tokens.TextSecondary,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.06f),
+                uncheckedBorderColor = Color.White.copy(alpha = 0.2f)
             )
         )
     }
@@ -411,6 +432,8 @@ fun GlyphButton(
     pop: Boolean = false,
     /** What a screen reader says; known glyphs name themselves. */
     label: String? = null,
+    /** 48 everywhere except beside 52-tall buttons, where it matches them. */
+    size: androidx.compose.ui.unit.Dp = 48.dp,
     onClick: () -> Unit
 ) {
     val spoken = label ?: GLYPH_NAMES[glyph] ?: glyph
@@ -430,12 +453,13 @@ fun GlyphButton(
                 scaleX = scale.value
                 scaleY = scale.value
             }
-            .size(48.dp)
+            .size(size)
             .background(
                 if (selected) Tokens.Accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.06f),
                 CircleShape
             )
-            .border(1.dp, Color.White.copy(alpha = if (selected) 0.3f else 0.12f), CircleShape)
+            // Selected reads the same here as on a Pill: accent fill, accent ring.
+            .border(1.dp, if (selected) Tokens.Accent else Color.White.copy(alpha = 0.12f), CircleShape)
             .clip(CircleShape)
             .clickable(role = Role.Button) { onClick() }
             // Read out as what it does: "black star", "die face-5" and
@@ -446,14 +470,41 @@ fun GlyphButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        // The variation selector asks for the text form: ⚙ ▶ ⏸ ⤴ ♥ are colour
+        // emoji by default on many phones, and an emoji ignores the colour.
+        // Sizes are per glyph because they come from different fallback fonts:
+        // ‹ is an x-height mark and read half the size of ★ at the same 16sp.
         Text(
-            glyph,
-            color = if (pop && selected) Tokens.Accent else Tokens.TextPrimary,
-            style = MaterialTheme.typography.titleMedium,
+            if (glyph in EMOJI_PRONE) glyph + "\uFE0E" else glyph,
+            color = if (pop && selected) Tokens.AccentText else Tokens.TextPrimary,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = GLYPH_SIZES[glyph] ?: 20.sp,
+                lineHeight = GLYPH_SIZES[glyph] ?: 20.sp,
+                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                )
+            ),
             modifier = Modifier.clearAndSetSemantics { }
         )
     }
 }
+
+/** Glyphs that a phone may draw as a colour emoji unless asked not to. */
+private val EMOJI_PRONE = setOf("⚙", "▶", "⏸", "⤴", "♥", "↻", "⚄")
+
+/** Glyph sizes that make the set read as one size. */
+private val GLYPH_SIZES = mapOf(
+    "‹" to 28.sp,
+    "≡" to 22.sp,
+    "▦" to 18.sp,
+    "◷" to 20.sp,
+    "★" to 20.sp,
+    "☆" to 20.sp,
+    "♥" to 20.sp,
+    "♡" to 20.sp
+)
 
 /** What each glyph button does, in words. */
 private val GLYPH_NAMES = mapOf(

@@ -362,15 +362,17 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
         // Transport
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            BigButton(if (playing) "Pause" else "Play") {
+            // Even shares: sized to their labels, the row jumped whenever Play
+            // became Pause or Freeze became Unfreeze.
+            BigButton(if (playing) "Pause" else "Play", Modifier.weight(1f)) {
                 playing = !playing
                 state.engine.studioPlaying = playing
             }
-            BigButton(if (project.isFrozenAt(playhead)) "Unfreeze" else "Freeze") {
+            BigButton(if (project.isFrozenAt(playhead)) "Unfreeze" else "Freeze", Modifier.weight(1f)) {
                 project.toggleFreeze(playhead)
                 revision++
             }
-            BigButton("Key ◆", primary = true) {
+            BigButton("Key ◆", Modifier.weight(1.2f), primary = true) {
                 // A view framed by hand wins: posing with a twist or a drag and
                 // then keying is the whole authoring flow for a camera move.
                 val value = if (isCameraTrack(selectedTrack) && state.engine.cameraPosed) {
@@ -390,7 +392,10 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                // Clipped once here, so the fill is a plain bar rather than a
+                // lozenge at small widths.
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.05f))
                 .pointerInput(project.duration) {
                     // The playhead follows the finger every sample; the sim is
                     // asked to catch up when the finger stops. Seeking on every
@@ -418,8 +423,18 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 Modifier
                     .fillMaxWidth(fill)
                     .height(48.dp)
-                    .background(Tokens.Accent.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
+                    .background(Tokens.Accent.copy(alpha = 0.22f))
             )
+            // The playhead itself, so where "now" is reads at a glance.
+            BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp)) {
+                Box(
+                    Modifier
+                        .offset(x = (maxWidth - 2.dp) * fill)
+                        .width(2.dp)
+                        .height(48.dp)
+                        .background(Tokens.TextPrimary)
+                )
+            }
             // The time sits on the scrubber. At the end of the button row it was
             // left forty-odd dp on a phone and cut off mid-number.
             Text(
@@ -472,13 +487,13 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                 Modifier
                     .fillMaxWidth()
                     .height(8.dp)
-                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(percent = 50))
             ) {
                 Box(
                     Modifier
                         .fillMaxWidth(exportProgress.coerceIn(0f, 1f))
                         .height(8.dp)
-                        .background(Tokens.Accent, RoundedCornerShape(3.dp))
+                        .background(Tokens.Accent, RoundedCornerShape(percent = 50))
                 )
             }
         }
