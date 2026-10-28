@@ -59,6 +59,8 @@ class VideoExporter(
     private val params: Map<String, Float>,
     /** The beat the preview played under the sound, or null for none. */
     private val groove: app.hypnotica.core.audio.Groove? = null,
+    /** The song the person chose, if any; null leaves it to the sim's own tune. */
+    private val song: app.hypnotica.core.audio.Song? = null,
     private val settings: ExportSettings = ExportSettings.VERTICAL,
     /** The look the player had, used wherever a track has nothing to say. */
     private val trails: Float = 0f,
@@ -134,6 +136,12 @@ class VideoExporter(
             val mapping = SoundMapping(synth)
             mapping.applyPreset(SoundPreset.byName(soundPresetName))
             mapping.groove = groove
+            // The chosen song, else the sim's own tune, as the live view plays
+            // them: a Marble music export played scale notes, not its tune.
+            val own = core.sim.tune(core.env)?.let { app.hypnotica.core.audio.Song.byName(it) }
+            mapping.song = song ?: own
+            mapping.tuneIsSims = song == null && own != null
+            mapping.resetSong()
 
             val camera = Camera()
             val overlay = TextOverlay().also { it.prepare() }

@@ -265,9 +265,13 @@ class HarmonographSim : Sim {
      * the middle. (Following the swing in as it dies cropped the older,
      * wider loops still on screen.)
      */
-    override fun frameHalfWidth(env: SimEnv): Float = EXTENT
+    override fun frameHalfWidth(env: SimEnv): Float = amp[0] + amp[1] + MARGIN
 
-    override fun focus(env: SimEnv): Float = EXTENT
+    override fun frameHalfHeight(env: SimEnv): Float = amp[2] + amp[3] + MARGIN
+
+    // The figure's own reach each way, from its amplitudes: a fixed 0.56
+    // cropped a third of some figures, which reach 0.94.
+    override fun focus(env: SimEnv): Float = max(frameHalfWidth(env), frameHalfHeight(env))
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -275,7 +279,7 @@ class HarmonographSim : Sim {
         listOf("ink" to String.format(java.util.Locale.US, "%,d", filled))
 
     companion object {
-        const val EXTENT = 0.56f
+        const val MARGIN = 0.03f
         fun def(): SimDef = SimDef(
             id = "art/harmonograph",
             title = "Harmonograph",

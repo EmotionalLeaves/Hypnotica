@@ -62,6 +62,16 @@ class SoundMapping(private val synth: Synth) {
     @Volatile
     var groove: Groove? = Groove.FOUR
 
+    /**
+     * True when the song is the running sim's own tune (Sim.tune): each of
+     * its events is that note, played the moment it happens, with no beat
+     * under it. On the grid, notes landing faster than an eighth were folded
+     * together and the tune lost a fifth of itself; and the sim keeps its own
+     * time, which a kit at another tempo would only fight.
+     */
+    @Volatile
+    var tuneIsSims = false
+
     // The groove's clock and the notes waiting for the next sixteenth.
     /**
      * Where the groove is, in sixteenths. Counted in steps, not seconds: a
@@ -153,7 +163,9 @@ class SoundMapping(private val synth: Synth) {
                 if (budget >= 1f) {
                     flushMerged()
                     budget -= 1f
-                    play(kind, value, pan, strength)
+                    // The end of a run doesn't take the tune's next note:
+                    // it played two stray notes after a tune had finished.
+                    play(kind, value, pan, strength, advanceSong = kind != EventKind.DONE)
                     if (kind in FELT) onHaptic?.invoke(strength)
                 } else {
                     // Out of budget: fold this event into one louder note.
@@ -178,7 +190,7 @@ class SoundMapping(private val synth: Synth) {
             flushMerged()
         }
 
-        val g = groove
+        val g = if (tuneIsSims) null else groove
         if (g != null) {
             // The kit plays while the sim does: in within a third of a second
             // of the first note, out over a couple once the notes stop.
@@ -330,7 +342,7 @@ class SoundMapping(private val synth: Synth) {
         advanceSong: Boolean = true
     ) {
         val tune = song
-        if (groove != null && tune != null && tune.notes.isNotEmpty()) {
+        if (groove != null && !tuneIsSims && tune != null && tune.notes.isNotEmpty()) {
             // On a beat, a tune advances once per step it sounds on, not once
             // per event: a sort makes dozens of events a step, and the melody
             // ran through itself in a blur. The event only says "a note now".
@@ -361,7 +373,7 @@ class SoundMapping(private val synth: Synth) {
             EventKind.DEATH -> VoiceType.CLICK
             else -> preset.voice
         }
-        if (groove != null) {
+        if (groove != null && !tuneIsSims) {
             hold(hz, pan, strength, type)
             return
         }

@@ -72,7 +72,11 @@ class DominoSim : Sim {
         var gap = 0f
         for (i in 1 until n) gap += sqrt((px[i] - px[i - 1]).let { it * it } + (py[i] - py[i - 1]).let { it * it })
         gap /= max(1, n - 1)
-        length = gap * 1.6f
+        // Long enough to reach across the widest gap too — the turn at the end
+        // of a row, on a wide screen — or the chain stopped there.
+        var widest = 0f
+        for (i in 1 until n) widest = max(widest, sqrt((px[i] - px[i - 1]).let { it * it } + (py[i] - py[i - 1]).let { it * it }))
+        length = max(gap * 1.6f, widest * 1.15f)
         thick = gap * 0.28f
         tilt = FloatArray(n)
         spin = FloatArray(n)

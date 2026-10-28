@@ -279,9 +279,26 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     fun setSoundPreset(name: String) = mapping.applyPreset(SoundPreset.byName(name))
 
+    /**
+     * Only records the choice: the render thread applies it at the top of
+     * its next frame, the one place the sim's own tune is also set. Both
+     * writing the mapping, from two threads, could each overwrite the other —
+     * the person's choice lost, or the last sim's tune left playing.
+     */
     fun setSong(song: Song) {
         chosenSong = if (song.notes.isEmpty()) null else song
-        mapping.song = chosenSong ?: ownSong
+        songDirty = true
+    }
+
+    @Volatile
+    private var songDirty = false
+
+    /** On the render thread: the chosen song, else the sim's own. */
+    private fun applySongs() {
+        val chosen = chosenSong
+        val own = ownSong
+        mapping.song = chosen ?: own
+        mapping.tuneIsSims = chosen == null && own != null
         mapping.resetSong()
     }
 
@@ -296,8 +313,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     /** After every setup: the sim's own tune, unless one was chosen over it. */
     private fun applyOwnSong() {
         ownSong = core.sim.tune(core.env)?.let { Song.byName(it) }
-        mapping.song = chosenSong ?: ownSong
-        mapping.resetSong()
+        applySongs()
     }
 
     fun setTrails(amount: Float) {
@@ -367,6 +383,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     /** The frame's work. Called only from onDrawFrame, inside its guard. */
     private fun drawFrame(dt: Float) {
+        if (songDirty) {
+            songDirty = false
+            applySongs()
+        }
         pendingLoad?.let {
             pendingLoad = null
             val keepLook = keepLookOnLoad

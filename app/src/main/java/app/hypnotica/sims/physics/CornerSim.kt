@@ -75,7 +75,7 @@ class CornerSim : Sim {
         y0 = startFor(vy, wy)
         tint = env.rng.nextFloat()
         bounces = 0
-        lastCellX = cellOf(x0, wx); lastCellY = cellOf(y0, wy)
+        lastCellX = cellOf(x0, wx, vx); lastCellY = cellOf(y0, wy, vy)
         elapsed = 0f
         doneAt = -1f
         payoffFrame = false
@@ -92,7 +92,13 @@ class CornerSim : Sim {
         return k * w - travel
     }
 
-    private fun cellOf(u: Float, w: Float): Int = floor(u / w + 1e-4f).toInt()
+    /**
+     * Which stretch of the unfolded line [u] is on. Moving backwards, a wall
+     * is passed on landing exactly on it, so the cell counts from the other
+     * side: else the corner counted a second bounce a step after it.
+     */
+    private fun cellOf(u: Float, w: Float, v: Float): Int =
+        if (v >= 0f) floor(u / w + 1e-4f).toInt() else (ceil(u / w - 1e-4f) - 1f).toInt()
 
     /** Fold the straight line back into the box. */
     private fun fold(u: Float, w: Float): Float {
@@ -117,16 +123,19 @@ class CornerSim : Sim {
         if (doneAt < 0f && lineT > cornerAt) lineT = cornerAt
         val u = lineT
         place(u)
-        val cx = cellOf(x0 + vx * u, wx)
-        val cy = cellOf(y0 + vy * u, wy)
+        val cx = cellOf(x0 + vx * u, wx, vx)
+        val cy = cellOf(y0 + vy * u, wy, vy)
         val hitX = cx != lastCellX
         val hitY = cy != lastCellY
         lastCellX = cx; lastCellY = cy
         if (hitX || hitY) {
             bounces++
             tint = (tint + 0.31f) % 1f
-            if (hitX && hitY || (doneAt < 0f && u >= cornerAt - 1e-3f)) {
-                if (doneAt < 0f) corner(env)
+            // Only the planned moment is the corner: both walls crossed in
+            // one step counted, and a near miss a few thousandths off ended
+            // the run seconds early, before the exact hit it was built for.
+            if (doneAt < 0f && u >= cornerAt - 1e-3f) {
+                corner(env)
             } else {
                 env.emit(EventKind.HIT, tint, (x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.45f)
             }
@@ -143,6 +152,10 @@ class CornerSim : Sim {
 
     private fun corner(env: SimEnv) {
         doneAt = elapsed
+        // Fired a hair before the walls register, the next step counted them
+        // as one more bounce: count them now, as part of the corner.
+        lastCellX = cellOf(x0 + vx * (cornerAt + 1e-3f), wx, vx)
+        lastCellY = cellOf(y0 + vy * (cornerAt + 1e-3f), wy, vy)
         payoffFrame = true
         flash = 1f
         env.emit(EventKind.DONE, 1f, 0f, 1f)

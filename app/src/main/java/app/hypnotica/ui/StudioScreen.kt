@@ -245,6 +245,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                             paletteName = state.paletteName,
                             soundPresetName = state.soundPresetName,
                             groove = state.engine.mapping.groove,
+                            song = app.hypnotica.core.audio.Song.byIndex(state.songIndex).takeIf { it.notes.isNotEmpty() },
                             params = state.engine.core.params.snapshot(),
                             settings = settings,
                             trails = state.trails,
