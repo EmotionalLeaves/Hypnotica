@@ -263,6 +263,9 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
             if (state.currentDef.heroRestarts) state.restart(newSeed = true)
             else state.engine.hero()
         }
+        // Surprise me: the same sim, its settings and look shuffled, as the
+        // feed does each time it lands on one.
+        GlyphButton("⚄") { state.loadRemixed(state.currentDef) }
         GlyphButton("≡", selected = state.controlsOpen) {
             state.controlsOpen = !state.controlsOpen
         }
