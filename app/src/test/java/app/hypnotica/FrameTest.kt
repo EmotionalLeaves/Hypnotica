@@ -51,7 +51,11 @@ class FrameTest {
                 for (i in 0 until g.instanceCount) {
                     val b = i * G.STRIDE
                     val r = g.instances[b + 4]
-                    xs[i] = abs(g.instances[b]) + abs(g.instances[b + 2] * cos(r)) + abs(g.instances[b + 3] * sin(r))
+                    // A ring or a disc reaches as far however it is turned; its
+                    // rotation only says where a ring's gap is. Treated as a
+                    // turned square it read up to 41% wider than it is.
+                    xs[i] = if (g.instances[b + 5] != G.SHAPE_RECT) abs(g.instances[b]) + abs(g.instances[b + 2])
+                    else abs(g.instances[b]) + abs(g.instances[b + 2] * cos(r)) + abs(g.instances[b + 3] * sin(r))
                 }
                 for (j in 0 until g.pointCount) xs[g.instanceCount + j] = abs(g.pointPos[j * 3])
                 xs.sort()
