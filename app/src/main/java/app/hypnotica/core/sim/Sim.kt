@@ -202,6 +202,13 @@ interface Sim {
 
     /** Which of [contenders] won, once that is settled; -1 until then. */
     fun winner(): Int = -1
+
+    /**
+     * The name of a tune this sim plays itself — each of its notes is the
+     * next note of it — when the person hasn't chosen one. Read after every
+     * setup, so a sim can let its own controls pick the tune.
+     */
+    fun tune(env: SimEnv): String? = null
 }
 
 /** Metadata plus the factory for one sim. */

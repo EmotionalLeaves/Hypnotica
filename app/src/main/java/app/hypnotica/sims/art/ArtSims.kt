@@ -595,6 +595,7 @@ object ArtSims {
         HarmonographSim.def(),
         CirclePackingSim.def(),
         SpirographSim.def(),
-        LSystemSim.def()
+        LSystemSim.def(),
+        MarbleMusicSim.def()
     )
 }

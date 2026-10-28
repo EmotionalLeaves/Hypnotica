@@ -503,5 +503,6 @@ data class Song(val name: String, val notes: IntArray) {
         val ALL = listOf(NONE, ASCENDING, ARPEGGIO, PENTATONIC_WALK) + TUNES
         val NAMES: List<String> = ALL.map { it.name }
         fun byIndex(i: Int): Song = ALL[i.coerceIn(0, ALL.size - 1)]
+        fun byName(name: String): Song? = ALL.firstOrNull { it.name == name }
     }
 }

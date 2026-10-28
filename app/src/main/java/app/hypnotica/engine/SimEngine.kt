@@ -280,7 +280,23 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     fun setSoundPreset(name: String) = mapping.applyPreset(SoundPreset.byName(name))
 
     fun setSong(song: Song) {
-        mapping.song = if (song.notes.isEmpty()) null else song
+        chosenSong = if (song.notes.isEmpty()) null else song
+        mapping.song = chosenSong ?: ownSong
+        mapping.resetSong()
+    }
+
+    /** The song the person or a clip chose; null leaves it to the sim. */
+    @Volatile
+    private var chosenSong: Song? = null
+
+    /** The tune the running sim asked for, if any; see [Sim.tune]. */
+    @Volatile
+    private var ownSong: Song? = null
+
+    /** After every setup: the sim's own tune, unless one was chosen over it. */
+    private fun applyOwnSong() {
+        ownSong = core.sim.tune(core.env)?.let { Song.byName(it) }
+        mapping.song = chosenSong ?: ownSong
         mapping.resetSong()
     }
 
@@ -658,6 +674,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     }
 
     private fun resetRunState() {
+        applyOwnSong()
         runId++
         pick = PickSnapshot(runId, app.hypnotica.core.sim.NO_CONTENDERS, -1)
         driftHold.clear()
