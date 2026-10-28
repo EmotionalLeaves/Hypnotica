@@ -1,0 +1,312 @@
+package app.hypnotica.sims.physics
+
+import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.render.G
+import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.Shelf
+import app.hypnotica.core.sim.Sim
+import app.hypnotica.core.sim.SimDef
+import app.hypnotica.core.sim.SimEnv
+import app.hypnotica.core.sim.TrapFormat
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * A grimy wall, power-washed. The nozzle sweeps it in strips and the dirt
+ * blasts off to show the mural underneath, a different one every run. Some
+ * patches are baked on and survive the first pass; once the sweep is done the
+ * nozzle goes back for them one at a time, until the very last spot.
+ */
+class PowerWashSim : Sim {
+
+    private var gx = 40
+    private var gy = 80
+    private var cell = 0.02f
+    private var ox = 0f
+    private var oy = 0f
+    private var mural = IntArray(0)
+    private var dirt = FloatArray(0)
+    private var dirty = 0
+    private var nx = 0f
+    private var ny = 0f
+    // The sweep: strip by strip, back and forth.
+    private var strip = 0
+    private var strips = 1
+    private var dir = 1f
+    private var sweeping = true
+    private var target = -1
+    private var elapsed = 0f
+    private var doneAt = -1f
+    private var payoffFrame = false
+    private var turbo = 0f
+    private var radius = 0.05f
+    private var speed = 0.5f
+    // Spray.
+    private var sx = FloatArray(SPRAY)
+    private var sy = FloatArray(SPRAY)
+    private var svx = FloatArray(SPRAY)
+    private var svy = FloatArray(SPRAY)
+    private var slife = FloatArray(SPRAY)
+    private var scol = IntArray(SPRAY)
+    private var sNext = 0
+    private var halfW = 0.46f
+
+    override fun setup(env: SimEnv) {
+        halfW = env.halfWidth
+        gx = env.params.i("detail", 40).coerceIn(10, MAX_DETAIL)
+        val w = 2f * halfW * 0.92f
+        cell = min(w / gx, 1.8f / 10f)
+        gy = (1.8f / cell).toInt().coerceIn(10, 400)
+        ox = -gx * cell * 0.5f
+        oy = -gy * cell * 0.5f
+        mural = IntArray(gx * gy)
+        paintMural(env)
+        dirt = FloatArray(gx * gy)
+        // Grime: thicker in blotches, and a few baked-on patches that one
+        // pass won't shift.
+        val blot = Array(6) { floatArrayOf(env.rng.range(0f, gx.toFloat()), env.rng.range(0f, gy.toFloat()), env.rng.range(3f, 10f)) }
+        for (k in 0 until gx * gy) {
+            val c = k % gx; val r = k / gx
+            var d = 0.8f + 0.25f * env.rng.nextFloat()
+            for (b in blot) {
+                val dx = c - b[0]; val dy = r - b[1]
+                if (dx * dx + dy * dy < b[2] * b[2]) d += 0.4f
+            }
+            dirt[k] = d
+        }
+        repeat(env.rng.int(2, 5)) {
+            val c = env.rng.int(1, gx - 1); val r = env.rng.int(1, gy - 1)
+            for (dy in -1..1) for (dx in -1..1) {
+                val k = (r + dy) * gx + (c + dx)
+                if (k in dirt.indices) dirt[k] = STUBBORN
+            }
+        }
+        dirty = gx * gy
+        // The jet is the same size whatever the detail — a thirteenth of the
+        // wall across. Tied to the cells, at high detail it shrank to a pin
+        // and swept past too fast to shift anything.
+        radius = gx * cell / JETS_ACROSS
+        // Strips a little narrower than the spray, so the sweep overlaps.
+        val stripH = radius * 1.5f
+        strips = max(1, kotlin.math.ceil(gy * cell / stripH).toInt())
+        // Paced for the sweep to take about this long.
+        val path = strips * gx * cell
+        speed = path / SWEEP_SECONDS
+        strip = 0
+        dir = 1f
+        nx = ox
+        ny = stripY(0)
+        sweeping = true
+        target = -1
+        elapsed = 0f
+        doneAt = -1f
+        payoffFrame = false
+        turbo = 0f
+        slife.fill(0f)
+        sNext = 0
+    }
+
+    private fun stripY(s: Int): Float = oy + gy * cell - (s + 0.5f) * (gy * cell / strips)
+
+    /** One of a few murals, coloured from the palette, laid out from the seed. */
+    private fun paintMural(env: SimEnv) {
+        val palette = env.palette
+        val kind = env.rng.int(0, 4)
+        val cx = gx * 0.5f; val cy = gy * 0.5f
+        val f1 = env.rng.range(0.15f, 0.35f); val turn = env.rng.range(0f, 6.28f)
+        val bands = env.rng.range(1.6f, 3.2f)
+        for (k in 0 until gx * gy) {
+            val c = k % gx; val r = k / gx
+            val u = (c - cx) / gx; val v = (r - cy) / gx
+            val t = when (kind) {
+                // Rings round the middle.
+                0 -> sqrt(u * u + v * v) * bands
+                // A spiral.
+                1 -> (kotlin.math.atan2(v, u) / (2f * PI.toFloat()) + sqrt(u * u + v * v) * bands * 0.5f)
+                // Diamonds.
+                2 -> (abs(u * cos(turn) - v * sin(turn)) + abs(u * sin(turn) + v * cos(turn))) * bands
+                // Waves.
+                else -> v * bands * 0.6f + 0.25f * sin(u * 30f * f1 + turn)
+            }
+            val tone = ((t % 1f) + 1f) % 1f
+            mural[k] = palette.at(tone)
+        }
+    }
+
+    override fun step(env: SimEnv, dt: Float) {
+        payoffFrame = false
+        val h = abs(dt)
+        elapsed += h
+        turbo = max(0f, turbo - h)
+        if (doneAt >= 0f) { stepSpray(env, h); return }
+        val v = speed * env.params.f("pace", 1f) * (if (sweeping) 1f else 1.6f)
+        if (sweeping) {
+            nx += dir * v * h
+            val edge = if (dir > 0f) ox + gx * cell else ox
+            if ((dir > 0f && nx >= edge) || (dir < 0f && nx <= edge)) {
+                nx = edge
+                strip++
+                dir = -dir
+                if (strip >= strips) sweeping = false else ny = stripY(strip)
+            }
+        } else {
+            // The sweep is done: back for what it missed, nearest first.
+            if (target < 0 || dirt[target] <= 0f) target = nearestDirty()
+            if (target >= 0) {
+                val tx = ox + (target % gx + 0.5f) * cell
+                val ty = oy + (target / gx + 0.5f) * cell
+                val dx = tx - nx; val dy = ty - ny
+                val d = sqrt(dx * dx + dy * dy)
+                if (d > 1e-4f) { val m = min(d, v * h); nx += dx / d * m; ny += dy / d * m }
+            }
+        }
+        blast(env, h)
+        stepSpray(env, h)
+        if (dirty == 0 && doneAt < 0f) {
+            doneAt = elapsed
+            payoffFrame = true
+            env.emit(EventKind.DONE, 1f, 0f, 1f)
+        }
+    }
+
+    private fun nearestDirty(): Int {
+        var best = -1; var bd = Float.MAX_VALUE
+        for (k in 0 until gx * gy) {
+            if (dirt[k] <= 0f) continue
+            val dx = ox + (k % gx + 0.5f) * cell - nx; val dy = oy + (k / gx + 0.5f) * cell - ny
+            val d = dx * dx + dy * dy
+            if (d < bd) { bd = d; best = k }
+        }
+        return best
+    }
+
+    private fun blast(env: SimEnv, h: Float) {
+        val r = radius * (if (turbo > 0f) 1.8f else 1f) * env.params.f("spray", 1f).coerceIn(0.3f, 3f)
+        val c0 = ((nx - r - ox) / cell).toInt().coerceIn(0, gx - 1)
+        val c1 = ((nx + r - ox) / cell).toInt().coerceIn(0, gx - 1)
+        val r0 = ((ny - r - oy) / cell).toInt().coerceIn(0, gy - 1)
+        val r1 = ((ny + r - oy) / cell).toInt().coerceIn(0, gy - 1)
+        var cleaned = 0
+        var tone = 0
+        for (row in r0..r1) for (c in c0..c1) {
+            val k = row * gx + c
+            if (dirt[k] <= 0f) continue
+            val dx = ox + (c + 0.5f) * cell - nx; val dy = oy + (row + 0.5f) * cell - ny
+            val d = sqrt(dx * dx + dy * dy)
+            if (d > r) continue
+            // Hardest at the middle of the jet.
+            dirt[k] -= h * BLAST * (1f - d / r * 0.6f)
+            if (env.rng.nextFloat() < h * 25f) spray(env, ox + (c + 0.5f) * cell, oy + (row + 0.5f) * cell, GRIME)
+            if (dirt[k] <= 0f) {
+                dirt[k] = 0f
+                dirty--
+                cleaned++
+                tone = k
+            }
+        }
+        if (cleaned > 0) {
+            // Each clean patch is a note, pitched by the colour it shows.
+            val c = mural[tone]
+            val lum = (((c shr 16) and 255) + ((c shr 8) and 255) + (c and 255)) / 765f
+            env.emit(EventKind.HIT, (0.2f + 0.7f * lum).coerceIn(0f, 1f), ((nx / max(0.1f, halfW))).coerceIn(-1f, 1f), (0.15f + 0.03f * cleaned).coerceAtMost(0.5f))
+        }
+    }
+
+    private fun spray(env: SimEnv, x: Float, y: Float, color: Int) {
+        val i = sNext; sNext = (sNext + 1) % SPRAY
+        sx[i] = x; sy[i] = y
+        val a = env.rng.range(0f, 2f * PI.toFloat())
+        val s = env.rng.range(0.2f, 0.9f)
+        svx[i] = cos(a) * s; svy[i] = sin(a) * s
+        slife[i] = env.rng.range(0.2f, 0.6f)
+        scol[i] = color
+    }
+
+    private fun stepSpray(env: SimEnv, h: Float) {
+        val g = max(0.5f, abs(env.laws.gravity)) * 0.15f
+        for (i in 0 until SPRAY) {
+            if (slife[i] <= 0f) continue
+            slife[i] -= h
+            svy[i] -= g * h
+            sx[i] += svx[i] * h; sy[i] += svy[i] * h
+        }
+    }
+
+    /** Turbo: a wider jet for a couple of seconds. */
+    override fun hero(env: SimEnv) {
+        if (doneAt >= 0f) return
+        turbo = 2.5f
+        env.emit(EventKind.STEP, 0.8f, 0f, 0.7f)
+    }
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        g.reserveInstances(gx * gy + 8)
+        val half = cell * 0.5f + 0.0004f
+        for (k in 0 until gx * gy) {
+            val d = dirt[k].coerceIn(0f, 1f)
+            val c = if (d <= 0f) mural[k] else Palette.lerp(mural[k], if (dirt[k] > 1.5f) BAKED else GRIME, 0.35f + 0.65f * d)
+            g.rect(ox + (k % gx + 0.5f) * cell, oy + (k / gx + 0.5f) * cell, half, half, c)
+        }
+        for (i in 0 until SPRAY) {
+            if (slife[i] <= 0f) continue
+            g.point(sx[i], sy[i], 0.006f, Palette.withAlpha(scol[i], min(1f, slife[i] * 3f)))
+        }
+        if (doneAt < 0f) {
+            val r = radius * (if (turbo > 0f) 1.8f else 1f)
+            g.glow(nx, ny, r * 1.6f, 0xFFBFE6FF.toInt(), 0.5f)
+            g.ring(nx, ny, r, 0.004f, Palette.TEXT_PRIMARY, alpha = 0.6f)
+            // The lance, from below the screen to the nozzle.
+            g.line(nx + 0.1f, -1.2f, nx, ny - r * 0.3f, 0.012f, 0xFF3A3F4B.toInt())
+        } else {
+            val k = ((elapsed - doneAt) * 0.8f).coerceIn(0f, 1f)
+            val sweepX = ox + gx * cell * (k * 1.4f - 0.2f)
+            g.glow(sweepX, 0f, 0.3f, Palette.TEXT_PRIMARY, 0.35f * (1f - k))
+        }
+    }
+
+    override fun payoff(): Boolean = payoffFrame
+
+    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+
+    override fun counters(): List<Pair<String, String>> = listOf(
+        "clean" to "${(100 - dirty * 100 / max(1, gx * gy)).coerceIn(0, 100)}%",
+        "spots left" to dirty.toString()
+    )
+
+    companion object {
+        const val MAX_DETAIL = 120
+        const val SWEEP_SECONDS = 12f
+        const val BLAST = 22f
+        const val JETS_ACROSS = 13f
+        const val STUBBORN = 3.2f
+        const val SPRAY = 900
+        val GRIME = 0xFF4A4034.toInt()
+        val BAKED = 0xFF2C241C.toInt()
+
+        fun def(): SimDef = SimDef(
+            id = "physics/power-wash",
+            title = "Power wash",
+            shelf = Shelf.PHYSICS,
+            family = "Cleaning",
+            blurb = "Strip by strip, the grime comes off. What's underneath? And that last spot…",
+            formats = listOf(TrapFormat.REVEAL, TrapFormat.FILL, TrapFormat.SNAP),
+            heroLabel = "Turbo",
+            heroRestarts = false,
+            defaultPalette = "Spectrum",
+            typicalSeconds = 16f,
+            params = listOf(
+                Param.int("detail", "Detail", 10, MAX_DETAIL, 40, card = Card.DATA),
+                Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION),
+                Param.float("spray", "Spray width", 0.5f, 2.5f, 1f, card = Card.MOTION)
+            ),
+            create = { PowerWashSim() }
+        )
+    }
+}

@@ -971,6 +971,7 @@ object PhysicsSims {
         PressSim.def(),
         ArenaSim.def(),
         LastOutSim.def(),
-        SoapCutSim.def()
+        SoapCutSim.def(),
+        PowerWashSim.def()
     )
 }
