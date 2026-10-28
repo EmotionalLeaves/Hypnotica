@@ -27,6 +27,16 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: the marble race and the sorting race.** Eight marbles down a tall
+  course of pegs and spinning paddles, the camera riding with the leader, every
+  peg a note pitched by where it sits across the course; and four sorts on the
+  same bars in stacked lanes, the stragglers hurried home once there is a
+  winner. Pick a colour.
+- **TickTock twists.** A clip can change gear partway through its build — a
+  surge to nearly double speed, a hush just before the payoff, a colour drop —
+  timed against the payoff it was checked for. The camera leans a tenth closer
+  through the build and eases back after; number clips show their number big.
+
 - **A beat under the sound.** The clips this app is modelled on always have a
   track under them, and the thing on screen lands on its beat; here every sim
   was one instrument with nothing under it, its notes at whatever moments the

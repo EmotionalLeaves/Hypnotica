@@ -921,6 +921,7 @@ object PhysicsSims {
         GaltonBoardSim.def(),
         SandpileSim.def(),
         WaveTankSim.def(),
-        TrafficSim.def()
+        TrafficSim.def(),
+        MarbleRaceSim.def()
     )
 }
