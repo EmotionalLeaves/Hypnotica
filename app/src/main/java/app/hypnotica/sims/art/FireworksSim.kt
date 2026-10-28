@@ -2,6 +2,7 @@ package app.hypnotica.sims.art
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -70,7 +71,15 @@ class FireworksSim : Sim {
         // Launched just hard enough to stop where it should burst.
         val rise = burstY - GROUND
         val vy = sqrt(2f * g * max(0.2f, rise))
-        rockets.add(Rocket(x, GROUND, env.rng.range(-0.05f, 0.05f), vy, burstY, env.rng.int(0, KINDS), env.rng.nextFloat()))
+        // What kind of shell: any of the classic three, or the shapes the
+        // show is set to, now and then a classic among them.
+        val kind = when (env.params.choiceIndex("shells")) {
+            1 -> if (env.rng.bool(0.75f)) HEART else env.rng.int(0, KINDS)
+            2 -> if (env.rng.bool(0.75f)) STAR else env.rng.int(0, KINDS)
+            3 -> env.rng.int(0, KINDS + 2)
+            else -> env.rng.int(0, KINDS)
+        }
+        rockets.add(Rocket(x, GROUND, env.rng.range(-0.05f, 0.05f), vy, burstY, kind, env.rng.nextFloat()))
         launched++
         env.emit(EventKind.STEP, 0.2f + 0.3f * ((burstY + 1f) / 2f), (x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.2f)
     }
@@ -86,24 +95,55 @@ class FireworksSim : Sim {
             val i = pNext; pNext = (pNext + 1) % cap
             px[i] = r.x; py[i] = r.y
             val a = 2f * PI.toFloat() * k / n + env.rng.range(-0.05f, 0.05f)
-            val s = when (r.kind) {
-                // A ring: every spark the same speed.
-                RING -> speed
-                // A willow: slow, heavy, long trails down.
-                WILLOW -> speed * 0.7f * sqrt(env.rng.nextFloat())
-                // A peony: a full ball.
-                else -> speed * sqrt(env.rng.nextFloat())
+            if (r.kind == HEART || r.kind == STAR) {
+                // A shape: each spark's speed is a point round the outline, so
+                // the burst grows as that shape and holds it while it spreads.
+                val t = k.toFloat() / n
+                val (ox, oy) = if (r.kind == HEART) heart(t) else star(t)
+                pvx[i] = ox * speed + r.vx; pvy[i] = oy * speed
+            } else {
+                val s = when (r.kind) {
+                    // A ring: every spark the same speed.
+                    RING -> speed
+                    // A willow: slow, heavy, long trails down.
+                    WILLOW -> speed * 0.7f * sqrt(env.rng.nextFloat())
+                    // A peony: a full ball.
+                    else -> speed * sqrt(env.rng.nextFloat())
+                }
+                pvx[i] = cos(a) * s + r.vx; pvy[i] = sin(a) * s
             }
-            pvx[i] = cos(a) * s + r.vx; pvy[i] = sin(a) * s
             maxLife[i] = if (r.kind == WILLOW) env.rng.range(2.2f, 3.2f) else env.rng.range(1.0f, 1.8f)
             life[i] = maxLife[i]
             drag[i] = if (r.kind == WILLOW) 1.6f else 1.1f
+            // Shapes hang together: no stray colours, and less fall, so the
+            // outline is still an outline when it fades.
             // Mostly the rocket's own colour, a few strays.
-            tint[i] = if (env.rng.nextFloat() < 0.85f) r.tint else env.rng.nextFloat()
+            tint[i] = if (r.kind >= HEART || env.rng.nextFloat() < 0.85f) r.tint else env.rng.nextFloat()
         }
         skyFlash = max(skyFlash, 0.25f * big)
         val height = ((r.y + 1f) / 2f).coerceIn(0f, 1f)
         env.emit(EventKind.HIT, 0.15f + 0.6f * height, (r.x / max(0.1f, halfW)).coerceIn(-1f, 1f), (0.5f + 0.3f * big).coerceAtMost(1f))
+    }
+
+    /** The heart curve, [t] from 0 to 1 round it, about one unit across. */
+    private fun heart(t: Float): Pair<Float, Float> {
+        val a = t * 2f * PI.toFloat()
+        val sn = sin(a)
+        return (16f * sn * sn * sn / 17f) to ((13f * cos(a) - 5f * cos(2f * a) - 2f * cos(3f * a) - cos(4f * a)) / 17f + 0.1f)
+    }
+
+    /** A five-pointed star's outline, [t] from 0 to 1. */
+    private fun star(t: Float): Pair<Float, Float> {
+        val e = t * 10f
+        val i = e.toInt() % 10
+        val f = e - kotlin.math.floor(e)
+        fun corner(k: Int): Pair<Float, Float> {
+            val rr = if (k % 2 == 0) 1f else 0.42f
+            val ang = PI.toFloat() / 2f + k * PI.toFloat() / 5f
+            return (rr * cos(ang)) to (rr * sin(ang))
+        }
+        val (x0, y0) = corner(i); val (x1, y1) = corner((i + 1) % 10)
+        return (x0 + (x1 - x0) * f) to (y0 + (y1 - y0) * f)
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -200,6 +240,8 @@ class FireworksSim : Sim {
         const val PEONY = 0
         const val RING = 1
         const val WILLOW = 2
+        const val HEART = 3
+        const val STAR = 4
 
         fun def(): SimDef = SimDef(
             id = "art/fireworks",
@@ -214,6 +256,7 @@ class FireworksSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 16f,
             params = listOf(
+                Param.choice("shells", "Shells", listOf("Classic", "Hearts", "Stars", "Everything"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.float("pace", "Pace", 0.4f, 3f, 1f, card = Card.MOTION),
                 Param.float("size", "Burst size", 0.4f, 2f, 1f, card = Card.MOTION)
             ),
