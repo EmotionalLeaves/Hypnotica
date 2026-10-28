@@ -967,6 +967,7 @@ object PhysicsSims {
         DominoSim.def(),
         BalloonSim.def(),
         PourSim.def(),
-        WheelSim.def()
+        WheelSim.def(),
+        PressSim.def()
     )
 }
