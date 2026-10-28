@@ -471,7 +471,34 @@ data class Song(val name: String, val notes: IntArray) {
         )
 
         /** The tunes a clip may be given, not counting the scale walks. */
-        val TUNES = listOf(ODE_TO_JOY, TWINKLE, FUR_ELISE, KOROBEINIKI, GREENSLEEVES, CANON)
+        // Grieg, 1875: the theme that climbs and climbs — made for a build.
+        val MOUNTAIN_KING = Song(
+            "Mountain King",
+            intArrayOf(
+                69, 71, 72, 74, 76, 72, 76, 75, 71, 75, 74, 70, 74,
+                69, 71, 72, 74, 76, 72, 76, 81, 79, 76, 72, 76, 79
+            )
+        )
+        // Mozart, 1783.
+        val TURKISH_MARCH = Song(
+            "Turkish March",
+            intArrayOf(71, 69, 68, 69, 72, 74, 72, 71, 72, 76, 77, 76, 75, 76, 83, 81, 80, 81, 83, 81, 80, 81, 84)
+        )
+        // Joplin, 1902.
+        val ENTERTAINER = Song(
+            "The Entertainer",
+            intArrayOf(74, 75, 76, 84, 76, 84, 76, 84, 84, 86, 87, 88, 84, 86, 88, 83, 86, 84)
+        )
+        // Pierpont, 1857.
+        val JINGLE_BELLS = Song(
+            "Jingle Bells",
+            intArrayOf(76, 76, 76, 76, 76, 76, 76, 79, 72, 74, 76, 77, 77, 77, 77, 77, 76, 76, 76, 76, 74, 74, 76, 74, 79)
+        )
+
+        val TUNES = listOf(
+            ODE_TO_JOY, TWINKLE, FUR_ELISE, KOROBEINIKI, GREENSLEEVES, CANON,
+            MOUNTAIN_KING, TURKISH_MARCH, ENTERTAINER, JINGLE_BELLS
+        )
 
         val ALL = listOf(NONE, ASCENDING, ARPEGGIO, PENTATONIC_WALK) + TUNES
         val NAMES: List<String> = ALL.map { it.name }
