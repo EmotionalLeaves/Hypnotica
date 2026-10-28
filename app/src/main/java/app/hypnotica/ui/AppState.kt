@@ -265,8 +265,15 @@ class AppState(
     var guessBest by mutableIntStateOf(prefs?.guessBest ?: 0)
         private set
 
+    /** A chip tapped: a tick under the finger. */
+    fun pickTapped() {
+        if (haptics) engine.haptics?.light()
+    }
+
     /** A pick settled: extend the run or end it. */
     fun recordGuess(right: Boolean) {
+        // Felt as well as read: a thump for a right call.
+        if (right && haptics) engine.haptics?.heavy()
         guessStreak = if (right) guessStreak + 1 else 0
         if (guessStreak > guessBest) guessBest = guessStreak
         prefs?.guessStreak = guessStreak

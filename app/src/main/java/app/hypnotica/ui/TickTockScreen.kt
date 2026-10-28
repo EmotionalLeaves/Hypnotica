@@ -654,7 +654,12 @@ fun WinnerPick(state: AppState, key: Any?) {
             verdict = verdict,
             streak = state.guessStreak,
             best = state.guessBest
-        ) { i -> if (pick < 0 && winnerSide < 0) pick = i }
+        ) { i ->
+            if (pick < 0 && winnerSide < 0) {
+                pick = i
+                state.pickTapped()
+            }
+        }
         Spacer(Modifier.height(16.dp))
     }
 }
