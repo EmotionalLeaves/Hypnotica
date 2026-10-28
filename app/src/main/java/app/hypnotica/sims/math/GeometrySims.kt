@@ -382,6 +382,7 @@ class CurvedSpaceSim : Sim {
         gridY = p.i("gridy", 44).coerceIn(6, 140)
         massAmount = p.f("mass", 1f)
         rays = p.i("rays", 7).coerceIn(1, 16)
+        rs = RS_PER_MASS * massAmount
         massX = 0f
         massY = 0f
         elapsed = 0f
@@ -392,27 +393,46 @@ class CurvedSpaceSim : Sim {
         closingFor = 0f
     }
 
-    /** How far a point is pulled towards the mass. */
-    private fun warp(x: Float, y: Float): Float {
-        val d = hypot(x - massX, y - massY)
-        return massAmount * 0.09f / (d + 0.12f)
+    private var captured = 0
+    private var rs = 0.035f
+
+    /**
+     * The height of space at a point, as Flamm's paraboloid has it: the
+     * exact shape of the plane through a non-rotating mass, embedded one
+     * dimension up, z = 2√(rs·(r − rs)), measured down from far away. Inside
+     * the horizon there is no surface; it stops at the throat.
+     */
+    private fun height(x: Float, y: Float): Float {
+        val r = max(rs, hypot(x - massX, y - massY))
+        return 2f * sqrt(rs * (r - rs)) - zFar
     }
+
+    private val zFar get() = 2f * sqrt(rs * (FAR - rs))
+
+    /** Plane to screen: the surface seen from above at an angle, so its dip shows. */
+    private fun screenY(y: Float, h: Float): Float = y * COS_TILT + h * SIN_TILT
 
     private fun traceRays(env: SimEnv) {
         val halfW = env.halfWidth
+        captured = 0
         for (r in 0 until rays) {
             var x = -halfW * 1.02f
-            var y = -0.8f + r * (1.6f / max(1, rays - 1))
+            var y = -RAY_SPAN + r * (2f * RAY_SPAN / max(1, rays - 1))
             var dx = 1f
             var dy = 0f
             var n = 0
             val step = 0.012f
             while (n < pathX[r].size && x < halfW * 1.02f) {
-                // Deflection grows as the ray passes close to the mass.
+                // Light bends twice as much as Newton would say: a sideways
+                // pull of rs/r² per unit of path, which summed along a
+                // passing ray is Einstein's 2·rs/b. It used to fall off as
+                // 1/r, so far rays bent as if the mass were everywhere.
                 val ddx = massX - x
                 val ddy = massY - y
-                val d2 = ddx * ddx + ddy * ddy + 0.01f
-                val pull = massAmount * 0.0016f / d2
+                val d = sqrt(ddx * ddx + ddy * ddy)
+                // Inside the photon sphere, 1.5 rs, light can't get out again.
+                if (d < 1.5f * rs) { captured++; break }
+                val pull = rs * step / (d * d * d)
                 dx += ddx * pull
                 dy += ddy * pull
                 val len = hypot(dx, dy)
@@ -460,56 +480,50 @@ class CurvedSpaceSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth * 0.98f
-        // The warped grid.
+        val gridColour = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f)
+        // The grid lies on the curved surface, so it dips into the well.
+        val top = GRID_REACH
         for (i in 0..gridX) {
             val x = -halfW + i * 2f * halfW / gridX
-            var prevX = x
-            var prevY = -1f
-            for (j in 1..gridY) {
-                val y = -1f + j * 2f / gridY
-                val w = warp(x, y)
-                val dx = (massX - x)
-                val dy = (massY - y)
-                val d = hypot(dx, dy) + 1e-5f
-                val px = x + dx / d * w
-                val py = y + dy / d * w
-                g.line(prevX, prevY, px, py, 0.0016f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
-                prevX = px
-                prevY = py
+            var prevY = screenY(-top, height(x, -top))
+            for (j in 1..gridY * 2) {
+                val y = -top + j * top / gridY
+                val sy = screenY(y, height(x, y))
+                g.line(x, prevY, x, sy, 0.0016f, gridColour)
+                prevY = sy
             }
         }
         for (j in 0..gridY) {
-            val y = -1f + j * 2f / gridY
+            val y = -top + j * 2f * top / gridY
             var prevX = -halfW
-            var prevY = y
-            for (i in 1..gridX) {
-                val x = -halfW + i * 2f * halfW / gridX
-                val w = warp(x, y)
-                val dx = (massX - x)
-                val dy = (massY - y)
-                val d = hypot(dx, dy) + 1e-5f
-                val px = x + dx / d * w
-                val py = y + dy / d * w
-                g.line(prevX, prevY, px, py, 0.0016f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
-                prevX = px
-                prevY = py
+            var prevY = screenY(y, height(-halfW, y))
+            for (i in 1..gridX * 2) {
+                val x = -halfW + i * halfW / gridX
+                val sy = screenY(y, height(x, y))
+                g.line(prevX, prevY, x, sy, 0.0016f, gridColour)
+                prevX = x
+                prevY = sy
             }
         }
         for (r in 0 until rays) {
             val c = palette.at(r.toFloat() / max(1, rays - 1))
             for (n in 0 until pathLen[r] - 1) {
-                g.line(pathX[r][n], pathY[r][n], pathX[r][n + 1], pathY[r][n + 1], 0.0026f, c, 0.9f)
+                val x0 = pathX[r][n]; val y0 = pathY[r][n]; val x1 = pathX[r][n + 1]; val y1 = pathY[r][n + 1]
+                g.line(x0, screenY(y0, height(x0, y0)), x1, screenY(y1, height(x1, y1)), 0.0026f, c, 0.9f)
             }
         }
-        g.glow(massX, massY, 0.2f * massAmount, Palette.WARNING, 0.55f)
-        g.disc(massX, massY, 0.035f, Palette.BG)
-        g.ring(massX, massY, 0.04f, 0.005f, Palette.WARNING)
+        // The mass at the bottom of its well; the horizon at its true size.
+        val my = screenY(massY, height(massX, massY))
+        g.glow(massX, my, 0.12f + 0.05f * massAmount, Palette.WARNING, 0.55f)
+        g.disc(massX, my, max(0.02f, rs), Palette.BG)
+        g.ring(massX, my, max(0.02f, rs) + 0.005f, 0.005f, Palette.WARNING)
     }
 
     override fun onInput(env: SimEnv, e: TouchEvent) {
         if (e.kind == TouchEvent.Kind.DRAG || e.kind == TouchEvent.Kind.TAP) {
             massX = e.x
-            massY = e.y
+            // The screen shows the surface tilted: undo it to find the spot.
+            massY = e.y / COS_TILT
         }
     }
 
@@ -517,10 +531,21 @@ class CurvedSpaceSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rays" to rays.toString(),
+        "swallowed" to captured.toString(),
         "mass" to String.format(java.util.Locale.US, "%.1f", massAmount)
     )
 
     companion object {
+        /** The horizon's radius for each unit of the Mass slider. */
+        const val RS_PER_MASS = 0.035f
+        /** Where "far away" is, for the surface's height. */
+        const val FAR = 1.6f
+        const val COS_TILT = 0.83f
+        const val SIN_TILT = 0.56f
+        /** The grid reaches this far up and down the plane, filling the tilted screen. */
+        const val GRID_REACH = 1.35f
+        const val RAY_SPAN = 0.95f
+
         /** Nothing is the closest approach before this much of the run. */
         const val PAYOFF_EARLIEST = 6f
 
@@ -532,7 +557,7 @@ class CurvedSpaceSim : Sim {
             title = "A mass bending space",
             shelf = Shelf.DIMENSIONS,
             family = "Curved space & spacetime",
-            blurb = "The grid dips, and light passing by bends with it.",
+            blurb = "Space round a mass as it really curves, and light bending by Einstein's amount.",
             formats = listOf(TrapFormat.LOOP, TrapFormat.REVEAL),
             heroLabel = "Move the mass",
             defaultPalette = "Aurora",
