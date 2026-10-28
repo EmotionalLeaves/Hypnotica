@@ -151,6 +151,15 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     @Volatile
     var kaleido: Int = 1
 
+    /**
+     * A slow turn of the camera, radians a second, for a sim drawn round its
+     * centre; zero turns it back upright. Set by the feed's remix and by
+     * TickTock, never by the player.
+     */
+    @Volatile
+    var spin: Float = 0f
+    private var spinning = false
+
     /** The sim the current fit was worked out for; a new one is framed at once. */
     private var fitFor: Any? = null
 
@@ -592,6 +601,19 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             // And a small bump on every kick of the beat, so the picture
             // moves with the music — the cut-to-the-beat feel of a clip.
             camera.zoom = baseZoom * breathing * (1f + 0.045f * punchEase) * (1f + BEAT_DEPTH * beat * beat)
+            // The slow turn, only for a sim drawn round its centre, and eased
+            // back upright when it ends rather than left at an angle.
+            val turn = spin
+            if (turn != 0f && fitFor === core.sim && scene.fit < 0.99f && !safety.reduceMotion) {
+                camera.rotation = ((camera.rotation + turn * dt) % TWO_PI)
+                spinning = true
+            } else if (spinning) {
+                var r = camera.rotation % TWO_PI
+                if (r > Math.PI) r -= TWO_PI.toFloat() else if (r < -Math.PI) r += TWO_PI.toFloat()
+                r *= (1f - kotlin.math.min(1f, dt * 4f))
+                if (kotlin.math.abs(r) < 0.002f) { r = 0f; spinning = false }
+                camera.rotation = r
+            }
 
             // Screen shake: a few pixels for a moment, on the heaviest frames.
             // Added to the camera at render time rather than written into it,
@@ -791,6 +813,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
          * to settle as the slow motion eases out rather than after it.
          */
         const val PUNCH_SECONDS = 0.8f
+        const val TWO_PI = (2.0 * Math.PI).toFloat()
         /** A change of screen shape this big lays the run out again. */
         const val RELAYOUT_CHANGE = 0.15f
         /** The beat bump: a percent and a half, gone in a fifth of a second. */

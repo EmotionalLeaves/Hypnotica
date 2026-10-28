@@ -205,6 +205,13 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             roll < 80 -> 3
             else -> 1
         }
+        // And some turn slowly, either way — a kaleidoscope turning most of all.
+        val turn = ((clip.seed ushr 29) and 0xFF).toInt()
+        state.engine.spin = when {
+            turn < 50 -> 0.12f
+            turn < 100 -> -0.12f
+            else -> 0f
+        }
     }
 
     /** Bring the chrome back in from the side it leaves by. */
@@ -334,6 +341,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         onDispose {
             state.engine.relayoutOnResize = true
             state.engine.kaleido = 1
+            state.engine.spin = 0f
             // A twist or a lean in progress does not follow the person out:
             // the feed ran at 1.9x under a slider reading 1x.
             state.engine.core.speed = state.speed

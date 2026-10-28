@@ -82,7 +82,13 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     var finishedAt by remember { mutableStateOf(0L) }
     DisposableEffect(Unit) {
         state.engine.onFinished = { finishedAt = System.nanoTime() }
-        onDispose { state.engine.onFinished = null }
+        onDispose {
+            state.engine.onFinished = null
+            // The remix's look stays with the feed: the player and the
+            // library show a sim as it is.
+            state.engine.kaleido = 1
+            state.engine.spin = 0f
+        }
     }
     LaunchedEffect(finishedAt) {
         if (finishedAt == 0L) return@LaunchedEffect
@@ -94,7 +100,15 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     // Keyed on the sim rather than Unit: re-entering the feed used to reload,
     // which threw away the run, the look and the person's place in it.
     DisposableEffect(index) {
-        if (order[index].id != state.currentDef.id) state.load(order[index])
+        if (order[index].id != state.currentDef.id) {
+            state.loadRemixed(order[index])
+            // A look of its own as well, sometimes: folded into a
+            // kaleidoscope, or turning slowly. Only sims drawn round their
+            // centre take either; the engine sees to that.
+            val roll = ((state.feedVisits * 2654435761L) ushr 8 and 0xFF).toInt()
+            state.engine.kaleido = if (roll < 40) (if (roll < 20) 6 else 4) else 1
+            state.engine.spin = if (roll in 40 until 80) (if (roll % 2 == 0) SPIN else -SPIN) else 0f
+        }
         onDispose { }
     }
 
@@ -374,6 +388,9 @@ private fun hookFor(state: AppState, visit: Int): String {
 
 /** Pixels of travel that count as a deliberate swipe. */
 private const val SWIPE = 90f
+
+/** A remixed sim's slow turn, radians a second. */
+private const val SPIN = 0.12f
 
 /** Rule 1's figure: chrome fades after this long with no touch. */
 internal const val CHROME_IDLE_MS = 2600L

@@ -913,6 +913,24 @@ class AppState(
         exprEpoch++
     }
 
+    /**
+     * Load [def] as the feed does: a fresh variation each time it comes
+     * round — its settings varied within a watchable band, and a palette of
+     * its own or another, unless the person has chosen one. Met again, a sim
+     * used to be the same picture every time.
+     */
+    fun loadRemixed(def: SimDef) {
+        load(def)
+        val params = director.remix(def)
+        if (chosenPalette == null) {
+            val palette = director.remixPalette(def)
+            paletteName = palette
+            engine.setPalette(palette)
+        }
+        engine.applyParams(params, System.nanoTime())
+        paramVersion++
+    }
+
     /** Hand the clip on screen to the normal player, controls and all. */
     fun openClipInPlayer(clip: Clip) {
         playClip(clip)

@@ -273,6 +273,18 @@ class ClipDirector(seed: Long = System.nanoTime()) {
      * before it is shown, and a 400,000 particle field would make the check cost
      * more than the clip is worth.
      */
+    /**
+     * Settings for one more run of [def], varied within the same watchable
+     * band a clip gets: the feed's remix, so a sim met again isn't the same.
+     */
+    @Synchronized
+    fun remix(def: SimDef): Map<String, Float> = randomiseParams(def)
+
+    /** A palette for a remix: the sim's own half the time, else any. */
+    @Synchronized
+    fun remixPalette(def: SimDef): String =
+        if (rng.bool(0.5f)) def.defaultPalette else Palette.NAMES[rng.int(0, Palette.NAMES.size)]
+
     private fun randomiseParams(def: SimDef): Map<String, Float> {
         val out = HashMap<String, Float>()
         for (p in def.params) {
