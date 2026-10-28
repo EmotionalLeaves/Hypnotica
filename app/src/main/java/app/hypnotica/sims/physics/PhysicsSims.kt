@@ -965,6 +965,7 @@ object PhysicsSims {
         MarbleRaceSim.def(),
         ShatterSim.def(),
         DominoSim.def(),
-        BalloonSim.def()
+        BalloonSim.def(),
+        PourSim.def()
     )
 }
