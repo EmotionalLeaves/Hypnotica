@@ -1,0 +1,267 @@
+package app.hypnotica.sims.algorithms
+
+import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.render.G
+import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.Shelf
+import app.hypnotica.core.sim.Sim
+import app.hypnotica.core.sim.SimDef
+import app.hypnotica.core.sim.SimEnv
+import app.hypnotica.core.sim.TrapFormat
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+
+/**
+ * The ball-sort puzzle from a thousand game adverts, played by a solver that
+ * doesn't lose. Tubes of mixed balls and two empty ones; a ball can go on an
+ * empty tube or on its own colour. Each move lifts a ball out and drops it
+ * into its new tube with a click, and each tube that comes out one colour
+ * rings.
+ *
+ * Solved by search before the first move — depth first, trying the moves
+ * that finish a tube or stack a colour first, and never visiting a position
+ * twice — so the play is all forward and the end is certain.
+ */
+class BallSortSim : Sim {
+
+    private var colors = 5
+    private var cap = 4
+    private var tubes = 7
+    private var state = Array(0) { IntArray(0) }
+    private var height = IntArray(0)
+    private var moves = IntArray(0)   // pairs: from, to
+    private var moveIndex = 0
+    private var phase = 0f            // 0..1 through the current move
+    private var moving = -1           // the color in flight, or -1
+    private var fromT = 0
+    private var toT = 0
+    private var elapsed = 0f
+    private var doneAt = -1f
+    private var payoffFrame = false
+    private var done = BooleanArray(0)
+    private var ring = FloatArray(0)
+    private var halfW = 0.46f
+    private var tubeW = 0.08f
+    private var ballR = 0.03f
+    private var floorY = -0.6f
+    private var stepSeconds = 0.4f
+
+    override fun setup(env: SimEnv) {
+        halfW = env.halfWidth
+        colors = env.params.i("colors", 5).coerceIn(2, MAX_COLORS)
+        cap = 4
+        tubes = colors + 2
+        // A shuffled bag of every colour four times, dealt into the full tubes.
+        var solution: IntArray? = null
+        var tries = 0
+        while (solution == null && tries < 20) {
+            tries++
+            val bag = IntArray(colors * cap) { it / cap }
+            env.rng.shuffle(bag)
+            state = Array(tubes) { IntArray(cap) }
+            height = IntArray(tubes)
+            for (i in bag.indices) { val t = i / cap; state[t][height[t]++] = bag[i] }
+            solution = solve()
+        }
+        moves = solution ?: IntArray(0)
+        moveIndex = 0
+        phase = 0f
+        moving = -1
+        done = BooleanArray(tubes)
+        ring = FloatArray(tubes)
+        for (t in 0 until tubes) done[t] = isDone(state[t], height[t])
+        // Two rows on a narrow screen once there are more than five tubes: in
+        // one row the balls were specks with the top of the screen empty.
+        layoutRows = if (tubes > 5 && halfW < 0.9f) 2 else 1
+        perRow = (tubes + layoutRows - 1) / layoutRows
+        spacing = min(2f * halfW * 0.92f / perRow, 0.22f)
+        tubeW = spacing * 0.36f
+        ballR = tubeW * 0.82f
+        // Each row's tubes are this tall; the rows sit one above the other.
+        val tubeH = (cap * 2.05f + 0.6f) * ballR
+        rowGap = tubeH + ballR * 5f
+        floorY = -(layoutRows - 1) * rowGap * 0.5f - tubeH * 0.5f
+        // About twelve seconds of play, however long the solution.
+        stepSeconds = (TARGET_SECONDS / max(1, moves.size / 2)).coerceIn(0.12f, 0.6f)
+        elapsed = 0f
+        doneAt = -1f
+        payoffFrame = false
+    }
+
+    private fun isDone(t: IntArray, h: Int): Boolean = h == 0 || (h == cap && (1 until cap).all { t[it] == t[0] })
+
+    /** Depth-first, best moves first, every position once; null if it gives up. */
+    private fun solve(): IntArray? {
+        val st = Array(tubes) { state[it].copyOf() }
+        val ht = height.copyOf()
+        val seen = HashSet<String>()
+        val path = ArrayList<Int>()
+        var budget = SEARCH_BUDGET
+        fun key(): String {
+            // Tubes in sorted order: two positions differing only by which
+            // tube is which are the same position.
+            val parts = Array(tubes) { t -> (0 until ht[t]).joinToString("") { ('a' + st[t][it]).toString() } }
+            parts.sort()
+            return parts.joinToString("|")
+        }
+        fun solved(): Boolean = (0 until tubes).all { isDone(st[it], ht[it]) }
+        fun dfs(): Boolean {
+            if (solved()) return true
+            if (--budget <= 0) return false
+            if (!seen.add(key())) return false
+            // Candidate moves, scored.
+            val cand = ArrayList<IntArray>()
+            for (a in 0 until tubes) {
+                if (ht[a] == 0) continue
+                if (isDone(st[a], ht[a])) continue
+                val c = st[a][ht[a] - 1]
+                // How many of that colour on top of a, in a run.
+                var run = 0
+                while (run < ht[a] && st[a][ht[a] - 1 - run] == c) run++
+                for (b in 0 until tubes) {
+                    if (b == a || ht[b] == cap) continue
+                    if (ht[b] > 0 && st[b][ht[b] - 1] != c) continue
+                    // Moving a whole uniform tube into an empty one changes nothing.
+                    if (ht[b] == 0 && run == ht[a]) continue
+                    val score = if (ht[b] > 0) 10 + ht[b] else 0
+                    cand.add(intArrayOf(a, b, score))
+                }
+            }
+            cand.sortByDescending { it[2] }
+            for (m in cand) {
+                val a = m[0]; val b = m[1]
+                val c = st[a][--ht[a]]
+                st[b][ht[b]++] = c
+                path.add(a); path.add(b)
+                if (dfs()) return true
+                path.removeAt(path.size - 1); path.removeAt(path.size - 1)
+                st[a][ht[a]++] = st[b][--ht[b]]
+            }
+            return false
+        }
+        return if (dfs()) path.toIntArray() else null
+    }
+
+    private var layoutRows = 1
+    private var perRow = 7
+    private var spacing = 0.12f
+    private var rowGap = 0.5f
+
+    private fun rowOf(t: Int) = t / perRow
+
+    private fun tubeX(t: Int): Float {
+        val inRow = if (rowOf(t) == layoutRows - 1) tubes - perRow * (layoutRows - 1) else perRow
+        return spacing * (t % perRow + 0.5f - inRow * 0.5f)
+    }
+
+    /** The bottom of tube [t]: the first row at the top. */
+    private fun base(t: Int) = floorY + (layoutRows - 1 - rowOf(t)) * rowGap
+
+    private fun slotY(t: Int, i: Int) = base(t) + ballR + i * ballR * 2.05f
+    private fun topY(t: Int) = slotY(t, cap) + ballR * 0.6f
+
+    override fun step(env: SimEnv, dt: Float) {
+        payoffFrame = false
+        val h = abs(dt)
+        elapsed += h
+        for (t in ring.indices) ring[t] = max(0f, ring[t] - h * 1.5f)
+        if (doneAt >= 0f || elapsed < LEAD) return
+        if (moving < 0) {
+            if (moveIndex * 2 >= moves.size) {
+                doneAt = elapsed
+                payoffFrame = true
+                env.emit(EventKind.DONE, 1f, 0f, 1f)
+                for (t in 0 until tubes) ring[t] = 1f
+                return
+            }
+            fromT = moves[moveIndex * 2]; toT = moves[moveIndex * 2 + 1]
+            moving = state[fromT][--height[fromT]]
+            phase = 0f
+        }
+        phase += h / stepSeconds * env.params.f("pace", 1f)
+        if (phase >= 1f) {
+            state[toT][height[toT]++] = moving
+            env.emit(EventKind.HIT, (moving + 0.5f) / colors, (tubeX(toT) / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.5f)
+            if (!done[toT] && isDone(state[toT], height[toT]) && height[toT] == cap) {
+                done[toT] = true
+                ring[toT] = 1f
+                env.emit(EventKind.STEP, (moving + 0.5f) / colors, 0f, 0.9f)
+            }
+            moving = -1
+            moveIndex++
+        }
+    }
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        val palette = env.palette
+        val glass = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.6f)
+        for (t in 0 until tubes) {
+            val x = tubeX(t)
+            val bottom = base(t)
+            val top = topY(t)
+            if (ring[t] > 0f && height[t] > 0) g.glow(x, (bottom + top) * 0.5f, tubeW * 4f, palette.at((state[t][0] + 0.5f) / colors), 0.6f * ring[t])
+            g.line(x - tubeW, bottom, x - tubeW, top, 0.006f, glass)
+            g.line(x + tubeW, bottom, x + tubeW, top, 0.006f, glass)
+            g.disc(x, bottom, tubeW, glass)
+            g.disc(x, bottom, tubeW - 0.006f, 0xFF07080C.toInt())
+            for (i in 0 until height[t]) {
+                val c = palette.at((state[t][i] + 0.5f) / colors)
+                g.disc(x, slotY(t, i), ballR, c)
+                g.disc(x - ballR * 0.3f, slotY(t, i) + ballR * 0.3f, ballR * 0.28f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
+            }
+        }
+        if (moving >= 0) {
+            // Up out of its tube, across, and down into the next.
+            val p = phase.coerceIn(0f, 1f)
+            val x0 = tubeX(fromT); val x1 = tubeX(toT)
+            val y0 = slotY(fromT, height[fromT]); val y1 = slotY(toT, height[toT])
+            // Over the taller of the two tubes' rims, whichever row each is in.
+            val lift = max(topY(fromT), topY(toT)) + ballR * 3f
+            val (x, y) = when {
+                p < 0.3f -> x0 to (y0 + (lift - y0) * ease(p / 0.3f))
+                p < 0.7f -> (x0 + (x1 - x0) * ease((p - 0.3f) / 0.4f)) to (lift + 0.04f * sin((p - 0.3f) / 0.4f * 3.1416f))
+                else -> x1 to (lift + (y1 - lift) * ease((p - 0.7f) / 0.3f))
+            }
+            g.disc(x, y, ballR, palette.at((moving + 0.5f) / colors))
+        }
+    }
+
+    private fun ease(t: Float): Float = t * t * (3f - 2f * t)
+
+    override fun payoff(): Boolean = payoffFrame
+
+    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+
+    override fun counters(): List<Pair<String, String>> = listOf(
+        "moves" to "${moveIndex} / ${moves.size / 2}",
+        "sorted" to "${done.count { it } - (0 until tubes).count { height[it] == 0 }}".let { s -> "${s.toIntOrNull()?.coerceAtLeast(0) ?: 0} / $colors" }
+    )
+
+    companion object {
+        const val MAX_COLORS = 10
+        const val SEARCH_BUDGET = 60000
+        const val TARGET_SECONDS = 12f
+        const val LEAD = 0.8f
+
+        fun def(): SimDef = SimDef(
+            id = "algorithms/ball-sort",
+            title = "Ball sort",
+            shelf = Shelf.ALGORITHMS,
+            family = "Puzzles",
+            blurb = "The puzzle from every game ad, solved without a wrong move.",
+            formats = listOf(TrapFormat.PERFECT_FIT, TrapFormat.FILL, TrapFormat.SNAP),
+            heroLabel = "New puzzle",
+            defaultPalette = "Candy",
+            typicalSeconds = 16f,
+            params = listOf(
+                Param.int("colors", "Colours", 2, MAX_COLORS, 5, card = Card.DATA),
+                Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION)
+            ),
+            create = { BallSortSim() }
+        )
+    }
+}
