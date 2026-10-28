@@ -2,6 +2,7 @@ package app.hypnotica.sims.life
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -33,19 +34,23 @@ class RpsBattleSim : Sim {
     private var flashT = FloatArray(0)
     private var legs = FloatArray(0)
     private var quiet = 0f
-    private val count = IntArray(3)
+    private val count = IntArray(MAX_TEAMS)
+    private var teams = 3
     private var halfW = 0.46f
     private var elapsed = 0f
     private var doneAt = -1f
     private var payoffFrame = false
     private var winner = -1
-    private val out = BooleanArray(3)
+    private val out = BooleanArray(MAX_TEAMS)
     private var size = 0.025f
     private var grip = 0.025f
 
     override fun setup(env: SimEnv) {
         val per = env.params.i("each", 40).coerceIn(3, MAX_EACH)
-        n = per * 3
+        // Three armies, or five: rock paper scissors lizard Spock, where
+        // each side beats two and loses to two.
+        teams = if (env.params.choiceIndex("game") == 1) 5 else 3
+        n = per * teams
         halfW = env.halfWidth
         size = (0.035f * sqrt(40f / per)).coerceIn(0.01f, 0.055f)
         // How close a catch is, kept as it was tuned: drawing them bigger
@@ -55,18 +60,19 @@ class RpsBattleSim : Sim {
         side = IntArray(n); flashT = FloatArray(n)
         // Some are quicker than others, or a chase at equal speed never ends.
         legs = FloatArray(n) { env.rng.range(LEGS_MIN, LEGS_MAX) }
-        // Each side starts in its own corner of a triangle, so the first
-        // clash is a charge rather than a scramble.
+        // Each side starts in its own corner of a triangle (or pentagon), so
+        // the first clash is a charge rather than a scramble.
         for (i in 0 until n) {
-            val s = i % 3
+            val s = i % teams
             side[i] = s
-            val a = (PI / 2 + s * 2 * PI / 3).toFloat()
+            val a = (PI / 2 + s * 2 * PI / teams).toFloat()
             val cx = kotlin.math.cos(a) * min(halfW, 1f) * 0.55f
             val cy = kotlin.math.sin(a) * 0.55f
             x[i] = cx + env.rng.range(-0.18f, 0.18f)
             y[i] = cy + env.rng.range(-0.18f, 0.18f)
         }
-        count.fill(per)
+        count.fill(0)
+        for (t in 0 until teams) count[t] = per
         out.fill(false)
         elapsed = 0f
         doneAt = -1f
@@ -99,8 +105,6 @@ class RpsBattleSim : Sim {
         var convertedSide = 0
         for (i in 0 until n) {
             val s = side[i]
-            val prey = (s + 2) % 3     // rock (0) beats scissors (2)
-            val hunter = (s + 1) % 3   // paper (1) beats rock (0)
             var bestPrey = Float.MAX_VALUE; var px = 0f; var py = 0f
             var bestHunter = Float.MAX_VALUE; var hx = 0f; var hy = 0f
             for (j in 0 until n) {
@@ -108,8 +112,8 @@ class RpsBattleSim : Sim {
                 if (t == s) continue
                 val dx = x[j] - x[i]; val dy = y[j] - y[i]
                 val d2 = dx * dx + dy * dy
-                if (t == prey && d2 < bestPrey) { bestPrey = d2; px = dx; py = dy }
-                else if (t == hunter && d2 < bestHunter) { bestHunter = d2; hx = dx; hy = dy }
+                if (beats(s, t)) { if (d2 < bestPrey) { bestPrey = d2; px = dx; py = dy } }
+                else if (d2 < bestHunter) { bestHunter = d2; hx = dx; hy = dy }
             }
             var ax = 0f; var ay = 0f
             if (bestPrey < Float.MAX_VALUE) {
@@ -134,7 +138,8 @@ class RpsBattleSim : Sim {
             if (bestPrey < reach * reach) {
                 // The nearest prey: find it again by position, it was not kept.
                 for (j in 0 until n) {
-                    if (side[j] != prey) continue
+                    val prey = side[j]
+                    if (prey == s || !beats(s, prey)) continue
                     val dx = x[j] - x[i]; val dy = y[j] - y[i]
                     if (dx * dx + dy * dy < reach * reach) {
                         side[j] = s
@@ -155,21 +160,39 @@ class RpsBattleSim : Sim {
         if (quiet > QUIET_SECONDS) { quiet = 0f; hero(env) }
         if (converted > 0) {
             // Each side has its own note; a burst is louder, not more notes.
-            env.emit(EventKind.HIT, NOTE[convertedSide], 0f, min(1f, 0.3f + 0.12f * converted))
+            env.emit(EventKind.HIT, note(convertedSide), 0f, min(1f, 0.3f + 0.12f * converted))
         }
         // A side wiped out is a beat of its own.
-        for (s in 0 until 3) if (!out[s] && count[s] == 0) {
+        for (s in 0 until teams) if (!out[s] && count[s] == 0) {
             out[s] = true
-            env.emit(EventKind.STEP, 0.2f + 0.3f * s, 0f, 0.8f)
+            env.emit(EventKind.STEP, note(s), 0f, 0.8f)
         }
-        val alive = (0 until 3).count { count[it] > 0 }
+        val alive = (0 until teams).count { count[it] > 0 }
         if (alive == 1) {
-            winner = (0 until 3).first { count[it] > 0 }
+            winner = (0 until teams).first { count[it] > 0 }
             doneAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, NOTE[winner], 0f, 1f)
+            env.emit(EventKind.DONE, note(winner), 0f, 1f)
         }
     }
+
+    /**
+     * Whether side [s] beats side [t]: in a ring of an odd number of sides,
+     * each beats the half of the others that come after the halfway point —
+     * scissors for rock with three; scissors and lizard with five.
+     */
+    private fun beats(s: Int, t: Int): Boolean = ((t - s + teams) % teams) >= (teams + 1) / 2
+
+    /**
+     * Which thing side [s] is. With five, round the ring each beats the two
+     * before it only in this order — rock, Spock, paper, lizard, scissors —
+     * which is exactly the game's rules.
+     */
+    private fun kindOf(s: Int): Int = if (teams == 3) s else FIVE_ORDER[s]
+
+    private fun note(s: Int): Float = 0.1f + 0.8f * s / (teams - 1f)
+
+    private fun colour(env: SimEnv, s: Int): Int = env.palette.at(0.08f + 0.84f * s / (teams - 1f))
 
     private fun move(i: Int, h: Float) {
         x[i] += vx[i] * h
@@ -194,16 +217,20 @@ class RpsBattleSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val colors = IntArray(3) { palette.at(0.12f + 0.38f * it) }
+        val colors = IntArray(teams) { colour(env, it) }
         for (i in 0 until n) {
             val s = side[i]
             val c = if (flashT[i] > 0f) Palette.brighten(colors[s], 0.6f * flashT[i]) else colors[s]
             val r = size * (1f + 0.6f * flashT[i])
-            when (s) {
+            when (kindOf(s)) {
                 // Rock: a stone.
                 0 -> g.disc(x[i], y[i], r, c)
                 // Paper: a sheet, a little tilted with its heading.
                 1 -> g.rect(x[i], y[i], r * 0.8f, r, c, vx[i] * 0.3f)
+                // Lizard: a ring.
+                3 -> g.ring(x[i], y[i], r, r * 0.35f, c)
+                // Spock: a diamond.
+                4 -> g.rect(x[i], y[i], r * 0.75f, r * 0.75f, c, (PI / 4).toFloat())
                 // Scissors: two crossed blades.
                 else -> {
                     g.rect(x[i], y[i], r * 1.1f, r * 0.22f, c, 0.6f)
@@ -217,7 +244,7 @@ class RpsBattleSim : Sim {
         val total = max(1, count.sum()).toFloat()
         val barW = halfW * 0.9f
         var left = -barW
-        for (s in 0 until 3) {
+        for (s in 0 until teams) {
             val w = 2f * barW * count[s] / total
             if (w > 0f) g.rect(left + w * 0.5f, 0.93f, w * 0.5f, 0.018f, colors[s])
             left += w
@@ -228,7 +255,7 @@ class RpsBattleSim : Sim {
         }
     }
 
-    override fun contenders(env: SimEnv): IntArray = IntArray(3) { env.palette.at(0.12f + 0.38f * it) }
+    override fun contenders(env: SimEnv): IntArray = IntArray(teams) { colour(env, it) }
 
     override fun winner(): Int = winner
 
@@ -237,8 +264,8 @@ class RpsBattleSim : Sim {
     override fun finished(): Boolean = (winner >= 0 && elapsed - doneAt > 3f) || elapsed > GIVE_UP_SECONDS
 
     override fun counters(): List<Pair<String, String>> =
-        if (winner >= 0) listOf("winner" to NAMES[winner])
-        else listOf(NAMES[0] to count[0].toString(), NAMES[1] to count[1].toString(), NAMES[2] to count[2].toString())
+        if (winner >= 0) listOf("winner" to NAMES[kindOf(winner)])
+        else (0 until teams).map { NAMES[kindOf(it)] to count[it].toString() }
 
     companion object {
         const val MAX_EACH = 200
@@ -250,8 +277,10 @@ class RpsBattleSim : Sim {
         const val RAMP_SECONDS = 20f
         const val GIVE_UP_SECONDS = 60f
         const val QUIET_SECONDS = 3f
-        val NAMES = arrayOf("rock", "paper", "scissors")
-        val NOTE = floatArrayOf(0.15f, 0.5f, 0.85f)
+        const val MAX_TEAMS = 5
+        val NAMES = arrayOf("rock", "paper", "scissors", "lizard", "Spock")
+        /** Sides 0 to 4 as kinds: rock, Spock, paper, lizard, scissors. */
+        val FIVE_ORDER = intArrayOf(0, 4, 1, 3, 2)
 
         fun def(): SimDef = SimDef(
             id = "life/rps-battle",
@@ -265,6 +294,7 @@ class RpsBattleSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 15f,
             params = listOf(
+                Param.choice("game", "Game", listOf("Rock paper scissors", "+ lizard, Spock"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("each", "Per side", 3, MAX_EACH, 40, card = Card.DATA, logScale = true),
                 Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION)
             ),

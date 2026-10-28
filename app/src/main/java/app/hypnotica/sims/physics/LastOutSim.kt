@@ -49,9 +49,11 @@ class LastOutSim : Sim {
     private var payoffFrame = false
     private var winner = -1
     private var halfW = 0.46f
+    private var gaps = 1
 
     override fun setup(env: SimEnv) {
         n = env.params.i("balls", 8).coerceIn(2, MAX_BALLS)
+        gaps = env.params.i("gaps", 1).coerceIn(1, MAX_GAPS)
         halfW = env.halfWidth
         ringR = min(halfW, 1f) * 0.85f
         r = (ringR * 0.09f * sqrt(8f / n)).coerceIn(0.008f, 0.08f)
@@ -139,11 +141,21 @@ class LastOutSim : Sim {
         }
     }
 
+    /** Through any of the gaps, spaced evenly round the ring. */
     private fun inGap(a: Float): Boolean {
-        var rel = (a - gapAngle) % (2f * PI.toFloat())
-        if (rel < 0f) rel += 2f * PI.toFloat()
-        return rel < gap
+        val twoPi = 2f * PI.toFloat()
+        for (k in 0 until gaps) {
+            var rel = (a - gapAngle - k * twoPi / gaps) % twoPi
+            if (rel < 0f) rel += twoPi
+            if (rel < gapNow) return true
+        }
+        return false
     }
+
+    /** Each gap's width: narrower the more there are (with the square
+     *  root: shared out evenly they were too narrow to get through), so more gaps
+     *  doesn't just mean over sooner. */
+    private val gapNow get() = min(gap / kotlin.math.sqrt(gaps.toFloat()), 2f * PI.toFloat() / gaps * 0.6f)
 
     private fun escape(env: SimEnv, i: Int) {
         if (doneAt >= 0f) return
@@ -172,7 +184,13 @@ class LastOutSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.ring(0f, 0f, ringR + 0.012f, 0.024f, Palette.TEXT_PRIMARY, gap, gapAngle, 0.9f)
+        // The ring as arcs between the gaps.
+        val twoPi = 2f * PI.toFloat()
+        val arc = twoPi / gaps - gapNow
+        for (k in 0 until gaps) {
+            val start = gapAngle + k * twoPi / gaps + gapNow
+            g.ring(0f, 0f, ringR + 0.012f, 0.024f, Palette.TEXT_PRIMARY, twoPi - arc, start + arc, 0.9f)
+        }
         for (i in 0 until n) {
             if (out[i] && y[i] < -1.4f) continue
             val c = palette.at(tint[i])
@@ -198,6 +216,7 @@ class LastOutSim : Sim {
 
     companion object {
         const val MAX_BALLS = 300
+        const val MAX_GAPS = 4
         const val MAX_PICKS = 8
         const val SPIN = 0.7f
         const val START_GAP = 0.35f
@@ -221,6 +240,7 @@ class LastOutSim : Sim {
             typicalSeconds = 18f,
             params = listOf(
                 Param.int("balls", "Balls", 2, MAX_BALLS, 8, card = Card.DATA, logScale = true),
+                Param.int("gaps", "Gaps", 1, MAX_GAPS, 1, card = Card.DATA),
                 Param.float("spin", "Spin", 0.2f, 4f, 1f, card = Card.MOTION)
             ),
             create = { LastOutSim() }

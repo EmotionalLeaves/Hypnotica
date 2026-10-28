@@ -2,6 +2,7 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
 import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
@@ -54,6 +55,11 @@ class ArenaSim : Sim {
     private var dlife = FloatArray(0)
     private var dtint = FloatArray(0)
     private var dNext = 0
+    // Bumpers, in the Bumpers arena: they kick back whatever hits them.
+    private var bx = FloatArray(0)
+    private var by = FloatArray(0)
+    private var br = FloatArray(0)
+    private var bFlash = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         n = env.params.i("fighters", 8).coerceIn(2, MAX_FIGHTERS)
@@ -72,6 +78,15 @@ class ArenaSim : Sim {
             val b = env.rng.range(0f, 2f * PI.toFloat())
             vx[i] = cos(b) * s; vy[i] = sin(b) * s
         }
+        val bumpers = if (env.params.choiceIndex("arena") == 1) env.rng.int(3, 7) else 0
+        bx = FloatArray(bumpers); by = FloatArray(bumpers); br = FloatArray(bumpers); bFlash = FloatArray(bumpers)
+        for (k in 0 until bumpers) {
+            // Round the middle, evenly, so they don't pile up on one side.
+            val a = 2f * PI.toFloat() * k / bumpers + env.rng.range(-0.3f, 0.3f)
+            val d = arena0 * env.rng.range(0.15f, 0.5f)
+            bx[k] = cos(a) * d; by[k] = sin(a) * d
+            br[k] = arena0 * env.rng.range(0.06f, 0.1f)
+        }
         aliveCount = n
         elapsed = 0f
         doneAt = -1f
@@ -87,7 +102,8 @@ class ArenaSim : Sim {
         elapsed += h
         val pace = env.params.f("pace", 1f)
         // The arena closes in once the opening skirmish is over.
-        if (doneAt < 0f && elapsed > SHRINK_AFTER) {
+        // With bumpers flinging everyone at the wall, the zone waits longer.
+        if (doneAt < 0f && elapsed > (if (bx.isEmpty()) SHRINK_AFTER else SHRINK_AFTER * 2f)) {
             arena = max(arena0 * MIN_ARENA, arena - arena0 * SHRINK_RATE * h * pace)
         }
         val sub = 4
@@ -112,7 +128,7 @@ class ArenaSim : Sim {
                         // hurts, and more the smaller it gets. Two fighters
                         // circling each other along the wall can't last.
                         if (arena < arena0 && doneAt < 0f) {
-                            hp[i] -= ZONE_DAMAGE * arena0 / arena
+                            hp[i] -= ZONE_DAMAGE * arena0 / arena * (if (bx.isEmpty()) 1f else BUMPER_DAMAGE)
                             hit[i] = max(hit[i], 0.5f)
                             if (hp[i] <= 0f) knockOut(env, i)
                         }
@@ -121,6 +137,24 @@ class ArenaSim : Sim {
             }
             for (i in 0 until n) {
                 if (hp[i] <= 0f) continue
+                for (k in bx.indices) {
+                    val ex = x[i] - bx[k]; val ey = y[i] - by[k]
+                    val d = sqrt(ex * ex + ey * ey)
+                    val reach = br[k] + radius
+                    if (d >= reach || d < 1e-6f) continue
+                    val nx = ex / d; val ny = ey / d
+                    x[i] = bx[k] + nx * reach; y[i] = by[k] + ny * reach
+                    val vn = vx[i] * nx + vy[i] * ny
+                    if (vn < 0f) {
+                        vx[i] -= 2f * vn * nx; vy[i] -= 2f * vn * ny
+                        // A kick, as a pinball bumper gives.
+                        val sp = sqrt(vx[i] * vx[i] + vy[i] * vy[i]).coerceAtLeast(1e-4f)
+                        val kicked = min(MAX_SPEED, sp * BUMPER_KICK + 0.15f)
+                        vx[i] *= kicked / sp; vy[i] *= kicked / sp
+                        bFlash[k] = 1f
+                        env.emit(EventKind.STEP, 0.85f, (bx[k] / max(0.1f, arena0)).coerceIn(-1f, 1f), 0.35f)
+                    }
+                }
                 for (j in i + 1 until n) {
                     // Knocked out by an earlier pair this pass: out of the fight.
                     if (hp[i] <= 0f) break
@@ -142,7 +176,8 @@ class ArenaSim : Sim {
                     val si = vx[i] * vx[i] + vy[i] * vy[i]
                     val sj = vx[j] * vx[j] + vy[j] * vy[j]
                     val (att, def) = if (si >= sj) i to j else j to i
-                    val dmg = (DAMAGE * rel * env.params.f("damage", 1f)).coerceIn(0.03f, 0.6f)
+                    // Bumpers speed everyone up, and speed is damage: softer blows there.
+                    val dmg = (DAMAGE * rel * env.params.f("damage", 1f) * (if (bx.isEmpty()) 1f else BUMPER_DAMAGE)).coerceIn(0.02f, 0.6f)
                     // Once it's won, they only bounce.
                     if (doneAt >= 0f) continue
                     hp[def] -= dmg
@@ -153,6 +188,7 @@ class ArenaSim : Sim {
             }
         }
         for (i in 0 until n) if (hit[i] > 0f) hit[i] = max(0f, hit[i] - h * 4f)
+        for (k in bFlash.indices) if (bFlash[k] > 0f) bFlash[k] = max(0f, bFlash[k] - h * 4f)
         for (k in 0 until DEBRIS) {
             if (dlife[k] <= 0f) continue
             dlife[k] -= h
@@ -198,6 +234,14 @@ class ArenaSim : Sim {
         // The arena, and where it started, faintly.
         g.ring(0f, 0f, arena0, 0.004f, Palette.TEXT_SECONDARY, alpha = 0.25f)
         g.ring(0f, 0f, arena, 0.012f, if (arena < arena0) Palette.DANGER else Palette.TEXT_SECONDARY, alpha = 0.85f)
+        for (k in bx.indices) {
+            val f = bFlash[k]
+            if (f > 0f) g.glow(bx[k], by[k], br[k] * 2.5f, Palette.TEXT_PRIMARY, 0.6f * f)
+            // A target, not a body: rings and a dot, nothing like a fighter.
+            g.ring(bx[k], by[k], br[k], br[k] * 0.18f, Palette.brighten(Palette.TEXT_PRIMARY, 0.3f * f))
+            g.ring(bx[k], by[k], br[k] * 0.6f, br[k] * 0.14f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.8f))
+            g.disc(bx[k], by[k], br[k] * 0.18f, Palette.brighten(Palette.TEXT_PRIMARY, 0.3f * f))
+        }
         for (k in 0 until DEBRIS) {
             if (dlife[k] <= 0f) continue
             g.point(dx[k], dy[k], radius * 0.35f * min(1f, dlife[k] * 2f), palette.at(dtint[k]))
@@ -242,6 +286,8 @@ class ArenaSim : Sim {
         const val DEBRIS_PER_KO = 40
         const val GIVE_UP_SECONDS = 90f
         const val ZONE_DAMAGE = 0.012f
+        const val BUMPER_KICK = 1.12f
+        const val BUMPER_DAMAGE = 0.5f
         const val MAX_PICKS = 8
 
         fun def(): SimDef = SimDef(
@@ -256,6 +302,7 @@ class ArenaSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 11f,
             params = listOf(
+                Param.choice("arena", "Arena", listOf("Open", "Bumpers"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("fighters", "Fighters", 2, MAX_FIGHTERS, 8, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION),
                 Param.float("damage", "Damage", 0.2f, 4f, 1f, card = Card.MOTION)
