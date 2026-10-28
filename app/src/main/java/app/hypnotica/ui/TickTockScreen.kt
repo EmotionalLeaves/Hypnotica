@@ -1,5 +1,7 @@
 package app.hypnotica.ui
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.onSizeChanged
@@ -380,11 +382,19 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 }
         ) {
             AnimatedVisibility(visible = showChrome, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
-                Text(
-                    current?.caption ?: "Finding something…",
-                    color = Tokens.TextPrimary,
-                    style = MaterialTheme.typography.displaySmall
-                )
+                // Crossfaded from one clip's hook to the next, as the feed's is,
+                // rather than swapped in a frame.
+                AnimatedContent(
+                    targetState = current?.caption ?: "Finding something…",
+                    transitionSpec = { fadeIn(tween(Tokens.Base)) togetherWith fadeOut(tween(Tokens.Fast)) },
+                    label = "tickTockHook"
+                ) { caption ->
+                    Text(
+                        caption,
+                        color = Tokens.TextPrimary,
+                        style = MaterialTheme.typography.displaySmall
+                    )
+                }
             }
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(visible = liked, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
