@@ -534,6 +534,7 @@ class AppState(
             }
             try {
                 val dir = java.io.File(context.getExternalFilesDir(null), "exports")
+                runCatching { app.hypnotica.export.Publish.prune(dir) }
                 val out = java.io.File(dir, "hypnotica-${System.currentTimeMillis()}.mp4")
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { exporter.export(out) }
                 val outcome = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -687,8 +688,21 @@ class AppState(
         if (def != null) load(def) else restart(newSeed = true)
     }
 
-    fun load(def: SimDef, restartSeed: Long = System.nanoTime()) {
+    /**
+     * Sims loaded so far. A restart that was waiting out a finished run's
+     * resolve beat checks it hasn't changed, so it lands on the run that
+     * finished rather than the one swiped to in the meantime.
+     */
+    var loadCount = 0L
+        private set
+
+    fun load(
+        def: SimDef,
+        restartSeed: Long = System.nanoTime(),
+        configure: ((app.hypnotica.core.recipe.ParamValues) -> Unit)? = null
+    ) {
         currentDef = def
+        loadCount++
         // Loaded as it comes, not remixed: its usual self.
         remixVariant = null
         // A new sim starts running, and says so.
@@ -702,7 +716,7 @@ class AppState(
         applyBeat(def.id.hashCode().toLong())
         // keepLook stops the engine re-applying the sim's own defaults on the
         // next GL frame, which is what used to undo the person's choice.
-        engine.loadSim(def, restartSeed, keepLook = true)
+        engine.loadSim(def, restartSeed, keepLook = true, configure = configure)
         engine.setPalette(palette)
         engine.setSoundPreset(sound)
         // The sound mapping is rebuilt by the preset, so the Sound tab's
@@ -1073,6 +1087,7 @@ class AppState(
             soundChanged()
         }
         engine.applyParams(params, System.nanoTime())
+        loadCount++
         paramVersion++
     }
 
@@ -1140,9 +1155,11 @@ class AppState(
             }
 
         val seed = run.seed ?: System.nanoTime()
-        load(def, seed)
-
-        val unknown = applyRunParams(run, def.params, engine.core.params)
+        // Applied to the new sim's own values once it has loaded. Written here
+        // they went into the outgoing sim's, which the load then replaced, so
+        // every saved clip replayed at its defaults.
+        val unknown = run.params.keys.filter { key -> def.params.none { it.key == key } }
+        load(def, seed) { values -> applyRunParams(run, def.params, values) }
 
         runLaws(run)?.let {
             laws = it

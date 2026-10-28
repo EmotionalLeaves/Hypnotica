@@ -120,9 +120,11 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
     }
     LaunchedEffect(finishedAt) {
         if (finishedAt == 0L) return@LaunchedEffect
+        val finishedRun = state.loadCount
         delay(resolveDelayMs(state.engine))
         finishedAt = 0L
-        state.restart(newSeed = true)
+        // Swiped on during the beat: the new sim is not the one that finished.
+        if (state.loadCount == finishedRun) state.restart(newSeed = true)
     }
 
     // Live counters come from the sim, which runs on the GL thread.

@@ -98,9 +98,11 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
     }
     LaunchedEffect(finishedAt) {
         if (finishedAt == 0L) return@LaunchedEffect
+        val finishedRun = state.loadCount
         delay(resolveDelayMs(state.engine))
         finishedAt = 0L
-        state.restart(newSeed = true)
+        // Swiped on during the beat: the new sim is not the one that finished.
+        if (state.loadCount == finishedRun) state.restart(newSeed = true)
     }
 
     // Keyed on the sim rather than Unit: re-entering the feed used to reload,
@@ -195,13 +197,20 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         state.tick()
         scope.launch {
             val out = if (step > 0) -height * LEAVE else height * LEAVE
-            drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
-            // Read now, not when the gesture began: the handler used to hold
-            // the index from the first time it ran, so every swipe after the
-            // first computed "next" from the sim the feed opened on — and the
-            // second swipe landed on the sim already showing.
-            state.feedIndex = (state.feedIndex + step + order.size) % order.size
-            state.feedVisits++
+            try {
+                drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
+            } finally {
+                // In a finally: a second flick inside this one's exit animation
+                // takes the drag and cancels it, and the move used to be lost
+                // with it — two quick flicks went one sim.
+                //
+                // Read now, not when the gesture began: the handler used to hold
+                // the index from the first time it ran, so every swipe after the
+                // first computed "next" from the sim the feed opened on — and the
+                // second swipe landed on the sim already showing.
+                state.feedIndex = (state.feedIndex + step + order.size) % order.size
+                state.feedVisits++
+            }
             drag.snapTo(-out * ARRIVE)
             drag.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
         }

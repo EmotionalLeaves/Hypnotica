@@ -58,4 +58,16 @@ object Publish {
         }
         context.startActivity(Intent.createChooser(intent, "Share clip"))
     }
+
+    /**
+     * Keep the newest few exports and delete the rest. Every export left a
+     * private copy behind — up to eighty megabytes each, beside the one in the
+     * gallery — and nothing ever removed them.
+     */
+    fun prune(dir: File, keep: Int = KEEP_EXPORTS) {
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".mp4") } ?: return
+        files.sortedByDescending { it.lastModified() }.drop(keep).forEach { runCatching { it.delete() } }
+    }
+
+    const val KEEP_EXPORTS = 4
 }

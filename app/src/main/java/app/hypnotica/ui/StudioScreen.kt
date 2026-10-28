@@ -252,6 +252,7 @@ fun StudioScreen(state: AppState, surface: SimSurfaceView) {
                     scope.launch {
                         val settings = ExportSettings.ALL[formatIndex]
                         val dir = File(context.getExternalFilesDir(null), "exports")
+                        runCatching { app.hypnotica.export.Publish.prune(dir) }
                         val out = File(dir, "hypnotica-${System.currentTimeMillis()}.mp4")
                         val exporter = VideoExporter(
                             def = state.currentDef,

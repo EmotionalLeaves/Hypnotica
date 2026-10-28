@@ -230,7 +230,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         drag.animateTo(0f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
     }
 
-    suspend fun advance() {
+    suspend fun advance(thenPrefetch: Boolean = true) {
         fillOne()
         val next = queue.removeFirstOrNull()
         if (next == null) {
@@ -249,7 +249,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         state.tickTockWatched = watched
         // Behind the clip that is already playing, so the next swipe is instant
         // and this one was not waiting on it.
-        prefetch()
+        if (thenPrefetch) prefetch()
     }
 
     // Every clip has a length: its payoff at 70% of it, as the arc puts it, and
@@ -332,12 +332,19 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         // Same reason as the swipe: this fires from the GL thread and used to
         // launch a third advance alongside whatever was already running.
         state.engine.onFinished = {
-            generating?.cancel()
-            // After the resolve beat, not on the finishing frame: moving on
-            // the instant a clip finished meant its ending was never seen.
-            generating = scope.launch {
-                delay(resolveDelayMs(state.engine))
-                advance()
+            // Over to the main thread, where every other change to the swipe
+            // and generation jobs is made: run here on the GL thread it raced
+            // the swipe's own cancel-and-relaunch, and could cancel a swipe
+            // half way out, leaving the screen dimmed with nothing coming.
+            scope.launch(Dispatchers.Main.immediate) {
+                if (swiping) return@launch
+                generating?.cancel()
+                // After the resolve beat, not on the finishing frame: moving on
+                // the instant a clip finished meant its ending was never seen.
+                generating = scope.launch {
+                    delay(resolveDelayMs(state.engine))
+                    advance()
+                }
             }
         }
         // Back from the player: carry on with the clip that was opened.
@@ -431,15 +438,23 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                             swiping = true
                             generating?.cancel()
                             generating = scope.launch {
+                                var landed = false
                                 try {
                                     drag.animateTo(-out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
-                                    advance()
+                                    // The next clip first and the one after it
+                                    // later: refilling the queue inside the swipe
+                                    // kept every swipe locked out for the
+                                    // seconds a generation takes, and pulled the
+                                    // hook back off-screen mid-clip when it ended.
+                                    advance(thenPrefetch = false)
                                     // Counted once it has really been left.
                                     if (skipped != null && current !== skipped) state.skipClip(skipped)
                                     arrive(fromBelow = true)
+                                    landed = true
                                 } finally {
                                     swiping = false
                                 }
+                                if (landed) generating = scope.launch { prefetch() }
                             }
                         } else if (down && history.isNotEmpty()) {
                             state.tick()

@@ -63,7 +63,10 @@ data class Param(
             card: Card = Card.MOTION, advancedOnly: Boolean = false,
             unit: String = "", logScale: Boolean = false
         ) = Param(
-            key, label, ParamType.INT, min.toFloat(), max.toFloat(), default.toFloat(),
+            // Ordered, so a recipe's {min=2} with the default max of 1 is a
+            // range rather than an empty one that throws on the first coerce.
+            key, label, ParamType.INT, minOf(min, max).toFloat(), maxOf(min, max).toFloat(),
+            default.coerceIn(minOf(min, max), maxOf(min, max)).toFloat(),
             card = card, advancedOnly = advancedOnly, unit = unit, logScale = logScale
         )
 
@@ -73,7 +76,8 @@ data class Param(
             unit: String = "", logScale: Boolean = false, mutedBy: String? = null,
             mutedAt: List<Int> = listOf(1)
         ) = Param(
-            key, label, ParamType.FLOAT, min, max, default,
+            key, label, ParamType.FLOAT, minOf(min, max), maxOf(min, max),
+            default.coerceIn(minOf(min, max), maxOf(min, max)),
             card = card, advancedOnly = advancedOnly, unit = unit, logScale = logScale,
             mutedBy = mutedBy,
             mutedAt = mutedAt

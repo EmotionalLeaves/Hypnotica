@@ -76,17 +76,24 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     var running: Boolean = true
 
     /** Set from the UI thread; applied on the next frame. */
-    @Volatile
-    private var pendingLoad: Pair<SimDef, Long>? = null
+    private val pendingLoad = java.util.concurrent.atomic.AtomicReference<PendingLoad?>(null)
+
+    /**
+     * A sim to load, with what to set on its fresh parameters once it exists.
+     * The setting has to wait for the load: written straight away it lands on
+     * the outgoing sim's values, which the load then replaces — a saved clip
+     * replayed with every one of its settings back at the defaults.
+     */
+    private class PendingLoad(val def: SimDef, val seed: Long, val configure: ((app.hypnotica.core.recipe.ParamValues) -> Unit)?)
 
     @Volatile
     private var keepLookOnLoad = false
 
-    @Volatile
-    private var pendingRestart: Long? = null
+    // Taken with getAndSet on the GL thread: a read and then a separate clear
+    // could lose a request the UI made in between.
+    private val pendingRestart = java.util.concurrent.atomic.AtomicReference<Long?>(null)
 
-    @Volatile
-    private var pendingParams: Pair<Map<String, Float>, Long>? = null
+    private val pendingParams = java.util.concurrent.atomic.AtomicReference<Pair<Map<String, Float>, Long>?>(null)
 
     @Volatile
     var onPayoff: (() -> Unit)? = null
@@ -276,13 +283,18 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
       * so half of TickTock's clips were meant to arrive in another palette and
       * none of them ever did.
       */
-    fun loadSim(def: SimDef, seed: Long = System.nanoTime(), keepLook: Boolean = false) {
+    fun loadSim(
+        def: SimDef,
+        seed: Long = System.nanoTime(),
+        keepLook: Boolean = false,
+        configure: ((app.hypnotica.core.recipe.ParamValues) -> Unit)? = null
+    ) {
         keepLookOnLoad = keepLook
-        pendingLoad = def to seed
+        pendingLoad.set(PendingLoad(def, seed, configure))
     }
 
     fun restart(seed: Long = System.nanoTime()) {
-        pendingRestart = seed
+        pendingRestart.set(seed)
     }
 
     /**
@@ -291,7 +303,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
      * matches exactly what was checked.
      */
     fun applyParams(values: Map<String, Float>, seed: Long) {
-        pendingParams = values to seed
+        pendingParams.set(values to seed)
     }
 
     fun setLaws(laws: Laws) = core.setLaws(laws)
@@ -384,9 +396,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         // that arrives in small steps still adds up to one.
         if (sizedOnce && project == null && relayoutOnResize && halted == null && laidOutAspect > 0f &&
             kotlin.math.abs(aspect / laidOutAspect - 1f) > RELAYOUT_CHANGE &&
-            pendingLoad == null && pendingParams == null && pendingRestart == null
+            pendingLoad.get() == null && pendingParams.get() == null && pendingRestart.get() == null
         ) {
-            pendingRestart = core.seed
+            pendingRestart.compareAndSet(null, core.seed)
         }
         sizedOnce = true
         GLES30.glViewport(0, 0, width, height)
@@ -426,28 +438,29 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             songDirty = false
             applySongs()
         }
-        pendingLoad?.let {
-            pendingLoad = null
+        pendingLoad.getAndSet(null)?.let {
             val keepLook = keepLookOnLoad
             keepLookOnLoad = false
-            core.load(it.first, it.second)
+            core.load(it.def, it.seed)
+            it.configure?.let { set ->
+                set(core.params)
+                core.restart(it.seed)
+            }
             if (!keepLook) {
-                core.setPalette(Palette.byName(it.first.defaultPalette))
-                mapping.applyPreset(SoundPreset.byName(it.first.defaultSound))
+                core.setPalette(Palette.byName(it.def.defaultPalette))
+                mapping.applyPreset(SoundPreset.byName(it.def.defaultSound))
             }
             mapping.resetSong()
             // A new sim arrives upright, not tilted by the last one's spin.
             camera.rotation = 0f
             resetRunState()
         }
-        pendingParams?.let { (values, seed) ->
-            pendingParams = null
+        pendingParams.getAndSet(null)?.let { (values, seed) ->
             for ((k, v) in values) core.params.set(k, v)
             core.restart(seed)
             resetRunState()
         }
-        pendingRestart?.let {
-            pendingRestart = null
+        pendingRestart.getAndSet(null)?.let {
             core.restart(it)
             resetRunState()
         }
