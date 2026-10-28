@@ -67,6 +67,21 @@ class BallSortSim : Sim {
             for (i in bag.indices) { val t = i / cap; state[t][height[t]++] = bag[i] }
             solution = solve()
         }
+        if (solution == null) {
+            // Never seen, but certain: a sorted board stirred by a few legal
+            // moves always solves, so the run can't end on an unsorted board.
+            var depth = 24
+            while (solution == null && depth > 0) {
+                state = Array(tubes) { t -> IntArray(cap) { if (t < colors) t else 0 } }
+                height = IntArray(tubes) { t -> if (t < colors) cap else 0 }
+                repeat(depth) {
+                    val a = env.rng.int(0, tubes); val b = env.rng.int(0, tubes)
+                    if (a != b && height[a] > 0 && height[b] < cap) state[b][height[b]++] = state[a][--height[a]]
+                }
+                solution = solve()
+                depth /= 2
+            }
+        }
         moves = solution ?: IntArray(0)
         moveIndex = 0
         phase = 0f
