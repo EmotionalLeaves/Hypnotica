@@ -227,6 +227,10 @@ class ColourWarSim : Sim {
         // balls in narrow ground, and one swallowed at once ended the war
         // before it was a war. Its ground stays on the board meanwhile.
         if (!decided && elapsed > EARLIEST && out.any { it }) decide(env)
+        // Whatever the clock: one colour holding the whole board has won — it
+        // used to end there with no verdict at all. And a war on a big board
+        // that would take minutes is called for whoever holds most.
+        if (!decided && (counts.any { it == owner.size } || elapsed > DECIDE_BY)) decide(env)
         // Or a colour holding over half the board.
         if (!decided && elapsed > EARLIEST) {
             // Twice a fair share: half the board of four, two thirds of three.
@@ -264,6 +268,9 @@ class ColourWarSim : Sim {
     }
 
     private fun take(env: SimEnv, x: Float, y: Float, t: Int) {
+        // Once it's called, the borders hold: squares kept changing hands
+        // after the verdict, and the colour named could end up behind.
+        if (decided) return
         val c = ((x + halfW) / cell).toInt().coerceIn(0, cols - 1)
         val r = ((1f - y) / cell).toInt().coerceIn(0, rows - 1)
         val i = r * cols + c
@@ -327,6 +334,8 @@ class ColourWarSim : Sim {
         const val ISLANDS = 3
         /** No verdict before this: the opening is the show. */
         const val EARLIEST = 8f
+        /** No war runs on longer than this before it is called. */
+        const val DECIDE_BY = 70f
         const val MIN_STRIPE = 5
         const val BALL_R = 0.018f
         const val SPEED = 1.3f

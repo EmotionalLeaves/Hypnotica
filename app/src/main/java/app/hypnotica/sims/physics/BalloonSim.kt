@@ -25,8 +25,9 @@ import kotlin.math.sqrt
  * skin starts to tremble; and at a size nobody can see coming it goes, in a
  * cloud of confetti.
  *
- * The bursting size is drawn at random for each balloon from the top third of
- * what it could hold, so the same balloon never pops at the same pump twice —
+ * The bursting size is drawn at random for each balloon — anywhere from a
+ * quarter of what it could hold to nearly all of it, by volume — so the same
+ * balloon never pops at the same pump twice —
  * the whole hook is not knowing which pump it will be. With several side by
  * side, pumped together, the question is which goes first.
  */
@@ -44,6 +45,8 @@ class BalloonSim : Sim {
     private var sincePump = 0f
     private var pumps = 0
     private var first = -1
+    /** The pump that popped the first one: the others are pumped on after it. */
+    private var firstPump = 0
     private var elapsed = 0f
     private var payoffFrame = false
     private var halfW = 0.46f
@@ -65,8 +68,9 @@ class BalloonSim : Sim {
         maxR = min(min(env.halfWidth, 1f) * 0.92f, slot * 0.46f).let { if (count > 1) min(it, 0.7f) else it }
         radius = FloatArray(count) { maxR * 0.1f }
         target = radius.copyOf()
-        // Somewhere in the last third of what it could hold.
-        // With several, from a narrower, higher band: the first of several
+        // By radius, 62–98% of the most it could reach: by volume, which is
+        // what the pumps add, a quarter to nearly all of it.
+        // With several, from a narrower, higher band (half full and up): the first of several
         // random sizes comes early, and a race should be close and late.
         burstAt = FloatArray(count) { maxR * (if (count == 1) env.rng.range(0.62f, 0.98f) else env.rng.range(0.8f, 0.99f)) }
         tremble = FloatArray(count)
@@ -130,6 +134,9 @@ class BalloonSim : Sim {
             if (i % 20 == 0 && was >= FLOOR && cy[i] < FLOOR) {
                 env.emit(EventKind.HIT, 0.6f + 0.4f * ctint[i], (cx[i] / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.25f)
             }
+            // And it lands: the floor the sound said it hit is the bottom of
+            // the screen, where it now lies instead of falling on out of view.
+            if (cy[i] < FLOOR) { cy[i] = FLOOR; cvy[i] = 0f; cvx[i] *= 0.5f }
             // The screen's edges are walls; confetti piles against them
             // rather than leaving.
             if (abs(cx[i]) > halfW) { cx[i] = cx[i].coerceIn(-halfW, halfW); cvx[i] = -cvx[i] * 0.3f }
@@ -146,6 +153,7 @@ class BalloonSim : Sim {
         poppedAt[k] = elapsed
         if (first < 0) {
             first = k
+            firstPump = pumps
             payoffFrame = true
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
@@ -218,7 +226,7 @@ class BalloonSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "pumps" to pumps.toString(),
-        if (first >= 0) "popped at" to (if (count > 1) "pump $pumps · #${first + 1}" else "pump $pumps")
+        if (first >= 0) "popped at" to (if (count > 1) "pump $firstPump · #${first + 1}" else "pump $firstPump")
         else "size" to String.format(java.util.Locale.US, "%.0f%%", radius.max() / maxR * 100f)
     )
 
@@ -228,7 +236,7 @@ class BalloonSim : Sim {
         const val PUMP_VOLUME = 0.035f
         const val POP_NOTES = 10
         const val FALL_SECONDS = 3f
-        const val FLOOR = -0.6f
+        const val FLOOR = -0.97f
 
         fun def(): SimDef = SimDef(
             id = "physics/balloon",

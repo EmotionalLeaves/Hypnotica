@@ -170,11 +170,13 @@ class ArenaSim : Sim {
                     x[i] -= nx * push; y[i] -= ny * push
                     x[j] += nx * push; y[j] += ny * push
                     if (rel <= 0f) continue
-                    vx[i] -= rel * nx; vy[i] -= rel * ny
-                    vx[j] += rel * nx; vy[j] += rel * ny
-                    // The faster one hits the slower one, harder the faster.
+                    // The faster one hits the slower one, harder the faster:
+                    // speeds as they came in. Measured after the bounce had
+                    // swapped them, the faster ball was the one that got hurt.
                     val si = vx[i] * vx[i] + vy[i] * vy[i]
                     val sj = vx[j] * vx[j] + vy[j] * vy[j]
+                    vx[i] -= rel * nx; vy[i] -= rel * ny
+                    vx[j] += rel * nx; vy[j] += rel * ny
                     val (att, def) = if (si >= sj) i to j else j to i
                     // Bumpers speed everyone up, and speed is damage: softer blows there.
                     val dmg = (DAMAGE * rel * env.params.f("damage", 1f) * (if (bx.isEmpty()) 1f else BUMPER_DAMAGE)).coerceIn(if (bx.isEmpty()) 0.03f else 0.02f, 0.6f)
@@ -194,6 +196,8 @@ class ArenaSim : Sim {
             dlife[k] -= h
             dvx[k] *= 1f - 2f * h; dvy[k] *= 1f - 2f * h
             dx[k] += dvx[k] * h; dy[k] += dvy[k] * h
+            // Gone at the screen's edge rather than drawn past it.
+            if (abs(dx[k]) > env.halfWidth * 0.98f || abs(dy[k]) > 0.98f) dlife[k] = 0f
         }
     }
 

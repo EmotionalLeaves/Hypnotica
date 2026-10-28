@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -186,7 +187,7 @@ fun NoticeLine(text: String?, modifier: Modifier = Modifier) {
     text ?: return
     Text(
         text,
-        color = Tokens.Accent,
+        color = Tokens.AccentText,
         style = MaterialTheme.typography.bodySmall,
         modifier = modifier.padding(top = 4.dp)
     )
@@ -502,3 +503,31 @@ private fun fromLog(position: Float, min: Float, max: Float): Float {
     val hi = ln(max.coerceAtLeast(min + 0.001f))
     return kotlin.math.E.toFloat().pow(lo + (hi - lo) * p)
 }
+
+/**
+ * Shade at the top and bottom of the screen, under the chrome, so white
+ * words read over the brightest sim. Fades with the chrome, by [alpha].
+ */
+@Composable
+fun Scrims(alpha: Float) {
+    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha }) {
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(SCRIM_TOP_DP.dp)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Tokens.Bg.copy(alpha = SCRIM_ALPHA), Color.Transparent)))
+        )
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(SCRIM_BOTTOM_DP.dp)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Tokens.Bg.copy(alpha = SCRIM_ALPHA))))
+        )
+    }
+}
+
+private const val SCRIM_TOP_DP = 180
+private const val SCRIM_BOTTOM_DP = 240
+private const val SCRIM_ALPHA = 0.55f

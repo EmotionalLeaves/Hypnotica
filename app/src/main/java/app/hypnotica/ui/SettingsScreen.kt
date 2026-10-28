@@ -79,8 +79,10 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
-        ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
-            state.setSoundPreset(SoundPreset.NAMES[it])
+        // Auto first: each sim its own voice, and the feed free to vary it.
+        val sounds = listOf(LOOK_AUTO) + SoundPreset.NAMES
+        ChipRow(sounds, if (state.soundAuto) 0 else sounds.indexOf(state.soundPresetName)) {
+            state.setSoundPreset(sounds[it])
         }
         SectionLabel("Beat")
         // Auto gives each sim its own groove; the names pin one everywhere.
@@ -98,8 +100,9 @@ fun SettingsScreen(state: AppState, versionName: String) {
         ) { state.volume = it }
 
         SectionLabel("Look")
-        ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
-            state.setPalette(Palette.NAMES[it])
+        val palettes = listOf(LOOK_AUTO) + Palette.NAMES
+        ChipRow(palettes, if (state.paletteAuto) 0 else palettes.indexOf(state.paletteName)) {
+            state.setPalette(palettes[it])
         }
         PaletteStrip(state.paletteName)
 

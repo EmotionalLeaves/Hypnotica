@@ -6,6 +6,7 @@ import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.Sim
 import app.hypnotica.core.sim.SimDef
@@ -26,7 +27,7 @@ import kotlin.math.sqrt
  * Pegs round the rim knock a flapper at the top: a click per peg, fast and
  * blurred at first, then further and further apart. Each peg takes a little
  * of the wheel's speed to get past, so near the end one may not make it — the
- * wheel climbs onto the peg, hangs, and rocks back. Where it stops is drawn
+ * wheel climbs onto the peg and is thrown back. Where it stops is drawn
  * from the spin, so nobody, the person watching included, knows until then.
  */
 class WheelSim : Sim {
@@ -75,7 +76,8 @@ class WheelSim : Sim {
         radius = min(env.halfWidth, 1f) * 0.86f
         halfW = env.halfWidth
         angle = env.rng.range(0f, 2f * PI.toFloat())
-        // A spin that stops after about this long, at full strength.
+        // Friction alone would stop it in 11–15 s; the drag and the pegs
+        // take their share too, so it stops in about 7–10.
         val seconds = env.rng.range(11f, 15f) * env.params.f("spin", 1f).coerceIn(0.3f, 3f)
         omega = env.rng.range(11f, 15f)
         friction = omega / seconds
@@ -125,8 +127,10 @@ class WheelSim : Sim {
         if (peg != lastPeg) {
             // A peg reached the flapper. Getting past costs speed; without
             // enough, the wheel is thrown back into the gap it came from.
-            // What it takes scales with the slice the wheel is moving into.
-            val need = PEG_COST * widths[((peg % segments) + segments) % segments]
+            // Every peg is the same peg, whatever the slices between: a cost
+            // that followed the slice's width made narrow slices traps, and
+            // the jackpot won twice its share.
+            val need = PEG_COST * (2f * PI.toFloat() / segments)
             val energy = 0.5f * omega * omega
             if (energy < need && abs(omega) < ROCK_SPEED) {
                 angle = before
@@ -293,6 +297,8 @@ class WheelSim : Sim {
             family = "Chance",
             blurb = "Click, click, click… click. Where does it stop? Will it hit the jackpot?",
             formats = listOf(TrapFormat.GUESS, TrapFormat.SNAP),
+            // The spray and the confetti fall under the universe's gravity.
+            lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Spin harder",
             heroRestarts = false,
             defaultPalette = "Spectrum",

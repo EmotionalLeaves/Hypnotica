@@ -98,6 +98,20 @@ class SoapCutSim : Sim {
         phase = 0f
         cut = 0
         tilt = FloatArray(slices); spin = FloatArray(slices); landed = BooleanArray(slices)
+        // Where each slice comes to rest, worked out from the geometry: the
+        // first lies flat on the table; each after it tips until it meets the
+        // one before. All stopped at one angle, the first hung in mid-air and
+        // each overlapped its neighbour by most of its thickness.
+        rest = FloatArray(slices)
+        for (k in 0 until slices) {
+            if (k == 0) { rest[k] = (PI / 2).toFloat(); continue }
+            var lo = 0f; var hi = (PI / 2).toFloat()
+            repeat(28) {
+                val m = (lo + hi) * 0.5f
+                if (overlaps(k, m, k - 1, rest[k - 1])) hi = m else lo = m
+            }
+            rest[k] = lo
+        }
         elapsed = 0f
         doneAt = -1f
         payoffFrame = false
@@ -107,6 +121,41 @@ class SoapCutSim : Sim {
     }
 
     private val sliceW get() = blockW / slices
+
+    private var rest = FloatArray(0)
+
+    /** Slice [k]'s four corners, tipped by [tilt] about its far bottom corner. */
+    private fun corners(k: Int, tilt: Float, out: FloatArray) {
+        val px = cutX(k) + sliceW
+        val c = cos(-tilt); val s = sin(-tilt)
+        var i = 0
+        for ((lx, ly) in arrayOf(-sliceW to 0f, 0f to 0f, 0f to blockH, -sliceW to blockH)) {
+            out[i++] = px + lx * c - ly * s
+            out[i++] = FLOOR + lx * s + ly * c
+        }
+    }
+
+    private val qa = FloatArray(8)
+    private val qb = FloatArray(8)
+
+    /** Whether two tipped slices overlap: separating axes over both rectangles' sides. */
+    private fun overlaps(a: Int, ta: Float, b: Int, tb: Float): Boolean {
+        corners(a, ta, qa); corners(b, tb, qb)
+        for (poly in arrayOf(qa, qb)) for (e in 0 until 4) {
+            val x1 = poly[2 * e]; val y1 = poly[2 * e + 1]
+            val x2 = poly[(2 * e + 2) % 8]; val y2 = poly[(2 * e + 3) % 8]
+            val ax = -(y2 - y1); val ay = x2 - x1
+            var minA = Float.MAX_VALUE; var maxA = -Float.MAX_VALUE
+            var minB = Float.MAX_VALUE; var maxB = -Float.MAX_VALUE
+            for (v in 0 until 4) {
+                val pa = qa[2 * v] * ax + qa[2 * v + 1] * ay; minA = min(minA, pa); maxA = max(maxA, pa)
+                val pb = qb[2 * v] * ax + qb[2 * v + 1] * ay; minB = min(minB, pb); maxB = max(maxB, pb)
+            }
+            // A hair of give, so touching isn't overlapping.
+            if (maxA <= minB + 1e-5f || maxB <= minA + 1e-5f) return false
+        }
+        return true
+    }
     private fun cutX(k: Int) = left + blockW - sliceW * (k + 1)
 
     override fun step(env: SimEnv, dt: Float) {
@@ -151,8 +200,8 @@ class SoapCutSim : Sim {
             if (spin[k] == 0f || landed[k]) continue
             spin[k] += g * sin(tilt[k] + 0.08f) * h * 6f
             tilt[k] += spin[k] * h
-            if (tilt[k] >= REST) {
-                tilt[k] = REST
+            if (tilt[k] >= rest[k]) {
+                tilt[k] = rest[k]
                 landed[k] = true
                 env.emit(EventKind.HIT, 0.15f + 0.1f * env.rng.nextFloat(), 0.4f, 0.7f)
                 repeat(12) { crumb(env, cutX(k) + sliceW + blockH * 0.8f, FLOOR + 0.02f) }
@@ -244,7 +293,6 @@ class SoapCutSim : Sim {
         const val MARGIN = 0.03f
         const val DOWN = 1.0f
         const val UP = 0.35f
-        val REST = (PI * 0.5 - 0.22).toFloat()
         const val MAX_CRUMBS = 3000
         const val CRUMBS_PER_SECOND = 90f
         const val TARGET_SECONDS = 13.5f

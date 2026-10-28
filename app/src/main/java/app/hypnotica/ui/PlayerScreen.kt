@@ -53,6 +53,10 @@ import app.hypnotica.core.recipe.ParamType
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
 import kotlinx.coroutines.delay
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.runtime.mutableLongStateOf
 
 /**
  * The player: the sim fills the screen and the controls float over it, out of the
@@ -71,8 +75,12 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
     // Rule 1: the sim is the interface. Chrome fades out when nobody is touching.
     // Not while paused: a still picture with no Play button in sight is the
     // one state that looks like the app has broken.
-    LaunchedEffect(overlayVisible, state.controlsOpen, state.paused) {
-        if (overlayVisible && !state.controlsOpen && !state.paused) {
+    // Any touch keeps it up: tapping ⚄ or the hero let the timer run out
+    // mid-tap, and the next tap toggled the bars instead of rolling again. And
+    // not while recording, so the stop control is always there.
+    var touchedAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(overlayVisible, state.controlsOpen, state.paused, touchedAt, state.recording) {
+        if (overlayVisible && !state.controlsOpen && !state.paused && !state.recording) {
             delay(CHROME_IDLE_MS)
             overlayVisible = false
         }
@@ -91,7 +99,12 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         state.engine.onFinished = {
             finishedAt = System.nanoTime()
         }
-        onDispose { state.engine.onFinished = null }
+        onDispose {
+            state.engine.onFinished = null
+            // A recording doesn't follow the person out of the player, to fill
+            // up unseen and pull them into the Studio later.
+            if (state.recording && state.screen != Screen.STUDIO) state.abandonRecording()
+        }
     }
     LaunchedEffect(finishedAt) {
         if (finishedAt == 0L) return@LaunchedEffect
@@ -111,7 +124,19 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Tokens.Bg)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Tokens.Bg)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.pressed }) touchedAt = System.nanoTime()
+                    }
+                }
+            }
+    ) {
         SimCanvas(
             surface = surface,
             modifier = Modifier.fillMaxSize(),
@@ -135,6 +160,34 @@ fun PlayerScreen(state: AppState, surface: SimSurfaceView) {
             },
             cameraMode = state.cameraDrag
         )
+
+        val scrim by animateFloatAsState(if (overlayVisible) 1f else 0f, tween(Tokens.Base), label = "playerScrim")
+        if (scrim > 0f) Scrims(scrim)
+
+        // What ⚄ landed on, said in the middle for a moment: with the
+        // counters showing, nothing else said anything had changed.
+        var remixNote by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(state.remixedAt) {
+            if (state.remixedAt == 0L) return@LaunchedEffect
+            remixNote = "Remixed  ·  " + (state.remixVariant ?: state.paletteName)
+            delay(REMIX_NOTE_MS)
+            remixNote = null
+        }
+        AnimatedVisibility(
+            visible = remixNote != null,
+            enter = fadeIn(tween(Tokens.Fast)),
+            exit = fadeOut(tween(Tokens.Slow)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Text(
+                remixNote ?: "",
+                color = Tokens.TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .background(Tokens.Surface.copy(alpha = 0.85f), RoundedCornerShape(percent = 50))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
 
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             val topShown = remember { MutableTransitionState(false) }
@@ -219,8 +272,9 @@ private fun TopBar(state: AppState, uiTick: Int) {
             }
             Text(
                 line,
-                // While recording, the line itself is the stop button.
-                modifier = if (state.recording) Modifier.clickable { state.stopRecording() } else Modifier,
+                // While recording, the line itself is the stop button — a full
+                // finger's height of it, not a line of small print.
+                modifier = if (state.recording) Modifier.heightIn(min = 48.dp).clickable { state.stopRecording() } else Modifier,
                 color = if (state.recording || recipeError != null) Tokens.Danger
                     else Tokens.TextSecondary,
                 // Tabular figures: a counter that changes every frame must not
@@ -265,7 +319,10 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
         }
         // Surprise me: the same sim, its settings and look shuffled, as the
         // feed does each time it lands on one.
-        GlyphButton("⚄") { state.loadRemixed(state.currentDef) }
+        GlyphButton("⚄") {
+            state.tick()
+            state.loadRemixed(state.currentDef)
+        }
         GlyphButton("≡", selected = state.controlsOpen) {
             state.controlsOpen = !state.controlsOpen
         }
@@ -574,8 +631,9 @@ private fun MotionCard(state: AppState) {
 @Composable
 private fun LookCard(state: AppState) {
     SectionLabel("Palette")
-    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
-        state.setPalette(Palette.NAMES[it])
+    val palettes = listOf(LOOK_AUTO) + Palette.NAMES
+    ChipRow(palettes, if (state.paletteAuto) 0 else palettes.indexOf(state.paletteName)) {
+        state.setPalette(palettes[it])
     }
     ValueSlider(
         label = "Trails",
@@ -621,8 +679,9 @@ private fun SoundCard(state: AppState) {
     val version = state.soundVersion
 
     SectionLabel("Preset")
-    ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
-        state.setSoundPreset(SoundPreset.NAMES[it])
+    val sounds = listOf(LOOK_AUTO) + SoundPreset.NAMES
+    ChipRow(sounds, if (state.soundAuto) 0 else sounds.indexOf(state.soundPresetName)) {
+        state.setSoundPreset(sounds[it])
     }
     // The two sliders straight after the preset: below three chip rows and
     // nine pills they were off the bottom of the drawer.
@@ -769,6 +828,11 @@ private fun ModeRow(state: AppState, chips: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) { chips() }
         Spacer(Modifier.width(8.dp))
-        Pill(if (state.advanced) "Simple" else "Advanced") { state.advanced = !state.advanced }
+        // Says where you are, lit when on: "Advanced" while in Simple read
+        // like a tab already chosen.
+        Pill("Advanced", selected = state.advanced) { state.advanced = !state.advanced }
     }
 }
+
+/** How long the remix's note stays up. */
+private const val REMIX_NOTE_MS = 1400L

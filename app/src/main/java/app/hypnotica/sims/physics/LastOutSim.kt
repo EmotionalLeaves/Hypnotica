@@ -108,6 +108,10 @@ class LastOutSim : Sim {
                     continue
                 }
                 if (open) continue
+                // Already more than half out when the gap's edge swung past:
+                // it was leaving, and it's gone. Snapped back inside, as it
+                // was, a ball visibly on its way out could be saved — and win.
+                if (d > ringR && doneAt < 0f) { escape(env, i); continue }
                 val nx = x[i] / d; val ny = y[i] / d
                 x[i] = nx * (ringR - r); y[i] = ny * (ringR - r)
                 val vn = vx[i] * nx + vy[i] * ny

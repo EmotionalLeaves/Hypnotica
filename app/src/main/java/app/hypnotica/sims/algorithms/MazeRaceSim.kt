@@ -62,12 +62,19 @@ class MazeRaceSim : Sim {
         carve(env)
         // Anywhere not right beside the start, in the top-left.
         val far = (cols + rows) / 5
-        var tries = 0
+        // And a goal with one clear winner: on a small maze two solvers often
+        // tied, and the first in the list was named the winner of a dead heat.
+        var attempt = 0
         do {
-            goal = env.rng.int(0, cells)
-            tries++
-        } while (tries < 200 && (goal % cols + goal / cols) < far)
-        for (s in 0 until SOLVERS) solve(env, s)
+            var tries = 0
+            do {
+                goal = env.rng.int(0, cells)
+                tries++
+            } while (tries < 200 && (goal % cols + goal / cols) < far)
+            for (s in 0 until SOLVERS) solve(env, s)
+            val best = (0 until SOLVERS).minOf { length[it] }
+            val unique = (0 until SOLVERS).count { length[it] == best } == 1
+        } while (!unique && ++attempt < 40)
         winner = (0 until SOLVERS).minByOrNull { length[it] } ?: 0
         // Paced so the winner gets out in about this long, whatever the maze.
         rate = length[winner] / RACE_SECONDS

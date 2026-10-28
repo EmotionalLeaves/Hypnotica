@@ -229,6 +229,8 @@ class AppState(
 
     /** The variant the last remix landed on, in words, for the feed's caption. */
     var remixVariant by mutableStateOf<String?>(null)
+    /** When the last remix landed, so the player can say what it landed on. */
+    var remixedAt by mutableStateOf(0L)
     var paletteName by mutableStateOf("Spectrum")
 
     /**
@@ -238,8 +240,13 @@ class AppState(
      * sim change — and the Settings screen has no preview, so the pill lit up
      * and nothing visible happened at all.
      */
-    private var chosenPalette: String? = null
-    private var chosenSound: String? = null
+    // Snapshot state, so the Auto chips can show whether the person has chosen.
+    private var chosenPalette by mutableStateOf<String?>(null)
+    private var chosenSound by mutableStateOf<String?>(null)
+
+    /** No palette chosen: each sim shows its own, and the feed varies it. */
+    val paletteAuto: Boolean get() = chosenPalette == null
+    val soundAuto: Boolean get() = chosenSound == null
 
     /**
      * Where the person is in the feed.
@@ -268,6 +275,20 @@ class AppState(
     var guessBest by mutableIntStateOf(prefs?.guessBest ?: 0)
         private set
 
+    /**
+     * A tap felt: light for moving on, medium for something kept or chosen,
+     * heavy for a miss. Every event is seen, heard and felt — the UI's own
+     * included, which until now were almost all silent under the finger.
+     */
+    fun tick(strength: Int = 0) {
+        if (!haptics) return
+        when (strength) {
+            0 -> engine.haptics?.light()
+            1 -> engine.haptics?.medium()
+            else -> engine.haptics?.heavy()
+        }
+    }
+
     /** A chip tapped: a tick under the finger. */
     fun pickTapped() {
         if (haptics) engine.haptics?.light()
@@ -277,6 +298,8 @@ class AppState(
     fun recordGuess(right: Boolean) {
         // Felt as well as read: a thump for a right call.
         if (right && haptics) engine.haptics?.verdict()
+        // And a miss is felt too, differently.
+        if (!right) tick(2)
         guessStreak = if (right) guessStreak + 1 else 0
         if (guessStreak > guessBest) guessBest = guessStreak
         prefs?.guessStreak = guessStreak
@@ -386,6 +409,10 @@ class AppState(
      * on "Finding something…".
      */
     val tickTockQueue = ArrayDeque<Clip>()
+    /** TickTock's place, kept across a visit to the player: the clip on, those before it, how many. */
+    var tickTockCurrent: Clip? = null
+    val tickTockHistory = ArrayList<Clip>()
+    var tickTockWatched = 0
 
     /** What the benchmark found, shown in Settings. */
     var benchNote by mutableStateOf<String?>(null)
@@ -512,6 +539,14 @@ class AppState(
     /** Set when something the person did could not be carried out, cleared on read. */
     var notice by mutableStateOf<String?>(null)
 
+    /** Leaving the player mid-recording: stop it, keep nothing, and say so. */
+    fun abandonRecording() {
+        if (!recording) return
+        engine.recorder = null
+        recording = false
+        notice = "Recording stopped — it only runs in the player."
+    }
+
     fun stopRecording() {
         val rec = engine.recorder ?: run { recording = false; return }
         engine.recorder = null
@@ -618,6 +653,15 @@ class AppState(
     }
 
     fun setPalette(name: String) {
+        if (name == LOOK_AUTO) {
+            // Back to each sim's own, and the feed's variety with it: one tap
+            // on a palette used to switch that off for good.
+            chosenPalette = null
+            prefs?.paletteName = null
+            paletteName = currentDef.defaultPalette
+            engine.setPalette(paletteName)
+            return
+        }
         paletteName = name
         engine.setPalette(name)
         chosenPalette = name
@@ -652,6 +696,14 @@ class AppState(
     }
 
     fun setSoundPreset(name: String) {
+        if (name == LOOK_AUTO) {
+            chosenSound = null
+            prefs?.soundPreset = null
+            soundPresetName = currentDef.defaultSound
+            engine.setSoundPreset(soundPresetName)
+            soundChanged()
+            return
+        }
         soundPresetName = name
         engine.setSoundPreset(name)
         chosenSound = name
@@ -935,6 +987,7 @@ class AppState(
         if (def.id != currentDef.id) load(def) else { engine.core.paused = false; paused = false }
         val params = director.remix(def)
         remixVariant = app.hypnotica.core.director.variantOf(def, params)
+        remixedAt = System.nanoTime()
         if (chosenPalette == null) {
             val palette = director.remixPalette(def)
             paletteName = palette
@@ -1049,6 +1102,7 @@ class AppState(
         val next = if (id in cur) cur - id else cur + id
         favourites.value = next
         prefs?.favourites = next
+        tick(if (id in next) 1 else 0)
     }
 
     fun isFavourite(id: String): Boolean = id in favourites.value

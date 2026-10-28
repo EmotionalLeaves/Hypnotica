@@ -80,7 +80,9 @@ class HanoiSim : Sim {
         // including where it shipped. Speed is a multiplier over the pace that
         // finishes the tower on the arc, so every position does something at
         // every size.
-        val rate = moves.size / TARGET_SECONDS * env.params.f("rate", 1f).coerceIn(0.05f, 40f)
+        // At least two moves a second: one disc's single move used to wait
+        // the whole nineteen seconds.
+        val rate = max(moves.size / TARGET_SECONDS, MIN_MOVES_PER_SECOND) * env.params.f("rate", 1f).coerceIn(0.05f, 40f)
         val voiceEvery = max(1, (rate / MAX_NOTES_PER_SECOND).toInt())
         carry += abs(dt) * rate
         while (carry >= 1f && played < moves.size) {
@@ -150,6 +152,7 @@ class HanoiSim : Sim {
     )
 
     companion object {
+        const val MIN_MOVES_PER_SECOND = 2f
         fun def(): SimDef = SimDef(
             id = "algorithms/hanoi",
             title = "Tower of Hanoi",
@@ -772,7 +775,10 @@ class GradientDescentSim : Sim {
             // silence while the rest of the walkers were still rolling in.
             val speed = hypot(vx[i], vy[i]) * 6f
             if (!settled[i]) {
-                stillFor[i] = if (speed < SETTLE_SPEED) stillFor[i] + abs(dt) else 0f
+                // Still, and at the bottom of something: slow alone counted a
+                // walker just setting off, or creeping down a gentle slope.
+                val slope = hypot(gradX(wx[i], wy[i]), gradY(wx[i], wy[i]))
+                stillFor[i] = if (speed < SETTLE_SPEED && slope < SETTLE_SLOPE) stillFor[i] + abs(dt) else 0f
                 if (stillFor[i] > SETTLE_SECONDS) {
                     settled[i] = true
                     settledCount++
@@ -843,6 +849,8 @@ class GradientDescentSim : Sim {
     )
 
     companion object {
+        /** The ground has to be about level, too, for a walker to have landed. */
+        const val SETTLE_SLOPE = 0.03f
         fun def(): SimDef = SimDef(
             id = "algorithms/gradient-descent",
             title = "Gradient descent",
@@ -882,6 +890,10 @@ class GraphLayoutSim : Sim {
     private var payoffFrame = false
     private var settled = false
     private var elapsed = 0f
+    private var peakEnergy = 0f
+    private var lowestEnergy = Float.MAX_VALUE
+    private var flatFor = 0f
+    private var settledAt = -1f
 
     /**
      * How the graph is framed: drawn scaled about its own centre so it fills
@@ -927,6 +939,10 @@ class GraphLayoutSim : Sim {
             }
         }
         energy = 1f
+        peakEnergy = 0f
+        lowestEnergy = Float.MAX_VALUE
+        flatFor = 0f
+        settledAt = -1f
         payoffFrame = false
         settled = false
         elapsed = 0f
@@ -975,8 +991,15 @@ class GraphLayoutSim : Sim {
         energy = energy * 0.9f + (moved / n) * 0.1f
         frame(env, dt)
         env.emit(EventKind.STEP, energy.coerceIn(0f, 1f), 0f, 0.25f)
-        if (!settled && elapsed > 10f && energy < 0.012f) {
+        // Settled: still against what it started with, or no longer getting
+        // any stiller, or simply long enough. A fixed 0.012 was never
+        // reached by a big graph pushed hard apart.
+        if (energy > peakEnergy) peakEnergy = energy
+        if (energy < lowestEnergy * 0.98f) { lowestEnergy = energy; flatFor = 0f } else flatFor += abs(dt)
+        val calm = energy < 0.012f || energy < peakEnergy * 0.05f || flatFor > 4f || elapsed > 40f
+        if (!settled && elapsed > 10f && calm) {
             settled = true
+            settledAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
@@ -1036,6 +1059,9 @@ class GraphLayoutSim : Sim {
     }
 
     override fun payoff(): Boolean = payoffFrame
+
+    /** The settled shape held a few seconds, then a new graph: it sat forever. */
+    override fun finished(): Boolean = settledAt >= 0f && elapsed - settledAt > 4f
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "nodes" to n.toString(),

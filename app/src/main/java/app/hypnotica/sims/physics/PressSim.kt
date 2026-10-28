@@ -215,7 +215,9 @@ class PressSim : Sim {
         if (gaveAt < 0f && (broken > springs * GIVE_SHARE || bottomAt >= 0f)) {
             gaveAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, if (broken > 0) 0.95f else 0.3f, 0f, 1f)
+            // The breaking chord only when it broke: jelly that bottoms out
+            // with a few links gone is squashed, not snapped.
+            env.emit(EventKind.DONE, if (broken > springs * GIVE_SHARE) 0.95f else 0.3f, 0f, 1f)
         }
     }
 

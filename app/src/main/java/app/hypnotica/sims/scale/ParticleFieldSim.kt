@@ -179,8 +179,10 @@ class ParticleFieldSim : Sim {
             var ny = py[i] + nvy * dt
 
             if (wrap) {
-                if (nx > w) nx -= 2 * w else if (nx < -w) nx += 2 * w
-                if (ny > 1f) ny -= 2f else if (ny < -1f) ny += 2f
+                // Crossing the seam is this space's event, and its sound: with
+                // wrap-around on, nothing was ever counted and it was silent.
+                if (nx > w) { nx -= 2 * w; localHits++ } else if (nx < -w) { nx += 2 * w; localHits++ }
+                if (ny > 1f) { ny -= 2f; localHits++ } else if (ny < -1f) { ny += 2f; localHits++ }
             } else {
                 if (nx > w) { nx = w; nvx = -nvx * restitution; localHits++ }
                 else if (nx < -w) { nx = -w; nvx = -nvx * restitution; localHits++ }
@@ -451,6 +453,7 @@ class GameOfLifeSim : Sim {
 /** The Lorenz attractor, drawn as the trail it carves. */
 class LorenzSim : Sim {
 
+    private var runFor = 0f
     private var settled = false
     private var settleClock = 0f
     private var lastX = 0.0
@@ -493,6 +496,7 @@ class LorenzSim : Sim {
         beta = p.f("beta", 2.667f).toDouble()
         carry = 0f
         payoffFrame = false
+        runFor = 0f
         lobeSwaps = 0
         lastLobe = 1
         prevZ = z
@@ -546,7 +550,7 @@ class LorenzSim : Sim {
                 lobeSwaps++
                 // The payoff is the attractor's shape being complete: both wings
                 // fully drawn, which takes a good few crossings.
-                if (lobeSwaps == PAYOFF_SWAPS) {
+                if (lobeSwaps == PAYOFF_SWAPS && !settled) {
                     payoffFrame = true
                     env.emit(EventKind.DONE, 0.8f, 0f, 1f)
                 }
@@ -558,6 +562,14 @@ class LorenzSim : Sim {
         // trajectory spirals into a fixed point and stays there. That settling
         // is the thing to watch at those values, so it is the payoff rather
         // than a run that never pays off at all.
+        // Drawn at the slider's slowest, the wings take minutes to fill: by
+        // this long, what's drawn is the picture.
+        runFor += abs(dt)
+        if (!settled && lobeSwaps < PAYOFF_SWAPS && runFor > BACKSTOP_SECONDS) {
+            settled = true
+            payoffFrame = true
+            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+        }
         if (!settled && settleClock > SETTLE_AFTER) {
             val speedNow = kotlin.math.abs(x - lastX) + kotlin.math.abs(z - lastZ)
             if (speedNow < SETTLE_SPEED) {
@@ -592,6 +604,7 @@ class LorenzSim : Sim {
         listOf("lobe swaps" to lobeSwaps.toString())
 
     companion object {
+        const val BACKSTOP_SECONDS = 40f
         private const val PAYOFF_SWAPS = 26L
         /** Below this a z peak is the spiral into a fixed point, not a loop. */
         private const val LOOP_FLOOR = 8.0

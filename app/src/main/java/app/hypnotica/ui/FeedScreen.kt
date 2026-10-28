@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 
 /**
  * Home: one sim, full screen, swipe up for the next.
@@ -191,6 +192,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
 
     fun go(step: Int) {
         hint = false
+        state.tick()
         scope.launch {
             val out = if (step > 0) -height * LEAVE else height * LEAVE
             drag.animateTo(out, tween(Tokens.Fast, easing = FastOutLinearInEasing))
@@ -221,17 +223,25 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             }
             .pointerInput(order.size) {
                 var travelled = 0f
+                // In dp, not pixels, and a quick flick counts as well as a
+                // long drag: ninety raw pixels was a short swipe on one phone
+                // and a long one on another, and a fast short flick sprang back.
+                val swipe = SWIPE_DP.dp.toPx()
+                val flick = FLICK_DP_PER_S.dp.toPx()
+                val minFlick = MIN_FLICK_DP.dp.toPx()
+                val tracker = VelocityTracker()
                 detectVerticalDragGestures(
-                    onDragStart = { travelled = 0f },
+                    onDragStart = { travelled = 0f; tracker.resetTracking() },
                     onDragCancel = {
                         travelled = 0f
                         scope.launch { drag.animateTo(0f, spring()) }
                     },
                     onDragEnd = {
                         // One flick moves one sim, however far it went.
+                        val vy = tracker.calculateVelocity().y
                         when {
-                            travelled <= -SWIPE -> go(+1)
-                            travelled >= SWIPE -> go(-1)
+                            travelled <= -swipe || (vy < -flick && travelled < -minFlick) -> go(+1)
+                            travelled >= swipe || (vy > flick && travelled > minFlick) -> go(-1)
                             else -> scope.launch {
                                 drag.animateTo(0f, spring(dampingRatio = 0.7f))
                             }
@@ -240,6 +250,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     }
                 ) { change, dragAmount ->
                     change.consume()
+                    tracker.addPosition(change.uptimeMillis, change.position)
                     travelled += dragAmount
                     // Followed one to one at first and with growing resistance
                     // after, so a long drag does not throw the chrome off screen.
@@ -279,6 +290,10 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                 .graphicsLayer { alpha = through * DIM }
                 .background(Tokens.Bg)
         )
+
+        // Shade behind the words, top and bottom, so they read over the
+        // brightest sim; it fades with them.
+        if (chromeAlpha > 0f) Scrims(chromeAlpha * (1f - through * 0.7f))
 
         // Not composed at all once it has faded: an invisible button is still
         // a button, and tapping the sim where one had been would press it.
@@ -331,7 +346,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            if (hint) "${state.currentDef.shelf.title}  ·  swipe up · hold for controls"
+                            if (hint) "swipe ↑↓  ·  tap to play with it  ·  hold for controls"
                             // Which variant this visit landed on, when it isn't the usual.
                             else state.remixVariant?.let { "${state.currentDef.shelf.title}  ·  $it" } ?: state.currentDef.shelf.title,
                             color = Tokens.TextSecondary,
@@ -349,7 +364,13 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                         pop = true
                     ) { state.toggleFavourite(state.currentDef.id) }
                     Spacer(Modifier.height(8.dp))
-                    GlyphButton("↻") { state.restart(newSeed = true) }
+                    // The door to TickTock, out where it can be found: it was a
+                    // faint mark under the version number in Settings. (A new
+                    // run of this sim is a swipe away anyway — the feed loops.)
+                    GlyphButton("◷") {
+                        state.tick()
+                        state.screen = Screen.TICKTOCK
+                    }
                     Spacer(Modifier.height(8.dp))
                     // Not ≡, which in the player opens the controls drawer.
                     GlyphButton("▦") { state.screen = Screen.LIBRARY }
@@ -362,6 +383,26 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             // and Settings is the last of the small buttons. The home screen
             // is the sim, a title and four glyphs.
         }
+
+        // How far through to the payoff, as a hairline along the bottom: the
+        // pull to watch the last bit, which TickTock had and the feed didn't.
+        var runShare by remember { mutableStateOf(0f) }
+        LaunchedEffect(state.currentDef.id) {
+            while (true) {
+                val core = state.engine.core
+                val build = (state.currentDef.typicalSeconds * 0.7f).coerceAtLeast(1f)
+                runShare = if (core.payoffFired) 1f else (kotlin.math.abs(core.env.time) / build).coerceIn(0f, 1f)
+                delay(120)
+            }
+        }
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .safeDrawingPadding()
+                .fillMaxWidth(runShare)
+                .height(2.dp)
+                .background(Tokens.Accent.copy(alpha = 0.6f))
+        )
 
         // Pick the winner, for sims with sides. Outside the chrome, which
         // fades: a pick made and then faded out with it lost its verdict.
@@ -394,8 +435,12 @@ private fun hookFor(state: AppState, visit: Int): String {
     return hooks[(key % hooks.size).toInt()]
 }
 
-/** Pixels of travel that count as a deliberate swipe. */
-private const val SWIPE = 90f
+/** Travel that counts as a deliberate swipe. */
+internal const val SWIPE_DP = 56f
+
+/** Or a flick this fast, over at least [MIN_FLICK_DP]. */
+internal const val FLICK_DP_PER_S = 800f
+internal const val MIN_FLICK_DP = 12f
 
 /** A remixed sim's slow turn, radians a second. */
 private const val SPIN = 0.12f

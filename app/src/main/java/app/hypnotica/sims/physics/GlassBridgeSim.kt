@@ -215,6 +215,8 @@ class GlassBridgeSim : Sim {
         for (i in 0 until SHARDS) if (sy[i] > -1.5f) g.rect(sx[i], sy[i], sr[i], sr[i] * 0.6f, 0xCCC8ECFF.toInt(), sx[i] * 7f)
         // The marbles: waiting below, the one on the bridge, the ones across.
         val r = MARBLE
+        // Closer together when there are many, so the whole queue fits the platform.
+        val queueStep = min(r * 2.6f, min(halfW, 1f) * 1.2f / max(1, marbles))
         for (m in 0 until marbles) {
             val c = palette.at((m + 0.5f) / marbles)
             when {
@@ -230,10 +232,10 @@ class GlassBridgeSim : Sim {
                 }
                 crossed[m] -> {
                     val k = m
-                    g.disc(-min(halfW, 1f) * 0.6f + k * r * 2.6f, TOP + 0.04f + r * 1.6f, r, c)
+                    g.disc(-min(halfW, 1f) * 0.6f + k * queueStep, TOP + 0.04f + r * 1.6f, r, c)
                 }
                 !fell[m] && m > current -> {
-                    g.disc(-min(halfW, 1f) * 0.6f + (m - current) * r * 2.6f, BOTTOM - 0.04f - r * 1.6f, r, c)
+                    g.disc(-min(halfW, 1f) * 0.6f + (m - current) * queueStep, BOTTOM - 0.04f - r * 1.6f, r, c)
                 }
             }
         }

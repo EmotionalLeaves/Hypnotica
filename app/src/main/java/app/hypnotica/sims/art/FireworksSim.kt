@@ -115,8 +115,8 @@ class FireworksSim : Sim {
             maxLife[i] = if (r.kind == WILLOW) env.rng.range(2.2f, 3.2f) else env.rng.range(1.0f, 1.8f)
             life[i] = maxLife[i]
             drag[i] = if (r.kind == WILLOW) 1.6f else 1.1f
-            // Shapes hang together: no stray colours, and less fall, so the
-            // outline is still an outline when it fades.
+            // Shapes hang together: no stray colours, so the outline reads
+            // as one thing while it lasts.
             // Mostly the rocket's own colour, a few strays.
             tint[i] = if (r.kind >= HEART || env.rng.nextFloat() < 0.85f) r.tint else env.rng.nextFloat()
         }

@@ -197,9 +197,11 @@ class HarmonographSim : Sim {
     private val p = FloatArray(4)
     private val amp = FloatArray(4)
     private val decay = FloatArray(4)
+    private var runFor = 0f
     private var settled = false
 
     override fun setup(env: SimEnv) {
+        runFor = 0f
         val params = env.params
         val len = params.i("trail", 14000).coerceIn(500, 120000)
         trailX = FloatArray(len)
@@ -243,9 +245,12 @@ class HarmonographSim : Sim {
             head = (head + 1) % trailX.size
             if (filled < trailX.size) filled++
         }
-        val envelope = exp(-decay[0] * t.toFloat())
+        // The swing that dies slowest is the one that decides it.
+        val envelope = exp(-min(min(decay[0], decay[1]), min(decay[2], decay[3])) * t.toFloat())
         env.emit(EventKind.STEP, envelope.coerceIn(0f, 1f), 0f, 0.25f)
-        if (!settled && envelope < 0.3f) {
+        runFor += abs(dt)
+        // Or long enough: barely damped and drawn slowly, it took minutes.
+        if (!settled && (envelope < 0.3f || runFor > BACKSTOP_SECONDS)) {
             settled = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.7f, 0f, 1f)
@@ -286,13 +291,14 @@ class HarmonographSim : Sim {
         listOf("ink" to String.format(java.util.Locale.US, "%,d", filled))
 
     companion object {
+        const val BACKSTOP_SECONDS = 40f
         const val MARGIN = 0.03f
         fun def(): SimDef = SimDef(
             id = "art/harmonograph",
             title = "Harmonograph",
             shelf = Shelf.ART,
             family = "Generative art",
-            blurb = "Two pendulums and a pen, drawing a figure that never repeats.",
+            blurb = "Swinging pendulums, dying away, steer a pen: a figure that never repeats.",
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "New figure",
             defaultPalette = "Candy",
@@ -381,7 +387,7 @@ class CirclePackingSim : Sim {
             val y = env.rng.range(-0.98f, 0.98f)
             attempts++
             if (!insideAny(x, y)) {
-                cx[count] = x; cy[count] = y; cr[count] = 0.004f
+                cx[count] = x; cy[count] = y; cr[count] = SEED_R
                 tint[count] = env.rng.nextFloat()
                 growing[count] = true
                 count++
@@ -417,7 +423,10 @@ class CirclePackingSim : Sim {
         for (j in 0 until count) {
             val dx = cx[j] - x
             val dy = cy[j] - y
-            if (dx * dx + dy * dy < cr[j] * cr[j]) return true
+            // Room for the seed itself: one born within its own radius of a
+            // circle overlapped it from the start and never grew.
+            val reach = cr[j] + SEED_R
+            if (dx * dx + dy * dy < reach * reach) return true
         }
         return false
     }
@@ -442,6 +451,8 @@ class CirclePackingSim : Sim {
     )
 
     companion object {
+        /** A new circle's size when it appears. */
+        const val SEED_R = 0.004f
         fun def(): SimDef = SimDef(
             id = "art/circle-packing",
             title = "Circle packing",

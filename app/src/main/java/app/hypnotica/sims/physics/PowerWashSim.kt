@@ -6,6 +6,7 @@ import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
 import app.hypnotica.core.render.Palette
 import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.LawKnob
 import app.hypnotica.core.sim.Shelf
 import app.hypnotica.core.sim.Sim
 import app.hypnotica.core.sim.SimDef
@@ -283,7 +284,8 @@ class PowerWashSim : Sim {
             g.point(sx[i], sy[i], 0.006f, Palette.withAlpha(scol[i], min(1f, slife[i] * 3f)))
         }
         if (doneAt < 0f) {
-            val r = radius * (if (turbo > 0f) 1.8f else 1f)
+            // As wide as what it actually cleans, spray setting and all.
+            val r = radius * (if (turbo > 0f) 1.8f else 1f) * env.params.f("spray", 1f).coerceIn(0.3f, 3f)
             g.glow(nx, ny, r * 1.6f, 0xFFBFE6FF.toInt(), 0.5f)
             g.ring(nx, ny, r, 0.004f, Palette.TEXT_PRIMARY, alpha = 0.6f)
             // The lance, from below the screen to the nozzle.
@@ -322,6 +324,8 @@ class PowerWashSim : Sim {
             family = "Cleaning",
             blurb = "Strip by strip, the grime comes off. What's underneath? And that last spot…",
             formats = listOf(TrapFormat.REVEAL, TrapFormat.FILL, TrapFormat.SNAP),
+            // The spray and the confetti fall under the universe's gravity.
+            lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Turbo",
             heroRestarts = false,
             defaultPalette = "Spectrum",

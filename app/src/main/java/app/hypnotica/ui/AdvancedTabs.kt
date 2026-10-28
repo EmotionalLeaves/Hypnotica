@@ -144,8 +144,9 @@ private fun ParamsTab(state: AppState) {
     ) { state.trails = it }
     TimeControls(state)
     SectionLabel("Palette")
-    ChipRow(Palette.NAMES, Palette.NAMES.indexOf(state.paletteName)) {
-        state.setPalette(Palette.NAMES[it])
+    val palettes = listOf(LOOK_AUTO) + Palette.NAMES
+    ChipRow(palettes, if (state.paletteAuto) 0 else palettes.indexOf(state.paletteName)) {
+        state.setPalette(palettes[it])
     }
     Spacer(Modifier.height(8.dp))
     ToggleRow("Evolve", state.evolve, enabled = state.canEvolve) { state.evolve = it }
@@ -521,8 +522,9 @@ private fun SoundTab(state: AppState) {
     val version = state.soundVersion
 
     SectionLabel("Preset")
-    ChipRow(SoundPreset.NAMES, SoundPreset.NAMES.indexOf(state.soundPresetName)) {
-        state.setSoundPreset(SoundPreset.NAMES[it])
+    val sounds = listOf(LOOK_AUTO) + SoundPreset.NAMES
+    ChipRow(sounds, if (state.soundAuto) 0 else sounds.indexOf(state.soundPresetName)) {
+        state.setSoundPreset(sounds[it])
     }
     // A song supplies its own notes, so the scale, the base pitch and the range
     // are not consulted at all while one is playing. All three sat directly

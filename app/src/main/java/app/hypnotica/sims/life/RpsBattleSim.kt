@@ -304,7 +304,7 @@ class RpsBattleSim : Sim {
             title = "Rock paper scissors",
             shelf = Shelf.LIFE,
             family = "Battles",
-            blurb = "Three armies, each chasing one and fleeing the other. Pick your side.",
+            blurb = "Armies that each chase what they beat and flee what beats them. Pick your side.",
             formats = listOf(TrapFormat.GUESS, TrapFormat.LAST_STANDING, TrapFormat.COLOR_BATTLE),
             heroLabel = "Stampede",
             heroRestarts = false,

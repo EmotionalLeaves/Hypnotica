@@ -127,9 +127,16 @@ class SnowflakeSim : Sim {
                 continue
             }
             val k = wy * size + wx
-            if (grid[k - 1].toInt() != 0 || grid[k + 1].toInt() != 0 || grid[k - size].toInt() != 0 || grid[k + size].toInt() != 0) {
+            val touched = when {
+                grid[k - 1].toInt() != 0 -> k - 1
+                grid[k + 1].toInt() != 0 -> k + 1
+                grid[k - size].toInt() != 0 -> k - size
+                grid[k + size].toInt() != 0 -> k + size
+                else -> -1
+            }
+            if (touched >= 0) {
                 // Touched: frozen here, and copied round the centre.
-                stick(env, wx, wy)
+                stick(env, wx, wy, touched % size, touched / size)
                 walking = false
                 if (radius >= maxRadius) break
             }
@@ -147,7 +154,7 @@ class SnowflakeSim : Sim {
         }
     }
 
-    private fun stick(env: SimEnv, x: Int, y: Int) {
+    private fun stick(env: SimEnv, x: Int, y: Int, tx: Int, ty: Int) {
         val c = size / 2
         frozen++
         val dx = (x - c).toFloat(); val dy = (y - c).toFloat()
@@ -156,17 +163,43 @@ class SnowflakeSim : Sim {
         } else {
             val r = sqrt(dx * dx + dy * dy)
             val a = atan2(dy, dx)
+            val tdx = (tx - c).toFloat(); val tdy = (ty - c).toFloat()
+            val tr = sqrt(tdx * tdx + tdy * tdy)
+            val ta = atan2(tdy, tdx)
             for (m in 0 until folds) {
                 // Each turn, and its mirror image: twelve copies for six folds.
                 for (mirror in 0..1) {
-                    val aa = (if (mirror == 0) a else -a) + 2f * PI.toFloat() * m / folds
+                    val turn = 2f * PI.toFloat() * m / folds
+                    val aa = (if (mirror == 0) a else -a) + turn
                     val nx = (c + cos(aa) * r).roundToInt()
                     val ny = (c + sin(aa) * r).roundToInt()
-                    if (nx in 1 until size - 1 && ny in 1 until size - 1) freeze(nx, ny)
+                    // And joined to the copy of the cell it stuck to: rounded
+                    // to the square grid, a turned copy could land a square
+                    // off, and the crystal's arms came apart into specks
+                    // that later walkers stuck to in mid-air.
+                    val ta2 = (if (mirror == 0) ta else -ta) + turn
+                    val ox = (c + cos(ta2) * tr).roundToInt()
+                    val oy = (c + sin(ta2) * tr).roundToInt()
+                    joinFreeze(ox, oy, nx, ny)
                 }
             }
         }
         if (frozen % 40 == 0) env.emit(EventKind.HIT, (radius / maxRadius).coerceIn(0f, 1f), (dx / max(1f, maxRadius)).coerceIn(-1f, 1f), 0.25f)
+    }
+
+    /** Every square on the way from one to the other, side to side, so they touch. */
+    private fun joinFreeze(x0: Int, y0: Int, x1: Int, y1: Int) {
+        var x = x0; var y = y0
+        val sx = if (x1 > x0) 1 else -1; val sy = if (y1 > y0) 1 else -1
+        val ddx = abs(x1 - x0); val ddy = abs(y1 - y0)
+        var err = ddx - ddy
+        var guard = ddx + ddy + 2
+        while (guard-- > 0) {
+            if (x in 1 until size - 1 && y in 1 until size - 1) freeze(x, y)
+            if (x == x1 && y == y1) break
+            // One axis at a time: a diagonal step would only meet at a corner.
+            if (err > 0 || (err == 0 && ddx >= ddy)) { x += sx; err -= ddy } else { y += sy; err += ddx }
+        }
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {

@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.hypnotica.core.director.Clip
@@ -74,10 +77,13 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     // The director lives in the state, so taste survives leaving TickTock.
     val director = state.director
     val queue = state.tickTockQueue
-    var current by remember { mutableStateOf<Clip?>(null) }
+    // Kept in the state, so holding a clip to open it and coming back finds
+    // it — and the clips before it — where they were. They were local here,
+    // and Back from the player lost the clip and the way back to the others.
+    var current by remember { mutableStateOf(state.tickTockCurrent) }
     var showChrome by remember { mutableStateOf(true) }
     var liked by remember { mutableStateOf(false) }
-    var watched by remember { mutableIntStateOf(0) }
+    var watched by remember { mutableIntStateOf(state.tickTockWatched) }
     var secondsWatching by remember { mutableIntStateOf(0) }
     var showTimeCheck by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -88,7 +94,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
      * does on the feeds this is named after. It used to leave TickTock — the
      * clip you had just skipped past by accident was gone for good.
      */
-    val history = remember { ArrayList<Clip>() }
+    val history = state.tickTockHistory
 
     // The swipe follows the finger, as on the feed: the chrome travels with
     // it, the picture dims, and the next clip comes up out of the dark.
@@ -187,6 +193,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
 
     fun play(clip: Clip) {
         current = clip
+        state.tickTockCurrent = clip
         liked = false
         progress = 0f
         state.playClip(clip)
@@ -237,6 +244,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         }
         play(next)
         watched++
+        state.tickTockWatched = watched
         // Behind the clip that is already playing, so the next swipe is instant
         // and this one was not waiting on it.
         prefetch()
@@ -330,7 +338,9 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 advance()
             }
         }
-        generating = scope.launch { advance() }
+        // Back from the player: carry on with the clip that was opened.
+        val resume = current
+        if (resume != null) play(resume) else generating = scope.launch { advance() }
     }
 
     // The optional time check, off unless the person turned it on.
@@ -377,19 +387,42 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 // throw away several generated clips, and teach the feed that the
                 // person disliked all of them.
                 var travelled = 0f
+                // In dp, and a quick flick counts, as on the feed.
+                val swipePx = SWIPE_DP.dp.toPx()
+                val flick = FLICK_DP_PER_S.dp.toPx()
+                val minFlick = MIN_FLICK_DP.dp.toPx()
+                val tracker = VelocityTracker()
                 detectVerticalDragGestures(
-                    onDragStart = { travelled = 0f },
+                    onDragStart = { travelled = 0f; tracker.resetTracking() },
                     onDragCancel = {
                         travelled = 0f
                         scope.launch { drag.animateTo(0f, spring()) }
                     },
                     onDragEnd = {
                         val out = height * LEAVE
+                        val vy = tracker.calculateVelocity().y
+                        val up = travelled <= -swipePx || (vy < -flick && travelled < -minFlick)
+                        val down = travelled >= swipePx || (vy > flick && travelled > minFlick)
                         if (swiping) {
                             // One swipe at a time: a second touch during the
                             // first's animation used to cancel it, after the
                             // skip had already been counted against the clip.
-                        } else if (travelled <= -SWIPE_PIXELS) {
+                        } else if (up && queue.isEmpty()) {
+                            // Nothing ready yet: this one keeps playing, and
+                            // says so, rather than the screen going dark for
+                            // the seconds a new clip takes to find.
+                            scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                            notice = "Finding the next one…"
+                            state.tick()
+                            if (generating?.isActive != true) {
+                                val skipped = current
+                                generating = scope.launch {
+                                    advance()
+                                    if (skipped != null && current !== skipped) state.skipClip(skipped)
+                                }
+                            }
+                        } else if (up) {
+                            state.tick()
                             val skipped = current
                             swiping = true
                             generating?.cancel()
@@ -404,7 +437,8 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                                     swiping = false
                                 }
                             }
-                        } else if (travelled >= SWIPE_PIXELS && history.isNotEmpty()) {
+                        } else if (down && history.isNotEmpty()) {
+                            state.tick()
                             // Back to the clip before, which goes to the front
                             // of the queue so a swipe up returns here.
                             swiping = true
@@ -419,7 +453,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                                     swiping = false
                                 }
                             }
-                        } else if (travelled >= SWIPE_PIXELS) {
+                        } else if (down) {
                             scope.launch { drag.animateTo(0f, spring(dampingRatio = 0.7f)) }
                             notice = "This is the first one. ‹ to leave."
                         } else {
@@ -429,6 +463,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                     }
                 ) { change, amount ->
                     change.consume()
+                    tracker.addPosition(change.uptimeMillis, change.position)
                     if (swiping) return@detectVerticalDragGestures
                     travelled += amount
                     val limit = height * LEAVE
@@ -449,6 +484,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             onTap = { showChrome = !showChrome },
             onDoubleTap = {
                 current?.let { state.likeClip(it); liked = true }
+                state.tick(1)
                 scope.launch {
                     pop.snapTo(1f)
                     pop.animateTo(0f, tween(LIKE_POP_MS, easing = LinearEasing))
@@ -465,6 +501,10 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                 .graphicsLayer { alpha = through * DIM }
                 .background(Tokens.Bg)
         )
+
+        // Shade under the words, so they read over a bright clip.
+        val scrim by animateFloatAsState(if (showChrome) 1f else 0f, tween(Tokens.Base), label = "tickScrim")
+        if (scrim > 0f) Scrims(scrim * (1f - through * 0.7f))
 
         // The like, blooming in the middle and fading.
         if (pop.value > 0f) {
@@ -548,7 +588,7 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             }
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(visible = liked, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
-                Text("★ more like this", color = Tokens.Accent, style = MaterialTheme.typography.titleMedium)
+                Text("★ more like this", color = Tokens.AccentText, style = MaterialTheme.typography.titleMedium)
             }
             // Faded rather than cut: it used to appear and vanish in a frame.
             AnimatedVisibility(visible = notice != null, enter = fadeIn(tween(Tokens.Base)), exit = fadeOut(tween(Tokens.Slow))) {
@@ -723,11 +763,11 @@ private fun PickRow(
         }
         Text(
             line,
-            color = when (verdict) { true -> Tokens.Accent; else -> Tokens.TextPrimary },
+            color = when (verdict) { true -> Tokens.AccentText; else -> Tokens.TextPrimary },
             style = MaterialTheme.typography.titleMedium
         )
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (i in sides.indices) {
                 val c = Color(sides[i])
                 val faded = (pick >= 0 && i != pick && i != winner)
@@ -736,15 +776,33 @@ private fun PickRow(
                     i == pick -> Tokens.TextPrimary
                     else -> Color.Transparent
                 }
+                // A full finger's target round each swatch, and the side's
+                // number in it: told apart by colour alone, a colour-blind
+                // eye couldn't pick, and a 24 dp target was easy to miss.
                 Box(
                     Modifier
-                        .size(if (i == winner || i == pick) 40.dp else 32.dp)
-                        .graphicsLayer { alpha = if (faded) 0.3f else 1f }
-                        .border(3.dp, ring, CircleShape)
-                        .padding(4.dp)
-                        .background(c, CircleShape)
+                        .size(48.dp)
                         .clickable(enabled = pick < 0 && winner < 0, role = Role.Button) { onPick(i) }
-                )
+                        .semantics { contentDescription = "Side ${i + 1}" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .size(if (i == winner || i == pick) 40.dp else 32.dp)
+                            .graphicsLayer { alpha = if (faded) 0.3f else 1f }
+                            .border(3.dp, ring, CircleShape)
+                            .padding(4.dp)
+                            .background(c, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val light = (0.299f * c.red + 0.587f * c.green + 0.114f * c.blue) > 0.55f
+                        Text(
+                            "${i + 1}",
+                            color = if (light) Color.Black else Color.White,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
             }
         }
     }
@@ -753,8 +811,6 @@ private fun PickRow(
 /** How far through a clip the next one's hook appears. */
 private const val UP_NEXT_AT = 0.72f
 
-/** Pixels of travel that count as a deliberate swipe. */
-private const val SWIPE_PIXELS = 90f
 
 /**
  * A change of gear partway through a clip's build — what an editor does to

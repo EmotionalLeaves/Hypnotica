@@ -178,3 +178,6 @@ class Prefs(context: Context) {
 
 /** The beat setting that gives each sim, and each TickTock clip, a groove of its own. */
 internal const val BEAT_AUTO = "Auto"
+
+/** The palette or sound chip that hands the choice back to each sim. */
+internal const val LOOK_AUTO = "Auto"

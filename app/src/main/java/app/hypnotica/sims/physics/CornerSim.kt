@@ -46,6 +46,8 @@ class CornerSim : Sim {
     private var wy = 1f
     private var bw = 0.1f
     private var bh = 0.06f
+    /** Its half-height at the most the wobble tips it. */
+    private var bhEff = 0.06f
     private var halfW = 0.46f
     private var bounces = 0
     private var elapsed = 0f
@@ -68,7 +70,11 @@ class CornerSim : Sim {
         bw = min(halfW, 1f) * 0.22f * env.params.f("size", 1f).coerceIn(0.4f, 2f) * (if (count > 1) 0.75f else 1f)
         bh = bw * 0.6f
         wx = max(0.05f, 2f * (halfW - bw))
-        wy = max(0.05f, 2f * (1f - bh))
+        // Tipped by the wobble, the badge stands taller: the walls are met
+        // by its tipped corners, not its flat top, or it poked through.
+        val tip = env.params.f("wobble", 0f).coerceIn(0f, 1f) * 0.35f
+        bhEff = (bw - bh) * sin(tip) + bh
+        wy = max(0.05f, 2f * (1f - bhEff))
         val speed = BASE_SPEED * min(halfW, 1f) / 0.46f
         x0 = FloatArray(count); y0 = FloatArray(count); vx = FloatArray(count); vy = FloatArray(count)
         x = FloatArray(count); y = FloatArray(count); tint = FloatArray(count)
@@ -150,7 +156,7 @@ class CornerSim : Sim {
 
     private fun place(k: Int, t: Float) {
         x[k] = -halfW + bw + fold(x0[k] + vx[k] * t, wx)
-        y[k] = -1f + bh + fold(y0[k] + vy[k] * t, wy)
+        y[k] = -1f + bhEff + fold(y0[k] + vy[k] * t, wy)
     }
 
     override fun step(env: SimEnv, dt: Float) {

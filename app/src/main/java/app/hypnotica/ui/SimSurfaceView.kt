@@ -21,6 +21,13 @@ import kotlin.math.hypot
 class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(context) {
 
     var onTap: (() -> Unit)? = null
+
+    /**
+     * The system's own touch slop, scaled for the screen: a fixed 18 pixels
+     * was a third of it on a dense screen, so a tap with any wobble turned
+     * into a drag and was lost.
+     */
+    private val tapSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     var onDoubleTap: (() -> Unit)? = null
     var onLongPress: (() -> Unit)? = null
 
@@ -150,7 +157,7 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
                     lastPanX = cx
                     lastPanY = cy
                 } else {
-                    if (abs(event.x - downX) > TAP_SLOP || abs(event.y - downY) > TAP_SLOP) {
+                    if (abs(event.x - downX) > tapSlop || abs(event.y - downY) > tapSlop) {
                         if (!moved) removeCallbacks(longPressRunnable)
                         moved = true
                     }
@@ -245,6 +252,5 @@ class SimSurfaceView(context: Context, val engine: SimEngine) : GLSurfaceView(co
         const val DOUBLE_TAP_MS = 280L
         const val TWO_PI = (Math.PI * 2.0).toFloat()
 
-        private const val TAP_SLOP = 18f
     }
 }

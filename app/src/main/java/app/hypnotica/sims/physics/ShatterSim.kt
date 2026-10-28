@@ -111,7 +111,11 @@ class ShatterSim : Sim {
                 turn[i] += spin[i] * h
                 // Each piece tinkles as it falls past the bottom of the frame,
                 // so the fall is heard as well as seen.
-                if (was >= -radius && sy[i] < -radius) {
+                // Where the piece itself is: the pane's centre plus its own place in it.
+                val r = shardRing[i]
+                val rm = (ringR[r] + (if (r == 0) 0f else ringR[r - 1])) * 0.5f
+                val py = sin((shardA0[i] + shardA1[i]) * 0.5f) * rm
+                if (was + py >= -radius && sy[i] + py < -radius) {
                     env.emit(EventKind.HIT, 0.55f + 0.45f * ((i * 37) % 11) / 10f,
                         (sx[i] / radius).coerceIn(-1f, 1f) * 0.8f, 0.35f)
                 }
@@ -191,7 +195,16 @@ class ShatterSim : Sim {
                 // ring's rotation, so the visible arc starts where [gap] ends.
                 val rot = shardA0[k] - gap + turn[k]
                 val c = palette.at(0.2f + 0.7f * r / max(1, rings - 1))
-                g.ring(sx[k], sy[k], outer, outer - inner, Palette.withAlpha(c, 0.75f), gap, rot)
+                // Turned about the piece's own middle, not the pane's: drawn
+                // about the pane's centre, an outer shard spinning at speed
+                // swung round in a circle and rose against gravity.
+                val mid = (shardA0[k] + shardA1[k]) * 0.5f
+                val rm = (outer + inner) * 0.5f
+                val c0x = cos(mid) * rm; val c0y = sin(mid) * rm
+                val ct = cos(turn[k]); val st = sin(turn[k])
+                val ox = sx[k] + c0x - (c0x * ct - c0y * st)
+                val oy = sy[k] + c0y - (c0x * st + c0y * ct)
+                g.ring(ox, oy, outer, outer - inner, Palette.withAlpha(c, 0.75f), gap, rot)
             }
         }
     }

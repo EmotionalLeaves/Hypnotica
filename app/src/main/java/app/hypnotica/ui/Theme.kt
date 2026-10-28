@@ -38,6 +38,9 @@ object Tokens {
     val TextPrimary = Color(0xFFF2F4F8)
     val TextSecondary = Color(0xFF9AA3B2)
     val Accent = Color(0xFF7C5CFF)
+
+    /** The accent for words: lighter, so small text on the surface reads (6.5:1, not 4.2). */
+    val AccentText = Color(0xFFA58FFF)
     val Success = Color(0xFF3DDC97)
     val Warning = Color(0xFFFFB020)
     val Danger = Color(0xFFFF5470)

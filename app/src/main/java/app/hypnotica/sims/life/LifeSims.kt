@@ -82,6 +82,7 @@ class BoidsSim : Sim {
     private var earlyOrder = -1f
 
     override fun setup(env: SimEnv) {
+        flocked = false
         val p = env.params
         n = p.i("count", 3000).coerceIn(10, 60000)
         separation = p.f("separation", 1f)
@@ -180,7 +181,8 @@ class BoidsSim : Sim {
             order[cellStart[c] + cursor[c]] = i
             cursor[c]++
         }
-        flocked = false
+        // (Not reset here: the grid is rebuilt every step, and clearing the
+        // payoff flag with it rang the "done" bell sixty times a second.)
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -490,8 +492,8 @@ class LangtonsAntSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        w = p.i("width", 180).coerceIn(20, 600)
-        h = p.i("height", 260).coerceIn(20, 800)
+        w = p.i("width", 180).coerceIn(60, 600)
+        h = p.i("height", 260).coerceIn(60, 800)
         cells = ByteArray(w * h)
         ax = w / 2
         ay = h / 2
@@ -602,8 +604,10 @@ class LangtonsAntSim : Sim {
             defaultPalette = "Ember",
             typicalSeconds = 26f,
             params = listOf(
-                Param.int("width", "Columns", 20, 600, 180, card = Card.DATA),
-                Param.int("height", "Rows", 20, 800, 260, card = Card.DATA),
+                // From sixty: on a smaller wrapped grid the ant meets its own
+                // trail coming round and the highway never forms.
+                Param.int("width", "Columns", 60, 600, 180, card = Card.DATA),
+                Param.int("height", "Rows", 60, 800, 260, card = Card.DATA),
                 Param.float("rate", "Speed", 50f, 200000f, 700f, card = Card.MOTION, unit = "steps/s", logScale = true)
             ),
             create = { LangtonsAntSim() }
@@ -619,6 +623,8 @@ class FallingSandSim : Sim {
     /** The payoff fires once; without this the bell retriggers every step. */
     private var settled = false
     private var settledFor = 0f
+    /** Passes in a row in which no grain moved. */
+    private var quietPasses = 0
 
     private var w = 140
     private var h = 220
@@ -645,6 +651,7 @@ class FallingSandSim : Sim {
         capacity = (w * h * 0.32f).toInt()
         settled = false
         settledFor = 0f
+        quietPasses = 0
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -667,6 +674,7 @@ class FallingSandSim : Sim {
         carry -= passes
         var moved = 0
         while (passes-- > 0) {
+            val before = moved
             // Bottom-up so a grain cannot fall twice in one pass.
             for (y in h - 2 downTo 0) {
                 val row = y * w
@@ -678,8 +686,11 @@ class FallingSandSim : Sim {
                         colour[below + x] = colour[row + x]
                         moved++
                     } else {
+                        // Down one side at random, or, blocked, the other:
+                        // a grain only stops when both are full.
                         val dir = if (env.rng.bool()) -1 else 1
-                        val sx = x + dir
+                        var sx = x + dir
+                        if (sx !in 0 until w || grid[below + sx].toInt() != 0) sx = x - dir
                         if (sx in 0 until w && grid[below + sx].toInt() == 0) {
                             grid[below + sx] = 1; grid[row + x] = 0
                             colour[below + sx] = colour[row + x]
@@ -688,11 +699,14 @@ class FallingSandSim : Sim {
                     }
                 }
             }
+            // Counted pass by pass: a step that ran no pass at all had
+            // "nothing moved" too, and called the pile settled mid-fall.
+            if (moved == before) quietPasses++ else quietPasses = 0
         }
         if (moved > 0) {
             env.emit(EventKind.STEP, (moved.toFloat() / max(1, filled)).coerceIn(0f, 1f), 0f, 0.3f)
         }
-        if (!settled && filled >= capacity && moved == 0) {
+        if (!settled && filled >= capacity && quietPasses >= QUIET_PASSES) {
             settled = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
@@ -745,6 +759,7 @@ class FallingSandSim : Sim {
         listOf("grains" to String.format(java.util.Locale.US, "%,d", filled))
 
     companion object {
+        const val QUIET_PASSES = 3
         fun def(): SimDef = SimDef(
             id = "life/falling-sand",
             title = "Falling sand",
@@ -754,7 +769,9 @@ class FallingSandSim : Sim {
             formats = listOf(TrapFormat.FILL, TrapFormat.GROW),
             heroLabel = "Empty it",
             defaultPalette = "Ember",
-            typicalSeconds = 30f,
+            // Settled means no grain moving for three passes in a row, which is
+            // a little later than the old test, which fired mid-fall.
+            typicalSeconds = 33f,
             params = listOf(
                 Param.int("width", "Columns", 20, 400, 140, card = Card.DATA),
                 Param.int("height", "Rows", 20, 600, 220, card = Card.DATA),

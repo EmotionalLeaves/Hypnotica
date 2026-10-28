@@ -66,6 +66,7 @@ class BallEscapeSim : Sim {
      * becomes a matter of when, not if.
      */
     private var energy = 1f
+    private var runSeconds = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -108,10 +109,12 @@ class BallEscapeSim : Sim {
         hits = 0L
         payoffFrame = false
         restSeconds = -1f
+        runSeconds = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        runSeconds += abs(dt)
         if (restSeconds >= 0f) {
             restSeconds -= abs(dt)
             return
@@ -146,9 +149,30 @@ class BallEscapeSim : Sim {
                 b.vx *= k; b.vy *= k
             }
 
-            b.x += b.vx * dt
-            b.y += b.vy * dt
+            // Forward in time whichever way the clock runs, and in steps
+            // shorter than the ball is wide: a small fast ball went clean
+            // through the outer ring in one stride, and with time reversed it
+            // moved against its own velocity, which no wall stops.
+            val h = abs(dt)
+            val stride = hypot(b.vx, b.vy) * h
+            val subs = kotlin.math.ceil(stride / max(1e-4f, b.r * 0.5f)).toInt().coerceIn(1, 24)
+            for (sub in 0 until subs) {
+                if (!b.alive) break
+                b.x += b.vx * h / subs
+                b.y += b.vy * h / subs
+                collideRings(env, b)
+            }
+        }
 
+        if (balls.none { it.alive } && restSeconds < 0f) restSeconds = 1.2f
+
+        if (spawned.isNotEmpty()) {
+            balls.addAll(spawned)
+            spawned.clear()
+        }
+    }
+
+    private fun collideRings(env: SimEnv, b: Ball) {
             // Rings are checked outside in; the ball normally sits inside the
             // smallest one and works its way out through the gaps.
             for (ri in ringRadii.indices) {
@@ -169,6 +193,18 @@ class BallEscapeSim : Sim {
                     rr *= cos(PI.toFloat() / sides)
                 }
                 if (d + b.r < rr) continue
+                // Which part of the ring the ball is at: the gap, or wall.
+                val angNow = atan2(b.y, b.x)
+                var relNow = angNow - ringAngle[ri]
+                relNow = ((relNow % TWO_PI) + TWO_PI) % TWO_PI
+                val atGap = relNow < gapWidth
+                if (ri > 0 && d >= rr) {
+                    // Outside an inner ring, already through it: its wall
+                    // stops the ball from this side too, or a bounce off the
+                    // next ring out shoved it back through solid wall.
+                    if (d - b.r < rr && !atGap) bounceOutside(env, b, rr, d, nx, ny)
+                    continue
+                }
                 if (d < rr) {
                     // Touching from inside.
                     val ang = atan2(b.y, b.x)
@@ -190,13 +226,22 @@ class BallEscapeSim : Sim {
                     break
                 }
             }
-        }
+    }
 
-        if (balls.none { it.alive } && restSeconds < 0f) restSeconds = 1.2f
-
-        if (spawned.isNotEmpty()) {
-            balls.addAll(spawned)
-            spawned.clear()
+    /** Off the outside of an inner ring: the same bounce, the normal turned outward. */
+    private fun bounceOutside(env: SimEnv, b: Ball, rr: Float, d: Float, nxIn: Float, nyIn: Float) {
+        if (env.laws.passThrough) return
+        val nx = if (!nxIn.isNaN()) nxIn else if (d > 1e-6f) b.x / d else 1f
+        val ny = if (!nyIn.isNaN()) nyIn else if (d > 1e-6f) b.y / d else 0f
+        val overlap = rr - (d - b.r)
+        if (overlap > 0f) { b.x += nx * overlap * 1.02f; b.y += ny * overlap * 1.02f }
+        val dot = b.vx * nx + b.vy * ny
+        if (dot < 0f) {
+            val e = if (env.laws.sticky) 0f else env.laws.bounce
+            b.vx -= (1f + e) * dot * nx
+            b.vy -= (1f + e) * dot * ny
+            hits++
+            env.emit(EventKind.HIT, b.colorT, nx.coerceIn(-1f, 1f) * 0.8f, min(1f, 0.3f + b.r * 6f))
         }
     }
 
@@ -207,10 +252,13 @@ class BallEscapeSim : Sim {
         val ny = if (!nyIn.isNaN()) nyIn else if (d > 1e-6f) b.y / d else 0f
         val dot = b.vx * nx + b.vy * ny
         if (dot > 0f) {
-            // Sticky: the ball gives up rather than bouncing.
+            // Sticky: the ball gives up rather than bouncing — but is still
+            // put back inside, or the wall it stuck to let it through.
             if (env.laws.sticky) {
                 b.vx *= 0.12f
                 b.vy *= 0.12f
+                val over = (d + b.r) - rr
+                if (over > 0f) { b.x -= nx * over * 1.02f; b.y -= ny * over * 1.02f }
                 env.emit(EventKind.HIT, b.colorT, b.x, 0.5f)
                 return
             }
@@ -223,7 +271,10 @@ class BallEscapeSim : Sim {
                 b.x -= nx * overlap * 1.02f
                 b.y -= ny * overlap * 1.02f
             }
-            b.r = min(b.r * growth, rr * 0.42f)
+            // Never bigger than fits between two rings, or it couldn't sit
+            // in the space a gap lets it into.
+            val spacing = if (ringRadii.size > 1) ringRadii[0] - ringRadii[1] else rr
+            b.r = min(b.r * growth, min(rr * 0.42f, spacing * 0.45f))
             energy = min(energy * speedUp, MAX_SPEED * 0.8f)
             val sp = hypot(b.vx, b.vy)
             val target = max(sp, energy)
@@ -300,7 +351,10 @@ class BallEscapeSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = restSeconds in -1000f..0f && (escaped > 0 || balls.none { it.alive })
+    override fun finished(): Boolean = (restSeconds in -1000f..0f && (escaped > 0 || balls.none { it.alive })) ||
+        // A ball that can't find the way out — a syrupy universe, three rings
+        // — still lets the next run come.
+        runSeconds > GIVE_UP
 
     override fun counters(): List<Pair<String, String>> =
         listOf("bounces" to hits.toString(), "balls" to balls.count { it.alive }.toString())
@@ -308,6 +362,7 @@ class BallEscapeSim : Sim {
     companion object {
         private const val TWO_PI = (PI * 2.0).toFloat()
         private const val MAX_SPEED = 7.5f
+        private const val GIVE_UP = 60f
         /** Sides for each Shape choice; 0 is a round ring. */
         private val SHAPE_SIDES = intArrayOf(0, 3, 4, 6)
         private const val EDGE_PIECES = 10
