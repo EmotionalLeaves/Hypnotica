@@ -101,6 +101,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
     /** Extra zoom applied around the payoff, the "punch-in". */
     private var punch = 0f
+
+    /** The zoom bump on the beat's kick, 1 on the hit and easing to 0. */
+    private var beat = 0f
+    private var kicksSeen = 0L
     private var baseZoom = 1f
     /**
      * The sim's counters, taken on this thread a few times a second for the
@@ -480,6 +484,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (punch > 0f) {
             punch = max(0f, punch - dt / PUNCH_SECONDS)
         }
+        val kicksNow = mapping.kicks
+        if (kicksNow != kicksSeen) {
+            kicksSeen = kicksNow
+            if (!safety.reduceMotion) beat = 1f
+        }
+        if (beat > 0f) beat = max(0f, beat - dt / BEAT_SECONDS)
         if (shake > 0f) {
             shake = max(0f, shake - dt / SHAKE_SECONDS)
         }
@@ -502,7 +512,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             // made the payoff read as three twitches and a drift rather than
             // one event. At 0.8 s squared, all five parts end inside a second.
             val punchEase = punch * punch
-            camera.zoom = baseZoom * breathing * (1f + 0.045f * punchEase)
+            // And a small bump on every kick of the beat, so the picture
+            // moves with the music — the cut-to-the-beat feel of a clip.
+            camera.zoom = baseZoom * breathing * (1f + 0.045f * punchEase) * (1f + BEAT_DEPTH * beat * beat)
 
             // Screen shake: a few pixels for a moment, on the heaviest frames.
             // Added to the camera at render time rather than written into it,
@@ -638,6 +650,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         payoffNotified = false
         finishNotified = false
         punch = 0f
+        beat = 0f
         shake = 0f
         shakeOffsetX = 0f
         shakeOffsetY = 0f
@@ -696,6 +709,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
          * to settle as the slow motion eases out rather than after it.
          */
         const val PUNCH_SECONDS = 0.8f
+        /** The beat bump: a percent and a half, gone in a fifth of a second. */
+        const val BEAT_DEPTH = 0.015f
+        const val BEAT_SECONDS = 0.2f
 
         /**
          * How long Evolve stands off a value after a hand moves it. Long enough

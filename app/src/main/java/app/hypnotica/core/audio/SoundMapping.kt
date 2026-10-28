@@ -70,6 +70,11 @@ class SoundMapping(private val synth: Synth) {
      * it caught up, minutes later.
      */
     private var stepPos = 0.0
+
+    /** Kicks played so far: the picture pulses on each one it sees go up. */
+    @Volatile
+    var kicks = 0L
+        private set
     private var nextStep = 0L
     private var activity = 0f
     private var quietFor = 10f
@@ -203,7 +208,10 @@ class SoundMapping(private val synth: Synth) {
         releaseHeld(root, step)
         val level = activity * preset.gain * GROOVE_LEVEL
         if (level < 0.002f || preset.silent) return
-        if (inBar in g.kick) synth.note(KICK_HZ, 0.55f * level, 0f, VoiceType.SINE, 0.11f)
+        if (inBar in g.kick) {
+            synth.note(KICK_HZ, 0.55f * level, 0f, VoiceType.SINE, 0.11f)
+            kicks++
+        }
         if (inBar in g.snare) synth.note(SNARE_HZ, 0.22f * level, 0f, VoiceType.NOISE, 0.07f)
         if (inBar in g.hat) synth.note(HAT_HZ, 0.08f * level, if (inBar % 4 == 2) 0.3f else -0.3f, VoiceType.NOISE, 0.022f)
         if (inBar in g.bass) {
