@@ -60,6 +60,8 @@ class PourSim : Sim {
     private var tapX = 0f
     private var glassBottom = -0.85f
     private var flowScale = 1f
+    private var poured = 0
+    private var gNow = 1f
 
     // Neighbour grid.
     private var cellsX = 1
@@ -96,6 +98,11 @@ class PourSim : Sim {
         var area = 0f
         for (k in 0 until glasses) area += (gR[k] - gL[k]) * (gTop[k] - glassBottom)
         flowScale = (area / REF_AREA).coerceIn(0.5f, 4f)
+        // As many drops as the glasses hold with room for the stream and a
+        // spill — no more: every drop costs every frame.
+        cap = (area / DROP_AREA * 1.4f + 500f).toInt().coerceIn(1200, MAX_DROPS)
+        poured = 0
+        gNow = 1f
         x = FloatArray(cap); y = FloatArray(cap); vx = FloatArray(cap); vy = FloatArray(cap)
         px = FloatArray(cap); py = FloatArray(cap); dvx = FloatArray(cap); dvy = FloatArray(cap)
         n = 0
@@ -126,13 +133,23 @@ class PourSim : Sim {
         if (!full && abs(toGo) <= 0.005f) {
             // Scaled with how much glass there is to fill, so two or three, or
             // a wide one, fill in about the time one upright glass does.
-            val flow = env.params.f("flow", 75f) * flowScale
+            // No more lanes than fit inside the glass, and no faster than
+            // they can carry with each lane's drops a drop apart: past that
+            // the stream sprays sideways, or misses the glass.
+            val room = ((gR[current] - gL[current] - 2f * D) / (1.05f * D)).toInt() + 1
+            val maxLanes = room.coerceIn(1, 9)
+            val flow = min(env.params.f("flow", 75f) * flowScale, maxLanes * TAP_SPEED / (1.2f * D))
             carry += h * flow
             // As many lanes as keep each one's drops a drop apart.
-            val lanes = kotlin.math.ceil(flow * D * 1.2f / TAP_SPEED).toInt().coerceIn(1, 9)
-            if (n >= cap && capAt < 0f) capAt = elapsed
-            while (carry >= 1f && n < cap) {
+            val lanes = kotlin.math.ceil(flow * D * 1.2f / TAP_SPEED).toInt().coerceIn(1, maxLanes)
+            // Out of water: the array is full, or the tap has run three
+            // glasses' worth (spill drains away, so it could run for ever).
+            if (n >= cap || poured >= cap * 3) { if (capAt < 0f) capAt = elapsed }
+            // Room again once spill has soaked away: not out after all.
+            else capAt = -1f
+            while (carry >= 1f && n < cap && poured < cap * 3) {
                 carry -= 1f
+                poured++
                 // In lanes across the tap, each drop set down a little below
                 // the last in its lane by the share of the frame since it
                 // left — spaced past the push-apart distance, or the stream
@@ -146,7 +163,24 @@ class PourSim : Sim {
             }
         }
         // Water pours down whatever the law says, or the glass never fills.
-        val g = (abs(env.laws.gravity) * GRAVITY_SCALE).coerceAtLeast(MIN_FALL)
+        // Not past a little over Earth's either: under heavy gravity the
+        // drops crushed together to a fraction of their room, and the glass
+        // took three times the water.
+        val g = (abs(env.laws.gravity) * GRAVITY_SCALE).coerceIn(MIN_FALL, MAX_FALL)
+        gNow = g
+        // Spill lying still on the floor outside the glasses soaks away, a
+        // little at a time: else it covers the floor and every frame pays
+        // for it.
+        var i0 = 0
+        while (i0 < n) {
+            val still = vx[i0] * vx[i0] + vy[i0] * vy[i0] < SETTLED * SETTLED
+            if (still && y[i0] < glassBottom + 2f * D && !inAnyGlass(x[i0]) && env.rng.nextFloat() < h * DRAIN) {
+                n--
+                x[i0] = x[n]; y[i0] = y[n]; vx[i0] = vx[n]; vy[i0] = vy[n]
+                continue
+            }
+            i0++
+        }
         // Move every drop where its speed takes it...
         for (i in 0 until n) {
             vy[i] -= g * h
@@ -205,7 +239,10 @@ class PourSim : Sim {
             next[i] = head[c]
             head[c] = i
         }
-        val thick = env.params.f("thick", VISCOSITY).coerceIn(0f, 0.9f)
+        // Never quite none: water with no thickness at all never calmed
+        // enough to show a water line, splashed out as fast as it came, and
+        // the glass never filled.
+        val thick = env.params.f("thick", VISCOSITY).coerceIn(MIN_THICK, 0.9f)
         for (i in 0 until n) {
             var sx = 0f; var sy = 0f; var w = 0f
             val cx = ((x[i] + halfW) / D).toInt().coerceIn(0, cellsX - 1)
@@ -257,6 +294,11 @@ class PourSim : Sim {
         }
     }
 
+    private fun inAnyGlass(px: Float): Boolean {
+        for (k in 0 until glasses) if (px > gL[k] - D && px < gR[k] + D) return true
+        return false
+    }
+
     private fun levelOf(k: Int): Float {
         val rows = ((gTop[k] - glassBottom) / D).toInt().coerceIn(4, level.size)
         java.util.Arrays.fill(level, 0)
@@ -265,7 +307,13 @@ class PourSim : Sim {
             if (x[i] <= gL[k] || x[i] >= gR[k] || y[i] < glassBottom) continue
             // Only water that has settled: the stream and the splash are
             // not the water line, and counting them called the brim early.
-            if (vx[i] * vx[i] + vy[i] * vy[i] > SETTLED * SETTLED) continue
+            // The falling stream is left out by its speed downward; the pool
+            // itself counts even while it churns. Thin water under heavy
+            // gravity never fell below a plain still-water speed, so its line
+            // was never counted and the glass ran over uncalled.
+            val settled = SETTLED * max(1f, gNow / REF_FALL)
+            if (vy[i] < -STREAM_CUT * settled) continue
+            if (vx[i] * vx[i] + vy[i] * vy[i] > CHURN * CHURN * settled * settled) continue
             val r = ((y[i] - glassBottom) / rowH).toInt()
             if (r in 0 until rows) level[r]++
         }
@@ -345,7 +393,9 @@ class PourSim : Sim {
 
     override fun finished(): Boolean = (full && elapsed - fullAt > 3f) ||
         // Out of water short of the brim: let the next run come.
-        (n >= cap && elapsed - capAt > 5f)
+        (capAt >= 0f && elapsed - capAt > 5f) ||
+        // However it goes, never minutes.
+        elapsed > GIVE_UP
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "drops" to n.toString(),
@@ -375,6 +425,17 @@ class PourSim : Sim {
         const val TAP_GLIDE = 0.5f
         const val MIN_FALL = 0.8f
         const val SETTLED = 0.5f
+        /** The fall under Earth's gravity, which SETTLED was tuned on. */
+        const val REF_FALL = 9.81f * GRAVITY_SCALE
+        /** How fast spill on the floor soaks away, as a share per second. */
+        const val DRAIN = 0.6f
+        const val GIVE_UP = 60f
+        const val MIN_THICK = 0.03f
+        const val MAX_FALL = REF_FALL * 1.4f
+        /** Falling faster than this many still-water speeds: the stream, not the pool. */
+        const val STREAM_CUT = 2f
+        /** Moving faster than this many, any way: splash, not the pool. */
+        const val CHURN = 4f
         const val FLOOR_GAP = 0.01f
         /** The area one drop takes up once settled, measured. */
         const val DROP_AREA = D * D * 0.95f

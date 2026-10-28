@@ -39,7 +39,9 @@ class Rng(seed: Long = 1L) {
 
     /** Uniform in [0, 1). */
     fun nextFloat(): Float =
-        ((nextInt().toLong() and 0xFFFFFFFFL).toFloat()) / 4294967296f
+        // Clamped: the largest ints round up to exactly 1 as a float, and
+        // [0, 1) is the promise every range() relies on.
+        (((nextInt().toLong() and 0xFFFFFFFFL).toFloat()) / 4294967296f).coerceAtMost(0.99999994f)
 
     /** Uniform in [a, b). */
     fun range(a: Float, b: Float): Float = a + (b - a) * nextFloat()

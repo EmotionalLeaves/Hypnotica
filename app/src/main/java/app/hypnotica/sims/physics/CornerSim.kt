@@ -76,19 +76,20 @@ class CornerSim : Sim {
         for (k in 0 until count) {
             // Each its own moment; several, and the race is who's first.
             cornerAt[k] = env.rng.range(9f, 15f)
-            val a = env.rng.range(0.55f, 1.0f) * (if (env.rng.bool()) 1f else -1f) + (if (env.rng.bool()) 0f else PI.toFloat())
-            vx[k] = cos(a) * speed * env.rng.range(0.85f, 1.15f)
-            vy[k] = sin(a) * speed * 1.4f * env.rng.range(0.85f, 1.15f)
-            // Unfolded, the walls are every wx along a straight line: land the
-            // badge on a whole number of widths, both ways at once, at its moment.
-            x0[k] = startFor(vx[k], wx, cornerAt[k])
-            y0[k] = startFor(vy[k], wy, cornerAt[k])
+            aim(env, k, speed)
             // A lone badge changes colour at every wall; several keep their
             // own, so they can be told apart and picked.
             tint[k] = if (count == 1) env.rng.nextFloat() else (k + 0.5f) / count
-            lastCellX[k] = cellOf(x0[k], wx, vx[k]); lastCellY[k] = cellOf(y0[k], wy, vy[k])
         }
         first = (0 until count).minByOrNull { cornerAt[it] } ?: 0
+        // A badge that only grazes a corner before the winner's moment looks,
+        // to anyone watching, like it got there first: throw it another way.
+        for (k in 0 until count) {
+            if (k == first) continue
+            var tries = 0
+            while (tries++ < 40 && grazesBefore(k, cornerAt[first])) aim(env, k, speed)
+        }
+        for (k in 0 until count) { lastCellX[k] = cellOf(x0[k], wx, vx[k]); lastCellY[k] = cellOf(y0[k], wy, vy[k]) }
         bounces = 0
         elapsed = 0f
         doneAt = -1f
@@ -97,6 +98,29 @@ class CornerSim : Sim {
         lineT = 0f
         sparkLife = 0f
         for (k in 0 until count) place(k, 0f)
+    }
+
+    private fun aim(env: SimEnv, k: Int, speed: Float) {
+        val a = env.rng.range(0.55f, 1.0f) * (if (env.rng.bool()) 1f else -1f) + (if (env.rng.bool()) 0f else PI.toFloat())
+        vx[k] = cos(a) * speed * env.rng.range(0.85f, 1.15f)
+        vy[k] = sin(a) * speed * 1.4f * env.rng.range(0.85f, 1.15f)
+        // Unfolded, the walls are every wx along a straight line: land the
+        // badge on a whole number of widths, both ways at once, at its moment.
+        x0[k] = startFor(vx[k], wx, cornerAt[k])
+        y0[k] = startFor(vy[k], wy, cornerAt[k])
+    }
+
+    /** Whether badge [k] comes within a near-touch of any corner before [until]. */
+    private fun grazesBefore(k: Int, until: Float): Boolean {
+        var t = 0f
+        val dt = 1f / 240f
+        while (t < until + 0.05f) {
+            val fx = fold(x0[k] + vx[k] * t, wx); val fy = fold(y0[k] + vy[k] * t, wy)
+            val ex = min(fx, wx - fx); val ey = min(fy, wy - fy)
+            if (ex < GRAZE && ey < GRAZE) return true
+            t += dt
+        }
+        return false
     }
 
     /** Where to start, in unfolded units, to be on a wall exactly at [at]. */
@@ -229,6 +253,8 @@ class CornerSim : Sim {
         const val BASE_SPEED = 0.42f
         const val SPARKS = 400
         const val MAX_BADGES = 4
+        /** Closer than this to a corner counts as touching it, to the eye. */
+        const val GRAZE = 0.02f
 
         fun def(): SimDef = SimDef(
             id = "physics/corner",

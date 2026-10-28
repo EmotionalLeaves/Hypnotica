@@ -436,6 +436,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
                 mapping.applyPreset(SoundPreset.byName(it.first.defaultSound))
             }
             mapping.resetSong()
+            // A new sim arrives upright, not tilted by the last one's spin.
+            camera.rotation = 0f
             resetRunState()
         }
         pendingParams?.let { (values, seed) ->

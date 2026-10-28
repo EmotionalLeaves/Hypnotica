@@ -920,7 +920,10 @@ class AppState(
      * used to be the same picture every time.
      */
     fun loadRemixed(def: SimDef) {
-        load(def)
+        // The same sim again (the player's dice): keep what is loaded, so a
+        // formula the person typed and their advanced settings survive — a
+        // fresh load would put every one back to its default first.
+        if (def.id != currentDef.id) load(def) else paused = false
         val params = director.remix(def)
         if (chosenPalette == null) {
             val palette = director.remixPalette(def)

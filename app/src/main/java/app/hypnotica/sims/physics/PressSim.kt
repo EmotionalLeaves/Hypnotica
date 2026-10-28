@@ -224,8 +224,9 @@ class PressSim : Sim {
         return when (shape) {
             // A ball: the lattice inside a circle.
             1 -> { val dx = c - m; val dy = r - m; dx * dx + dy * dy <= (m + 0.3f) * (m + 0.3f) }
-            // A pyramid: narrowing to a point at the top.
-            2 -> abs(c - m) <= (side - 1 - r) * 0.5f + 0.3f
+            // A pyramid: narrowing to a point at the top — a point braced by
+            // the row of three under it, so an odd size's tip doesn't flop.
+            2 -> abs(c - m) <= (side - 1 - r) * 0.5f + 0.8f
             else -> true
         }
     }

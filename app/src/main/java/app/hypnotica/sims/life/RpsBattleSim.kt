@@ -168,7 +168,9 @@ class RpsBattleSim : Sim {
             frenzy = FRENZY_SECONDS
             // And one side, at random, is quicker for it: with everyone
             // chasing at the same speed the ring only turned faster.
-            frenzySide = env.rng.int(0, teams)
+            // One still in it: a frenzy for a side already gone was wasted.
+            val living = (0 until teams).filter { count[it] > 0 }
+            frenzySide = if (living.isEmpty()) 0 else living[env.rng.int(0, living.size)]
         }
         frenzy = max(0f, frenzy - h)
         if (converted > 0) {
