@@ -103,6 +103,7 @@ class FrameTest {
 
         /** A little past the edge is a glow or a stroke; more is cut off. */
         const val LIMIT = 1.15f
-        val LEAVES_ON_PURPOSE = setOf("physics/n-body")
+        /** Bodies flung out of an n-body system, and glass flying apart, are meant to leave. */
+        val LEAVES_ON_PURPOSE = setOf("physics/n-body", "physics/shatter")
     }
 }

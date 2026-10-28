@@ -27,6 +27,12 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **New: glass, struck.** A pane hit again and again in one place, the cracks
+  running further each time — straight ones out from the centre, then rings
+  joining them — until one strike too many and it comes apart. The shards are
+  the cells of that web, drawn as ring sectors, blown outward and tinkling as
+  they fall out of the frame. The Cut format had two sims; it has three.
+
 - **New: colour war.** The board split between up to four colours, each with
   balls that roam their own ground and take the squares they bounce off.
   Left even it settled at a quarter each for ever, every border defended as
