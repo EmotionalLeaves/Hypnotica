@@ -1087,6 +1087,7 @@ object LifeSims {
         PredatorPreySim.def(),
         ReactionDiffusionSim.def(),
         ColourWarSim.def(),
-        RpsBattleSim.def()
+        RpsBattleSim.def(),
+        SnowflakeSim.def()
     )
 }

@@ -1,0 +1,212 @@
+package app.hypnotica.sims.life
+
+import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Param
+import app.hypnotica.core.recipe.ParamInput
+import app.hypnotica.core.render.G
+import app.hypnotica.core.render.Palette
+import app.hypnotica.core.sim.EventKind
+import app.hypnotica.core.sim.Shelf
+import app.hypnotica.core.sim.Sim
+import app.hypnotica.core.sim.SimDef
+import app.hypnotica.core.sim.SimEnv
+import app.hypnotica.core.sim.TrapFormat
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * A crystal grown one particle at a time. Each wanders in at random from far
+ * off and freezes the moment it touches the crystal — so the tips, which
+ * stick out furthest, catch the most and grow fastest, and the crystal
+ * branches into fronds. With symmetry on, every particle that sticks is
+ * copied round the centre: a snowflake.
+ */
+class SnowflakeSim : Sim {
+
+    private var size = 241
+    private var grid = ByteArray(0)
+    private var order = IntArray(0)   // when each cell froze, for its colour
+    private var frozen = 0
+    private var radius = 1f
+    private var maxRadius = 100f
+    private var folds = 6
+    private var elapsed = 0f
+    private var doneAt = -1f
+    private var payoffFrame = false
+    private var wx = 0
+    private var wy = 0
+    private var walking = false
+    private var cellsList = IntArray(0)
+    private var listCount = 0
+    private var lastRing = 0
+
+    override fun setup(env: SimEnv) {
+        size = (env.params.i("size", 241) / 2 * 2 + 1).coerceIn(61, MAX_SIZE)
+        grid = ByteArray(size * size)
+        order = IntArray(size * size)
+        cellsList = IntArray(size * size)
+        listCount = 0
+        folds = FOLDS[env.params.choiceIndex("shape").coerceIn(0, FOLDS.size - 1)]
+        val c = size / 2
+        freeze(c, c)
+        frozen = 1
+        radius = 1f
+        maxRadius = size * 0.47f
+        elapsed = 0f
+        doneAt = -1f
+        payoffFrame = false
+        walking = false
+        lastRing = 0
+    }
+
+    private fun freeze(x: Int, y: Int) {
+        val k = y * size + x
+        if (grid[k].toInt() != 0) return
+        grid[k] = 1
+        order[k] = frozen
+        cellsList[listCount++] = k
+        val c = size / 2
+        val r = sqrt(((x - c) * (x - c) + (y - c) * (y - c)).toFloat())
+        if (r > radius) radius = r
+    }
+
+    override fun step(env: SimEnv, dt: Float) {
+        payoffFrame = false
+        val h = abs(dt)
+        elapsed += h
+        if (doneAt >= 0f) return
+        val c = size / 2
+        // Steps of wandering this frame, more as the crystal grows: the walk
+        // in from the launch circle gets longer.
+        var budget = (h * STEPS_PER_SECOND * (1f + radius / 30f)).toInt().coerceAtMost(MAX_STEPS)
+        // Grown to a schedule, not as fast as it can: with symmetry every
+        // particle is twelve and a big crystal was done in a blink. Its reach
+        // eases out to the edge over GROW_SECONDS.
+        val sched = (elapsed * env.params.f("pace", 1f) / GROW_SECONDS).coerceIn(0f, 1f)
+        val allowed = 2f + (maxRadius - 2f) * (1f - (1f - sched) * (1f - sched))
+        while (budget-- > 0 && radius < allowed) {
+            if (!walking) {
+                // Launch from a circle just outside the crystal.
+                val a = env.rng.range(0f, 2f * PI.toFloat())
+                val lr = radius + 6f
+                wx = (c + cos(a) * lr).roundToInt().coerceIn(1, size - 2)
+                wy = (c + sin(a) * lr).roundToInt().coerceIn(1, size - 2)
+                walking = true
+            }
+            when (env.rng.int(0, 4)) {
+                0 -> wx++
+                1 -> wx--
+                2 -> wy++
+                else -> wy--
+            }
+            val dx = wx - c; val dy = wy - c
+            val d2 = dx * dx + dy * dy
+            // Wandered too far: start another.
+            if (d2 > (radius * 2.5f + 12f).let { it * it } || wx < 1 || wy < 1 || wx > size - 2 || wy > size - 2) {
+                walking = false
+                continue
+            }
+            val k = wy * size + wx
+            if (grid[k - 1].toInt() != 0 || grid[k + 1].toInt() != 0 || grid[k - size].toInt() != 0 || grid[k + size].toInt() != 0) {
+                // Touched: frozen here, and copied round the centre.
+                stick(env, wx, wy)
+                walking = false
+                if (radius >= maxRadius) break
+            }
+        }
+        // A note each time the crystal reaches a new ring outward.
+        val ring = (radius / maxRadius * 16f).toInt()
+        if (ring > lastRing) {
+            lastRing = ring
+            env.emit(EventKind.STEP, (ring / 16f).coerceIn(0f, 1f), 0f, 0.4f)
+        }
+        if (radius >= maxRadius && doneAt < 0f) {
+            doneAt = elapsed
+            payoffFrame = true
+            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+        }
+    }
+
+    private fun stick(env: SimEnv, x: Int, y: Int) {
+        val c = size / 2
+        frozen++
+        val dx = (x - c).toFloat(); val dy = (y - c).toFloat()
+        if (folds <= 1) {
+            freeze(x, y)
+        } else {
+            val r = sqrt(dx * dx + dy * dy)
+            val a = atan2(dy, dx)
+            for (m in 0 until folds) {
+                // Each turn, and its mirror image: twelve copies for six folds.
+                for (mirror in 0..1) {
+                    val aa = (if (mirror == 0) a else -a) + 2f * PI.toFloat() * m / folds
+                    val nx = (c + cos(aa) * r).roundToInt()
+                    val ny = (c + sin(aa) * r).roundToInt()
+                    if (nx in 1 until size - 1 && ny in 1 until size - 1) freeze(nx, ny)
+                }
+            }
+        }
+        if (frozen % 40 == 0) env.emit(EventKind.HIT, (radius / maxRadius).coerceIn(0f, 1f), (dx / max(1f, maxRadius)).coerceIn(-1f, 1f), 0.25f)
+    }
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        val palette = env.palette
+        val scale = min(env.halfWidth, 1f) * 0.95f / (size * 0.5f)
+        val c = size / 2
+        g.reservePoints(listCount)
+        for (i in 0 until listCount) {
+            val k = cellsList[i]
+            val x = (k % size - c) * scale
+            val y = (k / size - c) * scale
+            // Coloured by when it froze: the heart one colour, the newest tips another.
+            val t = order[k].toFloat() / max(1, frozen)
+            g.point(x, y, scale * 1.6f, palette.at(0.1f + 0.85f * t))
+        }
+        if (doneAt >= 0f) {
+            val k = (1f - (elapsed - doneAt)).coerceIn(0f, 1f)
+            if (k > 0f) g.glow(0f, 0f, radius * scale * 1.2f, Palette.TEXT_PRIMARY, 0.3f * k)
+        }
+    }
+
+    override fun payoff(): Boolean = payoffFrame
+
+    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+
+    override fun counters(): List<Pair<String, String>> = listOf(
+        "frozen" to listCount.toString(),
+        "grown" to "${(radius / maxRadius * 100f).toInt().coerceAtMost(100)}%"
+    )
+
+    companion object {
+        const val MAX_SIZE = 501
+        const val STEPS_PER_SECOND = 2_400_000f
+        const val MAX_STEPS = 60_000
+        const val GROW_SECONDS = 13f
+        val FOLDS = intArrayOf(6, 4, 8, 1)
+
+        fun def(): SimDef = SimDef(
+            id = "life/snowflake",
+            title = "Crystal growth",
+            shelf = Shelf.LIFE,
+            family = "Growth",
+            blurb = "Particles wander in and freeze where they touch. The tips grow fastest.",
+            formats = listOf(TrapFormat.GROW, TrapFormat.FILL),
+            heroLabel = "Grow another",
+            defaultPalette = "Ocean",
+            typicalSeconds = 16f,
+            params = listOf(
+                Param.choice("shape", "Symmetry", listOf("Snowflake", "Four-fold", "Eight-fold", "Wild"), 0, card = Card.DATA, input = ParamInput.TILES),
+                Param.int("size", "Size", 61, MAX_SIZE, 241, card = Card.DATA),
+                Param.float("pace", "Pace", 0.2f, 4f, 1f, card = Card.MOTION)
+            ),
+            create = { SnowflakeSim() }
+        )
+    }
+}
