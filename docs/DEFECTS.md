@@ -27,6 +27,27 @@ Measured, not yet acted on.
 
 ## Fixed this round
 
+- **A UX pass over the feed, player, Library and Settings.**
+  - The feed was a hook, a title, three round buttons and two big ones over
+    the sim. The big ones are gone: hold the sim for its controls (long-press
+    did nothing), and Settings is a fourth small glyph. The swipe hint now
+    shows until the first swipe of the session, not of every visit.
+  - The ★ bounces and turns accent-coloured when a sim is kept.
+  - The player's bars stay while paused — a still picture with no Play in
+    sight looked broken — and a tap with the drawer open closes only the
+    drawer. The bars fade and the drawer slides in on arrival instead of
+    being there on the first frame; the feed's chrome fades in on return.
+  - Simple cards lead with what is worth dragging: Sound's two sliders sit
+    under the preset, not below nine pills; Motion's sim controls come before
+    Reverse time; Look's before the camera switch. Speed reads "normal" and
+    snaps to 1x near it. Recording closes the drawer, and the red line is
+    the stop button.
+  - A one-line gesture tip shows the first three times the drawer opens.
+  - Library: ‹ like every panel, a × to clear a search, and tapping the sim
+    already playing no longer restarts it.
+  - Settings: the TickTock format pills fold away, Gestures comes before
+    them, and "Forget it all — sure?" stands down after four seconds.
+
 - **TickTock, made to feel like the feeds it is named after.** The swipe now
   follows the finger — the caption and buttons travel with it, the clip dims,
   and the next one comes up out of the dark — where it used to be a dead
