@@ -78,6 +78,8 @@ class BrachistochroneSim : Sim {
     private var trails = true
     private var nextTick = IntArray(0)
     private var maxT = 1.0
+    /** When the last bead of the race came in. */
+    private var allInAt = -1f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -98,6 +100,7 @@ class BrachistochroneSim : Sim {
         payoffFrame = false
         paidAt = -1f
         winner = -1
+        allInAt = -1f
         nextTick = IntArray(lanes) { 1 }
         maxT = 0.0
         for (k in 0 until lanes) maxT = max(maxT, if (iso) quarter else total[k])
@@ -248,6 +251,7 @@ class BrachistochroneSim : Sim {
                     payoffFrame = true
                     paidAt = elapsed
                 }
+                if (arrivals == RAMPS) allInAt = elapsed
             }
         }
     }
@@ -345,6 +349,7 @@ class BrachistochroneSim : Sim {
             val xs = px[winner]; val ys = py[winner]
             for (i in 0 until xs.size step 24) g.glow(xs[i], ys[i], 0.06f, laneColour(env, winner), pulse)
         }
+        if (!iso && allInAt >= 0f) drawWheel(env, g)
         // Start post and finish post.
         g.rect(ax - 0.012f, ay + 0.03f, 0.006f, 0.05f, POST)
         val gateUp = ((elapsed - HOLD + 0.25f) / 0.25f).coerceIn(0f, 1f)
@@ -378,6 +383,40 @@ class BrachistochroneSim : Sim {
             g.disc(x - BEAD * 0.3f, y + BEAD * 0.3f, BEAD * 0.32f, Palette.TEXT_PRIMARY, 0.7f)
         }
         drawBoard(env, g)
+    }
+
+    /**
+     * The finale, once every bead is in: why the winner is a cycloid. A wheel
+     * of half the ramp's height rolls along the underside of the start level
+     * and a point on its rim draws the winning curve, arriving at the finish
+     * as the wheel completes half a turn. It eases in once and then holds.
+     */
+    private fun drawWheel(env: SimEnv, g: G) {
+        val since = elapsed - allInAt - WHEEL_DELAY
+        if (since <= 0f) return
+        val fade = (since / 0.3f).coerceIn(0f, 1f)
+        val u = (since / WHEEL_ROLL).coerceIn(0f, 1f)
+        val e = u * u * (3f - 2f * u)
+        val th = PI.toFloat() * e
+        val rc = dy / 2f
+        val cx = ax + rc * th; val cy = ay - rc
+        val c = laneColour(env, RAMPS - 1)
+        // The level it rolls along.
+        g.line(ax, ay, ax + dx, ay, 0.003f, Palette.TEXT_SECONDARY, 0.35f * fade)
+        // The curve drawn so far, bright over the lit ramp.
+        val steps = 48
+        var prevX = ax; var prevY = ay
+        for (i in 1..steps) {
+            val t = th * i / steps
+            val x = ax + rc * (t - sin(t)); val y = ay - rc * (1f - cos(t))
+            g.line(prevX, prevY, x, y, 0.006f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.45f), fade)
+            prevX = x; prevY = y
+        }
+        // The wheel, a spoke to the drawing point, and the point.
+        g.ring(cx, cy, rc, 0.0035f, Palette.TEXT_SECONDARY, alpha = 0.6f * fade)
+        g.disc(cx, cy, 0.006f, Palette.TEXT_SECONDARY, 0.8f * fade)
+        g.line(cx, cy, prevX, prevY, 0.003f, Palette.TEXT_SECONDARY, 0.6f * fade)
+        g.disc(prevX, prevY, 0.011f, Palette.brighten(c, 0.3f), fade)
     }
 
     /** One lane per bead: its ramp in miniature, then a bar of its time so far. */
@@ -436,7 +475,8 @@ class BrachistochroneSim : Sim {
 
     override fun finished(): Boolean {
         if (paidAt < 0f) return false
-        return if (iso) meets >= 3 && elapsed - paidAt > 1f else arrivals >= RAMPS && elapsed - paidAt > 2.5f
+        return if (iso) meets >= 3 && elapsed - paidAt > 1f
+        else allInAt >= 0f && elapsed - allInAt > WHEEL_DELAY + WHEEL_ROLL + 1.4f
     }
 
     override fun counters(): List<Pair<String, String>> {
@@ -461,6 +501,8 @@ class BrachistochroneSim : Sim {
         const val ISO_BEADS = 5
         const val SAMPLES = 1200
         const val HOLD = 1.2f
+        const val WHEEL_DELAY = 0.3f
+        const val WHEEL_ROLL = 1.8f
         const val BEAD = 0.019f
         const val HALF_PI = (PI / 2).toFloat()
         val NAMES = listOf("straight", "circle", "steep dip", "cycloid")

@@ -248,8 +248,31 @@ class MagnetPendulumSim : Sim {
             cursor++
             // Already done at a coarser level.
             if (levelsDone > 0 && i % (stride * 2) == 0 && j % (stride * 2) == 0) continue
+            // Inside a calm region the answer is already known: when the four
+            // coarser starts around this one all end on the same magnet just
+            // as fast, so does this one. Only on the two finest levels, where
+            // those starts are at most four cells apart; trusting them at a
+            // coarse level would paint over thin bands for good. This is what
+            // lets the map reach full detail early instead of spending most of
+            // the run re-proving the calm lobes while the edges stay blocky.
+            if (levelsDone > 0 && stride <= 2) {
+                val v = agreed(i, j)
+                if (v >= 0) { fill(j * cols + i, v.toByte()); computed++; continue }
+            }
             return j * cols + i
         }
+    }
+
+    /** The shared value of the four coarser starts around (i, j), or −1. */
+    private fun agreed(i: Int, j: Int): Int {
+        val s2 = stride * 2
+        val i0 = i - i % s2; val j0 = j - j % s2
+        val i1 = i0 + s2; val j1 = j0 + s2
+        if (i1 >= cols || j1 >= rows) return -1
+        val v = disp[j0 * cols + i0].toInt()
+        if (v < 0) return -1
+        if (disp[j0 * cols + i1].toInt() != v || disp[j1 * cols + i0].toInt() != v || disp[j1 * cols + i1].toInt() != v) return -1
+        return v
     }
 
     private fun fill(c: Int, v: Byte) {
@@ -259,7 +282,11 @@ class MagnetPendulumSim : Sim {
     }
 
     private fun stepHero(env: SimEnv, h: Float) {
-        if (hSettled >= 0 && elapsed - hRestAt > HERO_REST) newHero(env)
+        if (hSettled >= 0 && elapsed - hRestAt > HERO_REST) {
+            newHero(env)
+            // A soft pick-up as the bob reappears at its new start ring.
+            env.emit(EventKind.STEP, 0.55f, pan(hx), 0.2f)
+        }
         val speed = env.params.f("speed", 1f).coerceIn(0.3f, 3f)
         val modelT = h * HERO_RATE * speed
         val n = max(1, (modelT / DT).toInt())
@@ -323,7 +350,9 @@ class MagnetPendulumSim : Sim {
                 while (e < cols && disp[base + e] == v) e++
                 if (v >= 0) {
                     val x0 = -hw + i * cell; val x1 = -hw + e * cell
-                    g.rect((x0 + x1) * 0.5f, y, (x1 - x0) * 0.5f, half * 1.02f, shadeCols[v.toInt()])
+                    // Overlapped a little both ways: butted edges showed as
+                    // faint scanlines and a seam down the middle.
+                    g.rect((x0 + x1) * 0.5f, y, (x1 - x0) * 0.5f + cell * 0.06f, half + cell * 0.06f, shadeCols[v.toInt()])
                 }
                 i = e
             }
@@ -378,9 +407,10 @@ class MagnetPendulumSim : Sim {
         const val SPRING = 0.5f
         const val DT = 0.03f
         const val HDT = DT * 0.5f
-        const val CELLS = 16000f
+        const val CELLS = 26000f
         const val FIRST_STRIDE = 16
-        const val EVALS = 11000
+        /** Leapfrog steps of background starts per frame: the whole map in about nine seconds. */
+        const val EVALS = 16000
         const val MAX_STEPS = 3000
         const val SHADES = 2
         const val FAST_STEPS = 330
@@ -406,7 +436,7 @@ class MagnetPendulumSim : Sim {
             heroLabel = "Drop it somewhere new",
             heroRestarts = false,
             defaultPalette = "Spectrum",
-            typicalSeconds = 20f,
+            typicalSeconds = 14f,
             params = listOf(
                 Param.int("magnets", "Magnets", 2, MAX_MAGNETS, 3, card = Card.DATA),
                 Param.float("drag", "Air drag", 0.08f, 0.5f, 0.2f, card = Card.DATA),
