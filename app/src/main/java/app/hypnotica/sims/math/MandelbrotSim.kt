@@ -1433,7 +1433,7 @@ class MandelbrotSim : Sim {
      * point needs no exponent, and a binary shift rounds where BigDecimal's
      * decimal rounding cost a division per multiply.
      */
-    internal object Fix {
+    object Fix {
         fun parse(s: String, bits: Int): BigInteger =
             BigDecimal(s).multiply(BigDecimal(BigInteger.ONE.shiftLeft(bits))).setScale(0, RoundingMode.HALF_EVEN).toBigIntegerExact()
 

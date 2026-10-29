@@ -316,10 +316,10 @@ class MetronomeSyncSim : Sim {
 
     companion object {
         const val MAX_N = 9
-        const val AMP = 0.6
+        @JvmField var AMP = 0.6
         /** van der Pol settles at about twice θ₀. */
-        const val THETA0 = AMP / 2
-        const val MU = 0.012
+        val THETA0 get() = AMP / 2
+        @JvmField var MU = 0.012
         const val PLANK_DRAG = 0.0
         const val CENTRING = 0.2
         const val SUBSTEPS = 2

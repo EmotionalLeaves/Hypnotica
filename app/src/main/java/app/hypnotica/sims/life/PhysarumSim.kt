@@ -49,6 +49,7 @@ class PhysarumSim : Sim {
     private var ax = FloatArray(0)
     private var ay = FloatArray(0)
     private var ah = FloatArray(0)
+    private var fed = FloatArray(0)   // 1 just after passing food, fading as the agent wanders
 
     private var foods = 0
     private val fx = FloatArray(MAX_FOOD)      // in cells
@@ -58,6 +59,7 @@ class PhysarumSim : Sim {
 
     // Scratch for the connectivity flood.
     private var label = IntArray(0)
+    private var foodNear = BooleanArray(0)
     private var queue = IntArray(0)
     private var dist = IntArray(0)              // network distance from the first food, for the finale
 
@@ -110,6 +112,12 @@ class PhysarumSim : Sim {
             placed++
         }
         foods = placed
+        foodNear = BooleanArray(gw * gh)
+        for (f in 0 until foods) for (dy in -4..4) for (dx in -4..4) {
+            if (dx * dx + dy * dy > 16) continue
+            val xx = fx[f].toInt() + dx; val yy = fy[f].toInt() + dy
+            if (xx in 0 until gw && yy in 0 until gh) foodNear[yy * gw + xx] = true
+        }
         for (i in 0 until foods) { group[i] = i; linkedAt[i] = -1f }
         groups = foods
 
@@ -117,7 +125,7 @@ class PhysarumSim : Sim {
         // calls for, so a wide screen gets the same density as a phone.
         val perCell = env.params.f("density", 0.32f).coerceIn(0.05f, 1.2f)
         n = (gw * gh * perCell).toInt().coerceIn(500, MAX_AGENTS)
-        ax = FloatArray(n); ay = FloatArray(n); ah = FloatArray(n)
+        ax = FloatArray(n); ay = FloatArray(n); ah = FloatArray(n); fed = FloatArray(n) { 1f }
         mean = n.toFloat() / (gw * gh) * DEPOSIT / DECAY
         for (i in 0 until n) {
             val f = i % foods
@@ -187,7 +195,15 @@ class PhysarumSim : Sim {
             }
             ax[i] = nx; ay[i] = ny; ah[i] = hd
             val k = ny.toInt() * w + nx.toInt()
-            t[k] += DEPOSIT
+            // Nutrient: an agent lays most chemical just after it has been at
+            // food, less the longer it wanders. Tubes between flakes are fed
+            // from both ends and hold; a tube to nowhere starves and withdraws,
+            // as a real mould retracts its fruitless branches. Without it the
+            // spare mould wore dead-end tubes out to the dish wall.
+            var fd = fed[i] * HUNGER
+            if (foodNear[k]) fd = 1f
+            fed[i] = fd
+            t[k] += DEPOSIT * (FED_FLOOR + (1f - FED_FLOOR) * fd)
         }
         // The food is a strong, steady smell.
         for (f in 0 until foods) {
@@ -387,6 +403,9 @@ class PhysarumSim : Sim {
         const val TICKS_PER_SECOND = 10f
         const val SENSE = 7f
         const val DEPOSIT = 5f
+        /** Per tick: an agent's nutrient halves in about forty ticks away from food. */
+        const val HUNGER = 0.983f
+        const val FED_FLOOR = 0.12f
         const val FOOD_SMELL = 3f
         const val WALL_ZONE = 14
         const val WALL_PUSH = 3f
