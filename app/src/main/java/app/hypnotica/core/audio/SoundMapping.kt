@@ -160,7 +160,16 @@ class SoundMapping(private val synth: Synth) {
         queue.drain(512) { kind, value, pan, strength ->
             seen++
             if (enabled.get(kind.ordinal) != 0) {
-                if (budget >= 1f) {
+                // The payoff always sounds on its own frame, as itself. Out of
+                // budget it used to be folded into a merged step note — the
+                // one sound the clip is built around arriving late, as
+                // something else, or not at all.
+                if (kind == EventKind.DONE) {
+                    flushMerged()
+                    budget = maxOf(0f, budget - 1f)
+                    play(kind, value, pan, strength, advanceSong = false)
+                    if (kind in FELT) onHaptic?.invoke(strength)
+                } else if (budget >= 1f) {
                     flushMerged()
                     budget -= 1f
                     // The end of a run doesn't take the tune's next note:
