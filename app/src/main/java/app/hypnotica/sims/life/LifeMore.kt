@@ -2,7 +2,14 @@ package app.hypnotica.sims.life
 
 import app.hypnotica.core.sim.SimDef
 
-/** Unfinished sims are kept out of builds until their tests pass. */
+/** The second wave of sims for this shelf; each sim lives in its own file. */
 object LifeMore {
-    fun defs(): List<SimDef> = listOf()
+    fun defs(): List<SimDef> = listOf(
+        PhysarumSim.def(),
+        ForestFireSim.def(),
+        AntColonySim.def(),
+        TruchetSim.def(),
+        KaleidoscopeSim.def(),
+        MengerSpongeSim.def()
+    )
 }
