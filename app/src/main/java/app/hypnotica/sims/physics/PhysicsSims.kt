@@ -34,7 +34,27 @@ class BallEscapeSim : Sim {
     private class Ball(
         var x: Float, var y: Float, var vx: Float, var vy: Float,
         var r: Float, var colorT: Float, var alive: Boolean = true
-    )
+    ) {
+        /** Through the outer gap and flying free; drawn until it leaves the screen. */
+        var out = false
+
+        /** Recent positions, a ring buffer, for the short motion trail. */
+        val trail = FloatArray(TRAIL * 2)
+        var head = 0
+        var filled = 0
+
+        fun record() {
+            trail[head * 2] = x; trail[head * 2 + 1] = y
+            head = (head + 1) % TRAIL
+            if (filled < TRAIL) filled++
+        }
+    }
+
+    /** The burst where a ball broke out: where, which colour, and how far it has spread (0..1). */
+    private var burstX = 0f
+    private var burstY = 0f
+    private var burstT = 0f
+    private var burstAge = 2f
 
     private val balls = ArrayList<Ball>()
 
@@ -75,7 +95,7 @@ class BallEscapeSim : Sim {
         rings = p.i("rings", 1).coerceIn(1, 12)
         sides = SHAPE_SIDES[p.choiceIndex("shape").coerceIn(0, SHAPE_SIDES.size - 1)]
         gapWidth = p.f("gap", 0.42f)
-        growth = 1f + p.f("growth", 1.1f) * 0.01f
+        growth = 1f + p.f("growth", 2.5f) * 0.01f
         speedUp = 1f + p.f("speedup", 3f) * 0.01f
         multiply = p.b("multiply", false)
         ringRadius = 0.92f
@@ -110,11 +130,21 @@ class BallEscapeSim : Sim {
         payoffFrame = false
         restSeconds = -1f
         runSeconds = 0f
+        burstAge = 2f
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         runSeconds += abs(dt)
+        burstAge += abs(dt)
+        // An escaped ball used to vanish the instant it crossed the ring, so
+        // the payoff was an empty circle. It now sails on out of the frame.
+        for (b in balls) {
+            if (!b.out) continue
+            b.x += b.vx * abs(dt)
+            b.y += b.vy * abs(dt)
+            b.record()
+        }
         if (restSeconds >= 0f) {
             restSeconds -= abs(dt)
             return
@@ -162,6 +192,7 @@ class BallEscapeSim : Sim {
                 b.y += b.vy * h / subs
                 collideRings(env, b)
             }
+            b.record()
         }
 
         if (balls.none { it.alive } && restSeconds < 0f) restSeconds = 1.2f
@@ -219,6 +250,10 @@ class BallEscapeSim : Sim {
                 } else if (ri == 0) {
                     // Outside the outer ring: escaped.
                     b.alive = false
+                    b.out = true
+                    if (escaped == 0) {
+                        burstX = b.x; burstY = b.y; burstT = b.colorT; burstAge = 0f
+                    }
                     escaped++
                     env.emit(EventKind.DONE, b.colorT, (b.x).coerceIn(-1f, 1f), 1f)
                     payoffFrame = true
@@ -322,9 +357,30 @@ class BallEscapeSim : Sim {
                 }
             }
         }
+        if (burstAge < BURST_SECONDS) {
+            val k = burstAge / BURST_SECONDS
+            val c = Palette.brighten(palette.at(burstT), 0.3f)
+            val ease = 1f - (1f - k) * (1f - k)
+            g.ring(burstX, burstY, 0.05f + 0.4f * ease, 0.006f, c, alpha = (1f - k) * 0.9f)
+            g.glow(burstX, burstY, 0.12f + 0.2f * ease, c, (1f - k) * 0.5f)
+        }
+        // Trails only while there are few balls; a split storm of 180 would
+        // otherwise be a thousand-odd ghost discs.
+        val trails = balls.size <= 24
         for (b in balls) {
-            if (!b.alive) continue
+            if (!b.alive && !b.out) continue
+            // Gone once it crosses the side of the frame (the frame is fitted
+            // to the ring's width) or well past the top or bottom.
+            if (b.out && (abs(b.x) + b.r > max(env.halfWidth, ringRadius + 0.04f) || abs(b.y) > 2.2f)) continue
             val c = palette.at(b.colorT)
+            if (trails && b.filled > 1) {
+                for (j in 1 until b.filled) {
+                    // Oldest first, so the newest ghost sits on top.
+                    val idx = (b.head - b.filled + j + TRAIL * 2) % TRAIL
+                    val f = j.toFloat() / b.filled
+                    g.disc(b.trail[idx * 2], b.trail[idx * 2 + 1], b.r * (0.35f + 0.5f * f), c, 0.06f + 0.22f * f)
+                }
+            }
             g.glow(b.x, b.y, b.r * 3.2f, c, 0.55f)
             g.disc(b.x, b.y, b.r, Palette.brighten(c, 0.15f))
         }
@@ -361,6 +417,8 @@ class BallEscapeSim : Sim {
 
     companion object {
         private const val TWO_PI = (PI * 2.0).toFloat()
+        private const val TRAIL = 9
+        private const val BURST_SECONDS = 0.9f
         private const val MAX_SPEED = 7.5f
         private const val GIVE_UP = 60f
         /** Sides for each Shape choice; 0 is a round ring. */
@@ -391,7 +449,9 @@ class BallEscapeSim : Sim {
                 Param.int("rings", "Rings", 1, 12, 1, card = Card.DATA),
                 Param.float("gap", "Gap", 0.12f, 1.6f, 0.42f, card = Card.DATA, unit = "rad"),
                 Param.float("speed0", "Start speed", 0.2f, 3f, 1.2f, card = Card.MOTION),
-                Param.float("growth", "Growth per hit", 0f, 5f, 1.1f, card = Card.MOTION, unit = "%"),
+                // 1.1% a hit grew the ball a tenth over a whole run: the "bigger every
+                // bounce" the blurb promises could not be seen.
+                Param.float("growth", "Growth per hit", 0f, 5f, 2.5f, card = Card.MOTION, unit = "%"),
                 Param.float("speedup", "Speed-up per hit", 0f, 5f, 3f, card = Card.MOTION, unit = "%"),
                 Param.float("spin", "Ring spin", 0f, 3f, 1f, card = Card.MOTION),
                 Param.bool("multiply", "Split on every hit", false, card = Card.MOTION)
@@ -424,6 +484,8 @@ class PendulumWaveSim : Sim {
 
     /** Which pendulums crossed this step; sounded in order after the slices. */
     private var crossedThisStep = BooleanArray(0)
+    private var curveX = FloatArray(0)
+    private var curveY = FloatArray(0)
     private var cyclePeriod = 30f
     private var swingAmplitude = 0.6f
     private var cycleNow = 30f
@@ -617,6 +679,21 @@ class PendulumWaveSim : Sim {
 
         val rowGap = if (count <= 1) 0f else top * 2f / (count - 1)
         val bob = (rowGap * 0.36f).coerceIn(0.008f, 0.034f)
+        // A thread through the bobs, so the snake, the braid and the snap back
+        // into one line read as a shape, not as loose dots. It brightens as the
+        // row comes together, which makes the realignment land visibly.
+        if (count >= 3) {
+            if (curveX.size < count) { curveX = FloatArray(count); curveY = FloatArray(count) }
+            var spread = 0f
+            for (i in 0 until count) {
+                curveX[i] = sin(angles[i]) * reach
+                curveY[i] = top - i.toFloat() / (count - 1) * top * 2f
+                spread = max(spread, abs(angles[i] - angles[0]))
+            }
+            val together = (1f - spread / max(1e-3f, 2f * swingAmplitude)).coerceIn(0f, 1f)
+            val k = together * together * together * together
+            g.polyline(curveX, curveY, count, 0.003f + 0.003f * k, Palette.TEXT_PRIMARY, 0.1f + 0.45f * k)
+        }
         for (i in 0 until count) {
             val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
             val y = if (count <= 1) 0f else top - t * top * 2f
@@ -704,6 +781,8 @@ class NewtonsCradleSim : Sim {
     private var n = 5
     private val pos = FloatArray(16)
     private val vel = FloatArray(16)
+    /** A spark at each contact, lit by a click and fading. */
+    private val spark = FloatArray(16)
     private var radius = 0.075f
     private var payoffFrame = false
     private var clicks = 0L
@@ -716,11 +795,12 @@ class NewtonsCradleSim : Sim {
         payoffDone = false
         stillSeconds = 0f
         n = env.params.i("count", 5).coerceIn(3, 9)
-        radius = (0.62f / n).coerceIn(0.03f, 0.09f)
+        radius = (0.62f / n).coerceIn(0.03f, 0.1f)
         val lift = env.params.i("lift", 1).coerceIn(1, n - 1)
         for (i in 0 until n) {
             pos[i] = 0f
             vel[i] = 0f
+            spark[i] = 0f
         }
         for (i in 0 until lift) {
             pos[i] = -env.params.f("swing", 0.55f)
@@ -742,8 +822,9 @@ class NewtonsCradleSim : Sim {
             return
         }
         stillSeconds = 0f
-        val l = 1.1f
+        val l = STRING
         val damping = 1f - (env.laws.friction * abs(dt) * 0.1f).coerceIn(0f, 0.02f)
+        for (i in 0 until n) spark[i] = max(0f, spark[i] - abs(dt) * 7f)
 
         for (i in 0 until n) {
             val acc = -(g / l) * sin(pos[i])
@@ -757,7 +838,12 @@ class NewtonsCradleSim : Sim {
             val xj = pos[i + 1] * l
             val gap = (xj + (i + 1) * spacing) - (xi + i * spacing)
             if (gap < spacing * 0.999f && vel[i] > vel[i + 1]) {
-                val e = env.laws.bounce.coerceIn(0f, 1.05f)
+                // The world's bounce is a rubber-ball 0.88 by default. Hardened
+                // steel is nearer 0.97, and at 0.88 each click through the row
+                // left a remainder on every ball: by the third swing all five
+                // swung together and the one-out-one-out the cradle is known by
+                // was gone before the payoff. The slider still moves it.
+                val e = (1f - (1f - env.laws.bounce) * 0.25f).coerceIn(0f, 1.05f)
                 val vi = vel[i]
                 val vj = vel[i + 1]
                 if (env.laws.sticky) {
@@ -776,6 +862,7 @@ class NewtonsCradleSim : Sim {
                     vel[i + 1] = vj + share
                 }
                 clicks++
+                spark[i] = min(1f, spark[i] + abs(vi - vj) * 1.5f)
                 env.emit(EventKind.HIT, i.toFloat() / max(1, n - 1), 0f, 0.8f)
                 // A handful of clean transfers first, so the payoff is the rhythm
                 // being established rather than the very first click.
@@ -792,23 +879,49 @@ class NewtonsCradleSim : Sim {
      * momentum kept, the end balls go out as far as the first was lifted.
      */
     override fun frameHalfWidth(env: SimEnv): Float =
-        (n - 1) * radius + radius + sin(abs(env.params.f("swing", 0.55f)).coerceAtMost(PI.toFloat() / 2f)) * 1.1f
+        (n - 1) * radius + radius + sin(abs(env.params.f("swing", 0.55f)).coerceAtMost(PI.toFloat() / 2f)) * STRING
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val spacing = radius * 2f
-        val top = 0.9f
-        val l = 1.1f
+        // Centred on the screen: hung from 0.9 the row sat above the middle
+        // of a tall screen with all the empty space below it.
+        val top = 0.45f
+        val l = STRING
         val startX = -(n - 1) * spacing * 0.5f
-        g.line(startX - 0.1f, top, startX + (n - 1) * spacing + 0.1f, top, 0.008f, Palette.TEXT_SECONDARY, 0.4f)
+        val dim = Palette.TEXT_SECONDARY
+        val barHalf = (n - 1) * spacing * 0.5f + radius + 0.06f
+        g.line(-barHalf, top, barHalf, top, 0.012f, dim, 0.55f)
+        g.disc(-barHalf, top, 0.012f, dim, 0.55f)
+        g.disc(barHalf, top, 0.012f, dim, 0.55f)
+        // A polished base under the row, with the balls faintly reflected in it.
+        val floorY = top - l - radius - 0.09f
+        val reach = sin(abs(env.params.f("swing", 0.55f)).coerceAtMost(PI.toFloat() / 2f)) * l
+        val floorHalf = (n - 1) * spacing * 0.5f + radius + reach * 0.8f
+        g.line(-floorHalf, floorY, floorHalf, floorY, 0.006f, dim, 0.35f)
         for (i in 0 until n) {
             val anchorX = startX + i * spacing
             val bx = anchorX + sin(pos[i]) * l
             val by = top - cos(pos[i]) * l
             val c = palette.at(i.toFloat() / max(1, n - 1))
-            g.line(anchorX, top, bx, by, 0.003f, Palette.TEXT_SECONDARY, 0.4f)
-            g.glow(bx, by, radius * 2.6f, c, 0.4f)
+            g.disc(bx, 2f * floorY - by, radius * 0.92f, c, 0.12f)
+        }
+        for (i in 0 until n) {
+            val anchorX = startX + i * spacing
+            val bx = anchorX + sin(pos[i]) * l
+            val by = top - cos(pos[i]) * l
+            val c = palette.at(i.toFloat() / max(1, n - 1))
+            g.line(anchorX, top, bx, by, 0.003f, dim, 0.5f)
+            g.glow(bx, by, radius * 2.2f, c, 0.3f)
             g.disc(bx, by, radius, c)
+            // A highlight, so the balls read as polished spheres, not flat dots.
+            g.disc(bx - radius * 0.35f, by + radius * 0.35f, radius * 0.28f, Palette.TEXT_PRIMARY, 0.35f)
+        }
+        for (i in 0 until n - 1) {
+            if (spark[i] < 0.02f) continue
+            val x0 = startX + i * spacing + sin(pos[i]) * l
+            val y0 = top - cos(pos[i]) * l
+            g.glow(x0 + radius, y0, radius * 1.4f, Palette.TEXT_PRIMARY, 0.6f * spark[i])
         }
     }
 
@@ -821,6 +934,12 @@ class NewtonsCradleSim : Sim {
         else listOf("clicks" to clicks.toString())
 
     companion object {
+        /**
+         * String length. It was 1.1, six ball widths: the view must take in the
+         * end ball's full swing, so long strings left a small cradle in a big
+         * empty screen. Real cradles hang theirs about four or five widths long.
+         */
+        const val STRING = 0.8f
         /** How long a still cradle is allowed to last before the run gives up. */
         const val STILL_SECONDS = 2.5f
 
@@ -852,30 +971,47 @@ class NewtonsCradleSim : Sim {
 
 /** A Galton board: beads fall through pegs and pile into a bell curve. */
 class GaltonBoardSim : Sim {
-
     private class Bead(
         var x: Float,
         var y: Float,
         var vy: Float,
         var bin: Int,
         var colorT: Float,
-        var settled: Boolean,
         /** Its way down: bit k set means right at peg row k. */
         var turns: Int = 0
     ) {
-        /** Which peg row it has passed, so each one can be heard and seen. */
-        var row = 0
+        /** The last peg row it has struck, so each knock is heard and seen once. */
+        var row = -1
 
-        /** Decays after a peg, for the visual knock. */
-        var bounce = 0f
+        /** Its place in the bin's stack, taken as it leaves the last peg. */
+        var slot = -1
     }
 
+    /** Only the beads still falling; settled ones live in [bins] and [binColors]. */
     private val beads = ArrayList<Bead>()
     private var bins = IntArray(21)
+
+    /** Slots handed out per bin (a bead takes one before it lands). */
+    private var reserved = IntArray(21)
+
+    /** The colour of every settled bead, by bin and slot, so the pile keeps its strata. */
+    private var binColors = Array(21) { FloatArray(0) }
     private var rows = 10
 
-    /** Height of one bead in the pile, scaled so a full board fits on screen. */
-    private var pileStep = 0.012f
+    // Layout, worked out in setup from the screen and the counts.
+    private var spacing = 0.07f
+    private var rowGap = 0.08f
+    private var pegR = 0.007f
+
+    /** The pitch of one bead in a bin's stack, and how many sit side by side. */
+    private var cell = 0.02f
+    private var cellY = 0.02f
+    private var cols = 3
+    private var beadR = 0.009f
+    private var fallR = 0.009f
+
+    /** Each peg lights when struck, one slot per peg, row by row. */
+    private var pegFlash = FloatArray(0)
 
     /** Only a sample of peg knocks becomes a note. */
     private var pegVoice = 0
@@ -888,6 +1024,7 @@ class GaltonBoardSim : Sim {
     private var restSeconds = -1f
     private var curveDone = false
     private var stillSeconds = 0f
+    private var doneGlow = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -895,6 +1032,7 @@ class GaltonBoardSim : Sim {
         rows = p.i("rows", 10).coerceIn(4, 20)
         total = p.i("beads", 400).coerceIn(10, 20000)
         bins = IntArray(rows + 1)
+        reserved = IntArray(rows + 1)
         beads.clear()
         dropped = 0
         dropTimer = 0f
@@ -902,16 +1040,58 @@ class GaltonBoardSim : Sim {
         peak = 1
         restSeconds = -1f
         curveDone = false
-        // A tall board with twenty thousand beads would pile far off screen,
-        // and twenty thousand knocks a second is a hiss, so both are scaled.
-        val expectedPerBin = max(1f, total.toFloat() / max(1, rows + 1))
-        pileStep = (0.5f / expectedPerBin).coerceIn(0.0012f, 0.02f)
+        doneGlow = 0f
         pegVoice = 0
         pegVoiceEvery = max(1, total / 400)
+
+        rowGap = (PEG_TOP - BIN_TOP) / rows
+        // On a wide screen the width alone would stretch the triangle flat;
+        // the gap is held near the row pitch so the pegs stay a lattice.
+        spacing = min((1.7f * env.halfWidth) / (rows + 1), rowGap * 1.3f)
+        pegR = min(0.009f, spacing * 0.13f)
+        pegFlash = FloatArray(rows * (rows + 1) / 2)
+
+        // The pile used to be one column of beads at a fixed step, so the middle
+        // bin of a 400-bead board towered past the pegs to the top of the screen.
+        // Beads now pack side by side, and the pitch is chosen so the tallest
+        // bin we expect (the centre bin, plus a 2.5 sigma margin) fills the bin.
+        val binW = spacing * 0.86f
+        val centre = total * centreProbability(rows)
+        val expectPeak = centre + 2.5f * sqrt(centre) + 1f
+        val fit = sqrt((BIN_TOP - FLOOR - 0.03f) * binW / expectPeak)
+        val maxCell = min(binW * 0.5f, 0.055f)
+        cols = max(1, kotlin.math.ceil(binW / min(fit, maxCell)).toInt())
+        cell = binW / cols
+        // Rounding the column count up leaves the stack short of the bin top,
+        // so the rows are let out a little (never more than a quarter) to fill it.
+        val stackRows = kotlin.math.ceil(expectPeak / cols)
+        cellY = ((BIN_TOP - FLOOR - 0.03f) / stackRows).coerceIn(cell, cell * 1.25f)
+        beadR = cell * 0.44f
+        fallR = (cell * 0.44f).coerceIn(0.0065f, spacing * 0.24f)
+        val cap = (expectPeak * 1.3f).toInt() + cols
+        binColors = Array(rows + 1) { FloatArray(cap) }
     }
+
+    /** C(n, n/2) / 2^n: the share of beads the centre bin gets. */
+    private fun centreProbability(n: Int): Float {
+        var pr = 1.0
+        val k = n / 2
+        for (i in 1..k) pr = pr * (n - k + i) / i
+        for (i in 0 until n) pr *= 0.5
+        return pr.toFloat()
+    }
+
+    private fun binX(i: Int): Float = (i - rows * 0.5f) * spacing
+
+    private fun slotX(bin: Int, slot: Int): Float =
+        binX(bin) - spacing * 0.43f + ((slot % cols) + 0.5f) * cell
+
+    private fun slotY(slot: Int): Float = FLOOR + ((slot / cols) + 0.5f) * cellY
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        for (i in pegFlash.indices) pegFlash[i] = max(0f, pegFlash[i] - abs(dt) * 5f)
+        if (curveDone) doneGlow = min(1f, doneGlow + abs(dt) * 2f)
         if (restSeconds >= 0f) {
             restSeconds -= abs(dt)
             return
@@ -926,11 +1106,11 @@ class GaltonBoardSim : Sim {
             var bin = 0
             var turns = 0
             for (r in 0 until rows) if (env.rng.bool()) { bin++; turns = turns or (1 shl r) }
-            beads.add(Bead(0f, 0.95f, 0f, bin, env.rng.nextFloat(), false, turns))
+            // Coloured by when it fell, so the finished pile shows its layers.
+            beads.add(Bead(0f, SPAWN_Y, -0.45f, bin, 0.9f * dropped / max(1, total - 1), turns))
             dropped++
         }
 
-        val targetSpacing = (1.7f * env.halfWidth) / (rows + 1)
         val g = 1.6f * (env.laws.gravity / 9.81f)
         // Nothing falls without gravity, and nothing ever settles, so the run
         // would never finish and the feed would never move on.
@@ -939,52 +1119,71 @@ class GaltonBoardSim : Sim {
             return
         }
         stillSeconds = 0f
-        var active = 0
+        // The bead rides on top of each peg it strikes, not through its middle.
+        val contact = pegR + fallR
+        var landed = false
         for (b in beads) {
-            if (b.settled) continue
-            active++
             b.vy -= g * dt
+            // Pegs bleed off speed on every knock, so a real bead crosses the
+            // board at a roughly steady pace instead of whipping through the
+            // bottom rows; the cap stands in for that.
+            b.vy = b.vy.coerceIn(-MAX_FALL, MAX_FALL)
             b.y += b.vy * dt
-            // Drift sideways towards the chosen bin as it falls, one peg row at
-            // a time: a bead that slid along a straight line never touched a peg,
-            // which is the whole picture the board is meant to show.
             // A real walk: at each peg it goes half a gap left or right, as
-            // its coin said, so it passes between the pegs below. It used to
-            // slide straight at its bin, a fifth of a gap per row, and beads
-            // bound for the middle went through the pegs.
-            val fallRows = ((PEG_TOP - b.y) / (1.5f / rows)).coerceIn(0f, rows.toFloat())
+            // its coin said, so it lands on the peg below. It used to slide
+            // straight at its bin and beads bound for the middle went through
+            // the pegs.
+            val fallRows = (PEG_TOP + contact - b.y) / rowGap
             val rowNow = fallRows.toInt().coerceIn(0, rows)
-            val frac = fallRows - rowNow
-            fun pegX(k: Int): Float = (Integer.bitCount(b.turns and ((1 shl k) - 1)) - k * 0.5f) * targetSpacing
-            val from = pegX(rowNow)
-            val to = if (rowNow < rows) pegX(rowNow + 1) else from
-            b.x = from + (to - from) * (frac * frac * (3f - 2f * frac))
-            if (rowNow > b.row) {
+            val frac = (fallRows - rowNow).coerceIn(0f, 1f)
+            fun pegX(k: Int): Float = (Integer.bitCount(b.turns and ((1 shl k) - 1)) - k * 0.5f) * spacing
+            if (fallRows < 0f) {
+                b.x = 0f
+            } else if (rowNow < rows) {
+                val from = pegX(rowNow)
+                val to = pegX(rowNow + 1)
+                b.x = from + (to - from) * (frac * frac * (3f - 2f * frac))
+            }
+            if (fallRows >= 0f && rowNow > b.row && b.row < rows) {
                 b.row = rowNow
-                b.bounce = 1f
-                if (pegVoice++ % pegVoiceEvery == 0) {
-                    env.emit(
-                        EventKind.STEP,
-                        (rowNow.toFloat() / rows).coerceIn(0f, 1f),
-                        b.x.coerceIn(-1f, 1f),
-                        0.22f
-                    )
+                if (rowNow < rows) {
+                    val c = Integer.bitCount(b.turns and ((1 shl rowNow) - 1))
+                    pegFlash[rowNow * (rowNow + 1) / 2 + c] = 1f
+                    if (pegVoice++ % pegVoiceEvery == 0) {
+                        env.emit(
+                            EventKind.STEP,
+                            (rowNow.toFloat() / rows).coerceIn(0f, 1f),
+                            b.x.coerceIn(-1f, 1f),
+                            0.22f
+                        )
+                    }
                 }
             }
-            b.bounce = max(0f, b.bounce - abs(dt) * 6f)
-            // The pile is scaled so a full board still fits on screen.
-            val floor = -0.78f + bins[b.bin] * pileStep
-            if (b.y <= floor) {
-                b.y = floor
-                b.settled = true
-                bins[b.bin]++
-                if (bins[b.bin] > peak) peak = bins[b.bin]
-                env.emit(EventKind.HIT, b.bin.toFloat() / rows, (b.x).coerceIn(-1f, 1f), 0.5f)
+            if (rowNow >= rows) {
+                // Past the last peg: take a place in the bin and drift to it
+                // while dropping, so the stack fills in tidy rows.
+                if (b.slot < 0) b.slot = reserved[b.bin]++
+                val top = PEG_TOP - rows * rowGap
+                val sy = slotY(b.slot)
+                val t = ((top - b.y) / max(1e-3f, top - sy)).coerceIn(0f, 1f)
+                b.x = binX(b.bin) + (slotX(b.bin, b.slot) - binX(b.bin)) * t
+                if (b.y <= sy) {
+                    b.y = sy
+                    val arr = binColors[b.bin]
+                    if (b.slot >= arr.size) binColors[b.bin] = arr.copyOf(max(b.slot + 1, arr.size * 2))
+                    binColors[b.bin][b.slot] = b.colorT
+                    bins[b.bin]++
+                    if (bins[b.bin] > peak) peak = bins[b.bin]
+                    landed = true
+                    b.row = Int.MAX_VALUE
+                    env.emit(EventKind.HIT, b.bin.toFloat() / rows, b.x.coerceIn(-1f, 1f), 0.5f)
+                }
             }
         }
+        if (landed) beads.removeAll { it.row == Int.MAX_VALUE }
         // The payoff is the finished bell curve. Hold it on screen for a moment
         // before the run resolves, or nobody ever sees the shape they waited for.
-        if (dropped >= total && active == 0 && !curveDone) {
+        if (dropped >= total && beads.isEmpty() && !curveDone) {
             curveDone = true
             payoffFrame = true
             restSeconds = 1.5f
@@ -994,31 +1193,67 @@ class GaltonBoardSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val spacing = (1.7f * env.halfWidth) / (rows + 1)
-        // Pegs
+        val dim = Palette.TEXT_SECONDARY
+        val half = (rows + 1) * spacing * 0.5f
+        val top = PEG_TOP - rows * rowGap
+        // The hopper the beads pour from.
+        g.line(-0.07f, SPAWN_Y + 0.05f, -0.016f, SPAWN_Y - 0.03f, 0.004f, dim, 0.55f)
+        g.line(0.07f, SPAWN_Y + 0.05f, 0.016f, SPAWN_Y - 0.03f, 0.004f, dim, 0.55f)
+        // Pegs: dim studs that light up in the colour of the bead striking them.
+        var pi = 0
         for (r in 0 until rows) {
-            val y = PEG_TOP - r * (1.5f / rows)
+            val y = PEG_TOP - r * rowGap
             for (c in 0..r) {
                 val x = (c - r * 0.5f) * spacing
-                g.disc(x, y, 0.006f, Palette.TEXT_SECONDARY, 0.5f)
+                val f = pegFlash[pi++]
+                if (f > 0.02f) g.glow(x, y, spacing * 0.32f, palette.at(0.9f * dropped / max(1, total - 1)), f * 0.35f)
+                g.disc(x, y, pegR, Palette.lerp(dim, Palette.TEXT_PRIMARY, f), 0.55f + 0.45f * f)
             }
         }
+        // Bin walls and floor.
+        for (i in 0..rows + 1) {
+            val x = -half + i * spacing
+            g.line(x, FLOOR, x, top, 0.003f, dim, 0.35f)
+        }
+        g.line(-half - 0.0015f, FLOOR - 0.0015f, half + 0.0015f, FLOOR - 0.0015f, 0.003f, dim, 0.5f)
+
+        // The settled beads. Small beads are drawn a full row at a time as one
+        // strip, so twenty thousand of them stay a few hundred shapes.
+        val strips = cols >= 6
+        for (i in 0..rows) {
+            val n = bins[i]
+            val colors = binColors[i]
+            if (strips) {
+                val full = n / cols
+                for (rIdx in 0 until full) {
+                    val y = FLOOR + (rIdx + 0.5f) * cellY
+                    g.rect(binX(i), y, spacing * 0.43f, cellY * 0.42f, palette.at(colors[rIdx * cols]))
+                }
+                for (s in full * cols until n) g.disc(slotX(i, s), slotY(s), beadR, palette.at(colors[s]))
+            } else {
+                for (s in 0 until n) g.disc(slotX(i, s), slotY(s), beadR, palette.at(colors[s]))
+            }
+        }
+        // The falling beads, each with a small halo so the stream reads.
         for (b in beads) {
             val c = palette.at(b.colorT)
-            // A bead that has just passed a peg flashes and spreads, so the
-            // knock is seen as well as heard.
-            if (b.bounce > 0.01f) {
-                g.glow(b.x, b.y, 0.03f + b.bounce * 0.05f, Palette.brighten(c, 0.3f), b.bounce * 0.7f)
-            }
-            g.disc(b.x, b.y, 0.012f + b.bounce * 0.004f, c)
+            if (beads.size < 300) g.glow(b.x, b.y, fallR * 2.6f, c, 0.35f)
+            g.disc(b.x, b.y, fallR, Palette.brighten(c, 0.2f))
         }
-        // The curve the bins are making.
-        for (i in bins.indices) {
-            if (bins[i] == 0) continue
-            val x = (i - rows * 0.5f) * spacing
-            val h = (bins[i].toFloat() / max(1, peak)) * 0.5f
-            g.bar(x, -0.95f, spacing * 0.42f, h, Palette.withAlpha(palette.at(i.toFloat() / rows), 0.45f))
+        // The bell curve the bins are heading for: total x the normal density,
+        // in stacked-bead height. Faint as a target, bright once it is matched.
+        val sigma = sqrt(rows.toFloat()) * 0.5f
+        val samples = 64
+        val xs = FloatArray(samples)
+        val ys = FloatArray(samples)
+        for (k in 0 until samples) {
+            val u = -0.5f + (rows + 1f) * k / (samples - 1)
+            val z = (u - rows * 0.5f) / sigma
+            val expected = total * kotlin.math.exp(-0.5f * z * z) / (sigma * sqrt(2f * PI.toFloat()))
+            xs[k] = (u - rows * 0.5f) * spacing
+            ys[k] = min(top, FLOOR + expected / cols * cellY)
         }
+        g.polyline(xs, ys, samples, 0.004f + 0.002f * doneGlow, Palette.TEXT_PRIMARY, 0.22f + 0.6f * doneGlow)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -1037,7 +1272,13 @@ class GaltonBoardSim : Sim {
         /** How long a still board is allowed to last before the run gives up. */
         const val STILL_SECONDS = 2.5f
         /** The first row of pegs. */
-        const val PEG_TOP = 0.82f
+        const val PEG_TOP = 0.80f
+        /** Where the last peg row hands each bead to its bin. */
+        const val BIN_TOP = -0.04f
+        const val FLOOR = -0.93f
+        const val SPAWN_Y = 0.92f
+        /** Steady crossing speed through the pegs, in world units a second. */
+        const val MAX_FALL = 1.1f
 
         fun def(): SimDef = SimDef(
             id = "physics/galton-board",

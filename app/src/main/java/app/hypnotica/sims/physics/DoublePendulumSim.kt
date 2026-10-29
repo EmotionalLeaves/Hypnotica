@@ -213,31 +213,43 @@ class DoublePendulumSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val arm = ARM
-        if (count > DRAWN_AS_POINTS) {
-            g.reservePoints(count * 2)
-            val size = (0.012f - count / 2_000_000f).coerceIn(0.004f, 0.012f)
-            for (i in 0 until count) {
-                val t = i.toFloat() / (count - 1)
-                val c = palette.at(t)
-                val x1 = (sin(a1[i]) * arm).toFloat()
-                val y1 = (-cos(a1[i]) * arm).toFloat()
-                val x2 = x1 + (sin(a2[i]) * arm).toFloat()
-                val y2 = y1 + (-cos(a2[i]) * arm).toFloat()
-                g.point(x1, y1, size * 0.6f, Palette.withAlpha(c, 0.35f))
-                g.point(x2, y2, size, c)
-            }
-        } else {
-            for (i in 0 until count) {
-                val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
-                val c = palette.at(t)
-                val x1 = (sin(a1[i]) * arm).toFloat()
-                val y1 = (-cos(a1[i]) * arm).toFloat()
-                val x2 = x1 + (sin(a2[i]) * arm).toFloat()
-                val y2 = y1 + (-cos(a2[i]) * arm).toFloat()
-                val faint = if (count > 40) 0.18f else 0.5f
-                g.line(0f, 0f, x1, y1, 0.004f, c, faint)
+        // The arms are always drawn. Above three hundred pendulums only the
+        // bobs were, as dots — and before the split all six hundred sit on one
+        // spot, so for the first ten seconds the screen showed a single speck
+        // and no pendulum at all. Faint arms stacked on each other read as one
+        // solid pendulum until they part, then as the fan.
+        val armEvery = max(1, count / MAX_ARMS)
+        val drawn = (count + armEvery - 1) / armEvery
+        val faint = (3f / sqrt(drawn.toFloat())).coerceIn(0.05f, 0.6f)
+        val asPoints = count > DRAWN_AS_POINTS
+        g.reserveInstances(drawn * 2 + (if (asPoints) 0 else count) + 2)
+        if (asPoints) g.reservePoints(count)
+        val bob = if (count > 40) 0.01f else 0.022f
+        val size = (0.014f - count / 2_000_000f).coerceIn(0.005f, 0.014f)
+        var i = 0
+        while (i < count) {
+            val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
+            val c = palette.at(t)
+            val x1 = (sin(a1[i]) * arm).toFloat()
+            val y1 = (-cos(a1[i]) * arm).toFloat()
+            val x2 = x1 + (sin(a2[i]) * arm).toFloat()
+            val y2 = y1 + (-cos(a2[i]) * arm).toFloat()
+            if (i % armEvery == 0) {
+                g.line(0f, 0f, x1, y1, 0.005f, c, faint)
                 g.line(x1, y1, x2, y2, 0.004f, c, faint)
-                g.disc(x2, y2, if (count > 40) 0.009f else 0.02f, c)
+            }
+            if (asPoints) g.point(x2, y2, size, c) else g.disc(x2, y2, bob, c)
+            i++
+        }
+        // The first and the last pendulum, the two furthest apart at the
+        // start, marked: one bright bob while they agree, two once they part.
+        if (count > 1) {
+            for (k in intArrayOf(0, count - 1)) {
+                val c = palette.at(if (k == 0) 0f else 1f)
+                val x2 = (sin(a1[k]) * arm + sin(a2[k]) * arm).toFloat()
+                val y2 = (-cos(a1[k]) * arm - cos(a2[k]) * arm).toFloat()
+                g.glow(x2, y2, 0.07f, c, 0.45f)
+                g.disc(x2, y2, 0.018f, Palette.brighten(c, 0.3f))
             }
         }
         g.disc(0f, 0f, 0.012f, Palette.TEXT_SECONDARY, 0.8f)
@@ -277,7 +289,9 @@ class DoublePendulumSim : Sim {
         const val SPLIT_GROWTH = 4f
         const val NEVER_SPLITS_SECONDS = 40f
         const val MAX_PENDULUMS = 20_000
-        const val DRAWN_AS_POINTS = 300
+        const val DRAWN_AS_POINTS = 2000
+        /** At most this many pendulums have their arms drawn; the rest are sampled. */
+        const val MAX_ARMS = 800
         const val VOICES = 40
         const val SPREAD_SAMPLES = 256
 

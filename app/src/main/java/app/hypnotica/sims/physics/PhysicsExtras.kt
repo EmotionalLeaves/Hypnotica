@@ -42,6 +42,8 @@ class NBodySim : Sim {
     private var accX = FloatArray(0)
     private var accY = FloatArray(0)
     private var tint = FloatArray(0)
+    /** Drawn size, fixed from the mass before the disc's masses are scaled. */
+    private var dotSize = FloatArray(0)
     private var trailX = FloatArray(0)
     private var trailY = FloatArray(0)
     private var trailTint = FloatArray(0)
@@ -51,6 +53,10 @@ class NBodySim : Sim {
     private var payoffFrame = false
     private var centralMass = 0f
     private var collapsed = false
+
+    /** How far round the centre each body has gone, for the arms payoff. */
+    private var lastAngle = FloatArray(0)
+    private var swept = FloatArray(0)
 
     /**
      * How far out the bulk of the system reaches, so the view can pull back to
@@ -68,8 +74,9 @@ class NBodySim : Sim {
         centralMass = p.f("central", 60f)
         px = FloatArray(n); py = FloatArray(n)
         vx = FloatArray(n); vy = FloatArray(n)
-        mass = FloatArray(n); tint = FloatArray(n)
+        mass = FloatArray(n); tint = FloatArray(n); dotSize = FloatArray(n)
         accX = FloatArray(n); accY = FloatArray(n)
+        lastAngle = FloatArray(n); swept = FloatArray(n)
         val trail = p.i("trail", 4000).coerceIn(0, 40000)
         trailX = FloatArray(max(1, trail))
         trailY = FloatArray(max(1, trail))
@@ -87,10 +94,19 @@ class NBodySim : Sim {
         for (i in 0 until n) {
             if (disc) {
                 // A rotating disc, which is what makes spiral structure appear.
-                val r = (0.12f + sqrt(env.rng.nextFloat()) * 0.78f) * discScale
+                // An annulus rather than a disc down to the centre: the
+                // innermost bodies went round ten times for each outer orbit and
+                // smeared any pattern into stripes before it could be seen.
+                val r = (0.36f + sqrt(env.rng.nextFloat()) * 0.56f) * discScale
                 val a = env.rng.range(0f, 2f * PI.toFloat())
                 px[i] = cos(a) * r
                 py[i] = sin(a) * r
+                // Coloured by where round the disc it starts, in two matching
+                // halves: the disc turns faster inside than out, and that shear
+                // winds the colour bands into trailing spiral arms you can see,
+                // which the speckle of random colours never showed.
+                val turn = a / (2f * PI.toFloat())
+                tint[i] = abs(((turn * 2f) % 2f) - 1f)
                 // Speeds are set below, once every body is placed.
                 vx[i] = -sin(a)
                 vy[i] = cos(a)
@@ -101,7 +117,24 @@ class NBodySim : Sim {
                 vy[i] = env.rng.range(-0.05f, 0.05f)
             }
             mass[i] = env.rng.range(0.6f, 1.4f)
-            tint[i] = env.rng.nextFloat()
+            if (!disc) tint[i] = env.rng.nextFloat()
+            dotSize[i] = 0.007f + mass[i] * 0.003f
+        }
+        // A disc six times heavier than its centre is a cold self-gravitating
+        // sheet: within two seconds it broke into clumps, collapsed and flung
+        // a quarter of itself away, so the view pulled back to specks. Galaxy
+        // discs are held by their centre; at a third of its mass the disc
+        // still pulls on itself, but differential rotation shears its clumps
+        // into trailing arms, which is what the sim promises.
+        if (disc && centralMass > 0f) {
+            var sum = 0f
+            for (i in 0 until n) sum += mass[i]
+            val k = min(1f, DISC_SHARE * centralMass / max(1e-3f, sum))
+            for (i in 0 until n) mass[i] *= k
+        }
+        for (i in 0 until n) {
+            lastAngle[i] = atan2(py[i], px[i])
+            swept[i] = 0f
         }
         if (disc) {
             // Each body at the speed of a circle under the pull it actually
@@ -234,9 +267,23 @@ class NBodySim : Sim {
         }
 
         var inner = 0
-        for (i in 0 until n) if (hypot(px[i], py[i]) < 0.3f) inner++
+        var wound = 0
+        for (i in 0 until n) {
+            if (hypot(px[i], py[i]) < 0.3f) inner++
+            val a = atan2(py[i], px[i])
+            var d = a - lastAngle[i]
+            if (d > PI.toFloat()) d -= 2f * PI.toFloat()
+            if (d < -PI.toFloat()) d += 2f * PI.toFloat()
+            swept[i] += abs(d)
+            lastAngle[i] = a
+            if (swept[i] > WOUND_ANGLE) wound++
+        }
         env.emit(EventKind.STEP, (inner.toFloat() / n).coerceIn(0f, 1f), 0f, 0.3f)
-        if (!collapsed && elapsed > 8f && inner > n * 0.45f) {
+        // Two endings: a cloud that falls together, or a disc whose bodies
+        // have mostly gone one and a half times round, by which time the
+        // shear has wound its clumps into arms. Measured, not timed, so a
+        // still universe never claims either.
+        if (!collapsed && ((elapsed > 8f && inner > n * 0.45f) || wound > n * 0.6f)) {
             collapsed = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.85f, 0f, 1f)
@@ -251,14 +298,14 @@ class NBodySim : Sim {
             val age = k.toFloat() / trailFill
             g.point(
                 trailX[idx], trailY[idx], 0.0035f,
-                Palette.withAlpha(palette.at(trailTint[idx]), (1f - age) * 0.4f)
+                Palette.withAlpha(palette.at(trailTint[idx]), (1f - age) * 0.22f)
             )
         }
         for (i in 0 until n) {
-            g.point(px[i], py[i], 0.006f + mass[i] * 0.003f, palette.at(tint[i]))
+            g.point(px[i], py[i], dotSize[i], palette.at(tint[i]))
         }
         if (centralMass > 0f) {
-            g.glow(0f, 0f, 0.2f, Palette.WARNING, 0.5f)
+            g.glow(0f, 0f, 0.16f, Palette.WARNING, 0.4f)
             g.disc(0f, 0f, 0.035f, Palette.brighten(Palette.WARNING, 0.3f))
         }
     }
@@ -273,6 +320,9 @@ class NBodySim : Sim {
 
     companion object {
         const val SOFTENING = 0.01f
+        /** The disc's mass as a share of the centre's. */
+        private const val DISC_SHARE = 0.35f
+        private const val WOUND_ANGLE = (3.0 * PI).toFloat()
         /** The gravitational constant in this sim's units. */
         const val G_SCALE = 0.0016f
         private const val REACH_SAMPLES = 512
@@ -316,6 +366,9 @@ class NBodySim : Sim {
 class GearsSim : Sim {
 
     private class Gear(val x: Float, val y: Float, val radius: Float, val teeth: Int, val dir: Float, val tint: Float) {
+        /** Tooth height either side of the pitch circle, and the pitch along it. */
+        var addendum = 0f
+        var pitch = 0f
         var angle = 0f
         /** Its turn at the start, set so its teeth sit in its neighbour's gaps. */
         var base = 0f
@@ -357,8 +410,15 @@ class GearsSim : Sim {
         }
         var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE
         var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+        // Every gear shares one tooth pitch, so every tooth is the same size.
+        // They were drawn at a fixed share of each gear's radius instead —
+        // big wheels with fat teeth, small ones with thin — and stuck out a
+        // sixth of a radius past the pitch circle, deep into the next gear's
+        // rim, so neighbours overlapped instead of meshing.
+        val pitch0 = 2f * toothSize
+        val addendum0 = pitch0 / PI.toFloat() * 0.85f
         for (i in 0 until count) {
-            val reach = radii[i] * TOOTH_REACH
+            val reach = radii[i] + addendum0
             x0 = min(x0, xs[i] - reach); x1 = max(x1, xs[i] + reach)
             y0 = min(y0, ys[i] - reach); y1 = max(y1, ys[i] + reach)
         }
@@ -367,7 +427,10 @@ class GearsSim : Sim {
         val cy = (y0 + y1) * 0.5f
         var dir = 1f
         for (i in 0 until count) {
-            gears.add(Gear((xs[i] - cx) * fit, (ys[i] - cy) * fit, radii[i] * fit, teethOf[i], dir, i.toFloat() / count))
+            val gear = Gear((xs[i] - cx) * fit, (ys[i] - cy) * fit, radii[i] * fit, teethOf[i], dir, i.toFloat() / count)
+            gear.addendum = addendum0 * fit
+            gear.pitch = pitch0 * fit
+            gears.add(gear)
             dir = -dir
         }
         // Each gear turned at the start so its gaps meet its neighbour's
@@ -424,23 +487,32 @@ class GearsSim : Sim {
         val palette = env.palette
         for (gear in gears) {
             val c = palette.at(gear.tint)
-            g.ring(gear.x, gear.y, gear.radius, gear.radius * 0.18f, c, alpha = 0.9f)
-            g.disc(gear.x, gear.y, gear.radius * 0.16f, c)
+            val ad = gear.addendum
+            val root = gear.radius - ad
+            val rim = max(gear.radius * 0.12f, ad * 1.1f)
+            // Rim up to the tooth roots, with the teeth standing on it, from
+            // root to tip, centred on the pitch circle where neighbours meet.
+            g.ring(gear.x, gear.y, root + ad * 0.15f, rim, c, alpha = 0.95f)
             for (t in 0 until gear.teeth) {
                 val a = gear.angle + t * 2f * PI.toFloat() / gear.teeth
-                val r = gear.radius * 1.06f
                 g.rect(
-                    gear.x + cos(a) * r, gear.y + sin(a) * r,
-                    gear.radius * 0.11f, gear.radius * 0.055f, c, a
+                    gear.x + cos(a) * gear.radius, gear.y + sin(a) * gear.radius,
+                    ad, gear.pitch * 0.22f, c, a
                 )
             }
-            // A spoke, so the rotation is actually visible.
-            g.line(
-                gear.x, gear.y,
-                gear.x + cos(gear.angle) * gear.radius * 0.8f,
-                gear.y + sin(gear.angle) * gear.radius * 0.8f,
-                gear.radius * 0.06f, Palette.brighten(c, 0.3f)
-            )
+            // Spokes and a hub, so the turning reads as a wheel, not a clock hand.
+            val hub = gear.radius * 0.17f
+            val inner = root + ad * 0.15f - rim * 0.5f
+            for (k in 0 until SPOKES) {
+                val a = gear.angle + (k + 0.5f) * 2f * PI.toFloat() / SPOKES
+                g.line(
+                    gear.x + cos(a) * hub * 0.8f, gear.y + sin(a) * hub * 0.8f,
+                    gear.x + cos(a) * inner, gear.y + sin(a) * inner,
+                    max(0.006f, gear.radius * 0.07f), c, 0.75f
+                )
+            }
+            g.disc(gear.x, gear.y, hub, Palette.brighten(c, 0.2f))
+            g.disc(gear.x, gear.y, hub * 0.4f, AXLE)
         }
     }
 
@@ -459,7 +531,8 @@ class GearsSim : Sim {
         /** How far either side of straight down each link of the train turns. */
         private const val ZIGZAG = 0.62f
         /** A gear's teeth reach this far out, as a share of its radius. */
-        private const val TOOTH_REACH = 1.18f
+        private const val SPOKES = 5
+        private val AXLE = 0xFF07090D.toInt()
         private const val FILL = 0.9f
 
         fun def(): SimDef = SimDef(
@@ -525,7 +598,9 @@ class ClothSim : Sim {
         cut = BooleanArray(n)
         rest = min(1.5f / cols, 1.4f / rows)
         val startX = -rest * (cols - 1) * 0.5f
-        val startY = 0.82f
+        // Hung so the sheet sits about the middle of the screen; from 0.82
+        // it filled the top third of a tall phone and left the rest empty.
+        val startY = (rest * (rows - 1) * 0.5f + 0.1f).coerceAtLeast(0.3f)
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val i = r * cols + c
@@ -662,23 +737,52 @@ class ClothSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reserveInstances(cols * rows * 2)
+        val n = cols * rows
+        g.reserveInstances(n * 2 + cols)
+        // Shading: where the weave is bunched across, the sheet is folded
+        // away from us, so it is drawn darker; where it lies flat it is lit.
+        // A flat-coloured grid read as a net, not as cloth with folds in it.
+        if (shade.size < n) shade = FloatArray(n)
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val i = r * cols + c
-                if (cut[i]) continue
-                val t = r.toFloat() / max(1, rows - 1)
-                val col = palette.at(t)
-                if (c < cols - 1 && !cut[i + 1]) {
-                    g.line(x[i], y[i], x[i + 1], y[i + 1], 0.0032f, col, 0.9f)
-                }
-                if (r < rows - 1 && !cut[i + cols]) {
-                    g.line(x[i], y[i], x[i + cols], y[i + cols], 0.0032f, col, 0.9f)
-                }
-                if (pinned[i]) g.disc(x[i], y[i], 0.012f, Palette.WARNING)
+                val a = if (c > 0) i - 1 else i
+                val b = if (c < cols - 1) i + 1 else i
+                val dx = x[b] - x[a]
+                val len = hypot(dx, y[b] - y[a])
+                // How square-on the weft runs: tipped threads are a sheet
+                // turning away from the light.
+                val face = if (len < 1e-6f) 1f else abs(dx) / len
+                val f2 = face * face
+                shade[i] = (0.3f + 0.7f * f2 * f2 * f2).coerceIn(0.3f, 1f)
             }
         }
+        // The rail the sheet hangs from.
+        var left = Float.MAX_VALUE; var right = -Float.MAX_VALUE; var railY = 0f
+        for (c in 0 until cols) if (pinned[c]) { left = min(left, x[c]); right = max(right, x[c]); railY = y[c] }
+        if (left < right) g.line(left - 0.04f, railY + 0.012f, right + 0.04f, railY + 0.012f, 0.008f, Palette.TEXT_SECONDARY, 0.45f)
+        for (r in 0 until rows) {
+            val t = r.toFloat() / max(1, rows - 1)
+            val col = palette.at(t)
+            for (c in 0 until cols) {
+                val i = r * cols + c
+                if (cut[i]) continue
+                val lit = Palette.lerp(0xFF000000.toInt(), col, shade[i])
+                if (c < cols - 1 && !cut[i + 1]) {
+                    g.line(x[i], y[i], x[i + 1], y[i + 1], 0.0034f, lit, 0.95f)
+                }
+                if (r < rows - 1 && !cut[i + cols]) {
+                    g.line(x[i], y[i], x[i + cols], y[i + cols], 0.0034f, lit, 0.95f)
+                }
+            }
+        }
+        for (c in 0 until cols) if (pinned[c] && !cut[c]) {
+            g.disc(x[c], y[c] + 0.012f, 0.014f, Palette.TEXT_SECONDARY)
+            g.disc(x[c], y[c] + 0.012f, 0.007f, AXLE_DARK)
+        }
     }
+
+    private var shade = FloatArray(0)
 
     /**
      * "Shake it": a gust through the cloth that is hanging there, not a new
@@ -733,6 +837,7 @@ class ClothSim : Sim {
         listOf("points" to (cols * rows).toString())
 
     companion object {
+        private val AXLE_DARK = 0xFF07090D.toInt()
         /** A gust's push, in world units a step, at the hem. */
         private const val GUST = 0.012f
 
@@ -777,6 +882,8 @@ class OpticsSim : Sim {
         val xs = FloatArray(MAX_SEGMENTS)
         val ys = FloatArray(MAX_SEGMENTS)
         var count = 0
+        /** The point where it first meets the glass; before that it is white light. */
+        var firstHit = -1
     }
 
     private val rays = ArrayList<Ray>()
@@ -957,6 +1064,7 @@ class OpticsSim : Sim {
             var dx = cos(aim)
             var dy = sin(aim)
             ray.count = 0
+            ray.firstHit = -1
             ray.xs[ray.count] = x
             ray.ys[ray.count] = y
             ray.count++
@@ -997,6 +1105,7 @@ class OpticsSim : Sim {
                     nx = bx + dx * 1e-4f
                     ny = by + dy * 1e-4f
                     if (ray.count >= MAX_SEGMENTS) break
+                    if (ray.firstHit < 0) ray.firstHit = ray.count
                     ray.xs[ray.count] = bx
                     ray.ys[ray.count] = by
                     ray.count++
@@ -1051,25 +1160,97 @@ class OpticsSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        // The glass itself.
-        val glassColour = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f)
+        // The glass itself: a faint body of glass with a clear edge. A 22%
+        // grey outline alone was barely there on a phone, and the lens was
+        // drawn as two whole circles rather than the lens they overlap in.
+        val edge = Palette.lerp(Palette.TEXT_SECONDARY, 0xFF9FD8FF.toInt(), 0.4f)
         when (shape) {
             0 -> {
-                g.line(0f, pT, -pH, pB, 0.006f, glassColour)
-                g.line(0f, pT, pH, pB, 0.006f, glassColour)
-                g.line(-pH, pB, pH, pB, 0.006f, glassColour)
+                // Filled in thin bands, row by row, under the edges.
+                val bands = 48
+                val h = (pT - pB) / bands
+                for (k in 0 until bands) {
+                    val yMid = pB + (k + 0.5f) * h
+                    val half = (pT - yMid) / (pT - pB) * pH
+                    g.rect(0f, yMid, half, h * 0.5f, GLASS_FILL, 0f, 1f)
+                }
+                g.line(0f, pT, -pH, pB, 0.006f, edge, 0.6f)
+                g.line(0f, pT, pH, pB, 0.006f, edge, 0.6f)
+                g.line(-pH, pB, pH, pB, 0.006f, edge, 0.6f)
             }
             1 -> {
-                g.ring(-0.45f, 0f, 0.75f, 0.005f, glassColour, alpha = 0.5f)
-                g.ring(0.45f, 0f, 0.75f, 0.005f, glassColour, alpha = 0.5f)
+                // The two arcs that bound the lens, as short chords.
+                val half = kotlin.math.acos((LENS_OFFSET / LENS_R).coerceIn(-1f, 1f))
+                val pieces = 40
+                for (side in 0..1) {
+                    val ccx = if (side == 0) -LENS_OFFSET else LENS_OFFSET
+                    val mid = if (side == 0) 0f else PI.toFloat()
+                    for (k in 0 until pieces) {
+                        val a0 = mid - half + 2f * half * k / pieces
+                        val a1 = mid - half + 2f * half * (k + 1) / pieces
+                        g.line(ccx + cos(a0) * LENS_R, sin(a0) * LENS_R, ccx + cos(a1) * LENS_R, sin(a1) * LENS_R, 0.006f, edge, 0.6f)
+                    }
+                }
+                val tall = sqrt(LENS_R * LENS_R - LENS_OFFSET * LENS_OFFSET)
+                val bands = 48
+                val h = 2f * tall / bands
+                for (k in 0 until bands) {
+                    val yMid = -tall + (k + 0.5f) * h
+                    val halfW = sqrt((LENS_R * LENS_R - yMid * yMid).coerceAtLeast(0f)) - LENS_OFFSET
+                    if (halfW > 0f) g.rect(0f, yMid, halfW, h * 0.5f, GLASS_FILL, 0f, 1f)
+                }
             }
-            else -> g.rect(0f, 0f, 0.35f, 0.55f, glassColour, 0f, 0.35f)
+            else -> {
+                g.rect(0f, 0f, SLAB_W, SLAB_H, GLASS_FILL, 0f, 1f)
+                g.line(-SLAB_W, SLAB_H, SLAB_W, SLAB_H, 0.006f, edge, 0.6f)
+                g.line(-SLAB_W, -SLAB_H, SLAB_W, -SLAB_H, 0.006f, edge, 0.6f)
+                g.line(-SLAB_W, -SLAB_H, -SLAB_W, SLAB_H, 0.006f, edge, 0.6f)
+                g.line(SLAB_W, -SLAB_H, SLAB_W, SLAB_H, 0.006f, edge, 0.6f)
+            }
         }
-        for (ray in rays) {
+        // The light before a prism or slab is white: every colour on one
+        // line. It was drawn as nine coloured lines on top of each other, so
+        // only the last one showed and the "white" beam came in orange. The
+        // lens is shown parallel rays of one colour each, so they keep theirs.
+        val shared = shape != 1
+        for ((index, ray) in rays.withIndex()) {
+            val split = if (ray.firstHit < 0) ray.count - 1 else ray.firstHit
+            if (!shared || index > 0) continue
+            strokes(g, ray, 0, split, 0.014f, Palette.TEXT_PRIMARY, 0.08f)
+            strokes(g, ray, 0, split, 0.0045f, Palette.TEXT_PRIMARY, 0.95f)
+        }
+        for ((index, ray) in rays.withIndex()) {
             val c = Palette.hsv(250f - ray.tint * 240f, 0.8f, 1f)
-            for (i in 0 until ray.count - 1) {
-                g.line(ray.xs[i], ray.ys[i], ray.xs[i + 1], ray.ys[i + 1], 0.0026f, c, 0.85f)
+            val from = when {
+                !shared -> 0
+                ray.firstHit >= 0 -> ray.firstHit
+                else -> ray.count
             }
+            // A soft wide stroke under each, so the fan reads as light.
+            strokes(g, ray, from, ray.count - 1, 0.016f, c, 0.07f)
+            strokes(g, ray, from, ray.count - 1, 0.003f, c, 0.9f)
+        }
+    }
+
+    /**
+     * The path from point [from] to [to] as one line per straight run: the
+     * march samples every 0.012, and a line per sample was hundreds of
+     * overlapping pieces per ray, beaded where the soft strokes overlapped.
+     */
+    private fun strokes(g: G, ray: Ray, from: Int, to: Int, width: Float, color: Int, alpha: Float) {
+        if (to <= from) return
+        var start = from
+        for (i in from + 1..to) {
+            val last = i == to
+            if (!last) {
+                val ax = ray.xs[i] - ray.xs[i - 1]; val ay = ray.ys[i] - ray.ys[i - 1]
+                val bx = ray.xs[i + 1] - ray.xs[i]; val by = ray.ys[i + 1] - ray.ys[i]
+                val cross = abs(ax * by - ay * bx)
+                val scale = hypot(ax, ay) * hypot(bx, by)
+                if (cross <= scale * 1e-4f) continue
+            }
+            g.line(ray.xs[start], ray.ys[start], ray.xs[i], ray.ys[i], width, color, alpha)
+            start = i
         }
     }
 
@@ -1088,6 +1269,7 @@ class OpticsSim : Sim {
          * sixty.
          */
         const val FOCUS_RATIO = 0.4f
+        private val GLASS_FILL = 0x149FD8FF
         /** Dense flint glass: red, and how much more violet is bent. */
         const val N_RED = 1.62f
         /** Least deviation for a 60° prism at n ≈ 1.65: in at about 55° to the face. */
@@ -1157,6 +1339,12 @@ class ChargesSim : Sim {
     private var px = FloatArray(0)
     private var py = FloatArray(0)
     private var alive = BooleanArray(0)
+    /** The field each tracer last felt, for the direction of its dash. */
+    private var fx = FloatArray(0)
+    private var fy = FloatArray(0)
+    /** Still on its first trip; once most have finished one, the field is revealed. */
+    private var fresh = BooleanArray(0)
+    private var firstTrips = 0
     private var particles = 0
     private var elapsed = 0f
     private var payoffFrame = false
@@ -1171,8 +1359,15 @@ class ChargesSim : Sim {
         cx = FloatArray(count)
         cy = FloatArray(count)
         for (i in 0 until count) {
-            cx[i] = env.rng.range(-env.halfWidth * 0.7f, env.halfWidth * 0.7f)
-            cy[i] = env.rng.range(-0.7f, 0.7f)
+            // Kept apart: two charges dropped on top of each other read as
+            // one blob and hide the field between them, which is the picture.
+            var tries = 0
+            do {
+                cx[i] = env.rng.range(-env.halfWidth * 0.7f, env.halfWidth * 0.7f)
+                cy[i] = env.rng.range(-0.7f, 0.7f)
+                var near = false
+                for (k in 0 until i) if (hypot(cx[i] - cx[k], cy[i] - cy[k]) < MIN_GAP) near = true
+            } while (near && ++tries < 30)
             charges[i] = if (i % 2 == 0) 1f else -1f
             charges[i] *= env.rng.range(0.6f, 1.4f)
         }
@@ -1180,6 +1375,10 @@ class ChargesSim : Sim {
         px = FloatArray(particles)
         py = FloatArray(particles)
         alive = BooleanArray(particles)
+        fx = FloatArray(particles)
+        fy = FloatArray(particles)
+        fresh = BooleanArray(particles) { true }
+        firstTrips = 0
         respawnAll(env)
         elapsed = 0f
         payoffFrame = false
@@ -1224,8 +1423,14 @@ class ChargesSim : Sim {
                 // particle sitting on top of a charge from crossing the screen
                 // in a single step.
                 val len = hypot(ex, ey)
+                fx[i] = ex * sign; fy[i] = ey * sign
                 if (len > 1e-7f) {
-                    val speed = (len * FIELD_SPEED).coerceAtMost(MAX_TRACER_SPEED)
+                    // Faster where the field is stronger, but not in direct
+                    // proportion: at speed ∝ |E| the tracers raced through the
+                    // strong field round each charge and piled up where it is
+                    // weak, so the part of the picture that matters was empty.
+                    val speed = (FIELD_SPEED * Math.pow(len.toDouble(), FIELD_EXPONENT).toFloat())
+                        .coerceAtMost(MAX_TRACER_SPEED)
                     px[i] += ex / len * dt * speed * sign
                     py[i] += ey / len * dt * speed * sign
                 }
@@ -1235,16 +1440,27 @@ class ChargesSim : Sim {
                 }
             }
         }
-        for (i in 0 until particles) if (!alive[i]) captured++
-        if (captured > particles * 0.8f) {
-            respawnAll(env)
-            env.emit(EventKind.BIRTH, 0.5f, 0f, 0.6f)
+        // A finished tracer starts again somewhere at random, straight away.
+        // They used to wait until four in five were gone and then all come
+        // back at once, so for most of a run the middle of the screen, where
+        // the field is, was an empty hole with confetti round the edges.
+        for (i in 0 until particles) {
+            if (alive[i]) continue
+            captured++
+            if (fresh[i]) { fresh[i] = false; firstTrips++ }
+            px[i] = env.rng.range(-env.halfWidth, env.halfWidth)
+            py[i] = env.rng.range(-1f, 1f)
+            alive[i] = true
         }
-        env.emit(EventKind.STEP, 1f - (captured.toFloat() / particles), 0f, 0.25f)
-        // The moment the picture resolves: most of the tracers have found a
-        // charge and the field lines are drawn. This used to be a stopwatch at
+        if (captured > 0) env.emit(EventKind.BIRTH, 0.5f, 0f, min(0.6f, 0.1f + captured * 0.002f))
+        env.emit(EventKind.STEP, 1f - (firstTrips.toFloat() / particles), 0f, 0.25f)
+        // The moment the picture resolves: most of the tracers have finished
+        // their first trip along a field line. This used to be a stopwatch at
         // ten seconds, which fires whether or not anything has happened.
-        if (!resolved && captured > particles * 0.7f && elapsed > 1.5f) {
+        // Not before 3.5 s: with tracers respawning as they finish, most have
+        // done a trip within two seconds, and a payoff that early lands
+        // before anyone has looked at the field.
+        if (!resolved && firstTrips > particles * 0.8f && elapsed > 3.5f) {
             resolved = true
             payoffFrame = true
             env.emit(EventKind.DONE, 0.75f, 0f, 1f)
@@ -1253,10 +1469,25 @@ class ChargesSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reservePoints(particles)
+        // Each tracer is a short dash along the field where it is, like iron
+        // filings, coloured by how strong the field is there: the whole field
+        // is visible at once. Loose dots coloured by screen position showed
+        // where the tracers were, not what the field was doing.
+        val dashes = particles <= DASH_LIMIT
+        if (dashes) g.reserveInstances(particles) else g.reservePoints(particles)
+        val dash = (0.9f / sqrt(particles.toFloat())).coerceIn(0.008f, 0.03f)
         for (i in 0 until particles) {
             if (!alive[i]) continue
-            g.point(px[i], py[i], 0.004f, palette.at(((px[i] + py[i]) * 0.5f + 0.5f).coerceIn(0f, 1f)))
+            val len = hypot(fx[i], fy[i])
+            val t = ((kotlin.math.log10(max(len, 1e-6f)) + 2.8f) / 2.8f).coerceIn(0f, 1f)
+            val c = palette.at(t)
+            if (dashes && len > 1e-7f) {
+                val ux = fx[i] / len * dash * 0.5f
+                val uy = fy[i] / len * dash * 0.5f
+                g.line(px[i] - ux, py[i] - uy, px[i] + ux, py[i] + uy, 0.0035f, c, 0.35f + 0.6f * t)
+            } else {
+                g.point(px[i], py[i], 0.004f, c)
+            }
         }
         for (k in 0 until count) {
             val positive = charges[k] > 0f
@@ -1303,11 +1534,19 @@ class ChargesSim : Sim {
         )
 
         /**
-         * Turns field magnitude into tracer speed. Chosen so the shipped
-         * strength of one moves a tracer at about the rate it always did, and
-         * the slider's hundredfold range is a hundredfold range of speed.
+         * Turns field magnitude into tracer speed, as FIELD_SPEED·|E|^0.4.
+         * At the shipped strength a tracer half a unit from a charge moves at
+         * about the rate it always did; the slider still speeds every tracer
+         * up, though ten times the strength is 2.5 times the speed, not ten.
          */
-        const val FIELD_SPEED = 12f
+        const val FIELD_SPEED = 1.1f
+        const val FIELD_EXPONENT = 0.4
+
+        /** Above this many tracers they are drawn as dots, not dashes. */
+        const val DASH_LIMIT = 6000
+
+        /** The closest two charges are placed. */
+        const val MIN_GAP = 0.32f
 
         /** World units a second, so nothing steps over a charge. */
         const val MAX_TRACER_SPEED = 2.5f

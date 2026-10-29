@@ -132,38 +132,60 @@ class TowerSim : Sim {
             0.004f, Palette.TEXT_SECONDARY, 0.4f
         )
 
-        val usePoints = bricks > POINT_THRESHOLD
-        if (usePoints) g.reservePoints(whole + 1) else g.reserveInstances(whole + 1)
-
-        var i = 0
+        // Past a few thousand bricks a brick is thinner than a pixel. They were
+        // drawn as dots a brick high, which on a wide row left only thin
+        // vertical threads with the gaps between showing through. Whole rows
+        // are drawn as one course each instead; only the row being laid is
+        // drawn brick by brick.
+        val courses = bricks > POINT_THRESHOLD
+        val fullRows = if (courses) whole / perRow else 0
+        g.reserveInstances(if (courses) fullRows + perRow + MAX_IN_FLIGHT else whole + MAX_IN_FLIGHT)
+        if (courses) {
+            val left = slotX(0, env.halfWidth) - brickW * 0.5f
+            val right = slotX(perRow - 1, env.halfWidth) + brickW * 0.5f
+            for (row in 0 until fullRows) {
+                val c = palette.at(((row.toFloat() / max(1, rows)) * 0.8f + 0.1f).coerceIn(0f, 1f))
+                g.rect((left + right) * 0.5f, floorY + row * brickH, (right - left) * 0.5f, brickH * 0.45f, c)
+            }
+        }
+        var i = fullRows * perRow
         while (i < whole) {
             val col = i % perRow
             val row = i / perRow
             val x = slotX(col, env.halfWidth)
             val y = floorY + row * brickH
-            val c = palette.at(((row.toFloat() / max(1, rows)) * 0.8f + tint[i] * 0.2f).coerceIn(0f, 1f))
-            if (usePoints) g.point(x, y, brickH * 0.8f, c) else {
-                g.rect(x, y, brickW * 0.5f, brickH * 0.42f, c)
-            }
+            val c = brickColour(palette, i, rows)
+            g.rect(x, y, brickW * 0.5f, brickH * 0.42f, c)
             i++
         }
 
-        // The brick in flight, falling towards its slot or lifting away from it.
-        if (whole < bricks) {
-            val col = whole % perRow
-            val row = whole / perRow
+        // The bricks in flight. One at a time, each falling for a fiftieth of
+        // a second, read as a flicker over the stack; now each falls for
+        // FALL_SECONDS, so a shower of them is always on its way down. Still
+        // a pure function of the clock: brick i starts falling when the
+        // count reaches i + 1 - fall and lands exactly when it reaches i + 1.
+        val fall = (FALL_SECONDS * bricks / buildSeconds).coerceIn(1f, MAX_IN_FLIGHT.toFloat())
+        val last = min(bricks - 1, (exact + fall).toInt())
+        for (k in whole..last) {
+            val t = ((exact - (k + 1 - fall)) / fall).coerceIn(0f, 1f)
+            if (t <= 0f) continue
+            val col = k % perRow
+            val row = k / perRow
             val restX = slotX(col, env.halfWidth)
             val restY = floorY + row * brickH
-            // Eased so it slows into place rather than stopping dead.
-            val t = partial * partial * (3f - 2f * partial)
-            val x = restX + jitter[whole] * brickW * 1.6f * (1f - t)
-            val y = restY + (1.25f - restY) * (1f - t)
-            val c = Palette.brighten(palette.at(tint[whole]), 0.25f)
-            g.glow(x, y, brickH * 1.4f, c, 0.35f)
-            g.rect(x, y, brickW * 0.5f, brickH * 0.42f, c)
+            // Dropped from rest, so it gathers speed all the way down.
+            val x = restX + jitter[k] * brickW * 0.8f * (1f - t)
+            val y = restY + DROP_HEIGHT * (1f - t * t)
+            // The colour it will have in the wall, so it does not change hue
+            // the moment it lands.
+            val c = Palette.brighten(brickColour(palette, k, rows), 0.25f * (1f - t))
+            g.rect(x, y, brickW * 0.5f, max(brickH * 0.42f, 0.002f), c)
         }
 
     }
+
+    private fun brickColour(palette: Palette, i: Int, rows: Int): Int =
+        palette.at((((i / perRow).toFloat() / max(1, rows)) * 0.8f + tint[i] * 0.2f).coerceIn(0f, 1f))
 
     private fun slotX(col: Int, halfWidth: Float): Float =
         -halfWidth * 0.85f + (col + 0.5f) * (1.7f * halfWidth / perRow)
@@ -176,7 +198,7 @@ class TowerSim : Sim {
     )
 
     companion object {
-        /** Above this the bricks are drawn as points rather than quads. */
+        /** Above this whole rows are drawn as one course each. */
         const val POINT_THRESHOLD = 3000
 
         /** How much of the screen the tower may fill. */
@@ -186,6 +208,11 @@ class TowerSim : Sim {
         const val MIN_BRICK_H = 0.0025f
 
         const val MAX_BRICKS = 40000
+
+        /** How long a brick takes to fall into place, and from where. */
+        const val FALL_SECONDS = 0.45f
+        const val DROP_HEIGHT = 0.55f
+        const val MAX_IN_FLIGHT = 60
 
         fun def(): SimDef = SimDef(
             id = "physics/tower",
