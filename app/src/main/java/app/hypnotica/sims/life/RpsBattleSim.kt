@@ -163,8 +163,10 @@ class RpsBattleSim : Sim {
                 // round pull packed the wide screen's bigger army into a
                 // disc too tall for it, a flat dome squashed on the floor.
                 val acrossK = (FIELD_HALF / halfW).coerceIn(WIDE_GATHER_MIN, 1f)
-                sx += -x[i] * GATHER * acrossK - cy * TURN
-                sy += -cy * GATHER + x[i] * TURN
+                // The turn scaled with it: at full strength against the weaker
+                // pull it threw the oval off-centre, heaped to one side.
+                sx += -x[i] * GATHER * acrossK - cy * TURN * acrossK
+                sy += -cy * GATHER + x[i] * TURN * acrossK
                 // Spacing pushes hard enough that the final crowd opens out
                 // within a second or two instead of sitting as one blob.
                 vx[i] = vx[i] * (1f - 2f * h) + (sx * 1.4f + env.rng.range(-1f, 1f)) * h
