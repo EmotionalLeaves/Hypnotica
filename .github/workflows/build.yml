@@ -101,6 +101,20 @@ jobs:
           set -o pipefail
           ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest -Pscreens 2>&1 | tee screens-output.txt
 
+      # The artifact store is not reachable from every network; a release
+      # asset is. A pre-release, so "latest" still means the newest APK.
+      - name: Publish the pictures
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p app/build/screens
+          cp screens-output.txt app/build/screens/ 2>/dev/null || true
+          (cd app/build && zip -qr ../../screens.zip screens)
+          gh release view screens >/dev/null 2>&1 || \
+            gh release create screens --prerelease --title "Screen pictures" --notes "Rendered by CI for review; not an app build."
+          gh release upload screens screens.zip --clobber
+
       - name: Upload the pictures
         if: always()
         uses: actions/upload-artifact@v4
