@@ -235,13 +235,15 @@ class PenroseTilingSim : Sim {
         val lineW = grout * 0.42f
         g.reserveInstances(n * 6)
 
-        val cutOf = FloatArray(n)
-        val visible = BooleanArray(n)
+        // Kept between frames: two fresh arrays of twenty thousand a frame
+        // were the garbage collector's main work.
+        if (cutOf.size < n) { cutOf = FloatArray(n); visible = BooleanArray(n); inside = BooleanArray(n) }
         for (i in 0 until n) {
             val o = i * 6
             val minX = min(v[o], min(v[o + 2], v[o + 4])); val maxX = max(v[o], max(v[o + 2], v[o + 4]))
             val minY = min(v[o + 1], min(v[o + 3], v[o + 5])); val maxY = max(v[o + 1], max(v[o + 3], v[o + 5]))
             visible[i] = maxX > -hw && minX < hw && maxY > -1f && minY < 1f
+            inside[i] = minX > -hw && maxX < hw && minY > -1f && maxY < 1f
             cutOf[i] = if (cutting && par[i] >= 0) localCut(dist[show - 1][par[i]]) else 1f
         }
         val stars = if (done) sinceDone / STAR_SECONDS else 0f
@@ -261,7 +263,7 @@ class PenroseTilingSim : Sim {
                 lit += 0.5f * s
                 c = Palette.lerp(c, Palette.TEXT_PRIMARY, 0.15f * s)
             }
-            fill(g, v, i, Palette.lerp(Palette.BG, c, lit), side)
+            fill(g, v, i, Palette.lerp(Palette.BG, c, lit), side, hw)
         }
         // Then the leading: the dark came, and a thin lit edge in it.
         for (pass in 0..1) {
@@ -289,10 +291,29 @@ class PenroseTilingSim : Sim {
     /** The two outer sides of a half-rhomb; the base is the rhomb's own diagonal. */
     private fun edges(g: G, v: FloatArray, i: Int, c: Int, w: Float, a: Float, hw: Float) {
         val o = i * 6
-        val ax = v[o]; val ay = v[o + 1]
-        if (abs(ax) > hw + 0.3f && abs(v[o + 2]) > hw + 0.3f) return
-        g.line(ax, ay, v[o + 2], v[o + 3], w, c, a)
-        g.line(ax, ay, v[o + 4], v[o + 5], w, c, a)
+        clipped(g, v[o], v[o + 1], v[o + 2], v[o + 3], w, c, a, hw)
+        clipped(g, v[o], v[o + 1], v[o + 4], v[o + 5], w, c, a, hw)
+    }
+
+    /**
+     * A line cut to the screen. The first generations' tiles are far bigger
+     * than the screen, and drawn whole they reached two and a half screens
+     * past its sides.
+     */
+    private fun clipped(g: G, x0: Float, y0: Float, x1: Float, y1: Float, w: Float, c: Int, a: Float, hw: Float) {
+        val mx = hw + CLIP_MARGIN; val my = 1f + CLIP_MARGIN
+        val dx = x1 - x0; val dy = y1 - y0
+        // Liang–Barsky against the four sides, without allocating: this runs
+        // for every strip of every tile, every frame.
+        var t0 = 0f; var t1 = 1f
+        for (k in 0 until 4) {
+            val pk = when (k) { 0 -> -dx; 1 -> dx; 2 -> -dy; else -> dy }
+            val qk = when (k) { 0 -> x0 + mx; 1 -> mx - x0; 2 -> y0 + my; else -> my - y0 }
+            if (pk == 0f) { if (qk < 0f) return; continue }
+            val r = qk / pk
+            if (pk < 0f) { if (r > t1) return; if (r > t0) t0 = r } else { if (r < t0) return; if (r < t1) t1 = r }
+        }
+        g.line(x0 + dx * t0, y0 + dy * t0, x0 + dx * t1, y0 + dy * t1, w, c, a)
     }
 
     /**
@@ -301,7 +322,7 @@ class PenroseTilingSim : Sim {
      * little; strips are made thin enough that the leading drawn over every
      * edge covers it.
      */
-    private fun fill(g: G, v: FloatArray, i: Int, c: Int, side: Float) {
+    private fun fill(g: G, v: FloatArray, i: Int, c: Int, side: Float, hw: Float) {
         val o = i * 6
         val ax = v[o]; val ay = v[o + 1]; val bx = v[o + 2]; val by = v[o + 3]; val cx = v[o + 4]; val cy = v[o + 5]
         val mx = (bx + cx) * 0.5f; val my = (by + cy) * 0.5f
@@ -314,13 +335,22 @@ class PenroseTilingSim : Sim {
         val k = (h / (if (thick) 0.004f else 0.012f)).toInt().coerceIn(1, 160)
         val rot = atan2(cy - by, cx - bx)
         val band = h / k
+        val cr = cos(rot); val sr = sin(rot)
+        val whole = inside[i]
         for (j in 0 until k) {
             val f = (j + 0.5f) / k
             val px = mx + (ax - mx) * f; val py = my + (ay - my) * f
             val half = base * (1f - f) * 0.5f
-            g.rect(px, py, half, band * 0.75f, c, rot)
+            // Tiles wholly on screen skip the clipping and its trig.
+            if (whole) { g.rect(px, py, half, band * 0.75f, c, rot); continue }
+            val ux = cr * half; val uy = sr * half
+            clipped(g, px - ux, py - uy, px + ux, py + uy, band * 1.5f, c, 1f, hw)
         }
     }
+
+    private var cutOf = FloatArray(0)
+    private var visible = BooleanArray(0)
+    private var inside = BooleanArray(0)
 
     private fun smooth(t: Float): Float {
         val u = t.coerceIn(0f, 1f)
@@ -351,6 +381,7 @@ class PenroseTilingSim : Sim {
         /** Width of the cutting front, as a share of the screen's reach. */
         private const val FRONT = 0.35f
         private const val BANDS = 6
+        private const val CLIP_MARGIN = 0.02f
         private const val STAR_SECONDS = 1.8f
         private const val HOLD_AFTER = 4f
 

@@ -362,7 +362,7 @@ class MandelbrotSim : Sim {
         }
         // A different entry each time, picked by the run's own generator so a
         // seed replays the same journey.
-        var next = env.rng.int(0, CATALOGUE.size - 1)
+        var next = env.rng.int(0, CATALOGUE.size)
         if (next == diveIndex) next = (next + 1) % CATALOGUE.size
         val prevLog = logBase + ln(zoom / 0.6)
         diveIndex = next
@@ -1803,7 +1803,7 @@ class MandelbrotSim : Sim {
         private const val COARSE_SLICES = 4
         private const val REFINE_SLICES = 7
         /** Iterations an image may cost before the next is spread over more steps. */
-        private const val WORK_PER_IMAGE = 3.0e7
+        private const val WORK_PER_IMAGE = 2.2e7
         private const val MAX_SPREAD = 4
         private const val BUILD_SLICES = 3
         private val LN2 = ln(2.0)
@@ -1848,19 +1848,22 @@ class MandelbrotSim : Sim {
 
         /**
          * Misiurewicz points, each found by Newton's method (preperiod k,
-         * period p) right beside the spot the dive was always aimed at, so a
-         * shallow dive looks as it did. The first four are the "Where to
-         * dive" choices; all of them are the dives a hand-off goes on to.
+         * period p) near the spot the dive was always aimed at. The first
+         * four are the "Where to dive" choices; all of them are the dives a
+         * hand-off goes on to. Picked for a cycle that repels fast enough
+         * (|multiplier|^(1/p) ≥ ~1.07): about a point whose cycle barely
+         * repels (the old spiral's was 1.012 an iteration) every pixel runs
+         * five times the iterations and the frame is solid filigree.
          */
         val CATALOGUE = listOf(
             // Seahorse valley.
             Target("-0.7432918908524302", "0.13124055230879758", 24, 2),
             // Spiral.
-            Target("-0.16070133631282532", "1.0375664986665432", 57, 8),
+            Target("-0.16254547044532094", "1.0262854812701585", 13, 4),
             // Out on the antenna, beside its period-3 copy of the set.
-            Target("-1.7695736211088844", "0.0035409946307072364", 52, 3),
+            Target("-1.7732746084008726", "0.006388268773377751", 19, 6),
             // Misiurewicz.
-            Target("0.3602495197782322", "0.6413502891821017", 56, 5),
+            Target("0.3554323472125332", "0.647090198204969", 21, 5),
             // Further seahorse-valley and dendrite points for later dives.
             Target("-0.745950170346325", "0.132750204860054", 17, 7),
             Target("-0.746791980247121", "0.132818988954767", 19, 5),

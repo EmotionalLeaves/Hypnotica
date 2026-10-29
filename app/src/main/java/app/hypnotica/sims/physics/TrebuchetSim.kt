@@ -130,6 +130,7 @@ class TrebuchetSim : Sim {
         knocked = 0
         started = false
         verdict = ""
+        releasedAt = -1f
         camS = startScale()
         camX = -1.5; camY = startCamY()
     }
@@ -366,6 +367,8 @@ class TrebuchetSim : Sim {
     }
 
     private var shade = FloatArray(0)
+    private var releasedAt = -1f
+    private var peak = 1.0
     private var cloudX = DoubleArray(0)
     private var cloudY = DoubleArray(0)
     private var cloudR = FloatArray(0)
@@ -388,6 +391,8 @@ class TrebuchetSim : Sim {
             if (!released && ready()) {
                 released = true
                 sx = stoneX(); sy = stoneY(); svx = stoneVX(); svy = stoneVY()
+                releasedAt = elapsed
+                peak = if (grav > 0) sy + max(0.0, svy) * max(0.0, svy) / (2 * grav) else sy + 50
                 env.emit(EventKind.CROSS, 0.7f, panOf(sx), 0.8f)
             }
         }
@@ -522,7 +527,7 @@ class TrebuchetSim : Sim {
         }
         val targetS = 1.0 / halfH
         // Eased, so the camera glides rather than cuts; zoom and pan together.
-        val k = 1.0 - kotlin.math.exp(-h * (if (released && hitAt < 0f) 3.0 else 2.2))
+        val k = 1.0 - kotlin.math.exp(-h * (if (released && hitAt < 0f) 4.0 else 2.2))
         camS += (targetS - camS) * k
         camX += (tx - camX) * k
         camY += (ty - camY) * k
@@ -563,6 +568,7 @@ class TrebuchetSim : Sim {
         }
         drawCastle(env, g, s)
         drawMachine(env, g, s)
+        drawMap(env, g)
         // The stone and its arc.
         val accent = pal.at(0.08f)
         if (released) {
@@ -584,6 +590,31 @@ class TrebuchetSim : Sim {
                 g.glow(ix, iy, (2f + 5f * u) * s, DUST, 0.35f * (1f - u))
             }
         }
+    }
+
+    /**
+     * The whole shot in miniature across the top: machine, castle, the arc so
+     * far and the stone on it, so the long flight always shows where it is.
+     */
+    private fun drawMap(env: SimEnv, g: G) {
+        if (releasedAt < 0f) return
+        val a = ((elapsed - releasedAt) / 0.5f).coerceIn(0f, 1f)
+        val w = hw * 0.8f
+        val x0 = -w; val y0 = 0.74f
+        val span = (wallX + 12.0).toFloat()
+        val hgt = 0.16f
+        val sx0 = 2f * w / span
+        val sy0 = hgt / max(peak, 20.0).toFloat()
+        val sc = min(sx0, sy0 * 3f)
+        val sy1 = min(sy0, sc)
+        g.rect(0f, y0, w, 0.0015f, POST, alpha = a)
+        g.rect(x0, y0 + 0.012f, 0.004f, 0.012f, WOOD, alpha = a)
+        g.rect(x0 + wallX.toFloat() * sx0 + 0.008f, y0 + 0.014f, 0.008f, 0.014f, 0xFF6B6F78.toInt(), alpha = a)
+        val accent = env.palette.at(0.08f)
+        for (i in 1 until trailN) {
+            g.line(x0 + trailX[i - 1] * sx0, y0 + trailY[i - 1] * sy1, x0 + trailX[i] * sx0, y0 + trailY[i] * sy1, 0.0025f, accent, 0.6f * a)
+        }
+        g.disc(x0 + sx.toFloat() * sx0, y0 + sy.toFloat() * sy1, 0.007f, STONE, a)
     }
 
     private fun drawMachine(env: SimEnv, g: G, s: Float) {

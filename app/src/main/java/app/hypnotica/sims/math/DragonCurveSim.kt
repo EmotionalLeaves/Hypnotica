@@ -38,6 +38,7 @@ class DragonCurveSim : Sim {
     /** The whole unfolded strip; every generation is a prefix of it. */
     private var px = FloatArray(0)
     private var py = FloatArray(0)
+    private var dir = IntArray(0)
 
     private var gen = 0
     private var turn = 0f
@@ -66,6 +67,12 @@ class DragonCurveSim : Sim {
                 py[len + j] = ey + dx
             }
             len *= 2
+        }
+        // Each piece's heading, in quarter turns: the folds keep every piece
+        // on the grid, so this is exact.
+        dir = IntArray(n) { i ->
+            val ddx = px[i + 1] - px[i]; val ddy = py[i + 1] - py[i]
+            if (abs(ddx) > abs(ddy)) (if (ddx > 0f) 0 else 2) else (if (ddy > 0f) 1 else 3)
         }
         gen = 0
         turn = 0f
@@ -222,6 +229,14 @@ class DragonCurveSim : Sim {
             fun sx(i: Int) = ((dx[i] * k0 - dy[i] * k1) - cx) * scale
             fun sy(i: Int) = ((dx[i] * k1 + dy[i] * k0) - cy) * scale
             val hue = 0.04f + 0.235f * c
+            // Once every crease is open the strip only ever runs along four
+            // directions, so each piece's angle is known without any trig —
+            // with four dragons that is 32,000 pieces a frame, and atan2 and
+            // hypot on each made the finale the slowest frame in the sim.
+            val flat = !opening
+            val base = rho + ang
+            val half = PI.toFloat() * 0.5f
+            val sideLen = scale
             for (i in 0 until m) {
                 val t = i.toFloat() / m
                 val grad = pal.at(0.04f + 0.74f * t)
@@ -232,11 +247,22 @@ class DragonCurveSim : Sim {
                 val ax = sx(i); val ay = sy(i); val bx = sx(i + 1); val by = sy(i + 1)
                 val qx = ax + (bx - ax) * 0.25f; val qy = ay + (by - ay) * 0.25f
                 val rx = ax + (bx - ax) * 0.75f; val ry = ay + (by - ay) * 0.75f
-                cap(g, qx, qy, rx, ry, width, col, show)
-                if (i + 1 < m) {
-                    val nx = bx + (sx(i + 2) - bx) * 0.25f
-                    val ny = by + (sy(i + 2) - by) * 0.25f
-                    cap(g, rx, ry, nx, ny, width, col, show)
+                if (flat) {
+                    val a0 = base + dir[i] * half
+                    g.rect((qx + rx) * 0.5f, (qy + ry) * 0.5f, sideLen * 0.25f + width * 0.5f, width * 0.5f, col, a0, show)
+                    if (i + 1 < m) {
+                        val turn = if (((dir[i + 1] - dir[i]) and 3) == 1) 1f else -1f
+                        val nx = bx + (sx(i + 2) - bx) * 0.25f
+                        val ny = by + (sy(i + 2) - by) * 0.25f
+                        g.rect((rx + nx) * 0.5f, (ry + ny) * 0.5f, sideLen * 0.17678f + width * 0.5f, width * 0.5f, col, a0 + turn * half * 0.5f, show)
+                    }
+                } else {
+                    cap(g, qx, qy, rx, ry, width, col, show)
+                    if (i + 1 < m) {
+                        val nx = bx + (sx(i + 2) - bx) * 0.25f
+                        val ny = by + (sy(i + 2) - by) * 0.25f
+                        cap(g, rx, ry, nx, ny, width, col, show)
+                    }
                 }
             }
         }

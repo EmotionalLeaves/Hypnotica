@@ -81,7 +81,11 @@ class PhysarumSim : Sim {
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
-        val rows = env.params.i("res", 230).coerceIn(80, 400)
+        // The same number of cells on any screen: the mould's reach is set in
+        // cells, and on a wide screen at the phone's cell size the flakes
+        // stood so far apart, in cells, that the blobs never met.
+        val shape = (2f * halfW) / (FIELD_TOP - FIELD_BOTTOM)
+        val rows = (env.params.i("res", 230) * sqrt(min(1f, PHONE_SHAPE / shape))).toInt().coerceIn(60, 400)
         // The dish: the whole screen less a margin, the counters' band on top.
         cell = (FIELD_TOP - FIELD_BOTTOM) / rows
         gh = rows
@@ -210,6 +214,7 @@ class PhysarumSim : Sim {
         val so = SENSE
         val t = trail
         val w = gw; val hh = gh
+        val hunger = Math.pow(HUNGER.toDouble(), RATE.toDouble()).toFloat()
         // Move: sense left, centre, right; turn towards the strongest; step; deposit.
         for (i in 0 until n) {
             var hd = ah[i]
@@ -227,8 +232,8 @@ class PhysarumSim : Sim {
             } else if (fr > fl) {
                 hd -= ra
             }
-            var nx = x + FastMath.cos(hd)
-            var ny = y + FastMath.sin(hd)
+            var nx = x + FastMath.cos(hd) * RATE
+            var ny = y + FastMath.sin(hd) * RATE
             // The dish wall turns an agent back the way it came. With the
             // nutrient below, what returns from the wall lays little chemical,
             // so a tube that only leads to the wall starves away.
@@ -243,25 +248,32 @@ class PhysarumSim : Sim {
             // from both ends and hold; a tube to nowhere starves and withdraws,
             // as a real mould retracts its fruitless branches. Without it the
             // spare mould wore dead-end tubes out to the dish wall.
-            var fd = fed[i] * HUNGER
+            var fd = fed[i] * hunger
             val at = foodAt[k]
             if (at >= 0) { fd = 1f; home[i] = at }
             fed[i] = fd
-            t[k] += DEPOSIT * (FED_FLOOR + (1f - FED_FLOOR) * fd)
+            t[k] += DEPOSIT * RATE * (FED_FLOOR + (1f - FED_FLOOR) * fd)
         }
         // Each flake is a strong, steady source of the chemical.
         for (f in 0 until foods) {
             val cx = fx[f].toInt(); val cy = fy[f].toInt()
             for (dy in -2..2) for (dx in -2..2) {
                 if (dx * dx + dy * dy > 5) continue
-                t[(cy + dy) * w + (cx + dx)] += FOOD_SMELL * mean
+                t[(cy + dy) * w + (cx + dx)] += FOOD_SMELL * RATE * mean
             }
         }
         // Spread (a 3×3 mean) and fade. The dish wall soaks the chemical up
         // (outside counts as zero), so a stream that meets the wall thins out
         // instead of running along it.
         val o = spare
-        val k9 = (1f - DECAY) / 9f
+        // Each tick is RATE of one of Jones's steps — half a cell of travel,
+        // half the deposit, half the spread, the matching share of the fade —
+        // so the mould grows at a watchable pace while the field still
+        // changes smoothly from frame to frame; fewer whole steps a second
+        // made it visibly jump.
+        val keep = Math.pow(1.0 - DECAY, RATE.toDouble()).toFloat()
+        val k9 = keep * RATE / 9f
+        val k1 = keep * (1f - RATE)
         for (y in 0 until hh) {
             val r0 = y * w
             val rm = r0 - w; val rp = r0 + w
@@ -272,7 +284,7 @@ class PhysarumSim : Sim {
                 if (hasM) { s += t[rm + x]; if (l) s += t[rm + x - 1]; if (r) s += t[rm + x + 1] }
                 s += t[r0 + x]; if (l) s += t[r0 + x - 1]; if (r) s += t[r0 + x + 1]
                 if (hasP) { s += t[rp + x]; if (l) s += t[rp + x - 1]; if (r) s += t[rp + x + 1] }
-                o[r0 + x] = s * k9
+                o[r0 + x] = s * k9 + t[r0 + x] * k1
             }
         }
         spare = trail; trail = o
@@ -334,6 +346,12 @@ class PhysarumSim : Sim {
         if (!merged) return
         rebuildLures()
         if (groups == 1) {
+            // Joined, every flake goes on drawing the mould gently, so the
+            // network can thin to its leanest without letting go of one.
+            for (f in 0 until foods) {
+                val out = lure[f]
+                for (j in 0 until foods) { val sc = scentOf[j]; for (k in out.indices) out[k] += sc[k] * HELD }
+            }
             doneAt = elapsed
             payoffFrame = true
             java.util.Arrays.fill(dist, -1)
@@ -383,7 +401,7 @@ class PhysarumSim : Sim {
         // middle flake and stays — every vein it reaches is lit for good, and
         // once it has reached the far end the whole mould is.
         val front = if (since >= 0f) since / GLINT_SECONDS * maxDist else -1f
-        val allLit = since >= 0f && front >= maxDist
+        val allLit = since >= 0f && front >= maxDist * 1.2f + 4f
         val levels = IntArray(LEVELS + 1) { lv ->
             if (lv == 0) 0 else {
                 val u = lv / LEVELS.toFloat()
@@ -391,15 +409,24 @@ class PhysarumSim : Sim {
                 Palette.lerp(Palette.BG, palette.at(0.72f - 0.67f * u), 0.2f + 0.8f * u)
             }
         }
-        val lit = IntArray(LEVELS + 1) { lv -> if (lv == 0) 0 else Palette.brighten(levels[lv], 0.08f + 0.22f * lv / LEVELS) }
+        // Lit in a few steps behind the front, so its edge is soft.
+        val lit = Array(LIT_STEPS) { s ->
+            val amt = (s + 1f) / LIT_STEPS
+            IntArray(LEVELS + 1) { lv -> if (lv == 0) 0 else Palette.brighten(levels[lv], amt * (0.08f + 0.22f * lv / LEVELS)) }
+        }
+        val band = max(4f, maxDist * 0.18f)
         for (y in 0 until gh) {
             val row = y * gw
             val yc = y0 + (y + 0.5f) * cell
             g.cellRow(x0, yc, cell, gw) { x ->
                 val lv = level(trail[row + x])
                 if (lv == 0) 0
-                else if (allLit || (front >= 0f && dist[row + x] in 0..front.toInt())) lit[lv]
-                else levels[lv]
+                else if (allLit) lit[LIT_STEPS - 1][lv]
+                else {
+                    val d = dist[row + x]
+                    if (front < 0f || d < 0 || d > front) levels[lv]
+                    else lit[((front - d) / band * LIT_STEPS).toInt().coerceIn(0, LIT_STEPS - 1)][lv]
+                }
             }
         }
         // The flakes, each ringed in white once its network has reached
@@ -449,7 +476,8 @@ class PhysarumSim : Sim {
         const val FIELD_TOP = 0.86f
         const val FIELD_BOTTOM = -0.96f
         const val MARGIN = 0.02f
-        const val TICKS_PER_SECOND = 10f
+        const val TICKS_PER_SECOND = 11f
+        const val RATE = 0.5f
         const val SENSE = 7f
         const val DEPOSIT = 5f
         /** Per tick: an agent's nutrient halves in about twenty ticks away from food. */
@@ -463,7 +491,7 @@ class PhysarumSim : Sim {
         const val LURE = 2f
         const val DECAY = 0.1f
         const val BLOB = 9f
-        const val CHECK_EVERY = 8
+        const val CHECK_EVERY = 6
         /** Chemical level that counts as a vein for the network test, against the mean field. */
         const val VEIN = 0.8f
         const val FAINT = 0.15f
@@ -471,6 +499,11 @@ class PhysarumSim : Sim {
         const val LEVELS = 14
         const val FOOD_R = 0.016f
         const val GLINT_SECONDS = 1.6f
+        const val LIT_STEPS = 5
+        /** Width over height of an upright phone's dish, which the default resolution is set for. */
+        const val PHONE_SHAPE = 0.48f
+        /** Each flake's pull once all are joined, as a share of the lure. */
+        const val HELD = 0.5f
 
         fun def(): SimDef = SimDef(
             id = "life/physarum",
@@ -481,7 +514,7 @@ class PhysarumSim : Sim {
             formats = listOf(TrapFormat.GROW, TrapFormat.CHAIN),
             heroLabel = "New dish",
             defaultPalette = "Ember",
-            typicalSeconds = 12f,
+            typicalSeconds = 9f,
             params = listOf(
                 Param.int("food", "Food", 3, MAX_FOOD, 7, card = Card.DATA),
                 Param.float("density", "Mould", 0.1f, 1f, 0.32f, card = Card.DATA),
