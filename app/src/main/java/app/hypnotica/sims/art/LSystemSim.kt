@@ -63,7 +63,7 @@ class LSystemSim : Sim {
         // edges: fitted edge to edge, the fern's swaying tips crossed the
         // screen's right edge at every gust.
         val swayRoom = p.f("sway", 0.35f) * GUST_MAX * SWAY * (FILL + TOP) * (FILL + TOP)
-        build(expand(plant, depth), angle, (env.halfWidth - swayRoom).coerceAtLeast(env.halfWidth * 0.7f))
+        build(expand(plant, depth), angle, (env.halfWidth - swayRoom).coerceAtLeast(env.halfWidth * 0.85f))
         grown = 0f
         elapsed = 0f
         fullAt = -1f

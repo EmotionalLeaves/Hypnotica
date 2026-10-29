@@ -60,6 +60,8 @@ class SoapCutSim : Sim {
     private var cvx = FloatArray(0)
     private var cvy = FloatArray(0)
     private var ccol = IntArray(0)
+    /** Seconds since a crumb came to rest; negative while it is still falling. */
+    private var crest = FloatArray(0)
     private var cn = 0
     private var crumbCarry = 0f
 
@@ -85,7 +87,8 @@ class SoapCutSim : Sim {
         stopH = STOP_CONTACT * blockH * cos(LEAN)
         stopW = min(0.06f, blockH * 0.12f)
         gridX = (slices * CELLS_PER_SLICE).coerceAtMost(240)
-        gridY = 40
+        // Finer than the 6 x 40 it was: the marbling's edges showed as stair-steps.
+        gridY = 48
         fx = env.rng.range(2f, 6f); fy = env.rng.range(1.5f, 4f)
         ph = env.rng.range(0f, 6.28f); warp = env.rng.range(0.3f, 1.1f)
         val palette = env.palette
@@ -129,7 +132,7 @@ class SoapCutSim : Sim {
         doneAt = -1f
         payoffFrame = false
         cx = FloatArray(MAX_CRUMBS); cy = FloatArray(MAX_CRUMBS); cvx = FloatArray(MAX_CRUMBS); cvy = FloatArray(MAX_CRUMBS)
-        ccol = IntArray(MAX_CRUMBS); cn = 0
+        ccol = IntArray(MAX_CRUMBS); crest = FloatArray(MAX_CRUMBS); cn = 0
         crumbCarry = 0f
     }
 
@@ -239,17 +242,17 @@ class SoapCutSim : Sim {
                 repeat(12) { crumb(env, qa[4], qa[5]) }
                 if (k == slices - 1) {
                     doneAt = elapsed
+                    // The engine sounds DONE on the payoff frame; a second one here doubled it.
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 0.8f, 0f, 1f)
                 }
             }
         }
         val cg = max(0.5f, abs(env.laws.gravity)) * 0.25f
         for (i in 0 until cn) {
-            if (cy[i] <= floorY + 0.003f && cvy[i] == 0f) continue
+            if (crest[i] >= 0f) { crest[i] += h; continue }
             cvy[i] -= cg * h
             cx[i] += cvx[i] * h; cy[i] += cvy[i] * h
-            if (cy[i] < floorY + 0.003f) { cy[i] = floorY + 0.003f; cvy[i] = 0f; cvx[i] = 0f }
+            if (cy[i] < floorY + 0.003f) { cy[i] = floorY + 0.003f; cvy[i] = 0f; cvx[i] = 0f; crest[i] = 0f }
             if (abs(cx[i]) > halfW) { cx[i] = cx[i].coerceIn(-halfW, halfW); cvx[i] = 0f }
         }
     }
@@ -266,7 +269,10 @@ class SoapCutSim : Sim {
         if (cn >= MAX_CRUMBS) return
         val i = cn++
         cx[i] = x + env.rng.range(-0.01f, 0.01f); cy[i] = y
-        cvx[i] = env.rng.range(-0.15f, 0.35f); cvy[i] = env.rng.range(0f, 0.25f)
+        // A short spill off the blade. Flung up to a third of a screen they
+        // settled in a dotted line along the whole table.
+        cvx[i] = env.rng.range(-0.06f, 0.14f); cvy[i] = env.rng.range(0f, 0.18f)
+        crest[i] = -1f
         val u = ((x - left) / blockW).coerceIn(0f, 0.999f)
         val v = ((y - floorY) / blockH).coerceIn(0f, 0.999f)
         ccol[i] = colors[(v * gridY).toInt() * gridX + (u * gridX).toInt()]
@@ -334,7 +340,13 @@ class SoapCutSim : Sim {
         }
         if (cn > 0) {
             g.reservePoints(cn)
-            for (i in 0 until cn) g.point(cx[i], cy[i], 0.008f, ccol[i])
+            for (i in 0 until cn) {
+                // Crumbs on the table fade away, so the finale is the row of
+                // slices on a clean bench, not slices over a trail of dust.
+                val a = if (crest[i] < 0f) 1f else 1f - crest[i] / CRUMB_FADE
+                if (a <= 0f) continue
+                g.point(cx[i], cy[i], 0.008f, Palette.withAlpha(ccol[i], a))
+            }
         }
         // The knife.
         if (cut < slices - 1) {
@@ -368,7 +380,7 @@ class SoapCutSim : Sim {
          * soap showed as a faint dark line.
          */
         const val PAD = 0.0016f
-        const val CELLS_PER_SLICE = 6
+        const val CELLS_PER_SLICE = 8
         /**
          * The table top. Low on the screen, so the block and the knife over
          * it sit in the middle: at -0.3 the bottom third was empty table.
@@ -389,6 +401,7 @@ class SoapCutSim : Sim {
         const val UP = 0.35f
         const val MAX_CRUMBS = 3000
         const val CRUMBS_PER_SECOND = 90f
+        const val CRUMB_FADE = 1.4f
         const val TARGET_SECONDS = 13.5f
 
         fun def(): SimDef = SimDef(

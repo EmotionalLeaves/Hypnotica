@@ -146,8 +146,12 @@ class RpsBattleSim : Sim {
                 // Gathered towards the middle and turning slowly round it: the
                 // victors' lap of honour. Spread evenly over the field by
                 // their spacing alone they set into a stiff grid of shapes.
-                sx += -x[i] * GATHER - y[i] * TURN
-                sy += -y[i] * GATHER + x[i] * TURN
+                // Round the middle of the field under the tug-of-war bar, not
+                // the screen's: pulled to y = 0 the crowd sat high, pressed
+                // against the top wall into a lopsided wedge.
+                val cy = y[i] - FIELD_MID
+                sx += -x[i] * GATHER - cy * TURN
+                sy += -cy * GATHER + x[i] * TURN
                 // Spacing pushes hard enough that the final crowd opens out
                 // within a second or two instead of sitting as one blob.
                 vx[i] = vx[i] * (1f - 2f * h) + (sx * 1.4f + env.rng.range(-1f, 1f)) * h
@@ -416,8 +420,12 @@ class RpsBattleSim : Sim {
         const val SQUADS_PER_SIDE = 2
         /** The victory lap: pull to the middle, and the turn round it. */
         // Gentle: at 1.2 the victors packed into one dense blob mid-screen.
-        const val GATHER = 0.35f
-        const val TURN = 1.1f
+        const val GATHER = 0.6f
+        /** The middle of the field: between the floor (-1) and the bar's wall (0.86). */
+        const val FIELD_MID = -0.07f
+        // 0.45, from 1.1: the strong swirl threw the spreading crowd round
+        // in a lopsided wedge, and the run ended before it evened out.
+        const val TURN = 0.45f
         val NAMES = arrayOf("rock", "paper", "scissors", "lizard", "Spock")
         /** Sides 0 to 4 as kinds: rock, Spock, paper, lizard, scissors. */
         val FIVE_ORDER = intArrayOf(0, 4, 1, 3, 2)

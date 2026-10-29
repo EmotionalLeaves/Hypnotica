@@ -722,9 +722,9 @@ class ClothSim : Sim {
         val drag = Math.pow((1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)).toDouble(), (abs(dt) * 60f).toDouble()).toFloat()
         // A breeze, by default: the hem swings out by the sheet's length
         // times the wind, and at 0.08 the taller curtain swung off the edge.
-        // 0.035 since the phone curtain grew longer: its hem swings out
+        // 0.022 since the phone curtain grew longer: its hem swings out
         // further for the same breeze, and at 0.055 it left the screen.
-        val wind = env.params.f("wind", 0.035f) *
+        val wind = env.params.f("wind", 0.022f) *
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
         val n = cols * rows
@@ -888,7 +888,7 @@ class ClothSim : Sim {
                 val sh = (shade[i00] + shade[i01] + shade[i10] + shade[i11]) * 0.25f
                 val cx = (x[i00] + x[i01] + x[i10] + x[i11]) * 0.25f
                 val cy = (y[i00] + y[i01] + y[i10] + y[i11]) * 0.25f
-                g.rect(cx, cy, vl * 0.5f + rest * 0.06f, across * 0.5f + rest * 0.08f,
+                g.rect(cx, cy, vl * 0.5f + rest * 0.06f, across * 0.5f + restX * 0.035f,
                     Palette.lerp(0xFF000000.toInt(), col, 0.14f + 0.6f * sh * sh), atan2(vy, vx))
             }
         }
@@ -1016,7 +1016,7 @@ class ClothSim : Sim {
                 Param.int("rows", "Rows", 2, 200, 44, card = Card.DATA, logScale = true),
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
-                Param.float("wind", "Wind", 0f, 1.5f, 0.035f, card = Card.MOTION),
+                Param.float("wind", "Wind", 0f, 1.5f, 0.022f, card = Card.MOTION),
                 Param.int("stiffness", "Stiffness", 1, 12, 6, card = Card.MOTION)
             ),
             create = { ClothSim() }

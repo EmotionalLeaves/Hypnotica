@@ -84,9 +84,14 @@ class VoronoiSim : Sim {
         elapsed += abs(dt)
         if (settled) sinceSettled += abs(dt)
         val halfW = env.halfWidth
+        // The ringed pair holds still while it is ringed, easing back into
+        // its drift as the rings fade: drifting on for four seconds carried a
+        // pair picked mid-screen to the edge, rings half off the frame.
+        val glint = if (settled) (1f - sinceSettled / HIGHLIGHT_SECONDS).coerceIn(0f, 1f) else 0f
         for (i in 0 until seeds) {
-            sx[i] += svx[i] * dt
-            sy[i] += svy[i] * dt
+            val m = if (glint > 0f && (i == pairA || i == pairB)) 1f - glint else 1f
+            sx[i] += svx[i] * dt * m
+            sy[i] += svy[i] * dt * m
             // A seed turning back off an edge is the one visible event in the
             // drift, so that is what sounds, in the seed's own pitch and at its
             // side. (It was a STEP on every refresh, sixty a second, pitched
@@ -94,8 +99,8 @@ class VoronoiSim : Sim {
             var bounced = false
             // (Only when heading outward, by the motion dt actually gave —
             // time can run backwards — so a seed just outside is turned once.)
-            val mx = svx[i] * dt
-            val my = svy[i] * dt
+            val mx = svx[i] * dt * m
+            val my = svy[i] * dt * m
             if ((sx[i] < -halfW && mx < 0f) || (sx[i] > halfW && mx > 0f)) { svx[i] = -svx[i]; bounced = true }
             if ((sy[i] < -1f && my < 0f) || (sy[i] > 1f && my > 0f)) { svy[i] = -svy[i]; bounced = true }
             if (bounced) env.emit(EventKind.HIT, i.toFloat() / max(1, seeds - 1), (sx[i] / halfW).coerceIn(-1f, 1f), 0.4f)
@@ -481,7 +486,10 @@ class RiemannSim : Sim {
         // Gaps between bars only while there is room for them; at hundreds of
         // bars the thin gaps beat against the pixels into stripes.
         val gapless = barW * stride < 0.012f
-        val half = if (gapless) barW * stride * 0.5f * 1.04f else barW * 0.44f
+        // Gapless bars overlap by over half a bar: at under a pixel each, a
+        // hair's overlap left the soft edges of neighbours summing to less
+        // than solid, and the area read as pinstripes.
+        val half = if (gapless) barW * stride * 0.5f * 1.6f else barW * 0.44f
         var i = 0
         while (i < bars) {
             val xMid = (i + 0.5f) / bars

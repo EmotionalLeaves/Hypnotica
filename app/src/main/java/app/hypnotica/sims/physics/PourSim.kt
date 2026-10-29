@@ -12,6 +12,7 @@ import app.hypnotica.core.sim.SimDef
 import app.hypnotica.core.sim.SimEnv
 import app.hypnotica.core.sim.TrapFormat
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -322,8 +323,8 @@ class PourSim : Sim {
                 if (current >= glasses) {
                     full = true
                     fullAt = elapsed
+                    // DONE comes from the engine on this payoff frame.
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 0.9f, 0f, 1f)
                 } else {
                     // One down: a chord, and on to the next.
                     env.emit(EventKind.HIT, 0.8f, glassPan, 0.8f)
@@ -434,6 +435,12 @@ class PourSim : Sim {
         val wallC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.85f)
         for (k in 0 until glasses) {
             val glassL = gL[k]; val glassR = gR[k]; val glassTop = gTop[k]
+            // A faint body of glass, and a lit strip down its left side: two
+            // grey lines and a floor read as a bracket, not a glass.
+            g.rect((glassL + glassR) * 0.5f, (glassBottom + glassTop) * 0.5f, (glassR - glassL) * 0.5f,
+                (glassTop - glassBottom) * 0.5f, Palette.TEXT_SECONDARY, alpha = 0.05f)
+            g.line(glassL + WALL * 1.4f, glassBottom + 0.04f, glassL + WALL * 1.4f, glassTop - 0.03f, 0.004f,
+                Palette.TEXT_PRIMARY, 0.12f)
             g.line(glassL, glassBottom, glassL, glassTop, WALL, wallC)
             g.line(glassR, glassBottom, glassR, glassTop, WALL, wallC)
             g.line(glassL - WALL * 0.5f, glassBottom, glassR + WALL * 0.5f, glassBottom, WALL, wallC)
@@ -476,8 +483,19 @@ class PourSim : Sim {
                     dx = if (dx < (gL[q] + gR[q]) * 0.5f) gL[q] - DRAW_INSET else gR[q] + DRAW_INSET
                 }
             }
-            val tone = (0.25f + sp * 0.35f).coerceIn(0f, 1f)
-            g.point(dx, dy, D * 1.3f, palette.at(if (lightUp) tone else 0.6f - tone * 0.6f))
+            // Deeper water a shade darker, so the pool has depth and its top
+            // reads as a surface instead of a flat slab of one colour.
+            val depth = if (k >= 0 && dy < gTop[k]) 0.14f * ((dy - glassBottom) / (gTop[k] - glassBottom)).coerceIn(0f, 1f) - 0.07f else 0f
+            val tone = (0.25f + sp * 0.35f + depth).coerceIn(0f, 1f)
+            val c = palette.at(if (lightUp) tone else 0.6f - tone * 0.6f)
+            if ((k < 0 || dy >= gTop[k]) && sp > STREAK_FROM) {
+                // Falling water drawn as a streak along its path, long enough
+                // to meet the drop behind: as round dots the stream was a
+                // string of pearls, not a pour.
+                g.rect(dx, dy, max(D * 0.55f, sp * STREAK), D * 0.42f, c, atan2(vy[i], vx[i]))
+            } else {
+                g.point(dx, dy, D * 1.3f, c)
+            }
         }
         // The tap: a spout, and the pipe it hangs from. Kept once the glass
         // is full, dimmed: hidden at the brim, the last of the stream fell
@@ -514,6 +532,9 @@ class PourSim : Sim {
         const val BOUNCE = 0.1f
         const val GRAVITY_SCALE = 0.25f
         const val TAP_WIDTH = 0.04f
+        /** Half a streak's length per unit of speed: about the gap between drops in the stream. */
+        const val STREAK = 0.0068f
+        const val STREAK_FROM = 1.2f
         const val WALL = 0.012f
         /** How far a drop's centre is drawn from a wall's centre line: half a wall and a drop's drawn radius. */
         const val DRAW_INSET = WALL * 0.5f + D * 0.65f
