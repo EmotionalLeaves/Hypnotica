@@ -5,6 +5,7 @@ import app.hypnotica.core.sim.SimDef
 /** The second wave of sims for this shelf; each sim lives in its own file. */
 object PhysicsMore {
     fun defs(): List<SimDef> = listOf(
-        SlinkyDropSim.def()
+        SlinkyDropSim.def(),
+        BrachistochroneSim.def()
     )
 }

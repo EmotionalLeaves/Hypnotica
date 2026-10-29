@@ -43,7 +43,7 @@ class SlinkyDropSim : Sim {
     private var topY = 0.82
     private var floorY = -0.93
     private var radius = 0.08f
-    private var slow = 4f
+    private var slow = 6f
     private var holdFor = 2f
 
     private var elapsed = 0f
@@ -69,7 +69,7 @@ class SlinkyDropSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         n = p.i("coils", 50).coerceIn(MIN_COILS, MAX_COILS)
-        slow = p.f("slow", 4f).coerceIn(1f, 10f)
+        slow = p.f("slow", 6f).coerceIn(1f, 10f)
         ball = p.b("ball", true)
         grav = max(0.0, env.laws.gravity.toDouble())
         // The hanging length is the slinky's own weight over its stiffness:
@@ -82,10 +82,12 @@ class SlinkyDropSim : Sim {
         // n − 1 springs in series, each n − 1 times as stiff as the whole.
         kSeg = kTotal * (n - 1)
         d0 = COLLAPSED / n
-        // The collapse takes as long as free fall over the stretch, √(M/K),
-        // and that is independent of gravity: g stretches the spring and
-        // speeds the fall in exactly cancelling measure.
-        theory = sqrt(TOTAL_MASS / kTotal)
+        // The top stack's momentum grows at exactly Mg, and it sits at the
+        // hanging position of the coil the front has reached, so
+        // (M/K)(ξ²/2 − ξ³/3) = t²/2 for the front at mass fraction ξ: it
+        // reaches the bottom at √(M/3K). Gravity cancels out — it stretches
+        // the spring and speeds the fall in exactly equal measure.
+        theory = sqrt(TOTAL_MASS / (3.0 * kTotal))
         radius = min(0.085f, env.halfWidth * 0.2f)
         y = DoubleArray(n); v = DoubleArray(n); y0 = DoubleArray(n)
         y[0] = topY
@@ -115,7 +117,7 @@ class SlinkyDropSim : Sim {
         val h = abs(dt)
         elapsed += h
         grav = max(0.0, env.laws.gravity.toDouble())
-        slow = env.params.f("slow", 4f).coerceIn(1f, 10f)
+        slow = env.params.f("slow", 6f).coerceIn(1f, 10f)
         if (!released) {
             if (elapsed >= holdFor) {
                 released = true
@@ -163,7 +165,7 @@ class SlinkyDropSim : Sim {
         // patter as the rest pile on.
         if (moved && landedAt < 0f) {
             var down = 0
-            for (i in 0 until n) if (y[i] <= floorY + d0 * 0.6) down++
+            for (i in 0 until n) if (y[i] <= floorY + (n - 1 - i) * d0 + d0 * 0.6) down++
             if (down > 0 && landed == 0) env.emit(EventKind.HIT, 0.2f, 0f, 0.9f)
             if (down >= n) {
                 landedAt = elapsed
@@ -274,8 +276,9 @@ class SlinkyDropSim : Sim {
         // The bottom coil: the one everyone is watching.
         val by = y[n - 1].toFloat()
         val bc = pal.at(0.85f)
-        val pulse = if (moved) 1f else 0.55f + 0.2f * kotlin.math.sin(elapsed * 5f)
-        g.glow(0f, by, r * 1.6f, bc, 0.35f * pulse)
+        // Steady: the user finds throbbing highlights disorienting.
+        val lit = if (moved) 1f else 0.6f
+        g.glow(0f, by, r * 1.6f, bc, 0.35f * lit)
         g.line(-r, by, r, by - d0.toFloat() * 0.5f, lw * 1.6f, Palette.brighten(bc, 0.25f))
         // The ball let go beside it at the same instant.
         if (ball) {
@@ -299,7 +302,7 @@ class SlinkyDropSim : Sim {
         val clock = if (released) String.format(l, "%.0f ms", real * 1000) else "holding"
         return if (moved) listOf(
             "bottom hung still" to String.format(l, "%.0f ms", hangTime * 1000),
-            "free fall over the stretch" to String.format(l, "%.0f ms", theory * 1000),
+            "theory √(M/3K)" to String.format(l, "%.0f ms", theory * 1000),
             "camera" to String.format(l, "%.0f× slow", slow)
         ) else listOf(
             "since release" to clock,
@@ -338,11 +341,11 @@ class SlinkyDropSim : Sim {
             lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Hang it again",
             defaultPalette = "Spectrum",
-            typicalSeconds = 5f,
+            typicalSeconds = 4.5f,
             params = listOf(
                 Param.int("coils", "Coils", MIN_COILS, MAX_COILS, 50, card = Card.DATA),
                 Param.float("stretch", "Hanging length", 0.6f, 1.45f, 1.2f, card = Card.DATA, unit = "m"),
-                Param.float("slow", "Slow motion", 1f, 10f, 4f, card = Card.MOTION, unit = "×"),
+                Param.float("slow", "Slow motion", 1f, 10f, 6f, card = Card.MOTION, unit = "×"),
                 Param.bool("ball", "Drop a ball beside it", true, card = Card.LOOK)
             ),
             create = { SlinkyDropSim() }

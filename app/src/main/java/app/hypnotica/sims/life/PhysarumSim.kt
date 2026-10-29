@@ -70,6 +70,8 @@ class PhysarumSim : Sim {
     private var maxDist = 1
     private var veinCells = 0
     private var halfW = 0.46f
+    /** The field's average at equilibrium: agents per cell × deposit ÷ decay. Levels are read against it. */
+    private var mean = 1f
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
@@ -116,6 +118,7 @@ class PhysarumSim : Sim {
         val perCell = env.params.f("density", 0.32f).coerceIn(0.05f, 1.2f)
         n = (gw * gh * perCell).toInt().coerceIn(500, MAX_AGENTS)
         ax = FloatArray(n); ay = FloatArray(n); ah = FloatArray(n)
+        mean = n.toFloat() / (gw * gh) * DEPOSIT / DECAY
         for (i in 0 until n) {
             val f = i % foods
             val a = env.rng.range(0f, TAU)
@@ -187,23 +190,27 @@ class PhysarumSim : Sim {
             for (dy in -2..2) for (dx in -2..2) {
                 if (dx * dx + dy * dy > 5) continue
                 val k = (cy + dy) * w + (cx + dx)
-                t[k] += FOOD_SMELL
+                t[k] += FOOD_SMELL * mean
             }
         }
         // Spread (a 3×3 mean) and fade.
         val keep = 1f - DECAY
         val o = spare
+        // The dish wall soaks the chemical up (outside counts as zero), so a
+        // stream that meets the wall thins out instead of running along it as
+        // a tube to nowhere.
+        val k9 = keep / 9f
         for (y in 0 until hh) {
-            val ym = if (y > 0) y - 1 else y
-            val yp = if (y < hh - 1) y + 1 else y
-            val rm = ym * w; val r0 = y * w; val rp = yp * w
+            val r0 = y * w
+            val rm = r0 - w; val rp = r0 + w
+            val hasM = y > 0; val hasP = y < hh - 1
             for (x in 0 until w) {
-                val xm = if (x > 0) x - 1 else x
-                val xp = if (x < w - 1) x + 1 else x
-                val s = t[rm + xm] + t[rm + x] + t[rm + xp] +
-                    t[r0 + xm] + t[r0 + x] + t[r0 + xp] +
-                    t[rp + xm] + t[rp + x] + t[rp + xp]
-                o[r0 + x] = s * (keep / 9f)
+                var s = 0f
+                val l = x > 0; val r = x < w - 1
+                if (hasM) { s += t[rm + x]; if (l) s += t[rm + x - 1]; if (r) s += t[rm + x + 1] }
+                s += t[r0 + x]; if (l) s += t[r0 + x - 1]; if (r) s += t[r0 + x + 1]
+                if (hasP) { s += t[rp + x]; if (l) s += t[rp + x - 1]; if (r) s += t[rp + x + 1] }
+                o[r0 + x] = s * k9
             }
         }
         spare = trail; trail = o
@@ -212,7 +219,12 @@ class PhysarumSim : Sim {
 
     private fun sample(t: FloatArray, x: Float, y: Float): Float {
         val ix = x.toInt(); val iy = y.toInt()
-        if (ix < 0 || iy < 0 || ix >= gw || iy >= gh) return -1f
+        if (ix < 0 || iy < 0 || ix >= gw || iy >= gh) return -mean
+        // Near the dish wall the smell reads weaker than it is: without it the
+        // agents a wall turned back slid along it and wore a tube round the
+        // edge of the dish that led to no food.
+        val edge = min(min(ix, gw - 1 - ix), min(iy, gh - 1 - iy))
+        if (edge < WALL_ZONE) return t[iy * gw + ix] - mean * WALL_PUSH * (1f - edge / WALL_ZONE.toFloat())
         return t[iy * gw + ix]
     }
 
@@ -224,7 +236,7 @@ class PhysarumSim : Sim {
      */
     private fun checkLinks(env: SimEnv) {
         java.util.Arrays.fill(label, -1)
-        val th = VEIN
+        val th = VEIN * mean
         var veins = 0
         for (k in trail.indices) if (trail[k] > th) veins++
         veinCells = veins
@@ -308,7 +320,7 @@ class PhysarumSim : Sim {
             if (lv == 0) 0 else {
                 val u = lv / LEVELS.toFloat()
                 // Faint chemical a dim, cool shade; thick veins bright.
-                Palette.lerp(Palette.BG, palette.at(0.15f + 0.55f * u), 0.25f + 0.75f * u)
+                Palette.lerp(Palette.BG, palette.at(0.72f - 0.67f * u), 0.2f + 0.8f * u)
             }
         }
         val glint = IntArray(LEVELS + 1) { lv -> if (lv == 0) 0 else Palette.brighten(levels[lv], 0.45f) }
@@ -324,21 +336,21 @@ class PhysarumSim : Sim {
             }
         }
         // The food: an oat flake, ringed once its network has reached another.
-        val accent = palette.at(0.92f)
+        val accent = palette.at(0.05f)
         for (f in 0 until foods) {
             val x = x0 + fx[f] * cell; val y = y0 + fy[f] * cell
             val linked = find(f).let { r -> (0 until foods).any { it != f && find(it) == r } }
             val flash = (1f - (elapsed - linkedAt[f]) / 0.8f).coerceIn(0f, 1f)
             val done = if (since >= 0f) (1f - since / 2.5f).coerceIn(0f, 1f) else 0f
             g.glow(x, y, FOOD_R * (2.6f + 2f * flash + 2f * done), accent, 0.35f + 0.4f * flash + 0.4f * done)
-            g.disc(x, y, FOOD_R, Palette.brighten(accent, 0.2f * flash))
+            g.disc(x, y, FOOD_R, Palette.TEXT_PRIMARY)
             g.ring(x, y, FOOD_R * 1.75f, FOOD_R * 0.28f, if (linked) Palette.TEXT_PRIMARY else accent, alpha = if (linked) 0.9f else 0.45f)
         }
     }
 
     private fun level(v: Float): Int {
-        if (v < FAINT) return 0
-        val u = 1f - exp(-v / BRIGHT)
+        if (v < FAINT * mean) return 0
+        val u = 1f - exp(-v / (BRIGHT * mean))
         return (u * LEVELS).roundToInt().coerceIn(1, LEVELS)
     }
 
@@ -359,17 +371,19 @@ class PhysarumSim : Sim {
         const val FIELD_TOP = 0.86f
         const val FIELD_BOTTOM = -0.96f
         const val MARGIN = 0.02f
-        const val TICKS_PER_SECOND = 32f
-        const val SENSE = 9f
+        const val TICKS_PER_SECOND = 14f
+        const val SENSE = 7f
         const val DEPOSIT = 5f
-        const val FOOD_SMELL = 18f
+        const val FOOD_SMELL = 3f
+        const val WALL_ZONE = 8
+        const val WALL_PUSH = 1.5f
         const val DECAY = 0.1f
         const val BLOB = 9f
         const val CHECK_EVERY = 8
         /** Chemical level that counts as a vein for the network test. */
-        const val VEIN = 3.2f
-        const val FAINT = 0.6f
-        const val BRIGHT = 9f
+        const val VEIN = 2.5f
+        const val FAINT = 0.15f
+        const val BRIGHT = 3f
         const val LEVELS = 14
         const val FOOD_R = 0.016f
         const val GLINT_SECONDS = 1.6f

@@ -18,17 +18,17 @@ internal object SegDigits {
 
     /**
      * One digit centred on ([cx], [cy]), [h] tall. The segments stop short of
-     * each other, the gap a third of a stroke, so the figure reads as built of
+     * each other, the gap a fifth of a stroke, so the figure reads as built of
      * bars rather than a box with notches.
      */
     fun digit(g: G, cx: Float, cy: Float, h: Float, d: Int, color: Int, alpha: Float = 1f) {
         if (d !in 0..9 || h <= 0f) return
         val m = MASKS[d]
         val w = h * ASPECT
-        val t = h * 0.13f
+        val t = h * 0.14f
         val hw = w * 0.5f - t * 0.5f
         val hh = h * 0.5f - t * 0.5f
-        val gap = t * 0.38f
+        val gap = t * 0.2f
         val xl = cx - hw; val xr = cx + hw
         val yt = cy + hh; val yb = cy - hh
         // Horizontal bars run between the verticals' centre lines, less the gap.

@@ -49,4 +49,11 @@ internal class AlgoPace(val total: Int, val seconds: Float, startRate: Float) {
     fun rate(t: Float): Float =
         if (a == 0.0) total / seconds.coerceAtLeast(1e-3f) else (r0 * exp(a * t.coerceIn(0f, seconds))).toFloat()
 
+    /** When action [i] (0-based) falls due: the inverse of [due]. */
+    fun timeOf(i: Int): Float {
+        val n = i + 1
+        if (n >= total) return seconds
+        return if (a == 0.0) seconds * n / total.coerceAtLeast(1)
+        else (kotlin.math.ln(1.0 + a * n / r0) / a).toFloat().coerceAtMost(seconds)
+    }
 }
