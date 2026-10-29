@@ -294,23 +294,51 @@ class ColourWarSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val colours = IntArray(teams) { palette.at(0.08f + 0.84f * it / max(1f, teams - 1f)) }
-        val dark = IntArray(teams) { Palette.withAlpha(colours[it], 0.85f) }
-        g.reservePoints(cols * rows)
+        // The ground as solid territory, a rect per run of one owner, with a
+        // dark seam where two owners meet. Each square used to be a round
+        // dot, so the board was a dot grid and a border was only a change of
+        // dot colour. Toned a little towards the background, so the balls,
+        // in the full colour and ringed in black, stand out on their own
+        // ground; much further and a yellow went to mud.
+        val glowK = if (decided) (1f - (elapsed - decidedAt) / 1.2f).coerceIn(0f, 1f) else 0f
+        val fill = IntArray(teams) {
+            val base = Palette.lerp(Palette.BG, colours[it], 0.78f)
+            // The verdict: the winner's ground lights up, and fades back.
+            if (it == winnerTeam && glowK > 0f) Palette.lerp(base, Palette.brighten(colours[it], 0.2f), glowK) else base
+        }
         for (r in 0 until rows) {
             val y = 1f - (r + 0.5f) * cell
+            val row = r * cols
+            g.cellRow(-halfW, y, cell, cols) { c -> fill[owner[row + c].toInt()] }
+        }
+        val seam = Palette.withAlpha(Palette.BG, 0.85f)
+        val sw = max(cell * 0.12f, 0.003f)
+        for (r in 0 until rows) {
+            val row = r * cols
+            val yTop = 1f - r * cell
             for (c in 0 until cols) {
-                val o = owner[r * cols + c].toInt()
-                g.point(-halfW + (c + 0.5f) * cell, y, cell * 0.92f, dark[o])
+                val o = owner[row + c]
+                // Seams on the right and below; the edges of the board are
+                // the screen's.
+                if (c + 1 < cols && owner[row + c + 1] != o) {
+                    val x = -halfW + (c + 1) * cell
+                    g.rect(x, yTop - cell * 0.5f, sw * 0.5f, cell * 0.5f + sw * 0.5f, seam)
+                }
+                if (r + 1 < rows && owner[row + cols + c] != o) {
+                    val x = -halfW + (c + 0.5f) * cell
+                    g.rect(x, yTop - cell, cell * 0.5f + sw * 0.5f, sw * 0.5f, seam)
+                }
             }
         }
         for (i in bx.indices) {
             if (!alive[i]) continue
             // Each ball wears the colour of the ground it fights for, bright
             // against its own territory.
-            val c = Palette.brighten(colours[bteam[i]], 0.55f)
-            g.glow(bx[i], by[i], BALL_R * 3.5f, c, 0.55f)
-            g.disc(bx[i], by[i], BALL_R, Palette.TEXT_PRIMARY)
-            g.disc(bx[i], by[i], BALL_R * 0.6f, c)
+            val c = colours[bteam[i]]
+            g.glow(bx[i], by[i], BALL_R * 3f, c, 0.45f)
+            g.disc(bx[i], by[i], BALL_R * 1.2f, Palette.BG)
+            g.disc(bx[i], by[i], BALL_R, c)
+            g.disc(bx[i], by[i], BALL_R * 0.4f, Palette.TEXT_PRIMARY)
         }
     }
 
@@ -352,7 +380,7 @@ class ColourWarSim : Sim {
             blurb = "Each colour's balls take the squares they bounce off. Who holds the board?",
             formats = listOf(TrapFormat.COLOR_BATTLE, TrapFormat.LAST_STANDING, TrapFormat.SONG),
             heroLabel = "New war",
-            defaultPalette = "Candy",
+            defaultPalette = "Aurora",
             typicalSeconds = 24f,
             params = listOf(
                 Param.choice("layout", "Battlefield", listOf("Blocks", "Stripes", "Islands"), 0, card = Card.DATA, input = ParamInput.TILES),

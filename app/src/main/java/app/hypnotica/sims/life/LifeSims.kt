@@ -27,6 +27,31 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/**
+ * One row of grid cells as solid squares, a rect per run of the same colour.
+ *
+ * Grid sims drew each cell as a point, and the point shader is a soft round
+ * dot: a sand pile, a field of chemical or an ant's trail read as a dot
+ * grid with black between — "swiss cheese". Rects have hard edges in the
+ * shader, so abutting runs tile with no seams, and merging a run of equal
+ * colours keeps the draw list a fraction of the cell count. [colorOf]
+ * answers 0 for an empty cell; palette colours are opaque, so never 0.
+ * Each rect is a hair over its cell so the preview's antialiasing cannot
+ * leave hairlines between rows either.
+ */
+internal inline fun G.cellRow(x0: Float, yc: Float, size: Float, count: Int, colorOf: (Int) -> Int) {
+    var start = 0
+    var cur = 0
+    for (x in 0..count) {
+        val c = if (x < count) colorOf(x) else 0
+        if (c != cur) {
+            if (cur != 0) rect(x0 + (start + x) * 0.5f * size, yc, (x - start) * 0.5f * size + size * 0.02f, size * 0.52f, cur)
+            start = x
+            cur = c
+        }
+    }
+}
+
 /** The ant's four headings, hoisted: this runs up to 120,000 times a step. */
 private val ANT_DX = intArrayOf(0, 1, 0, -1)
 private val ANT_DY = intArrayOf(-1, 0, 1, 0)
@@ -244,7 +269,10 @@ class BoidsSim : Sim {
             orderStalledFor += abs(dt)
         }
         val organised = earlyOrder > 0f && bestOrder > earlyOrder * Flock.ORDER_GAIN
-        if (!flocked && elapsed > 6f &&
+        // Not before ten seconds: turning before the walls, the flock
+        // organises sooner, and a stall at seven called it done before the
+        // streams had formed.
+        if (!flocked && elapsed > 10f &&
             ((organised && orderStalledFor > Flock.ORDER_STALL) || elapsed > Flock.ORDER_BACKSTOP)
         ) {
             flocked = true
@@ -303,8 +331,16 @@ class BoidsSim : Sim {
                         if (cy < 0 || cy >= gridH || cx < 0 || cx >= gridW) continue
                         val c = cy * gridW + cx
                         var k = cellStart[c]
-                        val end = cellStart[c] + cellCount[c]
-                        while (k < end && neighbours < Flock.MAX && looked < Flock.LOOK) {
+                        // A share of the budget per cell, too. In a dense
+                        // flock the bird's own cell alone filled the budget,
+                        // so it steered by its own cell only, cohesion pulled
+                        // every bird to its cell's middle, and at twenty
+                        // thousand the flock froze into a lattice of clumps
+                        // on the grid. At the shipped density no cell holds
+                        // its share, and nothing changes.
+                        val end = min(cellStart[c] + cellCount[c], cellStart[c] + Flock.LOOK_PER_CELL + 1)
+                        var taken = 0
+                        while (k < end && neighbours < Flock.MAX && looked < Flock.LOOK && taken < Flock.MAX_PER_CELL) {
                             val j = order[k]
                             k++
                             if (j == i) continue
@@ -314,6 +350,7 @@ class BoidsSim : Sim {
                             val d2 = dx * dx + dy * dy
                             if (d2 > r2 || d2 < 1e-9f) continue
                             neighbours++
+                            taken++
                             cohX += px[j]; cohY += py[j]
                             aliX += vx[j]; aliY += vy[j]
                             val inv = 1f / d2
@@ -337,6 +374,19 @@ class BoidsSim : Sim {
                 ay += cohY * cohesion * 0.9f + aliY * alignment * 2.4f + sepY * separation * 30f
             }
 
+            if (!wrap) {
+                // In a box, birds see the wall coming and turn before it, as
+                // in Reynolds' own boids. Bounced only at contact, the flock
+                // packed itself against the top and sides in a band of
+                // birds flying into the edge.
+                val m = WALL_MARGIN
+                val dl = px[i] + halfW; val dr = halfW - px[i]
+                val db = py[i] + 1f; val dtp = 1f - py[i]
+                if (dl < m) ax += (1f - dl / m) * WALL_PUSH
+                if (dr < m) ax -= (1f - dr / m) * WALL_PUSH
+                if (db < m) ay += (1f - db / m) * WALL_PUSH
+                if (dtp < m) ay -= (1f - dtp / m) * WALL_PUSH
+            }
             var nvx = vx[i] + ax * dt
             var nvy = vy[i] + ay * dt
             val s = sqrt(nvx * nvx + nvy * nvy)
@@ -370,16 +420,25 @@ class BoidsSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val small = n > 4000
+        // Coloured by heading, not at random. A random tint per bird made the
+        // flock a rainbow confetti of dashes in which no flock could be seen;
+        // by heading, birds flying together share a colour and each flock
+        // reads as one stream. |angle|/pi is continuous all the way round, so
+        // a ramp palette has no seam where the heading wraps. The bird's own
+        // tint survives as a faint shimmer within its stream.
         if (small) {
             g.reservePoints(n)
             for (i in 0 until n) {
-                g.point(px[i], py[i], 0.006f, palette.at(tint[i]))
+                val a = atan2(vy[i], vx[i])
+                g.point(px[i], py[i], 0.006f, Palette.brighten(palette.at(abs(a) / PI.toFloat()), (tint[i] - 0.5f) * 0.12f))
             }
         } else {
             g.reserveInstances(n)
             for (i in 0 until n) {
                 val a = atan2(vy[i], vx[i])
-                g.rect(px[i], py[i], 0.016f, 0.005f, palette.at(tint[i]), a)
+                // Slimmer than they were (0.032 by 0.010): at three thousand
+                // the old dashes covered a third of the screen and touched.
+                g.rect(px[i], py[i], 0.011f, 0.0032f, Palette.brighten(palette.at(abs(a) / PI.toFloat()), (tint[i] - 0.5f) * 0.12f), a)
             }
         }
     }
@@ -420,6 +479,10 @@ class BoidsSim : Sim {
          */
         const val LOOK = 120
 
+        /** The shares of [LOOK] and [MAX] any one of the nine cells may use. */
+        const val LOOK_PER_CELL = LOOK / 9
+        const val MAX_PER_CELL = MAX / 9 + 1
+
         /** When the starting disorder is read, after the first scatter settles. */
         const val ORDER_BASELINE_AT = 3f
 
@@ -434,6 +497,9 @@ class BoidsSim : Sim {
     }
 
     companion object {
+        /** How far from a wall a bird starts to turn, and how hard. */
+        const val WALL_MARGIN = 0.15f
+        const val WALL_PUSH = 10f
         fun def(): SimDef = SimDef(
             id = "life/boids",
             title = "Flocking",
@@ -495,6 +561,7 @@ class LangtonsAntSim : Sim {
         w = p.i("width", 180).coerceIn(60, 600)
         h = p.i("height", 260).coerceIn(60, 800)
         cells = ByteArray(w * h)
+        flippedAt = IntArray(w * h)
         ax = w / 2
         ay = h / 2
         dir = 0
@@ -504,20 +571,45 @@ class LangtonsAntSim : Sim {
         highwayAt = -1
         blackCount = 0
         turnIndex = 0
-        reach = 0
+        reachX = 0
+        reachY = 0
+        gone = false
+        goneFor = 0f
     }
 
-    /** How far from the start, in cells, the ant has been: the view follows it out. */
-    private var reach = 0
+    /** The step each cell last flipped at: its colour is its age. */
+    private var flippedAt = IntArray(0)
+
+    /** How far from the start, in cells, the ant has been, across and up: the view follows it out. */
+    private var reachX = 0
+    private var reachY = 0
+
+    /**
+     * The ant has walked off the edge along its highway. It used to wrap: the
+     * highway came back in at the opposite side as a second, unrelated line,
+     * and on the torus it would in time crash into its own debris — which the
+     * ant on the infinite plane never does. Before the highway it still wraps
+     * (see step), since a small grid can be met before the highway forms.
+     */
+    private var gone = false
+    private var goneFor = 0f
 
     override fun focus(env: SimEnv): Float {
         val size = min(2f * env.halfWidth / w, 2f / h)
-        // Square round the start; past the grid's own size there is nothing to close in on.
-        return (reach + FOCUS_MARGIN) * size
+        // The box round the start, across and up taken separately: the screen
+        // is twice as tall as it is wide, and a square took the width's limit
+        // for both, leaving a small smudge in a tall empty screen.
+        val hw = env.halfWidth
+        val m = min(hw, 1f)
+        return max((reachX + FOCUS_MARGIN) * size * m / hw, (reachY + FOCUS_MARGIN) * size * m)
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        if (gone) {
+            goneFor += abs(dt)
+            return
+        }
         carry += abs(dt) * env.params.f("rate", 700f)
         var budget = min(carry.toInt(), 120000)
         carry -= budget
@@ -526,21 +618,33 @@ class LangtonsAntSim : Sim {
             val black = cells[idx].toInt() != 0
             dir = if (black) (dir + 3) % 4 else (dir + 1) % 4
             cells[idx] = if (black) 0 else 1
+            flippedAt[idx] = steps.toInt()
             blackCount += if (black) -1 else 1
             recentTurns[turnIndex and 255] = if (black) 0 else 1
             turnIndex++
-            ax += ANT_DX[dir]
-            ay += ANT_DY[dir]
-            // Wrapping, not clamping: an ant pinned against a wall flips the
-            // same two cells forever, and the highway — which is the payoff —
-            // never appears.
-            if (ax < 0 || ax >= w || ay < 0 || ay >= h) {
-                ax = ((ax % w) + w) % w
-                ay = ((ay % h) + h) % h
-            }
+            val nx = ax + ANT_DX[dir]
+            val ny = ay + ANT_DY[dir]
             steps++
-            val far = max(abs(ax - w / 2), abs(ay - h / 2))
-            if (far > reach) reach = far
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+                // On its highway, it walks off the world and keeps going.
+                if (highwayAt >= 0) {
+                    gone = true
+                    env.emit(EventKind.STEP, 0.95f, 0f, 0.6f)
+                    break
+                }
+                // Before: wrapping, not clamping. An ant pinned against a
+                // wall flips the same two cells forever, and the highway —
+                // which is the payoff — never appears.
+                ax = ((nx % w) + w) % w
+                ay = ((ny % h) + h) % h
+            } else {
+                ax = nx
+                ay = ny
+            }
+            val fx = abs(ax - w / 2)
+            val fy = abs(ay - h / 2)
+            if (fx > reachX) reachX = fx
+            if (fy > reachY) reachY = fy
             if (steps % 97L == 0L) {
                 env.emit(EventKind.STEP, (blackCount.toFloat() / (w * h)).coerceIn(0f, 1f), 0f, 0.3f)
             }
@@ -570,19 +674,38 @@ class LangtonsAntSim : Sim {
         val size = min(2f * halfW / w, 2f / h)
         val originX = -size * w * 0.5f
         val originY = -size * h * 0.5f
-        g.reservePoints(max(1, blackCount))
-        for (i in 0 until w * h) {
-            if (cells[i].toInt() == 0) continue
-            g.point(
-                originX + (i % w + 0.5f) * size,
-                originY + (i / w + 0.5f) * size,
-                size,
-                palette.at(((i % w) + (i / w)).toFloat() / (w + h))
-            )
+        // Square cells, coloured by age: the freshest trail at the bright end
+        // of the palette, the oldest at the deep end. They were round dots
+        // coloured by position, a speckle whose colour said nothing — and the
+        // highway changed colour as it crossed the screen. By age, the chaos
+        // reads as a slowly cooling heap and the highway as a hot new road
+        // running out of it. In bands, so runs of a row merge into one rect.
+        val now = steps.toInt()
+        val span = max(1f, steps.toFloat())
+        val shades = IntArray(AGE_BANDS) { palette.at(it / (AGE_BANDS - 1f) * 0.92f) }
+        for (y in 0 until h) {
+            val row = y * w
+            g.cellRow(originX, originY + (y + 0.5f) * size, size, w) { x ->
+                if (cells[row + x].toInt() == 0) 0
+                else {
+                    val age = (now - flippedAt[row + x]) / span
+                    // A square root, so the young highway spans many bands
+                    // and the old heap only a few.
+                    shades[(sqrt(age) * (AGE_BANDS - 1)).toInt().coerceIn(0, AGE_BANDS - 1)]
+                }
+            }
         }
-        g.glow(originX + (ax + 0.5f) * size, originY + (ay + 0.5f) * size, size * 6f, Palette.SUCCESS, 0.8f)
-        g.disc(originX + (ax + 0.5f) * size, originY + (ay + 0.5f) * size, size * 1.4f, Palette.SUCCESS)
+        if (!gone) {
+            val cx = originX + (ax + 0.5f) * size
+            val cy = originY + (ay + 0.5f) * size
+            // At least a few pixels, so the ant is findable once the view pulls back.
+            val r = max(size * 1.1f, 0.006f)
+            g.glow(cx, cy, r * 5f, Palette.SUCCESS, 0.7f)
+            g.disc(cx, cy, r, Palette.SUCCESS)
+        }
     }
+
+    override fun finished(): Boolean = gone && goneFor > 2.5f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -593,6 +716,7 @@ class LangtonsAntSim : Sim {
 
     companion object {
         const val FOCUS_MARGIN = 10
+        const val AGE_BANDS = 24
         fun def(): SimDef = SimDef(
             id = "life/langtons-ant",
             title = "Langton's ant",
@@ -619,7 +743,13 @@ class LangtonsAntSim : Sim {
  * Falling sand: grains settle, pile and slide. Cheap rules, endlessly watchable.
  */
 /** Grains a full box holds at the shipped 140 by 220. */
-private const val SAND_SHIPPED_CAPACITY = 140f * 220f * 0.32f
+/**
+ * How full the box ends. It was 0.32, and the finished pile was a low ridge
+ * along the floor of a mostly empty box.
+ */
+private const val SAND_FILL = 0.42f
+
+private const val SAND_SHIPPED_CAPACITY = 140f * 220f * SAND_FILL
 
 class FallingSandSim : Sim {
 
@@ -638,6 +768,10 @@ class FallingSandSim : Sim {
     private var filled = 0
     private var payoffFrame = false
     private var pourX = 0
+    private var pourAt = 0f
+    private var vacated = IntArray(0)
+    private var passId = 0
+    private var pourDrift = 0f
     private var capacity = 0
 
     override fun setup(env: SimEnv) {
@@ -646,12 +780,16 @@ class FallingSandSim : Sim {
         h = p.i("height", 220).coerceIn(20, 600)
         grid = ByteArray(w * h)
         colour = FloatArray(w * h)
+        vacated = IntArray(w * h)
+        passId = 0
         carry = 0f
         pourTimer = 0f
         filled = 0
         payoffFrame = false
         pourX = w / 2
-        capacity = (w * h * 0.32f).toInt()
+        capacity = (w * h * SAND_FILL).toInt()
+        pourAt = w / 2f
+        pourDrift = 0f
         settled = false
         settledFor = 0f
         quietPasses = 0
@@ -663,33 +801,65 @@ class FallingSandSim : Sim {
         // third of a second and a 400-by-600 one in three minutes. The slider
         // is grains a second at the shipped size, and the fill takes the same
         // time whatever the size.
-        val pourRate = env.params.f("pour", 420f) * (capacity / SAND_SHIPPED_CAPACITY).coerceAtLeast(0.05f)
+        val pourRate = env.params.f("pour", 560f) * (capacity / SAND_SHIPPED_CAPACITY).coerceAtLeast(0.05f)
+        // The spout wanders slowly, so the pile grows several peaks. It used
+        // to jump up to two columns at random with every grain, and the
+        // falling grains drew that walk as a scraggly zigzag hanging from the
+        // top; now it is a steady stream that sways.
+        pourDrift = (pourDrift * (1f - abs(dt)) + env.rng.range(-1f, 1f) * abs(dt) * 40f).coerceIn(-14f, 14f)
+        pourAt = (pourAt + pourDrift * abs(dt)).coerceIn(w * 0.12f, w * 0.88f)
+        if (pourAt <= w * 0.12f || pourAt >= w * 0.88f) pourDrift = -pourDrift
+        pourX = pourAt.toInt().coerceIn(2, w - 3)
         pourTimer += abs(dt) * pourRate
-        while (pourTimer >= 1f && filled < capacity) {
-            pourTimer -= 1f
-            pourX = (pourX + env.rng.int(-2, 3)).coerceIn(2, w - 3)
-            val idx = pourX
-            if (grid[idx].toInt() == 0) {
-                grid[idx] = 1
-                colour[idx] = (env.time * 0.05f) % 1f
+        // The stream is as wide as it needs to be to carry the rate at about
+        // half density: a cell at the spout takes one grain a pass, so a
+        // one-column stream cannot pour faster than the settle speed, and a
+        // packed one fell as a solid wall that looked like part of the pile.
+        val passRate = max(1f, env.params.f("rate", 160f))
+        val spread = (pourRate / passRate).toInt().coerceIn(1, max(1, w / 6))
+        var tries = 0
+        while (pourTimer >= 1f && filled < capacity && tries < 4 * spread + 8) {
+            tries++
+            val x = (pourX + env.rng.int(-spread, spread + 1)).coerceIn(0, w - 1)
+            if (grid[x].toInt() == 0) {
+                pourTimer -= 1f
+                grid[x] = 1
+                // Strata: the colour sweeps along the palette and back, so
+                // the layers shade from one into the next. A sawtooth jumped
+                // from the dark end to the light one in a hard seam.
+                val phase = (env.time * 0.05f) % 1f
+                colour[x] = 1f - abs(2f * phase - 1f)
                 filled++
             }
         }
+        // Grains the spout could not place this frame are not owed later.
+        pourTimer = min(pourTimer, 4f * spread)
 
-        carry += abs(dt) * env.params.f("rate", 90f)
+        carry += abs(dt) * env.params.f("rate", 160f)
         var passes = min(carry.toInt(), 8)
         carry -= passes
         var moved = 0
         while (passes-- > 0) {
             val before = moved
+            // A cell emptied during this pass is not free until the next.
+            // Updated in place, a whole column fell as one in a single pass
+            // — each grain finding the cell below just vacated — so a grain
+            // on a vertical face never looked sideways, and a sheer cliff
+            // stood for seconds, draining one grain a pass from its foot.
+            // Deciding from the state at the start of the pass, as a
+            // cellular automaton should, the face slumps to the angle of
+            // repose at once.
+            passId++
+            val pass = passId
             // Bottom-up so a grain cannot fall twice in one pass.
             for (y in h - 2 downTo 0) {
                 val row = y * w
                 val below = (y + 1) * w
                 for (x in 0 until w) {
                     if (grid[row + x].toInt() == 0) continue
-                    if (grid[below + x].toInt() == 0) {
+                    if (grid[below + x].toInt() == 0 && vacated[below + x] != pass) {
                         grid[below + x] = 1; grid[row + x] = 0
+                        vacated[row + x] = pass
                         colour[below + x] = colour[row + x]
                         moved++
                     } else {
@@ -697,9 +867,10 @@ class FallingSandSim : Sim {
                         // a grain only stops when both are full.
                         val dir = if (env.rng.bool()) -1 else 1
                         var sx = x + dir
-                        if (sx !in 0 until w || grid[below + sx].toInt() != 0) sx = x - dir
-                        if (sx in 0 until w && grid[below + sx].toInt() == 0) {
+                        if (sx !in 0 until w || grid[below + sx].toInt() != 0 || vacated[below + sx] == pass) sx = x - dir
+                        if (sx in 0 until w && grid[below + sx].toInt() == 0 && vacated[below + sx] != pass) {
                             grid[below + sx] = 1; grid[row + x] = 0
+                            vacated[row + x] = pass
                             colour[below + sx] = colour[row + x]
                             moved++
                         }
@@ -738,15 +909,28 @@ class FallingSandSim : Sim {
         val size = min(2f * halfW / w, 2f / h)
         val originX = -size * w * 0.5f
         val originY = size * h * 0.5f
-        g.reservePoints(filled)
-        for (i in 0 until w * h) {
-            if (grid[i].toInt() == 0) continue
-            g.point(
-                originX + (i % w + 0.5f) * size,
-                originY - (i / w + 0.5f) * size,
-                size,
-                palette.at(colour[i])
-            )
+        // The glass the sand is poured into: two walls and a floor, so the
+        // pile stands on something and the space above it reads as the tank
+        // rather than as empty screen.
+        val glass = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.22f)
+        val lw = max(size * 0.5f, 0.004f)
+        val left = originX - lw * 0.5f
+        val right = -originX + lw * 0.5f
+        val floor = -originY - lw * 0.5f
+        g.line(left, floor, right, floor, lw, glass)
+        g.line(left, floor, left, originY, lw, glass)
+        g.line(right, floor, right, originY, lw, glass)
+        // The spout.
+        g.rect(originX + (pourX + 0.5f) * size, originY + size * 2f, size * 3f, size * 1.5f, palette.at(0f))
+        // Square grains in banded shades, merged into runs: as round dots the
+        // pile was a dot grid with black showing between every grain.
+        val shades = IntArray(SAND_BANDS) { palette.at(it / (SAND_BANDS - 1f)) }
+        for (y in 0 until h) {
+            val row = y * w
+            g.cellRow(originX, originY - (y + 0.5f) * size, size, w) { x ->
+                if (grid[row + x].toInt() == 0) 0
+                else shades[(colour[row + x] * (SAND_BANDS - 1) + 0.5f).toInt().coerceIn(0, SAND_BANDS - 1)]
+            }
         }
     }
 
@@ -756,7 +940,7 @@ class FallingSandSim : Sim {
             val size = min(2f * halfW / w, 2f / h)
             val gx = ((e.x + size * w * 0.5f) / size).toInt()
             val gy = ((size * h * 0.5f - e.y) / size).toInt()
-            if (gx in 1 until w - 1 && gy in 0 until h) pourX = gx
+            if (gx in 1 until w - 1 && gy in 0 until h) { pourX = gx; pourAt = gx.toFloat(); pourDrift = 0f }
         }
     }
 
@@ -767,6 +951,7 @@ class FallingSandSim : Sim {
 
     companion object {
         const val QUIET_PASSES = 3
+        const val SAND_BANDS = 32
         fun def(): SimDef = SimDef(
             id = "life/falling-sand",
             title = "Falling sand",
@@ -778,12 +963,12 @@ class FallingSandSim : Sim {
             defaultPalette = "Ember",
             // Settled means no grain moving for three passes in a row, which is
             // a little later than the old test, which fired mid-fall.
-            typicalSeconds = 33f,
+            typicalSeconds = 36f,
             params = listOf(
                 Param.int("width", "Columns", 20, 400, 140, card = Card.DATA),
                 Param.int("height", "Rows", 20, 600, 220, card = Card.DATA),
-                Param.float("pour", "Pour rate", 10f, 2000f, 420f, card = Card.MOTION, logScale = true),
-                Param.float("rate", "Settle speed", 10f, 600f, 90f, card = Card.MOTION, logScale = true)
+                Param.float("pour", "Pour rate", 10f, 2000f, 560f, card = Card.MOTION, logScale = true),
+                Param.float("rate", "Settle speed", 10f, 600f, 160f, card = Card.MOTION, logScale = true)
             ),
             create = { FallingSandSim() }
         )
@@ -818,6 +1003,8 @@ class PredatorPreySim : Sim {
     private var d = 0.1
     private var historyX = FloatArray(0)
     private var historyY = FloatArray(0)
+    /** When each sample was taken: the steps shrink in the payoff's slow motion. */
+    private var historyT = FloatArray(0)
     private var head = 0
     private var filled = 0
     private var elapsed = 0f
@@ -827,8 +1014,8 @@ class PredatorPreySim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        prey = p.f("prey0", 0.9f).toDouble()
-        predators = p.f("pred0", 0.4f).toDouble()
+        prey = p.f("prey0", 0.6f).toDouble()
+        predators = p.f("pred0", 1.4f).toDouble()
         peakPrey = max(prey * 1.2, 0.5)
         peakPred = max(predators * 1.2, 0.5)
         voiceClock = 0f
@@ -839,6 +1026,7 @@ class PredatorPreySim : Sim {
         val len = p.i("history", 3000).coerceIn(200, 40000)
         historyX = FloatArray(len)
         historyY = FloatArray(len)
+        historyT = FloatArray(len)
         head = 0
         filled = 0
         elapsed = 0f
@@ -873,6 +1061,7 @@ class PredatorPreySim : Sim {
 
         historyX[head] = prey.toFloat()
         historyY[head] = predators.toFloat()
+        historyT[head] = abs(env.time)
         head = (head + 1) % historyX.size
         if (filled < historyX.size) filled++
 
@@ -914,25 +1103,83 @@ class PredatorPreySim : Sim {
         val palette = env.palette
         val halfW = env.halfWidth
 
-        // Phase portrait: the closed loop is the point of the model.
-        val sx = (1.5f * halfW) / peakPrey.toFloat()
-        val sy = 1.55f / peakPred.toFloat()
-        g.reservePoints(filled)
-        for (k in 0 until filled) {
-            val idx = (head - 1 - k + historyX.size * 2) % historyX.size
-            val age = k.toFloat() / filled
-            g.point(
-                historyX[idx] * sx - halfW * 0.7f,
-                historyY[idx] * sy - 0.7f,
-                0.006f,
-                Palette.withAlpha(palette.at(0.2f + age * 0.5f), (1f - age) * 0.85f + 0.15f)
-            )
+        // Two plots of the one model, stacked: the phase portrait above — prey
+        // across, predators up, the closed loop that is the point of the
+        // model — and the two populations against time below, the classic
+        // pair of out-of-step waves. It was the loop as a faint dotted
+        // trail with two tall solid bars over the bottom of it, which hid
+        // the loop's lower edge and said nothing the loop did not.
+        val pw = min(halfW, 1.1f) * 0.84f
+        val left = -pw
+        val phaseBottom = -0.1f
+        val phaseTop = 0.84f
+        val waveBottom = -0.88f
+        val waveTop = -0.34f
+        val sx = 2f * pw / peakPrey.toFloat()
+        val sy = (phaseTop - phaseBottom) / peakPred.toFloat()
+        val axis = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.2f)
+        val preyColour = palette.at(0.08f)
+        val predColour = palette.at(0.92f)
+        val loopColour = palette.at(0.5f)
+        // Axes: each plot's own L, coloured by what it measures.
+        g.line(left, phaseBottom, pw, phaseBottom, 0.004f, Palette.withAlpha(preyColour, 0.45f))
+        g.line(left, phaseBottom, left, phaseTop, 0.004f, Palette.withAlpha(predColour, 0.45f))
+        g.line(left, waveBottom, pw, waveBottom, 0.004f, axis)
+        // The balance point, which the loop circles and never reaches: prey
+        // d/c, predators a/b.
+        val ex = left + (d / c).toFloat() * sx
+        val ey = phaseBottom + (a / b).toFloat() * sy
+        if (ex < pw && ey < phaseTop) {
+            g.line(ex - 0.018f, ey, ex + 0.018f, ey, 0.003f, axis)
+            g.line(ex, ey - 0.018f, ex, ey + 0.018f, 0.003f, axis)
         }
-        g.glow(prey.toFloat() * sx - halfW * 0.7f, predators.toFloat() * sy - 0.7f, 0.09f, Palette.SUCCESS, 0.8f)
-
-        // Live populations as two bars.
-        g.bar(-halfW * 0.86f, -0.95f, 0.05f, (prey / peakPrey).toFloat().coerceIn(0f, 1f) * 1.7f, palette.at(0.25f))
-        g.bar(-halfW * 0.7f, -0.95f, 0.05f, (predators / peakPred).toFloat().coerceIn(0f, 1f) * 1.7f, palette.at(0.8f))
+        // The loop as a line, oldest faint and newest bright. At most a few
+        // hundred segments: the history is thousands of steps, and a dot per
+        // step drew a dotted line wherever the orbit ran fast.
+        val stride = max(1, filled / 900)
+        var prevX = Float.NaN; var prevY = 0f
+        var k = filled - 1
+        while (k >= 0) {
+            val idx = (head - 1 - k + historyX.size * 2) % historyX.size
+            val px = left + historyX[idx] * sx
+            val py = phaseBottom + historyY[idx] * sy
+            if (!prevX.isNaN()) {
+                val age = k.toFloat() / max(1, filled)
+                g.line(prevX, prevY, px, py, 0.0065f, loopColour, 0.15f + 0.85f * (1f - age) * (1f - age))
+            }
+            prevX = px; prevY = py
+            k = if (k == 0) -1 else max(0, k - stride)
+        }
+        val cx = left + prey.toFloat() * sx
+        val cy = phaseBottom + predators.toFloat() * sy
+        g.glow(cx, cy, 0.07f, loopColour, 0.6f)
+        g.disc(cx, cy, 0.013f, Palette.TEXT_PRIMARY)
+        // Below: the same history against time, each population on its own
+        // scale, newest at the right. Placed by when each sample was taken,
+        // not by its index: the payoff's slow motion takes four samples a
+        // tick, and by index the curves grew a kink there that rode along.
+        val newest = if (filled > 0) historyT[(head - 1 + historyX.size) % historyX.size] else 0f
+        val oldest = if (filled > 0) historyT[(head - filled + historyX.size * 2) % historyX.size] else 0f
+        val window = max(1e-3f, newest - oldest)
+        val wh = waveTop - waveBottom
+        var lx = Float.NaN; var lp = 0f; var lq = 0f
+        k = filled - 1
+        while (k >= 0) {
+            val idx = (head - 1 - k + historyX.size * 2) % historyX.size
+            val x = pw - 2f * pw * (newest - historyT[idx]) / window
+            val yp = waveBottom + (historyX[idx] / peakPrey.toFloat()).coerceIn(0f, 1f) * wh
+            val yq = waveBottom + (historyY[idx] / peakPred.toFloat()).coerceIn(0f, 1f) * wh
+            if (!lx.isNaN()) {
+                g.line(lx, lp, x, yp, 0.006f, preyColour)
+                g.line(lx, lq, x, yq, 0.006f, predColour)
+            }
+            lx = x; lp = yp; lq = yq
+            k = if (k == 0) -1 else max(0, k - stride)
+        }
+        if (filled > 0) {
+            g.disc(pw, waveBottom + (prey / peakPrey).toFloat().coerceIn(0f, 1f) * wh, 0.011f, preyColour)
+            g.disc(pw, waveBottom + (predators / peakPred).toFloat().coerceIn(0f, 1f) * wh, 0.011f, predColour)
+        }
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -957,8 +1204,12 @@ class PredatorPreySim : Sim {
             defaultPalette = "Candy",
             typicalSeconds = 26f,
             params = listOf(
-                Param.float("prey0", "Starting prey", 0.1f, 4f, 0.9f, card = Card.DATA),
-                Param.float("pred0", "Starting predators", 0.05f, 3f, 0.4f, card = Card.DATA),
+                // Started nearer the balance point (0.25, 2.75) than the old
+                // 0.9 and 0.4, whose orbit crashed the prey to a millionth
+                // and drew the loop flat along both axes. Same equations; a
+                // rounder orbit that reads as a loop.
+                Param.float("prey0", "Starting prey", 0.1f, 4f, 0.6f, card = Card.DATA),
+                Param.float("pred0", "Starting predators", 0.05f, 3f, 1.4f, card = Card.DATA),
                 Param.float("growth", "Prey growth", 0.2f, 3f, 1.1f, card = Card.MOTION, advancedOnly = true),
                 Param.float("predation", "Predation", 0.05f, 2f, 0.4f, card = Card.MOTION, advancedOnly = true),
                 Param.float("efficiency", "Efficiency", 0.05f, 2f, 0.4f, card = Card.MOTION, advancedOnly = true),
@@ -1077,18 +1328,35 @@ class ReactionDiffusionSim : Sim {
         val palette = env.palette
         val halfW = env.halfWidth
         val size = min(2f * halfW / w, 2f / h)
-        val originX = -size * w * 0.5f
-        val originY = -size * h * 0.5f
-        g.reservePoints(w * h)
-        for (i in 0 until w * h) {
-            val v = b[i]
-            if (v < 0.08f) continue
-            g.point(
-                originX + (i % w + 0.5f) * size,
-                originY + (i / w + 0.5f) * size,
-                size * 1.05f,
-                palette.at((v * 2.2f).coerceIn(0f, 1f))
-            )
+        // The field is a torus — every edge wraps to the opposite one — so
+        // repeating it to cover the screen is the same pattern, exactly, not
+        // a stretch. It used to be drawn once in the middle with bands of
+        // black above and below, and a blob crossing the wrap was cut off
+        // flat at the bottom edge.
+        val cols = kotlin.math.ceil(halfW / size).toInt()
+        val rowsUp = kotlin.math.ceil(1f / size).toInt()
+        val x0 = -cols * size
+        // Shaded so more of the second chemical is brighter, and the thin
+        // edge of each blob fades into the background. The ramp ran the
+        // other way: bright rims round dark cores, which read as donuts.
+        // Ramps that go from light to dark are flipped so the light end is
+        // the strong one; a bright-ended ramp is used as it is.
+        val first = palette.at(0f)
+        val last = palette.at(1f)
+        fun lum(c: Int) = ((c ushr 16) and 255) * 0.3f + ((c ushr 8) and 255) * 0.59f + (c and 255) * 0.11f
+        val flip = lum(first) > lum(last)
+        val shades = IntArray(RD_BANDS) { k ->
+            val t = 0.06f + 0.94f * k / (RD_BANDS - 1f)
+            palette.at(if (flip) 1f - t else t)
+        }
+        for (sy in -rowsUp until rowsUp) {
+            val y = ((sy + h * 64) % h)
+            val row = y * w
+            g.cellRow(x0, (sy + 0.5f) * size, size, 2 * cols) { sx ->
+                val v = b[row + ((sx - cols + w * 64) % w)]
+                if (v < 0.06f) 0
+                else shades[((v - 0.06f) * (1f / 0.34f) * (RD_BANDS - 1)).toInt().coerceIn(0, RD_BANDS - 1)]
+            }
         }
     }
 
@@ -1098,6 +1366,7 @@ class ReactionDiffusionSim : Sim {
         listOf("generations" to String.format(java.util.Locale.US, "%,d", generations))
 
     companion object {
+        const val RD_BANDS = 28
         fun def(): SimDef = SimDef(
             id = "life/reaction-diffusion",
             title = "Reaction and diffusion",

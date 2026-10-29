@@ -43,6 +43,7 @@ class SnowflakeSim : Sim {
     private var wx = 0
     private var wy = 0
     private var walking = false
+    private var lastMove = 0
     private var cellsList = IntArray(0)
     private var listCount = 0
     private var lastRing = 0
@@ -55,9 +56,23 @@ class SnowflakeSim : Sim {
         listCount = 0
         folds = FOLDS[env.params.choiceIndex("shape").coerceIn(0, FOLDS.size - 1)]
         val c = size / 2
-        freeze(c, c)
         frozen = 1
         radius = 1f
+        freeze(c, c)
+        // A nucleus with one short spoke per fold, along the axes. Grown from
+        // a single square, the first particle to stick set the arms off at
+        // whatever angle it came in at, and its mirror image grew beside it:
+        // every arm came in a pair, twelve for a six-fold flake. A real
+        // flake's arms grow from the corners of its hexagonal seed, along
+        // the mirror lines, and seeded that way the tips that catch the most
+        // are the six (four, eight) the shape is named for.
+        if (folds > 1) {
+            val spoke = max(3f, size * 0.035f)
+            for (m in 0 until folds) {
+                val a = 2f * PI.toFloat() * m / folds
+                joinFreeze(c, c, (c + cos(a) * spoke).roundToInt(), (c + sin(a) * spoke).roundToInt())
+            }
+        }
         maxRadius = size * 0.47f
         elapsed = 0f
         doneAt = -1f
@@ -100,7 +115,8 @@ class SnowflakeSim : Sim {
                 wy = (c + sin(a) * lr).roundToInt().coerceIn(1, size - 2)
                 walking = true
             }
-            when (env.rng.int(0, 4)) {
+            lastMove = env.rng.int(0, 4)
+            when (lastMove) {
                 0 -> wx++
                 1 -> wx--
                 2 -> wy++
@@ -127,6 +143,13 @@ class SnowflakeSim : Sim {
                 continue
             }
             val k = wy * size + wx
+            // Never onto the crystal itself: a walker that stepped onto a
+            // frozen square stuck there as if it had touched it, and with
+            // sticking no longer certain (below) it could wander inside.
+            if (grid[k].toInt() != 0) {
+                when (lastMove) { 0 -> wx--; 1 -> wx++; 2 -> wy--; else -> wy++ }
+                continue
+            }
             val touched = when {
                 grid[k - 1].toInt() != 0 -> k - 1
                 grid[k + 1].toInt() != 0 -> k + 1
@@ -134,6 +157,7 @@ class SnowflakeSim : Sim {
                 grid[k + size].toInt() != 0 -> k + size
                 else -> -1
             }
+            if (touched >= 0 && !sticks(env, wx - c, wy - c)) continue
             if (touched >= 0) {
                 // Touched: frozen here, and copied round the centre.
                 stick(env, wx, wy, touched % size, touched / size)
@@ -152,6 +176,25 @@ class SnowflakeSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
+    }
+
+    /**
+     * Whether a walker touching the crystal here freezes. On the arms' own
+     * axes always; off them, only some of the time — the stand-in for the
+     * ice lattice, whose six directions are where a real flake grows
+     * fastest. Without it every tip split in two: a particle landing just
+     * off an axis was mirrored onto the other side of it, the pair grew
+     * apart, and a six-fold flake had twelve arms in six pairs. Side
+     * branches still grow, slower, so the arms are feathered, not bare.
+     */
+    private fun sticks(env: SimEnv, dx: Int, dy: Int): Boolean {
+        if (folds <= 1) return true
+        val r = sqrt((dx * dx + dy * dy).toFloat())
+        val wedge = 2f * PI.toFloat() / folds
+        val a = atan2(dy.toFloat(), dx.toFloat())
+        val off = a - wedge * kotlin.math.round(a / wedge)
+        val fromAxis = r * abs(sin(off))
+        return fromAxis <= AXIS_WIDTH || env.rng.nextFloat() < SIDE_STICK
     }
 
     private fun stick(env: SimEnv, x: Int, y: Int, tx: Int, ty: Int) {
@@ -213,7 +256,10 @@ class SnowflakeSim : Sim {
             val y = (k / size - c) * scale
             // Coloured by when it froze: the heart one colour, the newest tips another.
             val t = order[k].toFloat() / max(1, frozen)
-            g.point(x, y, scale * 1.6f, palette.at(0.1f + 0.85f * t))
+            // Short of the far end of the ramp: on Ocean that end is a navy that
+            // all but vanished against the background, and it is where the
+            // newest tips are.
+            g.point(x, y, scale * 1.6f, palette.at(0.05f + 0.7f * t))
         }
         if (doneAt >= 0f) {
             val k = (1f - (elapsed - doneAt)).coerceIn(0f, 1f)
@@ -232,6 +278,10 @@ class SnowflakeSim : Sim {
 
     companion object {
         const val MAX_SIZE = 501
+        /** Squares either side of an arm's axis that always stick. */
+        const val AXIS_WIDTH = 1.2f
+        /** How often a touch off the axes sticks. */
+        const val SIDE_STICK = 0.3f
         const val STEPS_PER_SECOND = 2_400_000f
         const val MAX_STEPS = 60_000
         const val GROW_SECONDS = 13f

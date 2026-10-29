@@ -89,10 +89,34 @@ class RpsBattleSim : Sim {
         val h = abs(dt)
         elapsed += h
         if (winner >= 0) {
-            // The winners mill about in their victory.
+            // The winners spread out over the field they have taken, rather
+            // than milling in the clump the last catch left them in.
             for (i in 0 until n) {
-                vx[i] = vx[i] * (1f - 2f * h) + env.rng.range(-1f, 1f) * h
-                vy[i] = vy[i] * (1f - 2f * h) + env.rng.range(-1f, 1f) * h
+                var sx = 0f; var sy = 0f
+                val far = 4f * size
+                for (j in 0 until n) {
+                    if (j == i) continue
+                    val dx = x[i] - x[j]; val dy = y[i] - y[j]
+                    val d2 = dx * dx + dy * dy
+                    if (d2 < far * far && d2 > 1e-10f) {
+                        val d = sqrt(d2)
+                        val k = (1f - d / far) / d
+                        sx += dx * k; sy += dy * k
+                    }
+                }
+                // The walls push too, or the spreading crowd packed itself
+                // into rows along the edges.
+                val wx = halfW - size; val wy = 0.86f - size
+                if (x[i] < -wx + far) sx += 2f * (1f - (x[i] + wx) / far)
+                if (x[i] > wx - far) sx -= 2f * (1f - (wx - x[i]) / far)
+                if (y[i] < -1f + size + far) sy += 2f * (1f - (y[i] + 1f - size) / far)
+                if (y[i] > wy - far) sy -= 2f * (1f - (wy - y[i]) / far)
+                // The last catch's flash fades here too: this branch returns
+                // before the battle's own fade, and the final convert stayed
+                // a big white disc for the rest of the run.
+                if (flashT[i] > 0f) flashT[i] = max(0f, flashT[i] - h * 3f)
+                vx[i] = vx[i] * (1f - 2f * h) + (sx * 0.6f + env.rng.range(-1f, 1f)) * h
+                vy[i] = vy[i] * (1f - 2f * h) + (sy * 0.6f + env.rng.range(-1f, 1f)) * h
                 move(i, h)
             }
             return
@@ -110,9 +134,32 @@ class RpsBattleSim : Sim {
             val s = side[i]
             var bestPrey = Float.MAX_VALUE; var px = 0f; var py = 0f
             var bestHunter = Float.MAX_VALUE; var hx = 0f; var hy = 0f
+            // Elbow room among a piece's own side: without it a side moved as
+            // one heap of overlapping pieces, illegible as rocks or scissors.
+            var sepX = 0f; var sepY = 0f
+            val room = 2.2f * size
             for (j in 0 until n) {
                 val t = side[j]
-                if (t == s) continue
+                if (t == s) {
+                    if (j == i) continue
+                    val dx = x[i] - x[j]; val dy = y[i] - y[j]
+                    val d2 = dx * dx + dy * dy
+                    if (d2 < room * room && d2 > 1e-10f) {
+                        val d = sqrt(d2)
+                        sepX += dx / d * (1f - d / room); sepY += dy / d * (1f - d / room)
+                        // And never more than a little overlap, whatever
+                        // the chase wants: a side all heading for the same
+                        // prey piled into one heap otherwise. Positions only;
+                        // the velocity is never read back from this.
+                        val touch = 2f * size
+                        if (d < touch && j > i) {
+                            val push = (touch - d) * 0.5f / d
+                            x[i] += dx * push; y[i] += dy * push
+                            x[j] -= dx * push; y[j] -= dy * push
+                        }
+                    }
+                    continue
+                }
                 val dx = x[j] - x[i]; val dy = y[j] - y[i]
                 val d2 = dx * dx + dy * dy
                 if (beats(s, t)) { if (d2 < bestPrey) { bestPrey = d2; px = dx; py = dy } }
@@ -130,6 +177,7 @@ class RpsBattleSim : Sim {
                 val fear = fearNow * (0.35f / (d + 0.35f))
                 ax -= hx / d * fear; ay -= hy / d * fear
             }
+            ax += sepX * SPACING; ay += sepY * SPACING
             ax += env.rng.range(-JITTER, JITTER)
             ay += env.rng.range(-JITTER, JITTER)
             val am = sqrt(ax * ax + ay * ay).coerceAtLeast(1e-4f)
@@ -235,8 +283,10 @@ class RpsBattleSim : Sim {
         val colors = IntArray(teams) { colour(env, it) }
         for (i in 0 until n) {
             val s = side[i]
-            val c = if (flashT[i] > 0f) Palette.brighten(colors[s], 0.6f * flashT[i]) else colors[s]
-            val r = size * (1f + 0.6f * flashT[i])
+            // A catch flashes, briefly and not to white: at full strength, in
+            // a big five-sided battle a third of the field was pale blobs.
+            val c = if (flashT[i] > 0f) Palette.brighten(colors[s], 0.35f * flashT[i]) else colors[s]
+            val r = size * (1f + 0.35f * flashT[i])
             when (kindOf(s)) {
                 // Rock: a stone.
                 0 -> g.disc(x[i], y[i], r, c)
@@ -264,9 +314,17 @@ class RpsBattleSim : Sim {
             if (w > 0f) g.rect(left + w * 0.5f, 0.93f, w * 0.5f, 0.018f, colors[s])
             left += w
         }
+        // The victory: a ripple out of every winning piece, in a wave from
+        // the middle of the field outwards. It was one dim glow the size of
+        // the screen, which in a dark colour read as a brown smudge.
         if (winner >= 0) {
-            val k = ((elapsed - doneAt) * 2f).coerceIn(0f, 1f)
-            g.glow(0f, 0f, 0.9f * k, colors[winner], 0.25f * k)
+            val since = elapsed - doneAt
+            for (i in 0 until n) {
+                val delay = sqrt(x[i] * x[i] + y[i] * y[i]) * 0.5f
+                val k = (since - delay) / 0.9f
+                if (k <= 0f || k >= 1f) continue
+                g.ring(x[i], y[i], size * (1.3f + 3.5f * k), size * 0.18f, colors[winner], alpha = (1f - k) * 0.8f)
+            }
         }
     }
 
@@ -289,6 +347,8 @@ class RpsBattleSim : Sim {
         const val BASE_SPEED = 0.16f
         const val FEAR = 0.9f
         const val JITTER = 0.35f
+        /** How hard a piece keeps clear of its own side. */
+        const val SPACING = 2.5f
         const val RAMP_SECONDS = 20f
         const val GIVE_UP_SECONDS = 60f
         const val QUIET_SECONDS = 3f
