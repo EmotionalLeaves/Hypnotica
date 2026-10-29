@@ -24,7 +24,7 @@ import kotlin.math.min
  * The burnt ground regrows, the fronts come round again, and the fire sizes
  * follow a power law — self-organised criticality.
  *
- * The payoff is the first great burn: one strike that takes a fifth of the
+ * The payoff is the first great burn: one strike that takes a sixth of the
  * whole forest.
  */
 class ForestFireSim : Sim {
@@ -70,7 +70,7 @@ class ForestFireSim : Sim {
         val n = cols * rows
         state = ByteArray(n); next = ByteArray(n); age = ByteArray(n)
         fireOf = IntArray(n); fireNext = IntArray(n)
-        // A young, patchy forest to start: a third of the ground.
+        // A young, patchy forest to start, just under half the ground.
         trees = 0
         for (k in 0 until n) if (env.rng.nextFloat() < START_DENSITY) {
             state[k] = TREE; age[k] = env.rng.int(0, AGE_CAP).toByte(); trees++
@@ -171,7 +171,7 @@ class ForestFireSim : Sim {
         val tf = fireOf; fireOf = fireNext; fireNext = tf
         burning = nowBurning
         trees = nowTrees
-        // The great burn: the first single fire to take a fifth of the forest.
+        // The great burn: the first single fire to take a sixth of the forest.
         // Measured against the whole ground, not the trees standing, so it
         // means the same on every screen.
         for (id in 0 until fireCount) if (burntBy[id] > biggest) biggest = burntBy[id]
@@ -223,7 +223,7 @@ class ForestFireSim : Sim {
         // 3×3 neighbourhood) rather than tree by tree: drawn per tree, a
         // random forest is salt-and-pepper noise, and the patches of old and
         // young growth that make the fire's history readable were lost in it.
-        val canopy = IntArray(CANOPY + 1) { i -> if (i == 0) 0 else Palette.lerp(Palette.BG, wood, 0.1f + 0.75f * (i / CANOPY.toFloat()).let { it * it }) }
+        val canopy = IntArray(CANOPY + 1) { i -> if (i == 0) 0 else Palette.lerp(Palette.BG, wood, 0.08f + 0.62f * (i / CANOPY.toFloat()).let { it * it }) }
         val flame = Palette.brighten(palette.at(fireT), 0.25f)
         val ashBase = Palette.lerp(Palette.BG, palette.at(fireT), 0.55f)
         val ash = IntArray(ASH_LAST - ASH_FIRST + 1) { i ->
@@ -314,13 +314,13 @@ class ForestFireSim : Sim {
         const val FIELD_BOTTOM = -0.96f
         const val MARGIN = 0.0f
         const val TICKS_PER_SECOND = 20f
-        const val START_DENSITY = 0.3f
+        const val START_DENSITY = 0.48f
         /** Per empty cell per tick. */
-        const val GROW_P = 0.0045f
+        const val GROW_P = 0.0016f
         /** Per tree per tick: about one strike a second on a phone-sized wood. */
         const val STRIKE_P = 0.000004f
         const val DIAGONAL = 0.35f
-        const val BIG_SHARE = 0.2f
+        const val BIG_SHARE = 0.16f
         const val CRACKLES_PER_SECOND = 5f
         const val CRACKLE_FROM = 12
         const val GLOW_LATTICE = 8
@@ -336,7 +336,7 @@ class ForestFireSim : Sim {
             formats = listOf(TrapFormat.SNAP, TrapFormat.CHAIN),
             heroLabel = "New forest",
             defaultPalette = "Spectrum",
-            typicalSeconds = 14f,
+            typicalSeconds = 12f,
             params = listOf(
                 Param.int("rows", "Size", 80, 400, 210, card = Card.DATA),
                 Param.float("growth", "Growth", 0.3f, 3f, 1f, card = Card.MOTION),

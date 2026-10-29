@@ -1864,11 +1864,13 @@ class MandelbrotSim : Sim {
             Target("-1.7732746084008726", "0.006388268773377751", 19, 6),
             // Misiurewicz.
             Target("0.3554323472125332", "0.647090198204969", 21, 5),
-            // Further seahorse-valley and dendrite points for later dives.
+            // Further seahorse-valley and antenna points for later dives.
             Target("-0.745950170346325", "0.132750204860054", 17, 7),
             Target("-0.746791980247121", "0.132818988954767", 19, 5),
-            Target("0.41964337760708054", "0.6062907292071994", 3, 2),
-            Target("0", "1", 2, 2)
+            Target("-0.7468556637982409", "0.13427090126716748", 50, 2),
+            Target("-1.7798774149162109", "-0.0021457146579731204", 22, 6)
+            // Not the classic c = i or other fast-repelling points: those are
+            // tips of the set, and their dive is one thin hair on a dark frame.
         )
 
         /** The palette's lightest colour, for the edge of the set: white on Mono, yellow on Viridis. */

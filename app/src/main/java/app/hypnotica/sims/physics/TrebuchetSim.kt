@@ -574,7 +574,7 @@ class TrebuchetSim : Sim {
         if (released) {
             for (i in 1 until trailN) {
                 val x0 = sxw(trailX[i - 1].toDouble()); val x1 = sxw(trailX[i].toDouble())
-                if (!visible(x0, 0f) && !visible(x1, 0f)) continue
+                if (!visible(x0, 0f) || !visible(x1, 0f)) continue
                 g.line(x0, syw(trailY[i - 1].toDouble()), x1, syw(trailY[i].toDouble()), 0.003f, accent, 0.35f + 0.4f * i / trailN)
             }
             val px = sxw(sx); val py = syw(sy)

@@ -33,12 +33,15 @@ import kotlin.math.sin
  */
 class DragonCurveSim : Sim {
 
-    private var folds = 12
+    private var folds = 11
     private var four = true
     /** The whole unfolded strip; every generation is a prefix of it. */
     private var px = FloatArray(0)
     private var py = FloatArray(0)
     private var dir = IntArray(0)
+    private var scrX = FloatArray(0)
+    private var scrY = FloatArray(0)
+    private val shade = IntArray(SHADES)
 
     private var gen = 0
     private var turn = 0f
@@ -52,7 +55,7 @@ class DragonCurveSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        folds = p.i("folds", 12).coerceIn(4, 16)
+        folds = p.i("folds", 11).coerceIn(4, 16)
         four = p.choiceIndex("copies") == 1
         val n = 1 shl folds
         px = FloatArray(n + 1); py = FloatArray(n + 1)
@@ -226,9 +229,23 @@ class DragonCurveSim : Sim {
             val k1 = ca * sr + sa * cr
             // Screen position of strip point i for this copy: turn by the
             // copy's angle and the view's at once, centre, scale.
-            fun sx(i: Int) = ((dx[i] * k0 - dy[i] * k1) - cx) * scale
-            fun sy(i: Int) = ((dx[i] * k1 + dy[i] * k0) - cy) * scale
+            if (scrX.size < m + 1) { scrX = FloatArray(m + 1); scrY = FloatArray(m + 1) }
+            for (i in 0..m) {
+                scrX[i] = ((dx[i] * k0 - dy[i] * k1) - cx) * scale
+                scrY[i] = ((dx[i] * k1 + dy[i] * k0) - cy) * scale
+            }
+            val sxs = scrX; val sys = scrY
+            fun sx(i: Int) = sxs[i]
+            fun sy(i: Int) = sys[i]
             val hue = 0.04f + 0.235f * c
+            // The colour along the strip, from a small table: two palette
+            // lookups and two blends per piece were most of the frame.
+            for (q in 0 until SHADES) {
+                val t = q / (SHADES - 1f)
+                val grad = pal.at(0.04f + 0.74f * t)
+                val solid = Palette.lerp(Palette.BG, pal.at(hue), 0.62f + 0.38f * t)
+                shade[q] = if (c == 0) Palette.lerp(grad, solid, tint) else solid
+            }
             // Once every crease is open the strip only ever runs along four
             // directions, so each piece's angle is known without any trig —
             // with four dragons that is 32,000 pieces a frame, and atan2 and
@@ -238,10 +255,7 @@ class DragonCurveSim : Sim {
             val half = PI.toFloat() * 0.5f
             val sideLen = scale
             for (i in 0 until m) {
-                val t = i.toFloat() / m
-                val grad = pal.at(0.04f + 0.74f * t)
-                val solid = Palette.lerp(Palette.BG, pal.at(hue), 0.62f + 0.38f * t)
-                val col = if (c == 0) Palette.lerp(grad, solid, tint) else solid
+                val col = shade[(i * (SHADES - 1)) / m]
                 // Corners cut at a quarter of each side: the strip's path can
                 // be followed through the places where the curve touches itself.
                 val ax = sx(i); val ay = sy(i); val bx = sx(i + 1); val by = sy(i + 1)
@@ -300,6 +314,7 @@ class DragonCurveSim : Sim {
 
     companion object {
         private const val LEAD_IN = 0.5f
+        private const val SHADES = 128
         private const val UNFOLD_SECONDS = 0.78f
         private const val PAUSE = 0.14f
         private const val SWING_SECONDS = 2.4f
@@ -310,7 +325,7 @@ class DragonCurveSim : Sim {
             title = "Paper-fold dragon",
             shelf = Shelf.MATH,
             family = "Fractals & iteration",
-            blurb = "Fold a strip in half twelve times, open every crease to a right angle: a dragon.",
+            blurb = "Fold a strip in half again and again, open every crease to a right angle: a dragon.",
             formats = listOf(TrapFormat.GROW, TrapFormat.PERFECT_FIT),
             heroLabel = "Unfold again",
             // Spectrum: the four finished dragons need four hues that can be told
@@ -318,7 +333,7 @@ class DragonCurveSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 19f,
             params = listOf(
-                Param.int("folds", "Folds", 4, 16, 12, card = Card.DATA),
+                Param.int("folds", "Folds", 4, 16, 11, card = Card.DATA),
                 Param.choice("copies", "Finish", listOf("One dragon", "Four dragons"), 1, card = Card.DATA, input = ParamInput.TILES),
                 Param.float("speed", "Unfolding speed", 0.3f, 4f, 1f, card = Card.MOTION, logScale = true)
             ),
