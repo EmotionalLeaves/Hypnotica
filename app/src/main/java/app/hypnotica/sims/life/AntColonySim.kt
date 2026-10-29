@@ -185,7 +185,7 @@ class AntColonySim : Sim {
                     // At the food: turn for home with a crumb.
                     dist[i] = routeLen(route[i])
                     homeward[i] = true
-                    excite[i] = routeLen(0) / routeLen(route[i])
+                    excite[i] = (routeLen(0) / routeLen(route[i])).let { it * it }
                     arrivals++
                     lastBridge = route[i]
                     lastPan = (foodX / halfW).coerceIn(-1f, 1f)
@@ -377,12 +377,12 @@ class AntColonySim : Sim {
         const val LONG_SWING = 0.4f
         const val SPEED = 0.42f
         const val SPAWN_PER_SECOND = 14f
-        const val OUT_MARK = 0.3f
+        const val OUT_MARK = 0.1f
         const val HOME_MARK = 1.2f
         const val EVAPORATE = 0.12f
         const val SPREAD = 0.05f
         const val SNIFF = 6
-        const val CHOICE_K = 50f
+        const val CHOICE_K = 15f
         const val WINDOW = 40
         const val MIN_DELIVERED = 40
         const val CONVERGED = 0.85f

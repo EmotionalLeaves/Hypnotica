@@ -349,11 +349,11 @@ class MandelbrotSim : Sim {
     private fun beginHandoff(env: SimEnv) {
         handoffWanted = false
         flatImages = 0
-        if (hasImage && shownGrid.size == cols * rows) {
+        if (hasImage && shownGrid.size == cols * rows * 9) {
             if (oldGrid.size != shownGrid.size) oldGrid = IntArray(shownGrid.size)
             System.arraycopy(shownGrid, 0, oldGrid, 0, shownGrid.size)
-            oldCs = cols
-            oldRs = rows
+            oldCs = cols * 3
+            oldRs = rows * 3
             oldZoomNow = zoom
             oldComputedZoom = computedZoom
             oldPanX = ((offX - imgOffX) / imgScale).toFloat()
@@ -653,12 +653,18 @@ class MandelbrotSim : Sim {
 
     /** The coarse colours of the image just swapped in, kept for a later dissolve. */
     private fun recordShown() {
+        // At sub-cell resolution (3× each way), boundary cells as their nine
+        // samples: a grid of whole cells faded out as a blur of blocks.
         val n = cols * rows
-        if (shownGrid.size != n) shownGrid = IntArray(n)
+        val fw = cols * 3
+        if (shownGrid.size != n * 9) shownGrid = IntArray(n * 9)
         val hasSubs = refined.size == n
-        for (i in 0 until n) {
+        for (row in 0 until rows) for (col in 0 until cols) {
+            val i = row * cols + col
             val ref = if (hasSubs) refined[i] else -1
-            shownGrid[i] = if (ref < 0) cellColour[i] else subColour[ref * 9 + 4]
+            val base = (row * 3) * fw + col * 3
+            for (sy in 0 until 3) for (sx in 0 until 3)
+                shownGrid[base + sy * fw + sx] = if (ref < 0) cellColour[i] else subColour[ref * 9 + sy * 3 + sx]
         }
     }
 
@@ -1798,8 +1804,12 @@ class MandelbrotSim : Sim {
                 if (sx * sx + sy * sy < 1e-24) {
                     // A repelling cycle (|multiplier| > 1) is a Misiurewicz
                     // point; 0 is a mini-set's centre, the black we are avoiding.
+                    // And one that repels briskly: about a cycle that barely
+                    // repels, every pixel needs many times the iterations
+                    // (a tap once made a dive eight times dearer).
                     val mult = sqrt(mx * mx + my * my)
-                    if (moved < SEEK_REACH && mult > 1.001 && (best == null || moved < best!!.dist))
+                    val brisk = mult > 1.0 && ln(mult) / pp > ln(SEEK_MIN_RATE)
+                    if (moved < SEEK_REACH && brisk && (best == null || moved < best!!.dist))
                         best = Found(ux * radius, uy * radius, kk, pp, moved)
                     nextCand(); continue
                 }
@@ -1863,6 +1873,8 @@ class MandelbrotSim : Sim {
         /** How far from the tap (in view half-heights) a found point may be. */
         private const val SEEK_REACH = 0.5
         private const val SEEK_ITERS_PER_STEP = 250_000
+        /** The slowest repelling a tapped point may have, per iteration (the catalogue's are ≥ 1.067). */
+        private const val SEEK_MIN_RATE = 1.05
         /** Big-number work a step, in iterations · words²: ~1 ms on a phone. */
         private const val BIG_WORK_PER_STEP = 200_000
         private val DEBUG = System.getenv("MANDEL_DEBUG") != null
