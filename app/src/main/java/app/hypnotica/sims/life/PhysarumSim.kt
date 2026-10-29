@@ -60,8 +60,14 @@ class PhysarumSim : Sim {
     // Scratch for the connectivity flood.
     private var label = IntArray(0)
     private var foodNear = BooleanArray(0)
+    private var scent = FloatArray(0)
     private var queue = IntArray(0)
     private var dist = IntArray(0)              // network distance from the first food, for the finale
+
+    private val seeking = BooleanArray(MAX_FOOD)
+    private val seekX = FloatArray(MAX_FOOD)
+    private val seekY = FloatArray(MAX_FOOD)
+    private var anySeek = false
 
     private var tickCarry = 0f
     private var ticks = 0
@@ -112,7 +118,21 @@ class PhysarumSim : Sim {
             placed++
         }
         foods = placed
+        seeking.fill(false); anySeek = false
         foodNear = BooleanArray(gw * gh)
+        // The smell of the food itself, carried far through the agar: a
+        // steady gradient every agent can climb. Without it a flake the
+        // network had dropped was invisible from more than a few cells away,
+        // and could sit alone for half a minute.
+        scent = FloatArray(gw * gh)
+        for (y in 0 until gh) for (x in 0 until gw) {
+            var v = 0f
+            for (f in 0 until foods) {
+                val dx = x - fx[f]; val dy = y - fy[f]
+                v += exp(-sqrt(dx * dx + dy * dy) / SCENT_REACH)
+            }
+            scent[y * gw + x] = v
+        }
         for (f in 0 until foods) for (dy in -4..4) for (dx in -4..4) {
             if (dx * dx + dy * dy > 16) continue
             val xx = fx[f].toInt() + dx; val yy = fy[f].toInt() + dy
@@ -181,6 +201,25 @@ class PhysarumSim : Sim {
             } else if (fr > fl) {
                 hd -= ra
             }
+            // A flake still cut off from the rest of the mould sends out a
+            // searching branch: some of the agents near it lean towards the
+            // nearest flake of another network, the way a starving mould
+            // pushes a pseudopod towards the smell of distant food. Left to
+            // chance alone, a flake the network had dropped could sit alone
+            // for half a minute.
+            if (anySeek && (i and 3) == 0) {
+                for (f in 0 until foods) {
+                    if (!seeking[f]) continue
+                    val dx = x - fx[f]; val dy = y - fy[f]
+                    if (dx * dx + dy * dy > SEEK_R * SEEK_R) continue
+                    val want = kotlin.math.atan2(seekY[f], seekX[f])
+                    var diff = (want - hd) % TAU
+                    if (diff > PI) diff -= TAU
+                    if (diff < -PI) diff += TAU
+                    hd += diff * SEEK_TURN
+                    break
+                }
+            }
             var nx = x + FastMath.cos(hd)
             var ny = y + FastMath.sin(hd)
             // The dish wall turns an agent back the way it came. With the
@@ -241,9 +280,11 @@ class PhysarumSim : Sim {
         // Near the dish wall the smell reads weaker than it is: without it the
         // agents a wall turned back slid along it and wore a tube round the
         // edge of the dish that led to no food.
+        val k = iy * gw + ix
+        val v = t[k] + scent[k] * mean * SCENT
         val edge = min(min(ix, gw - 1 - ix), min(iy, gh - 1 - iy))
-        if (edge < WALL_ZONE) return t[iy * gw + ix] * (edge / WALL_ZONE.toFloat()) - mean * WALL_PUSH * (1f - edge / WALL_ZONE.toFloat())
-        return t[iy * gw + ix]
+        if (edge < WALL_ZONE) return v * (edge / WALL_ZONE.toFloat()) - mean * WALL_PUSH * (1f - edge / WALL_ZONE.toFloat())
+        return v
     }
 
     /**
@@ -281,6 +322,30 @@ class PhysarumSim : Sim {
                 EventKind.HIT, 0.25f + 0.6f * (foods - groups) / max(1, foods - 1),
                 (mx / halfW).coerceIn(-1f, 1f), 0.75f
             )
+        }
+        // Who is cut off, and which way the nearest other network lies.
+        anySeek = false
+        for (f in 0 until foods) {
+            seeking[f] = false
+            if (elapsed < SEEK_AFTER || groups == 1) continue
+            val rf = find(f)
+            var best = Float.MAX_VALUE; var bx = 0f; var by = 0f
+            for (j in 0 until foods) {
+                if (find(j) == rf) continue
+                val dx = fx[j] - fx[f]; val dy = fy[j] - fy[f]
+                val d = dx * dx + dy * dy
+                if (d < best) { best = d; bx = dx; by = dy }
+            }
+            // Only the smaller side reaches out, so two networks do not both
+            // grow towards each other along the same line at once.
+            var mine = 0; var total = 0
+            for (j in 0 until foods) if (find(j) == rf) mine++
+            total = foods - mine
+            if (best < Float.MAX_VALUE && mine <= total) {
+                seeking[f] = true; anySeek = true
+                val d = sqrt(best)
+                seekX[f] = bx / d; seekY[f] = by / d
+            }
         }
         if (groups == 1 && before > 1) {
             doneAt = elapsed
@@ -409,6 +474,11 @@ class PhysarumSim : Sim {
         const val DECAY = 0.1f
         const val BLOB = 9f
         const val CHECK_EVERY = 8
+        const val SEEK_AFTER = 1e9f
+        const val SCENT_REACH = 28f
+        const val SCENT = 1.5f
+        const val SEEK_R = 30f
+        const val SEEK_TURN = 0.25f
         /** Chemical level that counts as a vein for the network test. */
         const val VEIN = 1.6f
         const val FAINT = 0.15f

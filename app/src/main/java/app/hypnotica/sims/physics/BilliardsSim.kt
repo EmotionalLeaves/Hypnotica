@@ -452,10 +452,7 @@ class BilliardsSim : Sim {
                 if (score < best) {
                     best = score; bestBall = b; bestPocket = k
                     bx0 = gx; by0 = gy
-                    // Fast enough for the object ball to roll the distance
-                    // with some to spare, through the cut and the skid.
-                    val objSpeed = 0.9f + 0.95f * dp / wpm
-                    bSpeed = (objSpeed / (cosCut * (1f + BALL_E) * 0.5f) + 0.25f * dc / wpm).coerceIn(1f, 6.5f)
+                    bSpeed = shotFor(dp / wpm, dc / wpm, cosCut)
                 }
             }
         }
@@ -476,6 +473,30 @@ class BilliardsSim : Sim {
     }
 
     private fun pan(x: Float) = (x / max(0.1f, hw)).coerceIn(-1f, 1f)
+
+    /** Speed left after [dist] metres from a skidding start at [v0], m/s. */
+    private fun arriving(v0: Float, dist: Float): Float {
+        val skid = (v0 * v0 - (ROLL_SHARE * v0) * (ROLL_SHARE * v0)) / (2f * SLIDE_DECEL)
+        if (dist <= skid) return sqrt(max(0f, v0 * v0 - 2f * SLIDE_DECEL * dist))
+        val vr = ROLL_SHARE * v0
+        return sqrt(max(0f, vr * vr - 2f * ROLL_DECEL * (dist - skid)))
+    }
+
+    /**
+     * The cue speed that sends the object ball [toPocket] metres with
+     * [ARRIVE] m/s to spare, through a cut of cos [cosCut] after the cue ball
+     * has skidded and rolled [toGhost] metres: both skids are counted, which
+     * is what the shooter kept getting wrong when it aimed by distance alone.
+     */
+    private fun shotFor(toPocket: Float, toGhost: Float, cosCut: Float): Float {
+        fun reaches(vObj: Float) = arriving(vObj, toPocket) >= ARRIVE
+        var lo = 0.2f; var hi = 8f
+        repeat(24) { val m = (lo + hi) / 2f; if (reaches(m)) hi = m else lo = m }
+        val need = hi / (cosCut * (1f + BALL_E) * 0.5f)
+        lo = 0.2f; hi = 9f
+        repeat(24) { val m = (lo + hi) / 2f; if (arriving(m, toGhost) >= need) hi = m else lo = m }
+        return hi.coerceIn(0.8f, MAX_SHOT)
+    }
 
     private fun ballColour(env: SimEnv, b: Int): Int {
         val n = numbers[b]
@@ -591,8 +612,10 @@ class BilliardsSim : Sim {
         const val BED_WIDTH = 0.99f
         const val BALL_R = 0.028575f
         const val RAIL_W = 0.1f
-        const val CORNER_MOUTH = 0.058f
-        const val SIDE_MOUTH = 0.034f
+        /** Jaw points this far from the corner along each cushion: a mouth of about 2.1 balls. */
+        const val CORNER_MOUTH = 0.085f
+        /** Half the side pocket's mouth: about 2.2 balls across. */
+        const val SIDE_MOUTH = 0.062f
         const val BALL_E = 0.95f
         const val CUSHION_E = 0.75f
         const val CUSHION_GRIP = 0.92f
@@ -604,6 +627,8 @@ class BilliardsSim : Sim {
         const val STOP = 0.012f
         const val CLICK_MIN = 0.06f
         const val MAX_CUT_COS = 0.34f
+        const val ARRIVE = 0.45f
+        const val MAX_SHOT = 6.5f
         const val SUBSTEPS = 12
         const val BREAK_WAIT = 1.4f
         const val AIM_TIME = 1.0f
