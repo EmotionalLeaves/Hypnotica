@@ -184,11 +184,28 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
     }
 
     /**
-     * A verified bar: green, shaded by its value so the finished staircase keeps
-     * its depth. One flat green turned the end into a single solid slab.
+     * A verified element keeps its own palette colour, lit a little. Recolouring
+     * the finished array green made every sort end on the same flat green
+     * staircase; the sorted colour ramp is the payoff picture, and green now
+     * lives only on the sweep's leading edge.
      */
-    private fun verified(v: Float): Int =
-        Palette.lerp(Palette.lerp(Palette.SUCCESS, Palette.BG, 0.45f), Palette.brighten(Palette.SUCCESS, 0.18f), v)
+    private fun verified(c: Int): Int = Palette.brighten(c, 0.12f)
+
+    /**
+     * Colour of element [i]: its palette colour, settled once verified, and a
+     * short green flash on the few elements the verify sweep has just passed,
+     * in every view (it used to exist only on bars).
+     */
+    private fun shade(i: Int, base: Int, sweepIndex: Int): Int {
+        if (i >= sweepIndex) return base
+        val settled = verified(base)
+        if (sweepIndex >= n) return settled
+        val lead = max(2, n / 40)
+        val back = sweepIndex - 1 - i
+        if (back >= lead) return settled
+        val k = 1f - back.toFloat() / lead
+        return Palette.lerp(settled, Palette.brighten(Palette.SUCCESS, 0.5f), k)
+    }
 
     /**
      * The round views are laid out to a radius of 0.9 and scaled to fit the
@@ -211,7 +228,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             for (i in 0 until n) {
                 val v = values[i]
                 val x = -halfW + (i + 0.5f) * barW
-                val c = if (i < sweepIndex) verified(v) else palette.at(v)
+                val c = shade(i, palette.at(v), sweepIndex)
                 g.point(x, baseY + v * 1.78f * 0.5f, size * 2f, c)
             }
             return
@@ -222,7 +239,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val v = values[i]
             val x = -halfW + (i + 0.5f) * barW
             val h = v * 1.78f
-            var c = if (i < sweepIndex) verified(v) else palette.at(v)
+            var c = shade(i, palette.at(v), sweepIndex)
             if (highlight(i)) c = Palette.brighten(c, 0.55f)
             g.bar(x, baseY, hw, h, c)
         }
@@ -233,17 +250,8 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
                 barW * 4f, palette.at(values[array.lastA]), 0.7f
             )
         }
-        // The verify sweep's leading edge: the few bars it has just passed,
-        // lit. It used to be a full-height line with a 0.12 glow centred on
-        // the screen, which read as a green blob smeared over the bars.
-        if (sweepIndex in 1 until n) {
-            val lead = max(2, n / 40)
-            for (i in max(0, sweepIndex - lead) until sweepIndex) {
-                val k = 1f - (sweepIndex - 1 - i).toFloat() / lead
-                g.bar(-halfW + (i + 0.5f) * barW, baseY, hw, values[i] * 1.78f,
-                    Palette.brighten(Palette.SUCCESS, 0.5f * k))
-            }
-        }
+        // The verify sweep's leading edge is lit by shade(). It used to be a
+        // full-height line with a 0.12 glow, which read as a green blob.
     }
 
     private fun drawDots(g: G, palette: Palette, halfW: Float, sweepIndex: Int, usePoints: Boolean) {
@@ -255,7 +263,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             g.reservePoints(n)
             for (i in 0 until n) {
                 val v = values[i]
-                val c = if (i < sweepIndex) verified(v) else palette.at(v)
+                val c = shade(i, palette.at(v), sweepIndex)
                 g.point(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r * 2.2f, c)
             }
             return
@@ -263,7 +271,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
         g.reserveInstances(n)
         for (i in 0 until n) {
             val v = values[i]
-            var c = if (i < sweepIndex) verified(v) else palette.at(v)
+            var c = shade(i, palette.at(v), sweepIndex)
             if (highlight(i)) c = Palette.brighten(c, 0.6f)
             g.disc(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r, c)
         }
@@ -278,7 +286,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = radius * (0.35f + 0.65f * v)
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = if (i < sweepIndex) verified(v) else Palette.hsv(v * 360f, 0.75f, 1f)
+            var c = shade(i, Palette.hsv(v * 360f, 0.75f, 1f), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.01f, c) else g.disc(x, y, roundDot(s), c)
         }
@@ -294,7 +302,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = (0.12f + 0.78f * sqrt(t) * (0.55f + 0.45f * v)) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = if (i < sweepIndex) verified(v) else palette.at(v)
+            var c = shade(i, palette.at(v), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }
@@ -311,7 +319,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = (0.9f - err * 0.78f) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = if (i < sweepIndex) verified(v) else palette.at(v)
+            var c = shade(i, palette.at(v), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }

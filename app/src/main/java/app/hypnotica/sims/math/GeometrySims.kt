@@ -146,12 +146,14 @@ class VoronoiSim : Sim {
         g.reserveInstances(cols * rows + seeds * 2)
         val dx = 2f * halfW / cols
         val dy = 2f / rows
+        // Overlapping by a fifth: at a hair over, the anti-aliased tile edges
+        // still showed as a faint grid over every cell.
         // Tiled squares, not round dots: the dots left a dark bead-grid
         // between them. Each cell is shaded like stained glass — lit at its
         // seed, falling away to a dark wall where it meets its neighbour —
         // rather than one flat block of saturated colour per cell.
-        val hw = dx * 0.515f
-        val hh = dy * 0.515f
+        val hw = dx * 0.6f
+        val hh = dy * 0.6f
         for (r in 0 until rows) {
             val y = -1f + (r + 0.5f) * dy
             val base = r * cols
@@ -159,18 +161,75 @@ class VoronoiSim : Sim {
                 val k = owner[base + c]
                 // A wall wherever the owner changes to the right or above: the
                 // diagram's own edges, one cell thick, in either metric.
-                val isWall = (c + 1 < cols && owner[base + c + 1] != k) ||
-                    (r + 1 < rows && owner[base + cols + c] != k)
-                if (isWall) continue
+                // With straight-line distance the walls are drawn exactly
+                // below, so every pixel is filled and the line covers the seam;
+                // pixel walls were staircases, jagged and doubled on diagonals.
+                if (manhattan) {
+                    val isWall = (c + 1 < cols && owner[base + c + 1] != k) ||
+                        (r + 1 < rows && owner[base + cols + c] != k)
+                    if (isWall) continue
+                }
                 val x = -halfW + (c + 0.5f) * dx
                 val toSeed = hypot(x - sx[k], y - sy[k])
                 val lit = 0.3f + 0.62f * Math.exp((-toSeed / GLOW_FALLOFF).toDouble()).toFloat()
                 g.rect(x, y, hw, hh, Palette.lerp(Palette.BG, palette.at(tint[k]), lit))
             }
         }
+        if (!manhattan) drawWalls(g, halfW, max(dx, dy) * 1.25f)
         for (i in 0 until seeds) {
             g.disc(sx[i], sy[i], 0.012f, Palette.BG)
             g.disc(sx[i], sy[i], 0.007f, Palette.brighten(palette.at(tint[i]), 0.55f))
+        }
+    }
+
+    private var px = FloatArray(64); private var py = FloatArray(64); private var pt = IntArray(64)
+    private var qx = FloatArray(64); private var qy = FloatArray(64); private var qt = IntArray(64)
+
+    /**
+     * The exact cell walls: each cell is the screen clipped by the bisector
+     * with every other seed, and each wall is drawn once, by the lower of the
+     * two seeds it divides. Anti-aliased lines, so the walls are clean and
+     * straight at any resolution.
+     */
+    private fun drawWalls(g: G, halfW: Float, width: Float) {
+        g.reserveInstances(seeds * 8)
+        for (i in 0 until seeds) {
+            var n = 4
+            px[0] = -halfW; py[0] = -1f; px[1] = halfW; py[1] = -1f
+            px[2] = halfW; py[2] = 1f; px[3] = -halfW; py[3] = 1f
+            for (k in 0 until 4) pt[k] = -1
+            for (j in 0 until seeds) {
+                if (j == i || n == 0) continue
+                val nx = sx[j] - sx[i]; val ny = sy[j] - sy[i]
+                val mx = (sx[i] + sx[j]) * 0.5f; val my = (sy[i] + sy[j]) * 0.5f
+                var m = 0
+                for (k in 0 until n) {
+                    val k2 = (k + 1) % n
+                    val da = (px[k] - mx) * nx + (py[k] - my) * ny
+                    val db = (px[k2] - mx) * nx + (py[k2] - my) * ny
+                    if (m + 2 >= qx.size) break
+                    if (da <= 0f) { qx[m] = px[k]; qy[m] = py[k]; qt[m] = pt[k]; m++ }
+                    if ((da <= 0f) != (db <= 0f)) {
+                        val f = da / (da - db)
+                        qx[m] = px[k] + (px[k2] - px[k]) * f
+                        qy[m] = py[k] + (py[k2] - py[k]) * f
+                        // Leaving the half-plane: the edge from here runs along
+                        // the bisector; entering: it continues the old edge.
+                        qt[m] = if (da <= 0f) j else pt[k]
+                        m++
+                    }
+                }
+                val tx = px; px = qx; qx = tx
+                val ty = py; py = qy; qy = ty
+                val tt = pt; pt = qt; qt = tt
+                n = m
+            }
+            for (k in 0 until n) {
+                val j = pt[k]
+                if (j <= i) continue
+                val k2 = (k + 1) % n
+                g.line(px[k], py[k], px[k2], py[k2], width, Palette.BG, 0.92f)
+            }
         }
     }
 

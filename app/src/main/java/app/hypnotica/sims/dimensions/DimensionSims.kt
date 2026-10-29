@@ -810,6 +810,10 @@ class RandomWalkSim : Sim {
         lastReturned = -1
         settledFor = 0f
         viewScale = 1f
+        viewCx = 0f
+        viewCy = 0f
+        viewRot = 0f
+        upright = false
         viewer = VIEWER
         carry = 0f
         wandered = BooleanArray(walkers)
@@ -970,16 +974,75 @@ class RandomWalkSim : Sim {
         }
         val radius = furthest.coerceAtLeast(0.2f)
         viewer = maxOf(VIEWER, Nd.viewerFor(radius, dims))
-        // Below three dimensions nothing is in perspective, so the cloud's
-        // reach is its radius; the factor of two the projection can add
-        // from three up held a plane walk to half the frame it had.
-        val gain = if (dims <= 2) 1f else PROJECTION_GAIN
-        // To the screen's own size: across an upright phone, and within the
-        // height on a wide one, where a fixed 0.85 left half of it empty.
-        val room = if (dims == 1) halfWidth * 0.9f else min(halfWidth, 1f) * 0.9f
-        val target = room / (radius * gain)
-        // Eases towards the target so the view does not jump every frame.
-        viewScale += (target.coerceIn(0.01f, 4f) - viewScale) * 0.06f
+        // Fitted to what is actually drawn — the projected walkers, their
+        // trails and home — across and up separately, and centred on that box
+        // rather than on home. Fitting the furthest walker's radius about the
+        // origin into the screen's narrow side (with the projection's
+        // worst-case factor of two) left the cloud a small tangle in the middle
+        // of a tall screen, most of it unused.
+        var x0 = 0f; var x1 = 0f; var y0 = 0f; var y1 = 0f
+        w = 0
+        while (w < walkers) {
+            Nd.project(pos, w * dims, dims, viewer, proj)
+            x0 = min(x0, proj[0]); x1 = max(x1, proj[0]); y0 = min(y0, proj[1]); y1 = max(y1, proj[1])
+            w += stride
+        }
+        val total = trailFill * walkers
+        val tStride = maxOf(1, total / 6000)
+        var k = 0
+        while (k < total) {
+            val idx = (k / trailFill) * trailLen + k % trailFill
+            x0 = min(x0, trailX[idx]); x1 = max(x1, trailX[idx])
+            y0 = min(y0, trailY[idx]); y1 = max(y1, trailY[idx])
+            k += tStride
+        }
+        if (dims == 1) { y0 = 0f; y1 = 0f }
+        val spanX = max(0.05f, (x1 - x0) * 0.5f)
+        val spanY = max(0.05f, (y1 - y0) * 0.5f)
+        // A plane walk's cloud is as often wide as tall, and a wide one on an
+        // upright phone is held to the narrow side. The walk is the same
+        // turned a quarter-turn (the grid's axes map onto each other), so the
+        // view turns it upright when that fits it markedly larger, then holds.
+        val flat = min(halfWidth * 0.9f / spanX, 0.9f / spanY)
+        val turned = min(halfWidth * 0.9f / spanY, 0.9f / spanX)
+        if (dims >= 2) {
+            if (!upright && turned > flat * 1.3f) upright = true
+            else if (upright && flat > turned * 1.3f) upright = false
+        }
+        val goal = if (upright) 0.5f * PI.toFloat() else 0f
+        viewRot += (goal - viewRot) * 0.05f
+        val turning = abs(goal - viewRot) > 0.03f
+        val target = when {
+            dims == 1 -> halfWidth * 0.9f / spanX
+            // Mid-turn the cloud is diagonal and reaches further: room for that.
+            turning -> min(flat, turned) * 0.72f
+            upright -> turned
+            else -> flat
+        }
+        // Pulling back is quicker than closing in, so a walker striding out
+        // is caught before it reaches the edge of the now tighter frame.
+        val tgt = target.coerceIn(0.01f, 4f)
+        val ease = if (tgt < viewScale) 0.25f else 0.06f
+        viewScale += (tgt - viewScale) * ease
+        viewCx += ((x0 + x1) * 0.5f - viewCx) * ease
+        viewCy += ((y0 + y1) * 0.5f - viewCy) * ease
+    }
+
+    /** The centre of the drawn cloud, in projected units; home is the origin. */
+    private var viewCx = 0f
+    private var viewCy = 0f
+    /** The view's turn, eased, and whether it is turning or turned upright. */
+    private var viewRot = 0f
+    private var upright = false
+
+    /** Projected units to screen: centred on the cloud, turned, scaled. */
+    private fun screenX(x: Float, y: Float): Float {
+        val c = cos(viewRot); val s = sin(viewRot)
+        return ((x - viewCx) * c - (y - viewCy) * s) * viewScale
+    }
+    private fun screenY(x: Float, y: Float): Float {
+        val c = cos(viewRot); val s = sin(viewRot)
+        return ((x - viewCx) * s + (y - viewCy) * c) * viewScale
     }
 
     /**
@@ -1010,11 +1073,11 @@ class RandomWalkSim : Sim {
                 val age = k.toFloat() / trailLen
                 // Rows are laid out at the scale of the moment, not the one
                 // the point was stored at.
-                val x = trailX[idx] * viewScale
-                val y = (if (oneD) rowFix else trailY[idx]) * viewScale
-                val a = (0.75f - 0.65f * age) * (if (home[w]) 0.5f else 1f)
+                val x = if (oneD) (trailX[idx] - viewCx) * viewScale else screenX(trailX[idx], trailY[idx])
+                val y = if (oneD) rowFix * viewScale else screenY(trailX[idx], trailY[idx])
+                val a = (0.8f - 0.72f * age) * (if (home[w]) 0.45f else 1f)
                 if (!asLines) g.point(x, y, dot * (1.15f - 0.6f * age), Palette.withAlpha(c, a))
-                else if (k > 0) g.line(lx, ly, x, y, dot * (0.8f - 0.4f * age), c, a)
+                else if (k > 0) g.line(lx, ly, x, y, dot * (0.6f - 0.3f * age), c, a)
                 lx = x; ly = y
             }
         }
@@ -1023,17 +1086,20 @@ class RandomWalkSim : Sim {
             val c = if (home[w]) Palette.SUCCESS else palette.at(w.toFloat() / max(1, walkers))
             // Big enough to follow on a phone: at a hundredth of the screen
             // they were specks in an empty frame.
-            val y = if (oneD) rowY(w) else proj[1]
-            g.point(proj[0] * viewScale, y * viewScale, if (walkers > 200) WALKER_SIZE * 0.6f else WALKER_SIZE, c)
+            val sxw = if (oneD) (proj[0] - viewCx) * viewScale else screenX(proj[0], proj[1])
+            val syw = if (oneD) rowY(w) * viewScale else screenY(proj[0], proj[1])
+            g.point(sxw, syw, if (walkers > 200) WALKER_SIZE * 0.6f else WALKER_SIZE, c)
         }
         // Home, at the same scale as everything else: on a line, the column
         // every row returns to.
+        val hx = if (oneD) -viewCx * viewScale else screenX(0f, 0f)
+        val hy = if (oneD) 0f else screenY(0f, 0f)
         if (oneD) {
-            g.line(0f, -0.9f, 0f, 0.9f, 0.004f, Palette.SUCCESS, 0.5f)
+            g.line(hx, -0.9f, hx, 0.9f, 0.004f, Palette.SUCCESS, 0.5f)
         } else {
             val r = (0.035f * viewScale).coerceIn(0.02f, 0.1f)
-            g.glow(0f, 0f, r * 3f, Palette.SUCCESS, 0.25f + 0.35f * returned / max(1, walkers))
-            g.ring(0f, 0f, r, 0.005f, Palette.SUCCESS, alpha = 0.9f)
+            g.glow(hx, hy, r * 3f, Palette.SUCCESS, 0.25f + 0.35f * returned / max(1, walkers))
+            g.ring(hx, hy, r, 0.005f, Palette.SUCCESS, alpha = 0.9f)
         }
     }
 
@@ -1062,9 +1128,6 @@ class RandomWalkSim : Sim {
          * perspective is.
          */
         const val VIEWER = 6f
-
-        /** The most the projection can magnify once the viewer keeps ahead. */
-        const val PROJECTION_GAIN = 2f
 
         fun def(): SimDef = SimDef(
             id = "dimensions/random-walk",
@@ -1111,6 +1174,13 @@ class NdBounceSim : Sim {
     private var tmp = FloatArray(0)
     private var viewer = 3f
     private var drawScale = 0.72f
+    /**
+     * How much taller than wide the box is: its "down" axis is stretched to
+     * use the height of the screen. A cube on an upright phone filled the
+     * width and left half the height empty, a smallish box in a big frame.
+     * Only that one wall pair moves; the walls are still 2·dims flat walls.
+     */
+    private var tall = 1f
 
     /**
      * Which of the 2*dims walls each ball has struck, as a bit per wall.
@@ -1147,10 +1217,12 @@ class NdBounceSim : Sim {
         vel = FloatArray(count * dims)
         tint = FloatArray(count)
         val speed = p.f("speed", 0.7f)
+        tall = tallFor(env)
         for (i in 0 until count) {
             val base = i * dims
             for (d in 0 until dims) {
-                pos[base + d] = env.rng.range(-0.7f, 0.7f)
+                val reach = if (d == 1) 0.7f * tall else 0.7f
+                pos[base + d] = env.rng.range(-reach, reach)
                 vel[base + d] = env.rng.range(-speed, speed)
             }
             tint[i] = env.rng.nextFloat()
@@ -1159,21 +1231,17 @@ class NdBounceSim : Sim {
         payoffFrame = false
         elapsed = 0f
         spin = 0f
-        boxVerts = Nd.hypercubeVertices(dims).also { for (k in it.indices) it[k] *= 2f * WALL }
+        boxVerts = Nd.hypercubeVertices(dims).also {
+            for (k in it.indices) it[k] *= 2f * WALL * (if (k % dims == 1) tall else 1f)
+        }
         boxEdges = Nd.hypercubeEdges(dims)
         tmp = FloatArray(dims)
         viewer = Nd.viewerFor(WALL, dims)
         // Scaled once, so the box at its widest over a whole turn of the view
-        // fills the frame: found by turning it, not guessed.
-        var extent = 0.1f
-        for (step in 0 until 48) {
-            val a = step * 2f * PI.toFloat() / 48
-            for (v in 0 until (1 shl dims)) {
-                viewOf(boxVerts, v * dims, a)
-                extent = max(extent, max(abs(proj[0]), abs(proj[1])))
-            }
-        }
-        drawScale = BOX_SCREEN / extent
+        // fills the frame — across, and up to the visible height: found by
+        // turning it, not guessed.
+        val (ex, ey) = turnedExtent()
+        drawScale = min(BOX_SCREEN / ex, visibleHalfHeight(env) * 0.93f / ey)
     }
 
     /**
@@ -1183,6 +1251,35 @@ class NdBounceSim : Sim {
      * it don't. Turning the positions themselves, as this used to, carried
      * balls straight through walls their velocities knew nothing about.
      */
+    /** The box's half extents across and up over a whole turn of the view. */
+    private fun turnedExtent(): Pair<Float, Float> {
+        var ex = 0.1f
+        var ey = 0.1f
+        for (step in 0 until 48) {
+            val a = step * 2f * PI.toFloat() / 48
+            for (v in 0 until (1 shl dims)) {
+                viewOf(boxVerts, v * dims, a)
+                ex = max(ex, abs(proj[0])); ey = max(ey, abs(proj[1]))
+            }
+        }
+        return ex to ey
+    }
+
+    /** Half the screen's height in world units once the view has fitted [frameHalfWidth]. */
+    private fun visibleHalfHeight(env: SimEnv): Float =
+        max(1f, (BOX_SCREEN + 0.035f) / max(env.halfWidth, 1e-3f))
+
+    /** As tall as the screen allows, measured on a cube and scaled up. */
+    private fun tallFor(env: SimEnv): Float {
+        tall = 1f
+        boxVerts = Nd.hypercubeVertices(dims).also { for (k in it.indices) it[k] *= 2f * WALL }
+        tmp = FloatArray(dims)
+        viewer = Nd.viewerFor(WALL, dims)
+        val (ex, ey) = turnedExtent()
+        val scale = BOX_SCREEN / ex
+        return (visibleHalfHeight(env) * 0.9f / (ey * scale)).coerceIn(1f, MAX_TALL)
+    }
+
     private fun viewOf(src: FloatArray, offset: Int, angle: Float) {
         for (d in 0 until dims) tmp[d] = src[offset + d]
         if (dims >= 3) {
@@ -1204,12 +1301,13 @@ class NdBounceSim : Sim {
             // Gravity acts along the second axis, the one that reads as "down".
             if (dims > 1) vel[base + 1] -= laws.gravityDirY * laws.gravity * 0.02f * dt
             for (d in 0 until dims) {
+                val wd = if (d == 1) wall * tall else wall
                 pos[base + d] += vel[base + d] * dt
-                if (pos[base + d] > wall) {
-                    pos[base + d] = wall; vel[base + d] = -vel[base + d] * e; hitsThisStep++
+                if (pos[base + d] > wd) {
+                    pos[base + d] = wd; vel[base + d] = -vel[base + d] * e; hitsThisStep++
                     visited[i] = visited[i] or (1 shl d)
-                } else if (pos[base + d] < -wall) {
-                    pos[base + d] = -wall; vel[base + d] = -vel[base + d] * e; hitsThisStep++
+                } else if (pos[base + d] < -wd) {
+                    pos[base + d] = -wd; vel[base + d] = -vel[base + d] * e; hitsThisStep++
                     visited[i] = visited[i] or (1 shl d)
                 }
             }
@@ -1361,6 +1459,8 @@ class NdBounceSim : Sim {
         private const val BOX_SCREEN = 0.68f
         /** A ball's radius on screen, before perspective. */
         private const val BALL = 0.027f
+        /** The tallest the box gets, as a multiple of its width. */
+        private const val MAX_TALL = 1.9f
 
         /** The drop into the box, before there is a rhythm to measure. */
         private const val SETTLE_SECONDS = 1.5f

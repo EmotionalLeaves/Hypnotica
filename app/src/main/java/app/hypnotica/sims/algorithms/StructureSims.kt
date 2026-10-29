@@ -13,6 +13,7 @@ import app.hypnotica.core.sim.SimEnv
 import app.hypnotica.core.sim.TrapFormat
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
@@ -442,6 +443,19 @@ class BinaryTreeSim : Sim {
     private var right = IntArray(0)
     private var depth = IntArray(0)
     private var xs = FloatArray(0)
+    /**
+     * Each node's place along the tree's breadth, 0..1, from relayout(), and
+     * the eased value drawn.
+     */
+    private var rankU = FloatArray(0)
+    private var shownU = FloatArray(0)
+    private var stack = IntArray(0)
+    private var order = IntArray(0)
+    private var span = FloatArray(0)
+    private var start = FloatArray(0)
+    private var ys = FloatArray(0)
+    private var totalUnits = 1f
+    private var layoutDirty = false
     private var size = 0
     private var target = 220
     private var carry = 0f
@@ -466,6 +480,15 @@ class BinaryTreeSim : Sim {
         right = IntArray(target) { -1 }
         depth = IntArray(target)
         xs = FloatArray(target)
+        rankU = FloatArray(target)
+        shownU = FloatArray(target)
+        stack = IntArray(target + 1)
+        order = IntArray(target)
+        span = FloatArray(target)
+        start = FloatArray(target)
+        ys = FloatArray(target)
+        totalUnits = 1f
+        layoutDirty = false
         size = 0
         // A whole node owed from the start, so the root is planted on the very
         // first step. At twenty-six a second from an empty tree the first
@@ -497,6 +520,10 @@ class BinaryTreeSim : Sim {
             val key = if (sorted) size.toFloat() / target else env.rng.nextFloat()
             insert(key, env)
         }
+        if (layoutDirty) relayout()
+        // Nodes glide to their new columns as the tree grows rather than jump.
+        val ease = min(1f, abs(dt) * 10f)
+        for (i in 0 until size) shownU[i] += (rankU[i] - shownU[i]) * ease
         if (size >= target && restSeconds < 0f) {
             payoffFrame = true
             restSeconds = 1.5f
@@ -511,6 +538,7 @@ class BinaryTreeSim : Sim {
             depth[0] = 0
             size = 1
             maxDepth = 0
+            rankU[0] = 0.5f; shownU[0] = 0.5f
             return
         }
         var current = 0
@@ -530,7 +558,63 @@ class BinaryTreeSim : Sim {
         depth[index] = d
         if (d > maxDepth) maxDepth = d
         size++
+        layoutDirty = true
         env.emit(EventKind.WRITE, key, key * 2f - 1f, 0.45f)
+    }
+
+    /**
+     * A tidy layout, in three linear passes (iterative: a sorted-key tree is a
+     * hundred thousand deep). Each leaf takes one unit of breadth, a node with
+     * one child half a unit more, and a parent sits centred over its children,
+     * so the left-to-right order is still the sorted order. Laid out by key
+     * value, keys that fell close together piled whole clumps of a level on
+     * top of each other; one column per node (in-order rank) cured that but
+     * shrank the nodes to specks. This needs about half as many columns.
+     */
+    private fun relayout() {
+        layoutDirty = false
+        val n = size
+        // Pre-order (node, left, right); reversed, every child precedes its parent.
+        var sp = 0
+        var k = 0
+        stack[sp++] = 0
+        while (sp > 0) {
+            val v = stack[--sp]
+            order[k++] = v
+            if (right[v] >= 0) stack[sp++] = right[v]
+            if (left[v] >= 0) stack[sp++] = left[v]
+        }
+        for (j in n - 1 downTo 0) {
+            val v = order[j]
+            val l = left[v]; val r = right[v]
+            span[v] = when {
+                l < 0 && r < 0 -> 1f
+                l >= 0 && r >= 0 -> span[l] + span[r]
+                else -> span[if (l >= 0) l else r] + 0.5f
+            }
+        }
+        start[0] = 0f
+        for (j in 0 until n) {
+            val v = order[j]
+            val l = left[v]; val r = right[v]
+            if (l >= 0) start[l] = start[v]
+            if (r >= 0) start[r] = if (l >= 0) start[v] + span[l] else start[v] + 0.5f
+        }
+        val total = span[0]
+        for (j in n - 1 downTo 0) {
+            val v = order[j]
+            val l = left[v]; val r = right[v]
+            span[v] = when {
+                l < 0 && r < 0 -> start[v] + 0.5f
+                l >= 0 && r >= 0 -> (span[l] + span[r]) * 0.5f
+                l >= 0 -> span[l] + 0.5f
+                else -> span[r] - 0.5f
+            }   // span now holds each node's centre, children first
+        }
+        for (j in 0 until n) rankU[j] = span[j] / total
+        totalUnits = total
+        // A new node appears where it belongs, not sliding in from the left.
+        shownU[n - 1] = rankU[n - 1]
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -538,54 +622,61 @@ class BinaryTreeSim : Sim {
         if (size == 0) return
         val halfW = env.halfWidth * 0.95f
         val levels = max(1, maxDepth)
-        val rowH = 1.75f / (levels + 1)
-        // Place by key so the in-order layout is the sorted order.
+        val units = max(1f, totalUnits)
+        // Breadth along whichever axis gives the nodes more room. A bushy tree
+        // is far wider than it is deep, so on a tall phone it lies on its side
+        // (root on the left, smallest keys at the top) and gets twice the
+        // room per node; on a wide screen it stands the usual way up.
+        val upLen = 2f * halfW
+        val upRow = 1.75f / (levels + 1)
+        val sideLen = 1.84f
+        val sideRow = (2f * halfW - 0.04f) / levels
+        fun dotFor(len: Float, row: Float) = min(len / units * 0.36f, row * 0.28f)
+        val sideways = dotFor(sideLen, sideRow) > 1.25f * dotFor(upLen, upRow)
+        val dotSize = (if (sideways) dotFor(sideLen, sideRow) else dotFor(upLen, upRow)).coerceIn(0.0028f, 0.016f)
+        val edgeW = (dotSize * 0.4f).coerceIn(0.0012f, 0.003f)
+        for (i in 0 until size) {
+            if (sideways) {
+                xs[i] = -halfW + 0.02f + depth[i] * sideRow
+                ys[i] = 0.92f - shownU[i] * sideLen
+            } else {
+                xs[i] = -halfW + shownU[i] * upLen
+                ys[i] = 0.88f - depth[i] * upRow
+            }
+        }
         val edgeStride = maxOf(1, size / Draw.MAX_EDGES)
-        for (i in 0 until size) xs[i] = -halfW + keys[i] * 2f * halfW
         // Depth runs over most of the palette, not into its far end, which on
         // Ocean is navy: the deepest nodes were black on black.
         fun shade(d: Int) = palette.at(Draw.DEPTH_SPAN * d / levels)
         g.reserveInstances(if (size > Draw.AS_POINTS) min(size, Draw.MAX_EDGES) * 2 else size * 4)
         for (i in 0 until size) {
-            val x = xs[i]
-            val y = 0.88f - depth[i] * rowH
             val l = left[i]
             val r = right[i]
             if (edgeStride == 1 || i % edgeStride == 0) {
-                if (l in 0 until size) g.line(x, y, xs[l], 0.88f - depth[l] * rowH, 0.003f, shade(depth[l]), 0.55f)
-                if (r in 0 until size) g.line(x, y, xs[r], 0.88f - depth[r] * rowH, 0.003f, shade(depth[r]), 0.55f)
+                if (l in 0 until size) g.line(xs[i], ys[i], xs[l], ys[l], edgeW, shade(depth[l]), 0.55f)
+                if (r in 0 until size) g.line(xs[i], ys[i], xs[r], ys[r], edgeW, shade(depth[r]), 0.55f)
             }
         }
-        // Smaller than they were: at the shipped 220 the nodes of a level
-        // piled into each other in clumps.
-        val dotSize = max(0.004f, min(0.014f, 1.9f / size))
         // A hundred thousand nodes are a texture, not a diagram: past the
         // threshold the nodes go through the point path and the edges thin out.
         if (size > Draw.AS_POINTS) {
             g.reservePoints(size)
             for (i in 0 until size) {
-                g.point(
-                    xs[i],
-                    0.88f - depth[i] * rowH,
-                    // World units, like every point size: 1.6 was the size of
-                    // the whole screen, clamped to the renderer's largest dot.
-                    dotSize * 1.6f,
-                    shade(depth[i])
-                )
+                // World units, like every point size: 1.6 was the size of
+                // the whole screen, clamped to the renderer's largest dot.
+                g.point(xs[i], ys[i], dotSize * 1.6f, shade(depth[i]))
             }
         } else
         for (i in 0 until size) {
-            val y = 0.88f - depth[i] * rowH
             // A dark rim, so neighbours that touch stay two nodes, not a blob.
-            g.disc(xs[i], y, dotSize * 1.3f, Palette.BG)
-            g.disc(xs[i], y, dotSize, shade(depth[i]))
+            g.disc(xs[i], ys[i], dotSize * 1.25f, Palette.BG)
+            g.disc(xs[i], ys[i], dotSize, shade(depth[i]))
         }
         // The newest node, lit.
         if (size > 1 && size <= Draw.AS_POINTS) {
             val k = size - 1
-            val y = 0.88f - depth[k] * rowH
-            g.glow(xs[k], y, dotSize * 5f, Palette.TEXT_PRIMARY, 0.5f)
-            g.disc(xs[k], y, dotSize * 1.1f, Palette.TEXT_PRIMARY)
+            g.glow(xs[k], ys[k], dotSize * 5f, Palette.TEXT_PRIMARY, 0.5f)
+            g.disc(xs[k], ys[k], dotSize * 1.1f, Palette.TEXT_PRIMARY)
         }
     }
 
@@ -839,7 +930,7 @@ class GradientDescentSim : Sim {
     private var elapsed = 0f
     private var converged = false
     private var convergedFor = 0f
-    private var bumps = 3f
+    private var bumps = 5f
     private var momentum = 0.86f
     private var rate = 0.008f
     private var gridX = 0
@@ -847,6 +938,21 @@ class GradientDescentSim : Sim {
     private var settled = BooleanArray(0)
     private var stillFor = FloatArray(0)
     private var settledCount = 0
+    /** Each walker's path so far, a ring of [TRAIL] points spaced [TRAIL_STEP] apart. */
+    private var trailX = FloatArray(0)
+    private var trailY = FloatArray(0)
+    private var trailHead = IntArray(0)
+    private var trailLen = IntArray(0)
+    /** When each walker last landed, for the landing ring. */
+    private var landedAt = FloatArray(0)
+    /** The lowest point of the surface on screen: landing there is finding the bottom. */
+    private var minX = 0f
+    private var minY = 0f
+    private var minLoss = 0f
+    /** Contour segments (x1, y1, x2, y2, level t), built once per surface. */
+    private var contours = FloatArray(0)
+    private var contourCount = 0
+    private var contourHalfW = -1f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -854,7 +960,7 @@ class GradientDescentSim : Sim {
         settled = BooleanArray(walkers)
         stillFor = FloatArray(walkers)
         settledCount = 0
-        bumps = p.f("bumps", 3f)
+        bumps = p.f("bumps", 5f)
         momentum = p.f("momentum", 0.86f)
         rate = p.f("rate", 0.008f)
         wx = FloatArray(walkers); wy = FloatArray(walkers)
@@ -863,13 +969,52 @@ class GradientDescentSim : Sim {
             wx[i] = env.rng.range(-env.halfWidth * 0.9f, env.halfWidth * 0.9f)
             wy[i] = env.rng.range(-0.9f, 0.9f)
         }
-        gridX = 44
-        gridY = 70
+        trailX = FloatArray(walkers * TRAIL); trailY = FloatArray(walkers * TRAIL)
+        trailHead = IntArray(walkers); trailLen = IntArray(walkers)
+        for (i in 0 until walkers) pushTrail(i)
+        landedAt = FloatArray(walkers) { -10f }
+        // Square tiles, about six thousand of them whatever the aspect: a fixed
+        // 44 x 70 grid was visibly blocky on a phone and stretched on a tablet.
+        val halfW = env.halfWidth
+        val cell = sqrt(4f * halfW / 6000f)
+        gridX = ceil(2f * halfW / cell).toInt().coerceIn(8, 400)
+        gridY = ceil(2f / cell).toInt().coerceIn(8, 400)
+        findMinimum(halfW)
+        contourHalfW = -1f
         best = Float.MAX_VALUE
         payoffFrame = false
         elapsed = 0f
         converged = false
         convergedFor = 0f
+    }
+
+    private fun pushTrail(i: Int) {
+        val base = i * TRAIL
+        if (trailLen[i] > 0) {
+            val last = base + (trailHead[i] + TRAIL - 1) % TRAIL
+            if (hypot(wx[i] - trailX[last], wy[i] - trailY[last]) < TRAIL_STEP) return
+        }
+        trailX[base + trailHead[i]] = wx[i]
+        trailY[base + trailHead[i]] = wy[i]
+        trailHead[i] = (trailHead[i] + 1) % TRAIL
+        if (trailLen[i] < TRAIL) trailLen[i]++
+    }
+
+    /** A coarse scan then a short descent from the best cell: the screen's true lowest point. */
+    private fun findMinimum(halfW: Float) {
+        var bx = 0f; var by = 0f; var bl = Float.MAX_VALUE
+        val n = 120
+        for (r in 0..n) for (c in 0..n) {
+            val x = -halfW + 2f * halfW * c / n
+            val y = -1f + 2f * r / n
+            val l = loss(x, y)
+            if (l < bl) { bl = l; bx = x; by = y }
+        }
+        repeat(400) {
+            bx = (bx - 0.02f * gradX(bx, by)).coerceIn(-halfW, halfW)
+            by = (by - 0.02f * gradY(bx, by)).coerceIn(-1f, 1f)
+        }
+        minX = bx; minY = by; minLoss = loss(bx, by)
     }
 
     /** A bowl with ripples: one true minimum, plenty of local dips. */
@@ -900,6 +1045,7 @@ class GradientDescentSim : Sim {
             val edgeX = env.halfWidth - EDGE_INSET
             wx[i] = (wx[i] + vx[i] * dt * 6f).coerceIn(-edgeX, edgeX)
             wy[i] = (wy[i] + vy[i] * dt * 6f).coerceIn(-1f + EDGE_INSET, 1f - EDGE_INSET)
+            pushTrail(i)
             val l = loss(wx[i], wy[i])
             if (l < lowest) lowest = l
             // Each walker lands with its own note, pitched by how deep its dip
@@ -915,6 +1061,7 @@ class GradientDescentSim : Sim {
                 if (stillFor[i] > SETTLE_SECONDS) {
                     settled[i] = true
                     settledCount++
+                    landedAt[i] = elapsed
                     env.emit(EventKind.HIT, (1f - (l + 0.3f) / 1.6f).coerceIn(0f, 1f),
                         (wx[i] / env.halfWidth).coerceIn(-1f, 1f), 0.6f)
                 }
@@ -957,32 +1104,130 @@ class GradientDescentSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth
-        g.reserveInstances(gridX * gridY + walkers * 3)
+        if (contourHalfW != halfW) buildContours(halfW)
+        val trailBudget = max(2, min(TRAIL, 2400 / max(1, walkers)))
+        g.reserveInstances(gridX * gridY + contourCount + walkers * (trailBudget + 4) + 4)
         val dx = 2f * halfW / gridX
         val dy = 2f / gridY
-        // The surface as solid tiles, dimmed so the walkers
-        // stand out. It was a grid of round points at 60%, which on a phone
-        // read as a moiré of dots with the walkers lost in it.
-        val lo = -0.25f
-        val hi = (halfW * halfW + 1f) * 0.6f + 0.22f
+        // The surface as terrain: colour by height, lower ground darker so the
+        // eye falls into the valleys, and lit from the upper left by its own
+        // slope so the bumps read as hills and dips. Flat colour alone read as
+        // a plain gradient with the dips invisible.
         for (r in 0 until gridY) {
             val y = -1f + (r + 0.5f) * dy
             for (c in 0 until gridX) {
                 val x = -halfW + (c + 0.5f) * dx
-                // Square-rooted, to spread the low ground — most of the screen,
-                // and where the dips are — over more of the palette.
-                val t = sqrt(((loss(x, y) - lo) / (hi - lo)).coerceIn(0f, 1f))
-                // Lower ground darker, so the eye falls into the valleys.
-                val c0 = Palette.lerp(palette.at(t), Palette.BG, 0.6f - 0.3f * t)
-                g.rect(x, y, dx * 0.5f + 0.0005f, dy * 0.5f + 0.0005f, c0)
+                val t = heightT(x, y, halfW)
+                val gx = gradX(x, y) * RELIEF
+                val gy = gradY(x, y) * RELIEF
+                val lambert = ((gx * 0.5f - gy * 0.5f + 0.707f) / sqrt(gx * gx + gy * gy + 1f)).coerceIn(0f, 1f)
+                val base = Palette.lerp(palette.at(t), Palette.BG, 0.62f - 0.3f * t)
+                val shaded = if (lambert >= 0.707f) Palette.lerp(base, Palette.TEXT_PRIMARY, (lambert - 0.707f) * 0.35f)
+                    else Palette.lerp(base, Palette.BG, (0.707f - lambert) * 0.9f)
+                // Overlapping by a fifth: a hair over left a faint tile grid.
+                g.rect(x, y, dx * 0.6f, dy * 0.6f, shaded)
             }
         }
-        val r = 0.014f
-        for (i in 0 until walkers) {
-            if (!settled[i]) g.glow(wx[i], wy[i], 0.05f, Palette.TEXT_PRIMARY, 0.35f)
-            g.disc(wx[i], wy[i], r * 1.45f, Palette.BG)
-            g.disc(wx[i], wy[i], r, if (settled[i]) Palette.SUCCESS else Palette.TEXT_PRIMARY)
+        // Contour lines, every equal step of the colour scale.
+        for (k in 0 until contourCount) {
+            val o = k * 5
+            val t = contours[o + 4]
+            g.line(contours[o], contours[o + 1], contours[o + 2], contours[o + 3], 0.0028f,
+                Palette.lerp(palette.at(t), Palette.TEXT_PRIMARY, 0.35f), 0.28f + 0.2f * t)
         }
+        // The true bottom, marked, so it is plain which walkers found it.
+        g.ring(minX, minY, 0.03f, 0.004f, Palette.SUCCESS, alpha = 0.55f)
+        g.disc(minX, minY, 0.005f, Palette.SUCCESS, 0.7f)
+        // Each walker's path down, fading towards where it started.
+        for (i in 0 until walkers) {
+            val n = min(trailLen[i], trailBudget)
+            if (n < 2) continue
+            val col = walkerColour(i)
+            val base = i * TRAIL
+            var px = 0f; var py = 0f
+            for (j in 0 until n) {
+                val idx = base + (trailHead[i] + TRAIL - n + j) % TRAIL
+                val x = trailX[idx]; val y = trailY[idx]
+                if (j > 0) {
+                    val k = j.toFloat() / (n - 1)
+                    g.line(px, py, x, y, 0.004f + 0.003f * k, col, 0.15f + 0.6f * k)
+                }
+                px = x; py = y
+            }
+            // Joined to where the walker is now, not where it was last sampled.
+            g.line(px, py, wx[i], wy[i], 0.007f, col, 0.75f)
+        }
+        val r = 0.016f
+        for (i in 0 until walkers) {
+            val col = walkerColour(i)
+            if (!settled[i]) g.glow(wx[i], wy[i], 0.05f, Palette.TEXT_PRIMARY, 0.3f)
+            else {
+                // A ring thrown out on landing, and a soft glow left behind.
+                val k = ((elapsed - landedAt[i]) / 0.7f)
+                if (k in 0f..1f) g.ring(wx[i], wy[i], r + 0.06f * k, 0.005f, col, alpha = 1f - k)
+                g.glow(wx[i], wy[i], 0.045f, col, 0.35f)
+            }
+            g.disc(wx[i], wy[i], r * 1.45f, Palette.BG)
+            g.disc(wx[i], wy[i], r, col)
+        }
+    }
+
+    /**
+     * White while rolling; once landed, green at the true bottom and amber in
+     * a dip that is not the bottom: the answer to the question the sim asks.
+     */
+    private fun walkerColour(i: Int): Int = when {
+        !settled[i] -> Palette.TEXT_PRIMARY
+        loss(wx[i], wy[i]) <= minLoss + 0.015f -> Palette.SUCCESS
+        else -> Palette.WARNING
+    }
+
+    /** Height on the colour scale, square-rooted to spread the low ground. */
+    private fun heightT(x: Float, y: Float, halfW: Float): Float {
+        val lo = -0.25f
+        val hi = (halfW * halfW + 1f) * 0.6f + 0.22f
+        return sqrt(((loss(x, y) - lo) / (hi - lo)).coerceIn(0f, 1f))
+    }
+
+    /** Marching squares over a fine grid, once: the surface only changes in setup. */
+    private fun buildContours(halfW: Float) {
+        contourHalfW = halfW
+        val cell = sqrt(4f * halfW / 9000f)
+        val nx = ceil(2f * halfW / cell).toInt().coerceIn(8, 300)
+        val ny = ceil(2f / cell).toInt().coerceIn(8, 300)
+        val sx = 2f * halfW / nx
+        val sy = 2f / ny
+        val h = FloatArray((nx + 1) * (ny + 1))
+        for (r in 0..ny) for (c in 0..nx) h[r * (nx + 1) + c] = heightT(-halfW + c * sx, -1f + r * sy, halfW)
+        val out = ArrayList<Float>()
+        for (lv in 1 until CONTOURS) {
+            val t = lv.toFloat() / CONTOURS
+            for (r in 0 until ny) for (c in 0 until nx) {
+                val i0 = r * (nx + 1) + c
+                val a = h[i0]; val b = h[i0 + 1]; val d = h[i0 + nx + 1]; val e = h[i0 + nx + 2]
+                // Corners: a bottom-left, b bottom-right, e top-right, d top-left.
+                val pts = FloatArray(8)
+                var np = 0
+                val x0 = -halfW + c * sx; val y0 = -1f + r * sy
+                fun edge(v1: Float, v2: Float, ax: Float, ay: Float, bx: Float, by: Float) {
+                    if ((v1 < t) != (v2 < t) && np < 8) {
+                        val f = (t - v1) / (v2 - v1)
+                        pts[np++] = ax + (bx - ax) * f; pts[np++] = ay + (by - ay) * f
+                    }
+                }
+                edge(a, b, x0, y0, x0 + sx, y0)
+                edge(b, e, x0 + sx, y0, x0 + sx, y0 + sy)
+                edge(e, d, x0 + sx, y0 + sy, x0, y0 + sy)
+                edge(d, a, x0, y0 + sy, x0, y0)
+                var k = 0
+                while (k + 3 < np) {
+                    out.add(pts[k]); out.add(pts[k + 1]); out.add(pts[k + 2]); out.add(pts[k + 3]); out.add(t)
+                    k += 4
+                }
+            }
+        }
+        contours = out.toFloatArray()
+        contourCount = contours.size / 5
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -995,7 +1240,13 @@ class GradientDescentSim : Sim {
     companion object {
         /** The ground has to be about level, too, for a walker to have landed. */
         const val SETTLE_SLOPE = 0.03f
-        const val EDGE_INSET = 0.022f
+        const val EDGE_INSET = 0.024f
+        const val TRAIL = 64
+        const val TRAIL_STEP = 0.014f
+        /** Contour levels across the colour scale. */
+        const val CONTOURS = 14
+        /** How steep the slopes look to the light: enough to model the bumps. */
+        const val RELIEF = 0.9f
         fun def(): SimDef = SimDef(
             id = "algorithms/gradient-descent",
             title = "Gradient descent",
@@ -1008,7 +1259,10 @@ class GradientDescentSim : Sim {
             typicalSeconds = 11f,
             params = listOf(
                 Param.int("walkers", "Walkers", 1, 400, 24, card = Card.DATA, logScale = true),
-                Param.float("bumps", "Bumpiness", 0f, 10f, 3f, card = Card.DATA),
+                // Five, not three: at three a phone-width screen held one smooth
+                // bowl and every walker found the bottom — no dip to get stuck in,
+                // which is the whole point of the sim.
+                Param.float("bumps", "Bumpiness", 0f, 10f, 5f, card = Card.DATA),
                 Param.float("rate", "Learning rate", 0.005f, 0.4f, 0.008f, card = Card.MOTION, logScale = true),
                 Param.float("momentum", "Momentum", 0f, 0.98f, 0.86f, card = Card.MOTION)
             ),
