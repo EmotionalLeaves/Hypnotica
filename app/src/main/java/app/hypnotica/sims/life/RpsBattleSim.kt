@@ -54,7 +54,12 @@ class RpsBattleSim : Sim {
         teams = if (env.params.choiceIndex("game") == 1) 5 else 3
         n = per * teams
         halfW = env.halfWidth
-        size = (0.035f * sqrt(40f / per)).coerceIn(0.01f, 0.055f)
+        // 0.027 at forty a side, from 0.035: at the old size a hundred and
+        // twenty pieces covered a quarter of an upright phone, and every
+        // clash was a heap of shapes on top of one another.
+        // Scaled by the number of sides too: five armies of the same size
+        // as three started overlapping one another.
+        size = (0.027f * sqrt(40f / per) * sqrt(3f / teams)).coerceIn(0.008f, 0.045f)
         // How close a catch is, kept as it was tuned: drawing them bigger
         // shouldn't make the battle shorter.
         grip = (0.025f * sqrt(40f / per)).coerceIn(0.008f, 0.04f)
@@ -64,14 +69,26 @@ class RpsBattleSim : Sim {
         legs = FloatArray(n) { env.rng.range(LEGS_MIN, LEGS_MAX) }
         // Each side starts in its own corner of a triangle (or pentagon), so
         // the first clash is a charge rather than a scramble.
+        // Packed in a sunflower spiral round its corner, with a little
+        // jitter: a random scatter in a box put pieces on top of each other,
+        // so the opening frames were a heap rather than three armies.
+        val radius = sqrt(per.toFloat()) * size * 1.25f
         for (i in 0 until n) {
             val s = i % teams
+            val k = i / teams
             side[i] = s
-            val a = (PI / 2 + s * 2 * PI / teams).toFloat()
-            val cx = kotlin.math.cos(a) * min(halfW, 1f) * 0.55f
-            val cy = kotlin.math.sin(a) * 0.55f
-            x[i] = cx + env.rng.range(-0.18f, 0.18f)
-            y[i] = cy + env.rng.range(-0.18f, 0.18f)
+            // On an upright screen the triangle lies on its side, one army on
+            // the right and two stacked on the left: pointing up, the two
+            // bottom armies had less than the narrow width between them and
+            // started already touching.
+            val turn = if (halfW < 0.8f) 0.0 else PI / 2
+            val a = (turn + s * 2 * PI / teams).toFloat()
+            val cx = kotlin.math.cos(a) * (halfW - radius - size).coerceAtLeast(0.1f) * 0.95f
+            val cy = kotlin.math.sin(a) * (if (halfW < 0.8f) 0.62f else 0.5f)
+            val rr = radius * sqrt((k + 0.5f) / per)
+            val th = k * GOLDEN_ANGLE
+            x[i] = cx + kotlin.math.cos(th) * rr + env.rng.range(-0.15f, 0.15f) * size
+            y[i] = cy + kotlin.math.sin(th) * rr + env.rng.range(-0.15f, 0.15f) * size
         }
         count.fill(0)
         for (t in 0 until teams) count[t] = per
@@ -115,6 +132,11 @@ class RpsBattleSim : Sim {
                 // before the battle's own fade, and the final convert stayed
                 // a big white disc for the rest of the run.
                 if (flashT[i] > 0f) flashT[i] = max(0f, flashT[i] - h * 3f)
+                // Gathered towards the middle and turning slowly round it: the
+                // victors' lap of honour. Spread evenly over the field by
+                // their spacing alone they set into a stiff grid of shapes.
+                sx += -x[i] * GATHER - y[i] * TURN
+                sy += -y[i] * GATHER + x[i] * TURN
                 vx[i] = vx[i] * (1f - 2f * h) + (sx * 0.6f + env.rng.range(-1f, 1f)) * h
                 vy[i] = vy[i] * (1f - 2f * h) + (sy * 0.6f + env.rng.range(-1f, 1f)) * h
                 move(i, h)
@@ -291,7 +313,9 @@ class RpsBattleSim : Sim {
                 // Rock: a stone.
                 0 -> g.disc(x[i], y[i], r, c)
                 // Paper: a sheet, a little tilted with its heading.
-                1 -> g.rect(x[i], y[i], r * 0.8f, r, c, vx[i] * 0.3f)
+                // Each its own tilt as well, or a side of sheets lined up
+                // like tiles.
+                1 -> g.rect(x[i], y[i], r * 0.8f, r, c, (vx[i] * 1.5f).coerceIn(-0.4f, 0.4f) + (legs[i] - 1f) * 4f)
                 // Lizard: a ring.
                 3 -> g.ring(x[i], y[i], r, r * 0.35f, c)
                 // Spock: a diamond.
@@ -355,6 +379,10 @@ class RpsBattleSim : Sim {
         const val FRENZY_SECONDS = 2.5f
         const val FRENZY_SPEED = 1.7f
         const val MAX_TEAMS = 5
+        const val GOLDEN_ANGLE = 2.3999632f
+        /** The victory lap: pull to the middle, and the turn round it. */
+        const val GATHER = 1.2f
+        const val TURN = 1.5f
         val NAMES = arrayOf("rock", "paper", "scissors", "lizard", "Spock")
         /** Sides 0 to 4 as kinds: rock, Spock, paper, lizard, scissors. */
         val FIVE_ORDER = intArrayOf(0, 4, 1, 3, 2)

@@ -32,12 +32,20 @@ import kotlin.math.sqrt
  */
 class ParticleFieldSim : Sim {
 
-    private var n = 20000
+    private var n = 10000
     private var px = FloatArray(0)
     private var py = FloatArray(0)
     private var vx = FloatArray(0)
     private var vy = FloatArray(0)
     private var tint = FloatArray(0)
+    /** Seconds since each particle was (re)born, and how many times it has been. */
+    private var age = FloatArray(0)
+    private var births = IntArray(0)
+    /** The last [TRAIL] positions of each particle, newest first, or empty when off. */
+    private var trailX = FloatArray(0)
+    private var trailY = FloatArray(0)
+    private var trail = 0
+    private var stepCount = 0
 
     private var attractorX = FloatArray(4)
     private var attractorY = FloatArray(4)
@@ -49,23 +57,25 @@ class ParticleFieldSim : Sim {
     private var drag = 0.02f
     private var elapsed = 0f
     private var payoffFrame = false
-    private var dotSize = 0.004f
+    private var dotSize = 0.0055f
     private var soundTimer = 0f
     private var flipped = false
     private val wallHits = java.util.concurrent.atomic.AtomicInteger(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        n = p.i("count", 20000).coerceIn(100, 400_000)
+        n = p.i("count", 10000).coerceIn(100, 400_000)
         flow = p.f("flow", 1f)
         swirl = p.f("swirl", 1f)
         drag = p.f("drag", 0.02f)
-        dotSize = p.f("dot", 0.004f)
+        dotSize = p.f("dot", 0.0055f)
         attractors = p.i("attractors", 3).coerceIn(0, 4)
 
         px = FloatArray(n); py = FloatArray(n)
         vx = FloatArray(n); vy = FloatArray(n)
         tint = FloatArray(n)
+        age = FloatArray(n)
+        births = IntArray(n)
 
         val w = env.halfWidth
         for (i in 0 until n) {
@@ -74,6 +84,17 @@ class ParticleFieldSim : Sim {
             vx[i] = 0f
             vy[i] = 0f
             tint[i] = env.rng.nextFloat()
+            // Staggered, so the first rebirths trickle rather than all land
+            // on one frame.
+            age[i] = env.rng.nextFloat() * lifeOf(tint[i])
+        }
+        stepCount = 0
+        trail = if (n <= TRAIL_UP_TO) TRAIL else 0
+        trailX = FloatArray(n * trail)
+        trailY = FloatArray(n * trail)
+        for (i in 0 until n) for (k in 0 until trail) {
+            trailX[i * trail + k] = px[i]
+            trailY[i * trail + k] = py[i]
         }
         for (a in 0 until 4) {
             attractorX[a] = env.rng.range(-w * 0.7f, w * 0.7f)
@@ -111,7 +132,9 @@ class ParticleFieldSim : Sim {
         val restitution = if (laws.sticky) 0f else laws.bounce
 
         wallHits.set(0)
-        Parallel.forRange(n) { from, to -> integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution) }
+        stepCount++
+        val sampleTrail = stepCount % 2 == 0
+        Parallel.forRange(n) { from, to -> integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution, sampleTrail) }
         val movedFast = wallHits.get()
 
         // At this scale individual events would be static, so the sound follows
@@ -137,7 +160,7 @@ class ParticleFieldSim : Sim {
 
     private fun integrate(
         from: Int, to: Int, dt: Float, gx: Float, gy: Float, dragF: Float,
-        t: Float, w: Float, wrap: Boolean, restitution: Float
+        t: Float, w: Float, wrap: Boolean, restitution: Float, sampleTrail: Boolean
     ) {
         var localHits = 0
         for (i in from until to) {
@@ -158,11 +181,13 @@ class ParticleFieldSim : Sim {
                     val dy = attractorY[a] - py[i]
                     val d2 = dx * dx + dy * dy + 0.01f
                     val inv = attractorK[a] * swirl / d2
-                    ax += dx * inv * 0.02f
-                    ay += dy * inv * 0.02f
-                    // A tangential term is what makes the field curl instead of collapse.
-                    ax += -dy * inv * 0.012f
-                    ay += dx * inv * 0.012f
+                    ax += dx * inv * 0.008f
+                    ay += dy * inv * 0.008f
+                    // A tangential term is what makes the field curl instead of
+                    // collapse. It leads now: with the pull leading, each
+                    // attractor swallowed its share into a dot.
+                    ax += -dy * inv * 0.02f
+                    ay += dx * inv * 0.02f
                 }
             }
 
@@ -203,6 +228,40 @@ class ParticleFieldSim : Sim {
                 else if (ny < -1f) { ny = -1f; nvy = -nvy * restitution; localHits++ }
             }
 
+            // Every particle lives a few seconds and is reborn somewhere
+            // random. Without this the attractors and the walls herded the
+            // whole cloud into one clump in a corner within half a minute and
+            // left the rest of the screen a dim haze; with it the field stays
+            // spread over the screen and what shows is the flow, the way
+            // tracer dye shows a current. Rebirth is a hash of the index and
+            // the count, not env.rng: this runs on several threads at once.
+            // A particle that has stalled ages up to four times as fast:
+            // stalled ones are what piled up in the corners the flow drives
+            // into, and they make way for moving ones sooner.
+            val moving = min(1f, sqrt(nvx * nvx + nvy * nvy) * 2f)
+            var a = age[i] + abs(dt) * (4f - 3f * moving)
+            val tb = i * trail
+            // Sampled every other step, so the tail is twice as long for the
+            // same number of points.
+            if (sampleTrail) {
+                for (k in trail - 1 downTo 1) {
+                    trailX[tb + k] = trailX[tb + k - 1]
+                    trailY[tb + k] = trailY[tb + k - 1]
+                }
+                if (trail > 0) { trailX[tb] = px[i]; trailY[tb] = py[i] }
+            }
+            if (a > lifeOf(tint[i])) {
+                val b = births[i] + 1
+                births[i] = b
+                var h = i * -0x61c88647 + b * -0x7a143595
+                h = h xor (h ushr 16); h *= -0x7a143595; h = h xor (h ushr 13); h *= -0x3d4d51cb; h = h xor (h ushr 16)
+                nx = ((h and 0xFFFF) / 65535f * 2f - 1f) * w
+                ny = ((h ushr 16) and 0xFFFF) / 65535f * 2f - 1f
+                nvx = 0f; nvy = 0f
+                a = 0f
+                for (k in 0 until trail) { trailX[tb + k] = nx; trailY[tb + k] = ny }
+            }
+            age[i] = a
             px[i] = nx; py[i] = ny; vx[i] = nvx; vy[i] = nvy
         }
         if (localHits > 0) wallHits.addAndGet(localHits)
@@ -219,7 +278,7 @@ class ParticleFieldSim : Sim {
         // so. The same trade the Riemann sum makes with its bars.
         val stride = if (n > DRAW_EVERY_ABOVE) 1 + n / DRAW_EVERY_ABOVE else 1
         val spread = if (stride > 1) sqrt(stride.toFloat()) else 1f
-        g.reservePoints(n / stride + 1)
+        g.reservePoints((n / stride + 1) * (1 + trail))
         var i = 0
         // Colour follows speed, with only a little per-particle variety, so
         // a stream reads as one ribbon. Half the colour was a random tint per
@@ -227,9 +286,21 @@ class ParticleFieldSim : Sim {
         // dimmer: what gravity and the field herd into a corner sits there
         // quietly instead of being the brightest thing on screen.
         while (i < n) {
-            val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 0.55f)
-            val c = Palette.withAlpha(palette.at((0.12f + 0.72f * speed + (tint[i] - 0.5f) * 0.1f).coerceIn(0f, 1f)), 0.3f + 0.65f * speed)
-            g.point(px[i], py[i], dotSize * sizeScale * spread * (0.8f + speed * 0.6f), c)
+            val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 0.9f)
+            // Faded in at birth and out before rebirth, so no particle pops.
+            val life = lifeOf(tint[i])
+            val fade = min(1f, min(age[i], life - age[i]) * 2.5f).coerceAtLeast(0f)
+            val c = Palette.withAlpha(palette.at((0.1f + 0.8f * speed + (tint[i] - 0.5f) * 0.08f).coerceIn(0f, 1f)), (0.6f + 0.4f * speed) * fade)
+            val size = dotSize * sizeScale * spread * (0.8f + speed * 0.6f)
+            g.point(px[i], py[i], size, c)
+            // The trail, fading: a point alone cannot show which way it is
+            // going, and twenty thousand of them read as static noise. With a
+            // short comet tail each, the streams of the field are visible.
+            val tb = i * trail
+            for (k in 0 until trail) {
+                val f = 1f - (k + 1f) / (trail + 1f)
+                g.point(trailX[tb + k], trailY[tb + k], size * (0.7f + 0.3f * f), Palette.withAlpha(c, ((c ushr 24) / 255f) * f * 0.8f))
+            }
             i += stride
         }
         for (a in 0 until attractors) {
@@ -263,6 +334,13 @@ class ParticleFieldSim : Sim {
         const val DRAW_EVERY_ABOVE = 200_000
 
         private const val MAX_SPEED = 3.2f
+
+        /** A particle's lifetime, from its tint, in seconds. */
+        private fun lifeOf(tint: Float): Float = 2.5f + 4f * tint
+
+        /** Trail points per particle, and the count above which there are none. */
+        private const val TRAIL = 6
+        private const val TRAIL_UP_TO = 60_000
         private const val MAX_SPEED2 = MAX_SPEED * MAX_SPEED
         private const val PAYOFF_AT = 18f
         /** How far in from a wall its soft push reaches, and how hard it pushes at the wall. */
@@ -282,12 +360,15 @@ class ParticleFieldSim : Sim {
             defaultPalette = "Aurora",
             typicalSeconds = 30f,
             params = listOf(
-                Param.int("count", "Particles", 100, 400_000, 20000, card = Card.DATA, logScale = true),
+                // Ten thousand with comet tails, not twenty thousand bare
+                // dots: twice the count filled every gap and the streams
+                // that show the flow were lost in the carpet.
+                Param.int("count", "Particles", 100, 400_000, 10000, card = Card.DATA, logScale = true),
                 Param.float("flow", "Flow", 0f, 3f, 1f, card = Card.MOTION),
                 Param.float("swirl", "Swirl", 0f, 3f, 1f, card = Card.MOTION),
                 Param.int("attractors", "Attractors", 0, 4, 3, card = Card.MOTION),
                 Param.float("drag", "Drag", 0f, 0.2f, 0.02f, card = Card.MOTION, advancedOnly = true),
-                Param.float("dot", "Dot size", 0.001f, 0.02f, 0.004f, card = Card.LOOK)
+                Param.float("dot", "Dot size", 0.001f, 0.02f, 0.0055f, card = Card.LOOK)
             ),
             macros = listOf(
                 Macro("size", "Size", Card.DATA, mapOf("count" to 2000f..400000f), 0.05f),
@@ -304,8 +385,8 @@ class ParticleFieldSim : Sim {
  */
 class GameOfLifeSim : Sim {
 
-    private var w = 160
-    private var h = 160
+    private var w = 72
+    private var h = 72
     private var cells = ByteArray(0)
     private var next = ByteArray(0)
     private var births = 0
@@ -320,10 +401,12 @@ class GameOfLifeSim : Sim {
     private var settled = false
     private var lastAlive = -1
     private var peakAlive = 0
+    private val history = IntArray(HISTORY)
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        val side = p.i("grid", 160).coerceIn(16, 1024)
+        java.util.Arrays.fill(history, 0)
+        val side = p.i("grid", 72).coerceIn(16, 1024)
         // Square cells on any screen, with as many cells as a side × side
         // grid. A square grid stretched over an upright phone drew every cell
         // 2.2 times taller than wide, and every glider and blinker squashed
@@ -415,10 +498,26 @@ class GameOfLifeSim : Sim {
             // stops falling and what is left is structure, not noise. Waiting for
             // perfect stillness would take thousands of generations nobody sees.
             if (peakAlive == 0) peakAlive = alive
-            val stable = kotlin.math.abs(alive - lastAlive) <= maxOf(2, alive / 50)
-            if (stable) quietGenerations++ else quietGenerations = 0
+            // Settled when the population's trend has flattened: the mean of
+            // the last ten generations against the ten before. A per-generation
+            // test (|alive - last| within 2%) only passed on big grids, where
+            // the blinkers' and gliders' flicker is small beside the total; on
+            // a grid with cells big enough to see, that flicker alone kept the
+            // soup "boiling" for minutes after it had plainly calmed down.
+            history[generation % HISTORY] = alive
+            if (generation >= HISTORY) {
+                var recent = 0
+                var before = 0
+                for (k in 0 until HISTORY / 2) {
+                    recent += history[(generation - k) % HISTORY]
+                    before += history[(generation - HISTORY / 2 - k) % HISTORY]
+                }
+                val half = HISTORY / 2f
+                val flat = abs(recent - before) / half <= max(2f, recent / half * SETTLED_DRIFT)
+                if (flat) quietGenerations++ else quietGenerations = 0
+            }
             lastAlive = alive
-            if (!settled && quietGenerations >= 12 && generation > 30) {
+            if (!settled && quietGenerations >= 6 && generation > 40) {
                 settled = true
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.75f, 0f, 1f)
@@ -438,6 +537,15 @@ class GameOfLifeSim : Sim {
         if (squares) g.reserveInstances(alive * 2) else g.reservePoints(alive)
         val hwC = cellW * 0.43f
         val hhC = cellH * 0.43f
+        // A faint board under the cells while they are big enough to have
+        // one: the empty cells then read as cells, and the ash of blocks and
+        // blinkers sits on a board instead of floating in black.
+        if (max(w, h) <= BOARD_UP_TO) {
+            val lc = Palette.withAlpha(palette.at(0.5f), 0.07f)
+            val lw = min(cellW, cellH) * 0.06f
+            for (x in 0..w) g.rect(-halfW + x * cellW, 0f, lw, 1f, lc)
+            for (y in 0..h) g.rect(0f, -1f + y * cellH, halfW, lw, lc)
+        }
         // After a step [next] holds the generation before, so each cell can
         // tell whether it was just born — drawn brighter — or just died,
         // left as a faint ghost for one generation: the motion shows.
@@ -449,7 +557,9 @@ class GameOfLifeSim : Sim {
                 val was = generation > 0 && next[row + x].toInt() != 0
                 if (!now && !was) continue
                 val cx = -halfW + (x + 0.5f) * cellW
-                val base = palette.at((x + y).toFloat() / (w + h))
+                // The ramp's darkest fifth left out: Ocean's navy end sat on
+                // the black background at a contrast the eye barely caught.
+                val base = palette.at(0.32f + 0.68f * (x + y).toFloat() / (w + h))
                 val c = when {
                     now && !was -> Palette.brighten(base, 0.3f)
                     now -> base
@@ -470,6 +580,12 @@ class GameOfLifeSim : Sim {
     companion object {
         /** Grids up to this many cells along the long side draw as squares. */
         private const val SQUARES_UP_TO = 420
+        /** Grids up to this many cells along the long side get a board drawn. */
+        private const val BOARD_UP_TO = 200
+        /** Generations of population kept for the settling test. */
+        private const val HISTORY = 20
+        /** How far the ten-generation mean may move and still count as flat. */
+        private const val SETTLED_DRIFT = 0.02f
         fun def(): SimDef = SimDef(
             id = "life/game-of-life",
             title = "Game of Life",
@@ -481,7 +597,9 @@ class GameOfLifeSim : Sim {
             defaultPalette = "Ocean",
             typicalSeconds = 22f,
             params = listOf(
-                Param.int("grid", "Grid size", 16, 1024, 160, card = Card.DATA, logScale = true),
+                // 72, not 160: at 160 a cell was a few pixels on a phone and
+                // the soup read as specks, not as gliders and blinkers.
+                Param.int("grid", "Grid size", 16, 1024, 72, card = Card.DATA, logScale = true),
                 Param.float("density", "Start density", 0.02f, 0.9f, 0.32f, card = Card.DATA),
                 Param.choice(
                     "rule", "Rule",
@@ -531,7 +649,7 @@ class LorenzSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        val len = p.i("trail", 4000).coerceIn(200, 60000)
+        val len = p.i("trail", 9000).coerceIn(200, 60000)
         trailX = FloatArray(len)
         trailY = FloatArray(len)
         head = 0
@@ -639,19 +757,34 @@ class LorenzSim : Sim {
         // The trail as joined strokes, oldest first so the newest lies on
         // top. As separate dots the fast outer loops broke into dotted lines
         // and the slow inner ones clumped into beads.
-        g.reserveInstances(filled)
+        // The newest stretch also gets a wide, faint underlay drawn first: a
+        // halo that makes the fresh loops glow. A single hairline stroke, with
+        // the view pulled back to fit a phone, read thin and dim.
+        val haloN = min(filled - 1, HALO_SEGMENTS)
+        g.reserveInstances(filled + haloN)
+        for (k in haloN downTo 1) {
+            val a = (head - 1 - k + trailX.size * 2) % trailX.size
+            val b = (a + 1) % trailX.size
+            val fresh = 1f - k.toFloat() / (haloN + 1)
+            g.line(trailX[a], trailY[a], trailX[b], trailY[b], size * 4f,
+                palette.at(0.15f), 0.10f * fresh)
+        }
         for (k in filled - 1 downTo 1) {
             val a = (head - 1 - k + trailX.size * 2) % trailX.size
             val b = (a + 1) % trailX.size
             val age = k.toFloat() / filled
-            g.line(trailX[a], trailY[a], trailX[b], trailY[b], size * (0.8f - age * 0.45f),
-                palette.at(0.15f + age * 0.7f), (1f - age) * 0.9f + 0.1f)
+            // A gentler fade than linear, so the older loops still describe
+            // the attractor's shape instead of vanishing into the background.
+            val keep = 1f - age
+            g.line(trailX[a], trailY[a], trailX[b], trailY[b], size * (1.15f - age * 0.6f),
+                Palette.brighten(palette.at(0.15f + age * 0.7f), 0.25f * keep),
+                0.18f + 0.82f * sqrt(keep))
         }
         if (filled > 0) {
             val last = (head - 1 + trailX.size) % trailX.size
-            val pen = Palette.brighten(palette.at(0.15f), 0.3f)
-            g.glow(trailX[last], trailY[last], 0.05f, pen, 0.6f)
-            g.disc(trailX[last], trailY[last], size * 1.2f, pen)
+            val pen = Palette.brighten(palette.at(0.15f), 0.45f)
+            g.glow(trailX[last], trailY[last], 0.06f, pen, 0.7f)
+            g.disc(trailX[last], trailY[last], size * 1.6f, pen)
         }
     }
 
@@ -670,6 +803,8 @@ class LorenzSim : Sim {
     companion object {
         const val BACKSTOP_SECONDS = 40f
         private const val PAYOFF_SWAPS = 26L
+        /** How much of the newest trail carries the glowing underlay. */
+        private const val HALO_SEGMENTS = 2500
         /** Below this a z peak is the spiral into a fixed point, not a loop. */
         private const val LOOP_FLOOR = 8.0
 
@@ -684,7 +819,9 @@ class LorenzSim : Sim {
             defaultPalette = "Aurora",
             typicalSeconds = 28f,
             params = listOf(
-                Param.int("trail", "Trail length", 200, 60000, 4000, card = Card.LOOK, logScale = true),
+                // 9000: at 4000 only the last two or three loops were on screen,
+                // a sparse sketch rather than the full butterfly.
+                Param.int("trail", "Trail length", 200, 60000, 9000, card = Card.LOOK, logScale = true),
                 Param.float("dot", "Dot size", 0.002f, 0.02f, 0.006f, card = Card.LOOK),
                 Param.float("rate", "Speed", 100f, 8000f, 1200f, card = Card.MOTION, logScale = true),
                 Param.float("sigma", "Sigma", 1f, 20f, 10f, card = Card.MOTION, advancedOnly = true),

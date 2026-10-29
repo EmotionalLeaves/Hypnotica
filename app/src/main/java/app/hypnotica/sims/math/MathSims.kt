@@ -189,6 +189,9 @@ class MandelbrotSim : Sim {
                 }
             }
         }
+        healSpecks(cs, rs)
+        healSpecks(cs, rs)
+        edgeGlow(cs, rs)
         // The range of escape counts in view sets how bright the outside is:
         // far from the set dim, close to it bright, so the boundary glows
         // rather than sitting in a flat field of colour. Eased between images
@@ -221,6 +224,97 @@ class MandelbrotSim : Sim {
         }
     }
 
+    /**
+     * A cell that has not escaped within the iteration budget but is mostly
+     * surrounded by cells that have is not a piece of the set's body: it is a
+     * filament finer than a cell whose orbit is just slow. Left black, those
+     * cells peppered every lit band with dark specks (the "swiss cheese").
+     * Such a cell is drawn as boundary (distance 0) at its neighbours' escape
+     * count. Cells with fewer escaped neighbours — the edges and insides of
+     * bulbs and mini-sets — stay black, so real interior is untouched.
+     */
+    private fun healSpecks(cs: Int, rs: Int) {
+        if (heal.size != cs * rs) heal = FloatArray(cs * rs)
+        for (row in 0 until rs) {
+            val base = row * cs
+            for (col in 0 until cs) {
+                heal[base + col] = -2f
+                if (iterations[base + col] >= 0f) continue
+                var outside = 0
+                var sum = 0f
+                for (oy in -1..1) for (ox in -1..1) {
+                    if (ox == 0 && oy == 0) continue
+                    val r = row + oy
+                    val c = col + ox
+                    if (r < 0 || r >= rs || c < 0 || c >= cs) continue
+                    val v = iterations[r * cs + c]
+                    if (v >= 0f) { outside++; sum += v }
+                }
+                if (outside >= 5) heal[base + col] = sum / outside
+            }
+        }
+        for (i in 0 until cs * rs) if (heal[i] > -2f) { iterations[i] = heal[i]; edgeDist[i] = 0f }
+    }
+
+    private var heal = FloatArray(0)
+
+    /**
+     * How strongly each outside cell takes the edge colour. The core is a
+     * smooth falloff with the distance estimate (in cells): full on the set,
+     * gone a cell out, so the boundary is a line one cell wide, never a band.
+     * Where filaments are packed tighter than the grid (a whole neighbourhood
+     * of edge cells), each is lit less, so a tangle reads as a textured
+     * mid-tone instead of a solid slab of yellow — an isolated filament keeps
+     * its full brightness.
+     */
+    private fun edgeGlow(cs: Int, rs: Int) {
+        if (glow.size != cs * rs) glow = FloatArray(cs * rs)
+        if (smooth.size != cs * rs) smooth = FloatArray(cs * rs)
+        System.arraycopy(iterations, 0, smooth, 0, cs * rs)
+        for (i in 0 until cs * rs) {
+            glow[i] = if (iterations[i] < 0f) 0f else {
+                val d = edgeDist[i] / EDGE_CELLS
+                1f / (1f + d * d * d)
+            }
+        }
+        for (row in 0 until rs) {
+            val base = row * cs
+            for (col in 0 until cs) {
+                val e = glow[base + col]
+                if (e < 0.02f) { edgeDist[base + col] = 0f; continue }
+                var sum = 0f
+                var cnt = 0
+                for (oy in -1..1) for (ox in -1..1) {
+                    if (ox == 0 && oy == 0) continue
+                    val r = row + oy
+                    val c = col + ox
+                    if (r < 0 || r >= rs || c < 0 || c >= cs) continue
+                    sum += glow[r * cs + c]; cnt++
+                }
+                val crowd = if (cnt == 0) 0f else sum / cnt
+                // Near the set neighbouring escape counts jump about, and a hue
+                // per cell was confetti; there the colour comes from the
+                // neighbourhood's mean count. Far from the set nothing changes.
+                var ms = 0f
+                var mc = 0
+                for (oy in -1..1) for (ox in -1..1) {
+                    val r = row + oy
+                    val c = col + ox
+                    if (r < 0 || r >= rs || c < 0 || c >= cs) continue
+                    val v = iterations[r * cs + c]
+                    if (v >= 0f) { ms += v; mc++ }
+                }
+                smooth[base + col] = ms / mc
+                // edgeDist is reused to hold the final mix; it is not read again.
+                edgeDist[base + col] = e * (1f - 0.55f * crowd * crowd)
+            }
+        }
+    }
+
+    private var glow = FloatArray(0)
+    /** Escape counts for colouring, smoothed near the set (see edgeGlow). */
+    private var smooth = FloatArray(0)
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         g.reserveInstances(cols * rows)
@@ -234,11 +328,11 @@ class MandelbrotSim : Sim {
         // then jump 2.8%, eight times a second: a zoom that stuttered, on the
         // one sim whose whole subject is a smooth dive.
         val k = (zoom / computedZoom).toFloat().coerceIn(0.5f, 4f)
-        // Square cells that tile, a hair oversized so no seam shows between
+        // Square cells that tile, a fifth oversized so no seam shows between
         // them. Round point sprites left a dark gap at every corner, which on
         // a phone read as a grid of beads rather than a picture.
-        val hw = dx * 0.5f * k * 1.03f
-        val hh = dy * 0.5f * k * 1.03f
+        val hw = dx * 0.5f * k * 1.18f
+        val hh = dy * 0.5f * k * 1.18f
         val span = max(0.5f, highMu - lowMu)
         val edgeColour = brightestOf(palette)
         for (row in 0 until rows) {
@@ -246,8 +340,8 @@ class MandelbrotSim : Sim {
             if (abs(y) - hh > 1f) continue
             val base = row * cols
             for (col in 0 until cols) {
-                val mu = iterations[base + col]
-                if (mu < 0f) continue
+                if (iterations[base + col] < 0f) continue
+                val mu = smooth[base + col]
                 val x = (-halfW + (col + 0.5f) * dx) * k
                 if (abs(x) - hw > halfW) continue
                 val lm = ln(1f + mu)
@@ -261,9 +355,11 @@ class MandelbrotSim : Sim {
                 val near = ((lm - lowMu) / span).coerceIn(0f, 1f)
                 val lit = 0.17f + 0.77f * near * kotlin.math.sqrt(near)
                 val c = Palette.lerp(Palette.BG, palette.at(hue), lit)
-                // Within about a cell of the set: the lit filament.
-                val edge = (1f - edgeDist[base + col] / EDGE_CELLS).coerceIn(0f, 1f)
-                g.rect(x, y, hw, hh, if (edge > 0f) Palette.lerp(c, edgeColour, 0.2f + 0.7f * edge * edge) else c)
+                // The lit filament, as weighted by edgeGlow(). A hard "within
+                // 1.2 cells" threshold switched whole cells on and off along
+                // sub-cell filaments: a thick, ragged, pixel-noisy band.
+                val edge = edgeDist[base + col]
+                g.rect(x, y, hw, hh, if (edge > 0.02f) Palette.lerp(c, edgeColour, 0.9f * edge) else c)
             }
         }
     }
@@ -289,7 +385,7 @@ class MandelbrotSim : Sim {
         /** Colour cycles per e-fold of escape count: two or three bands across a view. */
         private const val HUE_CYCLES = 0.6f
         /** How many cells out from the set the lit edge reaches. */
-        private const val EDGE_CELLS = 1.2f
+        private const val EDGE_CELLS = 0.35f
         private const val HUE_SPAN = 0.78f
 
         /** The palette's lightest colour, for the edge of the set: white on Mono, yellow on Viridis. */
@@ -538,6 +634,21 @@ class PrimeSpiralSim : Sim {
     private var primeCount = 0
     private var sacks = false
 
+    /**
+     * Per diagonal of the Ulam square — x + y and x - y, offset to index
+     * from zero — the numbers drawn on it so far and how many were prime.
+     * A prime is drawn as bright as the diagonals through it are rich: the
+     * famous streaks are exactly the diagonals with far more primes than
+     * their share, and drawn all one white they were lost in the lattice of
+     * the rest. Nothing is moved or added; only the emphasis follows the
+     * counts, so the picture is still Ulam's.
+     */
+    private var diagOffset = 0
+    private var cellsSum = IntArray(0)
+    private var primesSum = IntArray(0)
+    private var cellsDiff = IntArray(0)
+    private var primesDiff = IntArray(0)
+
     override fun setup(env: SimEnv) {
         val p = env.params
         limit = p.i("limit", 40000).coerceIn(200, 400000)
@@ -546,6 +657,10 @@ class PrimeSpiralSim : Sim {
         xs = FloatArray(limit)
         ys = FloatArray(limit)
         buildLayout()
+        diagOffset = (sqrt(limit.toFloat()) + 4f).toInt()
+        val span = 2 * diagOffset + 1
+        cellsSum = IntArray(span); primesSum = IntArray(span)
+        cellsDiff = IntArray(span); primesDiff = IntArray(span)
         drawn = 0
         carry = 0f
         payoffFrame = false
@@ -620,7 +735,17 @@ class PrimeSpiralSim : Sim {
         carry -= budget
         val before = drawn
         drawn = min(limit, drawn + budget)
-        for (n in before until drawn) if (isPrime[n]) primeCount++
+        for (n in before until drawn) {
+            val prime = isPrime[n]
+            if (prime) primeCount++
+            if (!sacks && n >= 1) {
+                val x = xs[n].toInt(); val y = ys[n].toInt()
+                val dS = x + y + diagOffset
+                val dD = x - y + diagOffset
+                cellsSum[dS]++; cellsDiff[dD]++
+                if (prime) { primesSum[dS]++; primesDiff[dD]++ }
+            }
+        }
         if (drawn > before && primeCount > 0) {
             env.emit(EventKind.WRITE, (drawn.toFloat() / limit).coerceIn(0f, 1f), 0f, 0.3f)
         }
@@ -655,15 +780,33 @@ class PrimeSpiralSim : Sim {
         val size = min(MAX_DOT, max(0.0022f, cellSize * 0.82f))
         val reachX = halfW + size
         val reachY = halfH + size
+        // The share of drawn ODD numbers that are prime, the yardstick a
+        // diagonal is measured against. The spiral is a checkerboard of odd
+        // and even, so every diagonal is all one or all the other: against
+        // the share of all numbers, every odd diagonal read as twice as rich
+        // as it is, and every prime lit up alike.
+        val avg = max(1e-3f, 2f * primeCount.toFloat() / max(1, drawn))
+        val shrink = DIAG_PRIOR * avg
         for (n in 2 until drawn) {
             if (!isPrime[n]) continue
             val x = xs[n] * scale
             val y = ys[n] * scale
             if (abs(x) > reachX || abs(y) > reachY) continue
-            // Colour runs out from the centre over the first part of the
-            // palette: its far end is near-black on Mono glow, and the outer
-            // primes faded into the background.
-            g.point(x, y, size, palette.at(0.08f + 0.6f * n.toFloat() / limit))
+            if (sacks) {
+                // Colour runs out from the centre over the first part of the
+                // palette, whose far end is near-black on some palettes.
+                g.point(x, y, size, palette.at(0.08f + 0.6f * n.toFloat() / limit))
+                continue
+            }
+            val dS = xs[n].toInt() + ys[n].toInt() + diagOffset
+            val dD = xs[n].toInt() - ys[n].toInt() + diagOffset
+            // Shrunk towards the average, so a short diagonal with two
+            // primes on it does not count as a streak.
+            val rS = (primesSum[dS] + shrink) / (cellsSum[dS] + DIAG_PRIOR)
+            val rD = (primesDiff[dD] + shrink) / (cellsDiff[dD] + DIAG_PRIOR)
+            val rich = ((max(rS, rD) / avg - 1f) / DIAG_RICH).coerceIn(0f, 1f)
+            val c = Palette.withAlpha(palette.at(0.68f * (1f - rich)), 0.6f + 0.4f * rich)
+            g.point(x, y, size * (0.8f + 0.3f * rich), c)
         }
     }
 
@@ -680,6 +823,10 @@ class PrimeSpiralSim : Sim {
         /** The smallest spiral, in cells from the centre, the view closes in on. */
         private const val MIN_EXTENT = 9f
         private const val MAX_DOT = 0.045f
+        /** Numbers' worth of the average a diagonal is shrunk towards. */
+        private const val DIAG_PRIOR = 24f
+        /** How many times the average share counts as fully rich, less one. */
+        private const val DIAG_RICH = 0.9f
         fun def(): SimDef = SimDef(
             id = "math/prime-spiral",
             title = "Prime spiral",
@@ -688,7 +835,10 @@ class PrimeSpiralSim : Sim {
             blurb = "Primes on a spiral line up in diagonal streaks — prime-rich quadratics, still not fully explained.",
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "Draw again",
-            defaultPalette = "Mono glow",
+            // Ember, from Mono glow: its gold end marks the prime-rich
+            // diagonals and its deep red the rest, where in greys the streaks
+            // could only be told by brightness.
+            defaultPalette = "Ember",
             typicalSeconds = 16f,
             params = listOf(
                 Param.choice("layout", "Layout", listOf("Ulam square", "Sacks"), 0, card = Card.DATA, input = ParamInput.TILES),

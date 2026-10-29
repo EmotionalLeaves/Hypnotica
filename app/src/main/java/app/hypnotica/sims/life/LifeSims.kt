@@ -45,7 +45,7 @@ internal inline fun G.cellRow(x0: Float, yc: Float, size: Float, count: Int, col
     for (x in 0..count) {
         val c = if (x < count) colorOf(x) else 0
         if (c != cur) {
-            if (cur != 0) rect(x0 + (start + x) * 0.5f * size, yc, (x - start) * 0.5f * size + size * 0.02f, size * 0.52f, cur)
+            if (cur != 0) rect(x0 + (start + x) * 0.5f * size, yc, (x - start) * 0.5f * size + size * 0.04f, size * 0.56f, cur)
             start = x
             cur = c
         }
@@ -73,7 +73,7 @@ class BoidsSim : Sim {
     /** The payoff fires once; without this the bell retriggers every step. */
     private var flocked = false
 
-    private var n = 3000
+    private var n = 600
     private var px = FloatArray(0)
     private var py = FloatArray(0)
     private var vx = FloatArray(0)
@@ -109,7 +109,7 @@ class BoidsSim : Sim {
     override fun setup(env: SimEnv) {
         flocked = false
         val p = env.params
-        n = p.i("count", 3000).coerceIn(10, 60000)
+        n = p.i("count", 600).coerceIn(10, 60000)
         separation = p.f("separation", 1f)
         alignment = p.f("alignment", 1f)
         cohesion = p.f("cohesion", 1f)
@@ -283,6 +283,12 @@ class BoidsSim : Sim {
 
     private fun flock(from: Int, to: Int, dt: Float, halfW: Float, wrap: Boolean) {
         val r2 = perception * perception
+        // Separation reaches only the nearest part of the perception disc, as
+        // in Reynolds' boids. Applied across the whole radius it out-pushed
+        // cohesion everywhere, spaced every bird evenly from every other, and
+        // the flock read as a uniform gas of dashes filling the screen rather
+        // than streams with sky between them.
+        val sepR2 = r2 * SEP_FRAC * SEP_FRAC
         for (i in from until to) {
             // A bird in a dense flock has hundreds of neighbours inside its
             // perception radius, and the averages have converged long before
@@ -353,9 +359,11 @@ class BoidsSim : Sim {
                             taken++
                             cohX += px[j]; cohY += py[j]
                             aliX += vx[j]; aliY += vy[j]
-                            val inv = 1f / d2
-                            sepX -= dx * inv * 0.0012f
-                            sepY -= dy * inv * 0.0012f
+                            if (d2 < sepR2) {
+                                val inv = 1f / d2
+                                sepX -= dx * inv * 0.0012f
+                                sepY -= dy * inv * 0.0012f
+                            }
                         }
                     }
                     oy++
@@ -433,12 +441,20 @@ class BoidsSim : Sim {
                 g.point(px[i], py[i], 0.006f, Palette.brighten(palette.at(abs(a) / PI.toFloat()), (tint[i] - 0.5f) * 0.12f))
             }
         } else {
-            g.reserveInstances(n)
+            g.reserveInstances(n * 2)
+            // A bright head and a faint streak behind it, both along the
+            // bird's velocity: a motion trail without keeping history. Lone
+            // dashes of one length read as hatching; the streaks make each
+            // stream's direction of travel visible at a glance. The heading
+            // uses most of the ramp but not its far end, where Aurora's
+            // orange sat against its cyan as a clash.
             for (i in 0 until n) {
                 val a = atan2(vy[i], vx[i])
-                // Slimmer than they were (0.032 by 0.010): at three thousand
-                // the old dashes covered a third of the screen and touched.
-                g.rect(px[i], py[i], 0.011f, 0.0032f, Palette.brighten(palette.at(abs(a) / PI.toFloat()), (tint[i] - 0.5f) * 0.12f), a)
+                val c = Palette.brighten(palette.at(0.04f + 0.72f * abs(a) / PI.toFloat()), (tint[i] - 0.5f) * 0.10f)
+                val x = px[i]; val y = py[i]
+                val tx = vx[i]; val ty = vy[i]
+                g.line(x - tx * 0.12f, y - ty * 0.12f, x - tx * 0.03f, y - ty * 0.03f, 0.0034f, c, 0.28f)
+                g.line(x - tx * 0.035f, y - ty * 0.035f, x, y, 0.0058f, Palette.brighten(c, 0.08f))
             }
         }
     }
@@ -499,6 +515,8 @@ class BoidsSim : Sim {
     companion object {
         /** How far from a wall a bird starts to turn, and how hard. */
         const val WALL_MARGIN = 0.15f
+        /** Separation radius as a share of perception. */
+        const val SEP_FRAC = 0.3f
         const val WALL_PUSH = 10f
         fun def(): SimDef = SimDef(
             id = "life/boids",
@@ -512,7 +530,10 @@ class BoidsSim : Sim {
             defaultPalette = "Aurora",
             typicalSeconds = 28f,
             params = listOf(
-                Param.int("count", "Birds", 10, 60000, 3000, card = Card.DATA, logScale = true),
+                // Six hundred, down from three thousand: on a phone-shaped box
+                // three thousand birds filled every gap, and the flocks — the
+                // point of the sim — could not be told apart from the crowd.
+                Param.int("count", "Birds", 10, 60000, 600, card = Card.DATA, logScale = true),
                 Param.float("separation", "Separation", 0f, 3f, 1f, card = Card.MOTION),
                 Param.float("alignment", "Alignment", 0f, 3f, 1f, card = Card.MOTION),
                 Param.float("cohesion", "Cohesion", 0f, 3f, 1f, card = Card.MOTION),
@@ -542,7 +563,7 @@ class BoidsSim : Sim {
  */
 class LangtonsAntSim : Sim {
 
-    private var w = 180
+    private var w = 120
     private var h = 260
     private var cells = ByteArray(0)
     private var ax = 0
@@ -558,7 +579,7 @@ class LangtonsAntSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        w = p.i("width", 180).coerceIn(60, 600)
+        w = p.i("width", 120).coerceIn(60, 600)
         h = p.i("height", 260).coerceIn(60, 800)
         cells = ByteArray(w * h)
         flippedAt = IntArray(w * h)
@@ -571,8 +592,9 @@ class LangtonsAntSim : Sim {
         highwayAt = -1
         blackCount = 0
         turnIndex = 0
-        reachX = 0
-        reachY = 0
+        minX = ax; maxX = ax; minY = ay; maxY = ay
+        panX = ax + 0.5f
+        panY = ay + 0.5f
         gone = false
         goneFor = 0f
     }
@@ -580,9 +602,21 @@ class LangtonsAntSim : Sim {
     /** The step each cell last flipped at: its colour is its age. */
     private var flippedAt = IntArray(0)
 
-    /** How far from the start, in cells, the ant has been, across and up: the view follows it out. */
-    private var reachX = 0
-    private var reachY = 0
+    /**
+     * The box of cells the ant has visited, and the eased centre of it the
+     * view is panned to. The view used to close in on a box round the START,
+     * but the heap grows lopsided and the highway leaves in one direction, so
+     * half that box was always empty: a heap in one corner of a zoomed view,
+     * and at the end a small smudge in the middle of an empty screen with
+     * the highway off to one side. Framing what was visited fills the screen
+     * with the heap early and with heap and highway together at the end.
+     */
+    private var minX = 0
+    private var maxX = 0
+    private var minY = 0
+    private var maxY = 0
+    private var panX = 0f
+    private var panY = 0f
 
     /**
      * The ant has walked off the edge along its highway. It used to wrap: the
@@ -601,11 +635,17 @@ class LangtonsAntSim : Sim {
         // for both, leaving a small smudge in a tall empty screen.
         val hw = env.halfWidth
         val m = min(hw, 1f)
-        return max((reachX + FOCUS_MARGIN) * size * m / hw, (reachY + FOCUS_MARGIN) * size * m)
+        val halfX = (maxX - minX + 1) * 0.5f
+        val halfY = (maxY - minY + 1) * 0.5f
+        return max((halfX + FOCUS_MARGIN) * size * m / hw, (halfY + FOCUS_MARGIN) * size * m)
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        // Eased, so the view glides as the box grows a cell at a time.
+        val ease = min(1f, abs(dt) * 4f)
+        panX += ((minX + maxX + 1) * 0.5f - panX) * ease
+        panY += ((minY + maxY + 1) * 0.5f - panY) * ease
         if (gone) {
             goneFor += abs(dt)
             return
@@ -641,10 +681,8 @@ class LangtonsAntSim : Sim {
                 ax = nx
                 ay = ny
             }
-            val fx = abs(ax - w / 2)
-            val fy = abs(ay - h / 2)
-            if (fx > reachX) reachX = fx
-            if (fy > reachY) reachY = fy
+            if (ax < minX) minX = ax else if (ax > maxX) maxX = ax
+            if (ay < minY) minY = ay else if (ay > maxY) maxY = ay
             if (steps % 97L == 0L) {
                 env.emit(EventKind.STEP, (blackCount.toFloat() / (w * h)).coerceIn(0f, 1f), 0f, 0.3f)
             }
@@ -672,8 +710,15 @@ class LangtonsAntSim : Sim {
         val palette = env.palette
         val halfW = env.halfWidth
         val size = min(2f * halfW / w, 2f / h)
-        val originX = -size * w * 0.5f
-        val originY = -size * h * 0.5f
+        // Panned to the visited box, but never so far that the view, at the
+        // zoom the camera will use (SimCore.fit), shows past the grid's edge.
+        val zoom = (min(halfW, 1f) / focus(env)).coerceIn(1f, 4f)
+        val visX = halfW / (zoom * size)
+        val visY = 1f / (zoom * size)
+        val px = if (visX * 2f >= w) w * 0.5f else panX.coerceIn(visX, w - visX)
+        val py = if (visY * 2f >= h) h * 0.5f else panY.coerceIn(visY, h - visY)
+        val originX = -size * px
+        val originY = -size * py
         // Square cells, coloured by age: the freshest trail at the bright end
         // of the palette, the oldest at the deep end. They were round dots
         // coloured by position, a speckle whose colour said nothing — and the
@@ -715,7 +760,7 @@ class LangtonsAntSim : Sim {
     )
 
     companion object {
-        const val FOCUS_MARGIN = 10
+        const val FOCUS_MARGIN = 6
         const val AGE_BANDS = 24
         fun def(): SimDef = SimDef(
             id = "life/langtons-ant",
@@ -730,7 +775,12 @@ class LangtonsAntSim : Sim {
             params = listOf(
                 // From sixty: on a smaller wrapped grid the ant meets its own
                 // trail coming round and the highway never forms.
-                Param.int("width", "Columns", 60, 600, 180, card = Card.DATA),
+                // 120, not 180: the heap the ant builds before its highway is
+                // about seventy cells across whatever the grid, and on the
+                // wider grid the finished picture — heap and highway, fully
+                // zoomed out — was a small smudge in the middle of the screen.
+                // 120 by 260 is the shape of an upright phone.
+                Param.int("width", "Columns", 60, 600, 120, card = Card.DATA),
                 Param.int("height", "Rows", 60, 800, 260, card = Card.DATA),
                 Param.float("rate", "Speed", 50f, 200000f, 700f, card = Card.MOTION, unit = "steps/s", logScale = true)
             ),
@@ -742,14 +792,14 @@ class LangtonsAntSim : Sim {
 /**
  * Falling sand: grains settle, pile and slide. Cheap rules, endlessly watchable.
  */
-/** Grains a full box holds at the shipped 140 by 220. */
+/** Grains a full box holds at the shipped 120 by 250. */
 /**
  * How full the box ends. It was 0.32, and the finished pile was a low ridge
  * along the floor of a mostly empty box.
  */
 private const val SAND_FILL = 0.42f
 
-private const val SAND_SHIPPED_CAPACITY = 140f * 220f * SAND_FILL
+private const val SAND_SHIPPED_CAPACITY = 120f * 250f * SAND_FILL
 
 class FallingSandSim : Sim {
 
@@ -759,8 +809,8 @@ class FallingSandSim : Sim {
     /** Passes in a row in which no grain moved. */
     private var quietPasses = 0
 
-    private var w = 140
-    private var h = 220
+    private var w = 120
+    private var h = 250
     private var grid = ByteArray(0)
     private var colour = FloatArray(0)
     private var carry = 0f
@@ -776,8 +826,8 @@ class FallingSandSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        w = p.i("width", 140).coerceIn(20, 400)
-        h = p.i("height", 220).coerceIn(20, 600)
+        w = p.i("width", 120).coerceIn(20, 400)
+        h = p.i("height", 250).coerceIn(20, 600)
         grid = ByteArray(w * h)
         colour = FloatArray(w * h)
         vacated = IntArray(w * h)
@@ -806,9 +856,13 @@ class FallingSandSim : Sim {
         // to jump up to two columns at random with every grain, and the
         // falling grains drew that walk as a scraggly zigzag hanging from the
         // top; now it is a steady stream that sways.
-        pourDrift = (pourDrift * (1f - abs(dt)) + env.rng.range(-1f, 1f) * abs(dt) * 40f).coerceIn(-14f, 14f)
-        pourAt = (pourAt + pourDrift * abs(dt)).coerceIn(w * 0.12f, w * 0.88f)
-        if (pourAt <= w * 0.12f || pourAt >= w * 0.88f) pourDrift = -pourDrift
+        // A gentle pull back towards the middle, too: left to wander, the
+        // spout could spend half a run against one wall and heap the whole
+        // pile into that corner of the tank.
+        pourDrift = (pourDrift * (1f - abs(dt)) + env.rng.range(-1f, 1f) * abs(dt) * 40f +
+            (w * 0.5f - pourAt) / w * abs(dt) * 12f).coerceIn(-14f, 14f)
+        pourAt = (pourAt + pourDrift * abs(dt)).coerceIn(w * 0.2f, w * 0.8f)
+        if (pourAt <= w * 0.2f || pourAt >= w * 0.8f) pourDrift = -pourDrift
         pourX = pourAt.toInt().coerceIn(2, w - 3)
         pourTimer += abs(dt) * pourRate
         // The stream is as wide as it needs to be to carry the rate at about
@@ -903,20 +957,27 @@ class FallingSandSim : Sim {
 
     override fun finished(): Boolean = settled && settledFor > HOLD_SECONDS
 
+    /**
+     * Grain size on screen. Inset from the screen's edges, so the glass walls
+     * and the spout above the tank are on screen rather than on its border.
+     */
+    private fun cellSize(halfW: Float): Float = min(2f * halfW * TANK_FILL_X / w, 2f * TANK_FILL_Y / h)
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth
-        val size = min(2f * halfW / w, 2f / h)
+        val size = cellSize(halfW)
         val originX = -size * w * 0.5f
-        val originY = size * h * 0.5f
+        // A little below centre: the spout sits above the tank's top.
+        val originY = size * h * 0.5f - size * 2f
         // The glass the sand is poured into: two walls and a floor, so the
         // pile stands on something and the space above it reads as the tank
         // rather than as empty screen.
-        val glass = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.22f)
+        val glass = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.32f)
         val lw = max(size * 0.5f, 0.004f)
         val left = originX - lw * 0.5f
         val right = -originX + lw * 0.5f
-        val floor = -originY - lw * 0.5f
+        val floor = originY - size * h - lw * 0.5f
         g.line(left, floor, right, floor, lw, glass)
         g.line(left, floor, left, originY, lw, glass)
         g.line(right, floor, right, originY, lw, glass)
@@ -937,9 +998,9 @@ class FallingSandSim : Sim {
     override fun onInput(env: SimEnv, e: TouchEvent) {
         if (e.kind == TouchEvent.Kind.DRAG || e.kind == TouchEvent.Kind.TAP) {
             val halfW = env.halfWidth
-            val size = min(2f * halfW / w, 2f / h)
+            val size = cellSize(halfW)
             val gx = ((e.x + size * w * 0.5f) / size).toInt()
-            val gy = ((size * h * 0.5f - e.y) / size).toInt()
+            val gy = ((size * h * 0.5f - size * 2f - e.y) / size).toInt()
             if (gx in 1 until w - 1 && gy in 0 until h) { pourX = gx; pourAt = gx.toFloat(); pourDrift = 0f }
         }
     }
@@ -952,6 +1013,9 @@ class FallingSandSim : Sim {
     companion object {
         const val QUIET_PASSES = 3
         const val SAND_BANDS = 32
+        /** Shares of the screen's width and height the tank may take. */
+        const val TANK_FILL_X = 0.9f
+        const val TANK_FILL_Y = 0.9f
         fun def(): SimDef = SimDef(
             id = "life/falling-sand",
             title = "Falling sand",
@@ -965,8 +1029,12 @@ class FallingSandSim : Sim {
             // a little later than the old test, which fired mid-fall.
             typicalSeconds = 36f,
             params = listOf(
-                Param.int("width", "Columns", 20, 400, 140, card = Card.DATA),
-                Param.int("height", "Rows", 20, 600, 220, card = Card.DATA),
+                // About the shape of an upright phone. At 140 by 220 the tank
+                // was wider than the screen's proportions allowed, so it was
+                // fitted to the width: the walls sat on the screen's edges,
+                // invisible, with an empty band under the floor.
+                Param.int("width", "Columns", 20, 400, 120, card = Card.DATA),
+                Param.int("height", "Rows", 20, 600, 250, card = Card.DATA),
                 Param.float("pour", "Pour rate", 10f, 2000f, 560f, card = Card.MOTION, logScale = true),
                 Param.float("rate", "Settle speed", 10f, 600f, 160f, card = Card.MOTION, logScale = true)
             ),
