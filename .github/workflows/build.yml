@@ -99,7 +99,7 @@ jobs:
       - name: Render the screens
         run: |
           set -o pipefail
-          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest -Pscreens 2>&1 | tee screens-output.txt
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest -Pscreens --rerun 2>&1 | tee screens-output.txt
 
       # The artifact store is not reachable from every network; a release
       # asset is. A pre-release, so "latest" still means the newest APK.
