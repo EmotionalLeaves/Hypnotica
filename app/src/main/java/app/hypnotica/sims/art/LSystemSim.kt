@@ -118,7 +118,9 @@ class LSystemSim : Sim {
         // right: fitted to the width, it filled the lower half of an upright
         // phone and its tips brushed the edge. A turn has to earn its place
         // (a tenth larger), so symmetric plants stay upright.
-        if (n > 0) {
+        // Upright screens only: on a wide one the height decides, and the
+        // turn that flattened the fern to fit it laid it over sideways.
+        if (n > 0 && halfWidth < 0.75f) {
             fun fitAt(turn: Float): Float {
                 val c = cos(turn); val s0 = sin(turn)
                 var lx = 0f; var hx = 0f; var ly = 0f; var hy = 0f
@@ -223,8 +225,15 @@ class LSystemSim : Sim {
             // stroke it grows from: butt-ended strokes meeting end to end
             // left hairline seams across the trunk, every segment a band.
             val len = kotlin.math.hypot(ex - ax, ey - y1[i])
-            val back = if (len > 1e-6f) width * 0.5f / len else 0f
-            g.line(ax - (ex - ax) * back, y1[i] - (ey - y1[i]) * back, ex, ey, width, palette.at(0.15f + 0.8f * share))
+            // (A bold stroke gets a round joint instead, below: its square
+            // overlap stuck out past the bend.)
+            val back = if (len > 1e-6f && width <= JOINT_WIDTH) width * 0.5f / len else 0f
+            val c = palette.at(0.15f + 0.8f * share)
+            g.line(ax - (ex - ax) * back, y1[i] - (ey - y1[i]) * back, ex, ey, width, c)
+            // A round joint where a bold stroke turns: the square ends of
+            // thick strokes meeting at an angle stuck out as notches and
+            // arrowheads all down a grass stem or bush trunk.
+            if (width > JOINT_WIDTH) g.disc(ax, y1[i], width * 0.5f, c)
         }
     }
 
@@ -267,6 +276,8 @@ class LSystemSim : Sim {
         private const val SWAY = 0.035f
         private const val TRUNK = 0.012f
         private const val TIP = 0.0022f
+        /** Strokes bolder than this get a round joint. */
+        private const val JOINT_WIDTH = 0.005f
         /** The stroke count drawn at the base widths; fewer are drawn bolder. */
         private const val STROKE_REFERENCE = 1500f
 
