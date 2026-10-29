@@ -41,16 +41,20 @@ class ParticleFieldSim : Sim {
     /** Seconds since each particle was (re)born, and how many times it has been. */
     private var age = FloatArray(0)
     private var births = IntArray(0)
-    /** The last [TRAIL] positions of each particle, newest first, or empty when off. */
+    /** The last [TRAIL] positions of each particle, a ring newest at [trailHead], or empty when off. */
     private var trailX = FloatArray(0)
     private var trailY = FloatArray(0)
     private var trail = 0
+    /** The newest slot of every tail ring. */
+    private var trailHead = 0
     private var stepCount = 0
 
     private var attractorX = FloatArray(4)
     private var attractorY = FloatArray(4)
     private var attractorK = FloatArray(4)
     private var attractors = 3
+    /** Each vortex's strength × swirl, for this step. */
+    private val vortexK = FloatArray(4)
 
     private var flow = 1f
     private var swirl = 1f
@@ -69,6 +73,8 @@ class ParticleFieldSim : Sim {
     /** Each particle's stream-function value: constant along a streamline, so it colours the streams. */
     private var psiNow = FloatArray(0)
     private var psiScale = 1f
+    private var tailAlpha = FloatArray(0)
+    private var tailSize = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -97,6 +103,7 @@ class ParticleFieldSim : Sim {
             age[i] = env.rng.nextFloat() * lifeOf(tint[i])
         }
         stepCount = 0
+        trailHead = 0
         trail = if (n <= TRAIL_UP_TO) TRAIL else 0
         trailX = FloatArray(n * trail)
         trailY = FloatArray(n * trail)
@@ -158,7 +165,26 @@ class ParticleFieldSim : Sim {
         wallHits.set(0)
         stepCount++
         val sampleTrail = stepCount % TRAIL_EVERY == 0
-        Parallel.forRange(n) { from, to -> integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution, sampleTrail) }
+        // The tails are rings with one head for every particle (they are all
+        // sampled on the same step), so a sample overwrites the oldest slot
+        // instead of every particle shifting its whole tail along.
+        if (sampleTrail && trail > 0) trailHead = (trailHead + trail - 1) % trail
+        for (a in 0 until attractors) vortexK[a] = attractorK[a] * swirl * VORTEX
+        // Split across cores even below the pool's 20 000-item floor, which is
+        // sized for loops that cost nanoseconds an item: a particle here costs
+        // three waves and up to four vortices, ~100 ns, so ten thousand of
+        // them is a millisecond of work. The count is scaled past the floor
+        // and the slices mapped back to particles.
+        val m = if (n >= Parallel.MIN_ITEMS) 1 else (Parallel.MIN_ITEMS + n - 1) / n
+        if (m == 1 || n < MIN_SPLIT) {
+            Parallel.forRange(n) { from, to -> integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution, sampleTrail) }
+        } else {
+            Parallel.forRange(n * m) { a, b ->
+                val from = (a + m - 1) / m
+                val to = (b + m - 1) / m
+                if (to > from) integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution, sampleTrail)
+            }
+        }
         val movedFast = wallHits.get()
 
         // At this scale individual events would be static, so the sound follows
@@ -189,6 +215,19 @@ class ParticleFieldSim : Sim {
     ) {
         var localHits = 0
         val relax = min(1f, RELAX * abs(dt))
+        // Fields read into locals once: the JIT reloaded each array and
+        // constant from the object on every particle, which with the vortex
+        // loop's three arrays was most of a step's cost.
+        val px = px; val py = py; val vx = vx; val vy = vy
+        val age = age; val births = births; val tint = tint; val psiNow = psiNow
+        val trailX = trailX; val trailY = trailY; val trail = trail; val head = trailHead
+        val flow = flow; val swirl = swirl; val attractors = attractors
+        val aX = attractorX; val aY = attractorY
+        val aK = vortexK
+        val wP0 = waveP[0]; val wP1 = waveP[1]; val wP2 = waveP[2]
+        val wQ0 = waveQ[0]; val wQ1 = waveQ[1]; val wQ2 = waveQ[2]
+        val wA0 = waveA[0] * flow; val wA1 = waveA[1] * flow; val wA2 = waveA[2] * flow
+        val ph0 = waveW[0] * t + wavePh[0]; val ph1 = waveW[1] * t + wavePh[1]; val ph2 = waveW[2] * t + wavePh[2]
         for (i in from until to) {
             val x = px[i]
             val y = py[i]
@@ -202,15 +241,16 @@ class ParticleFieldSim : Sim {
             var psiX = 0f
             var psiY = 0f
             if (flow > 0.001f) {
-                for (k in 0 until WAVES) {
-                    val th = waveP[k] * x + waveQ[k] * y + waveW[k] * t + wavePh[k]
-                    val sn = FastMath.sin(th)
-                    val cs = FastMath.cos(th)
-                    psi += waveA[k] * sn
-                    psiX += waveA[k] * waveP[k] * cs
-                    psiY += waveA[k] * waveQ[k] * cs
-                }
-                psi *= flow; psiX *= flow; psiY *= flow
+                // The WAVES (three) plane waves, unrolled.
+                val th0 = wP0 * x + wQ0 * y + ph0
+                val th1 = wP1 * x + wQ1 * y + ph1
+                val th2 = wP2 * x + wQ2 * y + ph2
+                val c0 = wA0 * fcos(th0)
+                val c1 = wA1 * fcos(th1)
+                val c2 = wA2 * fcos(th2)
+                psi = wA0 * fsin(th0) + wA1 * fsin(th1) + wA2 * fsin(th2)
+                psiX = c0 * wP0 + c1 * wP1 + c2 * wP2
+                psiY = c0 * wQ0 + c1 * wQ1 + c2 * wQ2
             }
             var u: Float
             var v: Float
@@ -239,9 +279,9 @@ class ParticleFieldSim : Sim {
             // attractors stir the field into eddies rather than swallowing it.
             if (swirl > 0.001f) {
                 for (a in 0 until attractors) {
-                    val dx = x - attractorX[a]
-                    val dy = y - attractorY[a]
-                    val k = attractorK[a] * swirl * VORTEX / (dx * dx + dy * dy + CORE2) * win
+                    val dx = x - aX[a]
+                    val dy = y - aY[a]
+                    val k = aK[a] / (dx * dx + dy * dy + CORE2) * win
                     u += -dy * k
                     v += dx * k
                 }
@@ -279,13 +319,7 @@ class ParticleFieldSim : Sim {
             // several threads at once.
             var a = age[i] + abs(dt)
             val tb = i * trail
-            if (sampleTrail) {
-                for (k in trail - 1 downTo 1) {
-                    trailX[tb + k] = trailX[tb + k - 1]
-                    trailY[tb + k] = trailY[tb + k - 1]
-                }
-                if (trail > 0) { trailX[tb] = x; trailY[tb] = y }
-            }
+            if (sampleTrail && trail > 0) { trailX[tb + head] = x; trailY[tb + head] = y }
             // A jump across the seam would draw its tail across the screen.
             if (wrap && trail > 0 && (abs(nx - x) > 0.5f || abs(ny - y) > 0.5f)) {
                 for (k in 0 until trail) { trailX[tb + k] = nx; trailY[tb + k] = ny }
@@ -319,13 +353,84 @@ class ParticleFieldSim : Sim {
         val stride = if (n > DRAW_EVERY_ABOVE) 1 + n / DRAW_EVERY_ABOVE else 1
         val spread = if (stride > 1) sqrt(stride.toFloat()) else 1f
         g.reservePoints((n / stride + 1) * (1 + trail))
-        var i = 0
+        // Each tail point's fade and size, the same for every particle, worked
+        // out once a frame rather than per point.
+        if (tailAlpha.size != trail) { tailAlpha = FloatArray(trail); tailSize = FloatArray(trail) }
+        for (k in 0 until trail) {
+            val f = 1f - (k + 1f) / (trail + 1f)
+            tailAlpha[k] = f * 0.8f
+            tailSize[k] = 0.7f + 0.3f * f
+        }
+        // Each particle's colour and size first, across cores (a square root,
+        // a sine, a palette lookup and two blends each, the dearer half of the
+        // draw), then the draw list filled in one pass, which has to be serial.
+        val count = (n + stride - 1) / stride
+        if (dotColour.size < count) { dotColour = IntArray(count); dotSize2 = FloatArray(count) }
+        val baseSize = dotSize * sizeScale * spread
+        val m = if (count >= Parallel.MIN_ITEMS) 1 else (Parallel.MIN_ITEMS + count - 1) / count
+        if (count < MIN_SPLIT) colourDots(palette, 0, count, stride, baseSize)
+        else Parallel.forRange(count * m) { a, b ->
+            val from = (a + m - 1) / m
+            val to = (b + m - 1) / m
+            if (to > from) colourDots(palette, from, to, stride, baseSize)
+        }
+        emitDots(g, count, stride)
+        // The vortex centres, small and quiet: the eddies round them show
+        // where they are.
+        for (a in 0 until attractors) {
+            val c = if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER
+            g.glow(attractorX[a], attractorY[a], 0.05f, c, 0.18f)
+            g.ring(attractorX[a], attractorY[a], 0.014f, 0.003f, c, alpha = 0.5f)
+        }
+    }
+
+    /** The draw list for the dots and their tails: a small method of its own so G.point inlines into it. */
+    private fun emitDots(g: G, count: Int, stride: Int) {
+        val px = px
+        val py = py
+        val trailX = trailX
+        val trailY = trailY
+        val trail = trail
+        val head = trailHead
+        val tailAlpha = tailAlpha
+        val tailSize = tailSize
+        val dotColour = dotColour
+        val dotSize2 = dotSize2
+        for (j in 0 until count) {
+            val i = j * stride
+            val c = dotColour[j]
+            val size = dotSize2[j]
+            g.point(px[i], py[i], size, c)
+            // The trail, fading: a point alone cannot show which way it is
+            // going, and twenty thousand of them read as static noise. With a
+            // short comet tail each, the streams of the field are visible.
+            val tb = i * trail
+            val rgb = c and 0x00FFFFFF
+            val a0 = (c ushr 24).toFloat()
+            // Newest first: slot (head + k) of the ring. The alpha is at most
+            // 255 × 0.8, so no clamp.
+            var slot = head
+            for (k in 0 until trail) {
+                val ak = (a0 * tailAlpha[k]).toInt()
+                g.point(trailX[tb + slot], trailY[tb + slot], size * tailSize[k], (ak shl 24) or rgb)
+                slot++
+                if (slot == trail) slot = 0
+            }
+        }
+    }
+
+    private var dotColour = IntArray(0)
+    private var dotSize2 = FloatArray(0)
+
+    /** Colour and size of drawn dots [from, to) (particle j * stride). */
+    private fun colourDots(palette: Palette, from: Int, to: Int, stride: Int, baseSize: Float) {
         // Colour follows speed, with only a little per-particle variety, so
         // a stream reads as one ribbon. Half the colour was a random tint per
         // particle, and every stream was salt-and-pepper grain. Slow ones are
         // dimmer: what gravity and the field herd into a corner sits there
         // quietly instead of being the brightest thing on screen.
-        while (i < n) {
+        for (j in from until to) {
+            val i = j * stride
             val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 1.6f)
             // Faded in at birth and out before rebirth, so no particle pops.
             val life = lifeOf(tint[i])
@@ -333,29 +438,12 @@ class ParticleFieldSim : Sim {
             // Hue from the stream function, which is constant along a
             // streamline: each stream is one ribbon of colour and the field's
             // structure shows as bands. Brightness from speed.
-            val band = 0.5f + 0.5f * FastMath.sin(psiNow[i] * psiScale)
-            val c = Palette.withAlpha(
+            val band = 0.5f + 0.5f * fsin(psiNow[i] * psiScale)
+            dotColour[j] = Palette.withAlpha(
                 Palette.brighten(palette.at((0.12f + 0.76f * band + (tint[i] - 0.5f) * 0.04f).coerceIn(0f, 1f)), 0.25f * speed),
                 (0.45f + 0.55f * speed) * fade
             )
-            val size = dotSize * sizeScale * spread * (0.85f + speed * 0.3f)
-            g.point(px[i], py[i], size, c)
-            // The trail, fading: a point alone cannot show which way it is
-            // going, and twenty thousand of them read as static noise. With a
-            // short comet tail each, the streams of the field are visible.
-            val tb = i * trail
-            for (k in 0 until trail) {
-                val f = 1f - (k + 1f) / (trail + 1f)
-                g.point(trailX[tb + k], trailY[tb + k], size * (0.7f + 0.3f * f), Palette.withAlpha(c, ((c ushr 24) / 255f) * f * 0.8f))
-            }
-            i += stride
-        }
-        // The vortex centres, small and quiet: the eddies round them show
-        // where they are.
-        for (a in 0 until attractors) {
-            val c = if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER
-            g.glow(attractorX[a], attractorY[a], 0.05f, c, 0.18f)
-            g.ring(attractorX[a], attractorY[a], 0.014f, 0.003f, c, alpha = 0.5f)
+            dotSize2[j] = baseSize * (0.85f + speed * 0.3f)
         }
     }
 
@@ -409,6 +497,29 @@ class ParticleFieldSim : Sim {
         private const val TRAIL_UP_TO = 60_000
         private const val MAX_SPEED2 = MAX_SPEED * MAX_SPEED
         private const val PAYOFF_AT = 18f
+        /** Below this many particles a step is too little work to hand to other cores. */
+        private const val MIN_SPLIT = 3000
+
+        /**
+         * FastMath.sin with its two sign branches written as abs(): the same
+         * parabola and the same numbers, but the branches on a random sign
+         * mispredicted half the time, six calls a particle, and that was a
+         * large share of the step.
+         */
+        private fun fsin(xIn: Float): Float {
+            var x = xIn - F_TWO_PI * kotlin.math.floor((xIn + F_PI) * (1f / F_TWO_PI))
+            if (x > F_PI) x -= F_TWO_PI else if (x < -F_PI) x += F_TWO_PI
+            val y = F_B * x + F_C * x * abs(x)
+            return F_P * (y * abs(y) - y) + y
+        }
+
+        private fun fcos(x: Float): Float = fsin(x + F_PI * 0.5f)
+
+        private const val F_PI = 3.14159265f
+        private const val F_TWO_PI = 6.2831853f
+        private const val F_B = 4f / F_PI
+        private const val F_C = -4f / (F_PI * F_PI)
+        private const val F_P = 0.225f
 
         fun def(): SimDef = SimDef(
             id = "life/particle-field",

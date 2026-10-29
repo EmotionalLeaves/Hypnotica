@@ -73,6 +73,10 @@ class MandelbrotSim : Sim {
         val quality = p.i("resolution", 240).coerceIn(40, 460)
         refCount = 0
         refined = IntArray(0)
+        phase = IDLE
+        hasImage = false
+        dN = 0
+        bN = 0
         // The coarse grid; boundary cells are refined 3× (see refine), so the
         // edge is drawn at twice the old 240-row resolution for about the same
         // work, the smooth outside costing less than before.
@@ -129,42 +133,173 @@ class MandelbrotSim : Sim {
         }
 
         sinceRecompute += abs(dt)
-        if (sinceRecompute < 1f / REFRESH_HZ) return
-        sinceRecompute = 0f
-        computedZoom = zoom
+        if (phase == IDLE) {
+            if (sinceRecompute < 1f / REFRESH_HZ) return
+            sinceRecompute = 0f
+            beginImage(env)
+            // Nothing on screen yet (a fresh start or a new resolution): the
+            // first image is made whole, at once, rather than a blank screen
+            // for the dozen steps the slices take.
+            if (!hasImage) { while (phase != IDLE) work(env, true); return }
+        }
+        work(env, false)
+    }
 
-        val scale = 1.4 / zoom
-        val halfW = env.halfWidth
-        val cs = cols
-        val rs = rows
+    /*
+     * The image is made in slices across steps, into back buffers, and swapped
+     * in whole when done. Made in one step it cost up to 40 ms eight times a
+     * second, on a desktop: a dropped frame on every refresh on a phone. The
+     * slices finish inside one refresh period, and the zoom between images is
+     * still continuous because the shown image is scaled by zoom / its own
+     * zoom (see draw), so the extra eighth of a second of latency never shows.
+     */
+    private var phase = IDLE
+    private var hasImage = false
+    private var cursor = 0
+    private var jCx = 0.0
+    private var jCy = 0.0
+    private var jScale = 1.0
+    private var jHalfW = 1f
+    private var jMi = 220
+    private var jCell = 0.01
+    private var jZoom = 0.6
+
+    private fun beginImage(env: SimEnv) {
+        jZoom = zoom
+        jScale = 1.4 / zoom
+        jHalfW = env.halfWidth
         // Deeper in, points take longer to escape: the detail grows with the
         // zoom, or every deep view flattened into one blob.
         val depth = kotlin.math.ln(max(1.0, zoom / 0.6)) / kotlin.math.ln(2.0)
-        val mi = (maxIter * (1.0 + 0.12 * depth)).toInt().coerceAtMost(MAX_ITER_DEEP)
-        iterNow = mi
-        val cx = centreX
-        val cy = centreY
-        val cell = 2.0 * scale / (rs - 1)
-        if (rawDist.size != cs * rs) rawDist = FloatArray(cs * rs)
+        jMi = (maxIter * (1.0 + 0.12 * depth)).toInt().coerceAtMost(MAX_ITER_DEEP)
+        jCx = centreX
+        jCy = centreY
+        jCell = 2.0 * jScale / (rows - 1)
+        if (rawDist.size != cols * rows) rawDist = FloatArray(cols * rows)
+        phase = COARSE
+        cursor = 0
+    }
 
-        Parallel.forRange(rs) { from, to ->
-            for (row in from until to) {
-                val y0 = cy + (row.toDouble() / (rs - 1) * 2.0 - 1.0) * scale
-                val base = row * cs
-                for (col in 0 until cs) {
-                    val x0 = cx + (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
-                    escape(x0, y0, mi, cell, iterations, edgeDist, base + col)
+    /** One slice of the image in progress, or all of it when [all]. */
+    private fun work(env: SimEnv, all: Boolean) {
+        val cs = cols
+        val rs = rows
+        when (phase) {
+            COARSE -> {
+                // Strided like the refinement (slice j takes rows j, j + 4…), so
+                // a slice is never all slow rows across a minibrot's edge.
+                val perR = (rs + COARSE_SLICES - 1) / COARSE_SLICES
+                val total = perR * COARSE_SLICES
+                val to = if (all) total else min(total, cursor + perR)
+                val from = cursor
+                val cx = jCx
+                val cy = jCy
+                val scale = jScale
+                val halfW = jHalfW
+                val mi = jMi
+                val cell = jCell
+                heavyRange(to - from) { a, b ->
+                    for (p in from + a until from + b) {
+                        val row = (p % perR) * COARSE_SLICES + p / perR
+                        if (row >= rs) continue
+                        val y0 = cy + (row.toDouble() / (rs - 1) * 2.0 - 1.0) * scale
+                        val base = row * cs
+                        // Neighbouring columns in pairs (see escapePair).
+                        var col = 0
+                        while (col + 1 < cs) {
+                            val xa = cx + (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
+                            val xb = cx + ((col + 1).toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
+                            escapePair(xa, y0, base + col, xb, y0, base + col + 1, mi, cell, iterations, edgeDist, true)
+                            col += 2
+                        }
+                        if (col < cs) {
+                            val x0 = cx + (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
+                            escape(x0, y0, mi, cell, iterations, edgeDist, base + col, true)
+                        }
+                    }
+                }
+                cursor = to
+                if (cursor >= total) phase = POST
+            }
+            POST -> {
+                // Raw distances, before healSpecks/edgeGlow reuse edgeDist, pick the
+                // cells that are refined below.
+                System.arraycopy(edgeDist, 0, rawDist, 0, cs * rs)
+                if (healedMask.size == cs * rs) java.util.Arrays.fill(healedMask, false)
+                healSpecks(cs, rs)
+                healSpecks(cs, rs)
+                edgeGlow(cs, rs)
+                selectRefine(cs, rs)
+                phase = REFINE
+                cursor = 0
+            }
+            REFINE -> {
+                // Slice j takes refined cells j, j + 7, j + 14…: an even spread
+                // over the picture, so each step gets its share of the slow
+                // boundary instead of one step drawing a whole minibrot's edge.
+                val per = (refCount + REFINE_SLICES - 1) / REFINE_SLICES
+                val total = per * REFINE_SLICES * 9
+                val to = if (all) total else min(total, cursor + per * 9)
+                refineSlice(cs, cursor, to)
+                cursor = to
+                if (cursor >= total) {
+                    healSubs()
+                    finishImage(env)
+                    phase = BUILD
+                    cursor = 0
+                }
+            }
+            BUILD -> {
+                val to = if (all) rs else min(rs, cursor + (rs + BUILD_SLICES - 1) / BUILD_SLICES)
+                buildRows(env.palette, cursor, to)
+                cursor = to
+                if (cursor >= rs) {
+                    // The finished image goes on screen whole.
+                    val tx = dX; dX = bX; bX = tx
+                    val ty = dY; dY = bY; bY = ty
+                    val tw = dW; dW = bW; bW = tw
+                    val th = dH; dH = bH; bH = th
+                    val tc = dC; dC = bC; bC = tc
+                    dN = bN
+                    computedZoom = jZoom
+                    iterNow = jMi
+                    hasImage = true
+                    phase = IDLE
+                    // Deep enough that the detail on screen is a thousand times finer than
+                    // where it started. That is the zoom arriving, which is what the sim
+                    // promises, rather than eighteen seconds having gone by.
+                    if (!reached && jZoom >= 0.6 * TARGET_DEPTH) {
+                        reached = true
+                        payoffFrame = true
+                        env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+                    }
                 }
             }
         }
-        // Raw distances, before healSpecks/edgeGlow reuse edgeDist, pick the
-        // cells that are refined below.
-        System.arraycopy(edgeDist, 0, rawDist, 0, cs * rs)
-        if (healedMask.size == cs * rs) java.util.Arrays.fill(healedMask, false)
-        healSpecks(cs, rs)
-        healSpecks(cs, rs)
-        edgeGlow(cs, rs)
-        refine(cs, rs, cx, cy, scale, halfW, mi, cell)
+    }
+
+    /**
+     * Parallel.forRange over [n] items that each cost hundreds of iterations.
+     * A slice is a few thousand samples, under the pool's 20 000-item floor
+     * (sized for particles that cost nanoseconds each), so it ran on one core;
+     * the count is scaled up past the floor and the slices mapped back.
+     */
+    private inline fun heavyRange(n: Int, crossinline body: (from: Int, to: Int) -> Unit) {
+        if (n <= 0) return
+        val m = (Parallel.MIN_ITEMS + n - 1) / n
+        if (m <= 1) { Parallel.forRange(n) { a, b -> body(a, b) }; return }
+        Parallel.forRange(n * m) { a, b ->
+            val from = (a + m - 1) / m
+            val to = (b + m - 1) / m
+            if (to > from) body(from, to)
+        }
+    }
+
+    /** The brightness range and the sound, once every sample of an image is in. */
+    private fun finishImage(env: SimEnv) {
+        val cs = cols
+        val rs = rows
+        val mi = jMi
         // The range of escape counts in view sets how bright the outside is:
         // far from the set dim, close to it bright, so the boundary glows
         // rather than sitting in a flat field of colour. Eased between images
@@ -180,20 +315,11 @@ class MandelbrotSim : Sim {
                 highMu += (lHi - highMu) * 0.35f
             }
         }
-
         // The sound follows how deep the picture has become.
         val centreIter = iterations[(rs / 2) * cs + cs / 2].let { if (it < 0f) mi else it.toInt() }
         if (abs(centreIter - lastSoundIter) > mi / 40) {
             lastSoundIter = centreIter
             env.emit(EventKind.STEP, (centreIter.toFloat() / mi).coerceIn(0f, 1f), 0f, 0.4f)
-        }
-        // Deep enough that the detail on screen is a thousand times finer than
-         // where it started. That is the zoom arriving, which is what the sim
-         // promises, rather than eighteen seconds having gone by.
-        if (!reached && zoom >= 0.6 * TARGET_DEPTH) {
-            reached = true
-            payoffFrame = true
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
     }
 
@@ -201,14 +327,44 @@ class MandelbrotSim : Sim {
      * One escape-time sample: the smooth count into [mu] (or -1 inside the
      * set) and the distance estimate, in units of [cell], into [de].
      */
-    private fun escape(x0: Double, y0: Double, mi: Int, cell: Double, mu: FloatArray, de: FloatArray, idx: Int) {
+    private fun escape(x0: Double, y0: Double, mi: Int, cell: Double, mu: FloatArray, de: FloatArray, idx: Int, periodic: Boolean) {
+        // Points in the main cardioid or the period-2 bulb never escape: tested
+        // in closed form instead of iterated to the budget. Interior is most of
+        // the screen for much of the dive and was most of the cost.
+        if (inCardioidOrBulb(x0, y0)) {
+            mu[idx] = -1f
+            de[idx] = 0f
+            return
+        }
         var x = 0.0
         var y = 0.0
         // dz/dc alongside z, for the distance estimate only.
         var dx = 0.0
         var dy = 0.0
         var i = 0
-        while (x * x + y * y <= 4.0 && i < mi) {
+        // Periodicity (Brent): an orbit that comes back to within 1e-13 of an
+        // earlier point has fallen onto an attracting cycle and never escapes,
+        // so it is inside without running out the budget. Anything still
+        // moving that slowly near a parabolic point moves ~1/n^2 per return,
+        // orders of magnitude above this, so no escaping point is misread.
+        // The check costs a quarter of the loop, so the boundary sub-samples,
+        // whose interior ones are all slow to settle and almost never caught,
+        // run without it: same answers, less work.
+        var px = 0.0
+        var py = 0.0
+        var check = 8
+        var inside = false
+        if (periodic) while (x * x + y * y <= 4.0 && i < mi) {
+            val dxt = 2.0 * (x * dx - y * dy) + 1.0
+            dy = 2.0 * (x * dy + y * dx)
+            dx = dxt
+            val xt = x * x - y * y + x0
+            y = 2.0 * x * y + y0
+            x = xt
+            i++
+            if (abs(x - px) < PERIOD_EPS && abs(y - py) < PERIOD_EPS) { inside = true; break }
+            if (i == check) { px = x; py = y; check += check }
+        } else while (x * x + y * y <= 4.0 && i < mi) {
             val dxt = 2.0 * (x * dx - y * dy) + 1.0
             dy = 2.0 * (x * dy + y * dx)
             dx = dxt
@@ -217,11 +373,97 @@ class MandelbrotSim : Sim {
             x = xt
             i++
         }
-        if (i >= mi) {
+        if (inside || i >= mi) {
             mu[idx] = -1f
             de[idx] = 0f
             return
         }
+        settle(x, y, dx, dy, i, x0, y0, cell, mu, de, idx)
+    }
+
+    private fun inCardioidOrBulb(x0: Double, y0: Double): Boolean {
+        val xq = x0 - 0.25
+        val q = xq * xq + y0 * y0
+        return q * (q + xq) <= 0.25 * y0 * y0 || (x0 + 1.0) * (x0 + 1.0) + y0 * y0 <= 0.0625
+    }
+
+    /**
+     * Two samples (neighbouring cells or sub-cells) iterated in one loop. One orbit is a chain of
+     * dependent multiplies that leaves most of the core idle; two independent
+     * chains side by side run in nearly the time of one. Each result is
+     * exactly what [escape] gives for that point on its own.
+     */
+    private fun escapePair(
+        ax0: Double, ay0: Double, ia: Int, bx0: Double, by0: Double, ib: Int,
+        mi: Int, cell: Double, mu: FloatArray, de: FloatArray, periodic: Boolean
+    ) {
+        val aIn = inCardioidOrBulb(ax0, ay0)
+        val bIn = inCardioidOrBulb(bx0, by0)
+        if (aIn || bIn) {
+            if (aIn) { mu[ia] = -1f; de[ia] = 0f } else escape(ax0, ay0, mi, cell, mu, de, ia, periodic)
+            if (bIn) { mu[ib] = -1f; de[ib] = 0f } else escape(bx0, by0, mi, cell, mu, de, ib, periodic)
+            return
+        }
+        var ax = 0.0; var ay = 0.0; var adx = 0.0; var ady = 0.0; var ai = 0
+        var bx = 0.0; var by = 0.0; var bdx = 0.0; var bdy = 0.0; var bi = 0
+        // The periodicity check of escape(), per orbit, in the same order.
+        var apx = 0.0; var apy = 0.0; var ac = 8; var aCyc = false
+        var bpx = 0.0; var bpy = 0.0; var bc = 8; var bCyc = false
+        var aOn = true
+        var bOn = true
+        while (aOn && bOn) {
+            val adxt = 2.0 * (ax * adx - ay * ady) + 1.0
+            ady = 2.0 * (ax * ady + ay * adx); adx = adxt
+            val axt = ax * ax - ay * ay + ax0
+            ay = 2.0 * ax * ay + ay0; ax = axt; ai++
+            val bdxt = 2.0 * (bx * bdx - by * bdy) + 1.0
+            bdy = 2.0 * (bx * bdy + by * bdx); bdx = bdxt
+            val bxt = bx * bx - by * by + bx0
+            by = 2.0 * bx * by + by0; bx = bxt; bi++
+            if (periodic) {
+                if (abs(ax - apx) < PERIOD_EPS && abs(ay - apy) < PERIOD_EPS) aCyc = true
+                else if (ai == ac) { apx = ax; apy = ay; ac += ac }
+                if (abs(bx - bpx) < PERIOD_EPS && abs(by - bpy) < PERIOD_EPS) bCyc = true
+                else if (bi == bc) { bpx = bx; bpy = by; bc += bc }
+            }
+            aOn = !aCyc && ax * ax + ay * ay <= 4.0 && ai < mi
+            bOn = !bCyc && bx * bx + by * by <= 4.0 && bi < mi
+        }
+        while (aOn) {
+            val adxt = 2.0 * (ax * adx - ay * ady) + 1.0
+            ady = 2.0 * (ax * ady + ay * adx); adx = adxt
+            val axt = ax * ax - ay * ay + ax0
+            ay = 2.0 * ax * ay + ay0; ax = axt; ai++
+            if (periodic) {
+                if (abs(ax - apx) < PERIOD_EPS && abs(ay - apy) < PERIOD_EPS) aCyc = true
+                else if (ai == ac) { apx = ax; apy = ay; ac += ac }
+            }
+            aOn = !aCyc && ax * ax + ay * ay <= 4.0 && ai < mi
+        }
+        while (bOn) {
+            val bdxt = 2.0 * (bx * bdx - by * bdy) + 1.0
+            bdy = 2.0 * (bx * bdy + by * bdx); bdx = bdxt
+            val bxt = bx * bx - by * by + bx0
+            by = 2.0 * bx * by + by0; bx = bxt; bi++
+            if (periodic) {
+                if (abs(bx - bpx) < PERIOD_EPS && abs(by - bpy) < PERIOD_EPS) bCyc = true
+                else if (bi == bc) { bpx = bx; bpy = by; bc += bc }
+            }
+            bOn = !bCyc && bx * bx + by * by <= 4.0 && bi < mi
+        }
+        if (aCyc || ai >= mi) { mu[ia] = -1f; de[ia] = 0f } else settle(ax, ay, adx, ady, ai, ax0, ay0, cell, mu, de, ia)
+        if (bCyc || bi >= mi) { mu[ib] = -1f; de[ib] = 0f } else settle(bx, by, bdx, bdy, bi, bx0, by0, cell, mu, de, ib)
+    }
+
+    /** An escaped orbit's smooth count and distance estimate, from where it crossed radius 2. */
+    private fun settle(
+        x1: Double, y1: Double, dx1: Double, dy1: Double, i: Int,
+        x0: Double, y0: Double, cell: Double, mu: FloatArray, de: FloatArray, idx: Int
+    ) {
+        var x = x1
+        var y = y1
+        var dx = dx1
+        var dy = dy1
         // Membership is decided above, at radius 2. Three more steps only
         // carry the escaped orbit far enough out (|z| in the hundreds) for the
         // smooth count n + 1 − log2(ln|z|) to be continuous across the bands.
@@ -252,8 +494,12 @@ class MandelbrotSim : Sim {
      * sample, reused). The sub-samples are exact escape times of their own
      * points: nothing is interpolated except the base hue.
      */
-    private fun refine(cs: Int, rs: Int, cx: Double, cy: Double, scale: Double, halfW: Float, mi: Int, cell: Double) {
+    private fun selectRefine(cs: Int, rs: Int) {
         val n = cs * rs
+        // Each cell's log count once, not five times over as each neighbour's
+        // neighbour; the colouring reuses it too.
+        if (lnSmooth.size != n) lnSmooth = FloatArray(n)
+        for (i in 0 until n) lnSmooth[i] = ln(1f + max(0f, smooth[i]))
         if (refined.size != n) refined = IntArray(n)
         var count = 0
         for (row in 0 until rs) {
@@ -265,11 +511,11 @@ class MandelbrotSim : Sim {
                 // Where the colour itself changes fast between cells (the
                 // bands close to the set), flat tiles stepped visibly.
                 if (!need && !inside) {
-                    val lm = ln(1f + smooth[i])
-                    if (col + 1 < cs && smooth[i + 1] >= 0f && abs(ln(1f + smooth[i + 1]) - lm) > STEP_LM) need = true
-                    else if (col > 0 && smooth[i - 1] >= 0f && abs(ln(1f + smooth[i - 1]) - lm) > STEP_LM) need = true
-                    else if (row + 1 < rs && smooth[i + cs] >= 0f && abs(ln(1f + smooth[i + cs]) - lm) > STEP_LM) need = true
-                    else if (row > 0 && smooth[i - cs] >= 0f && abs(ln(1f + smooth[i - cs]) - lm) > STEP_LM) need = true
+                    val lm = lnSmooth[i]
+                    if (col + 1 < cs && smooth[i + 1] >= 0f && abs(lnSmooth[i + 1] - lm) > STEP_LM) need = true
+                    else if (col > 0 && smooth[i - 1] >= 0f && abs(lnSmooth[i - 1] - lm) > STEP_LM) need = true
+                    else if (row + 1 < rs && smooth[i + cs] >= 0f && abs(lnSmooth[i + cs] - lm) > STEP_LM) need = true
+                    else if (row > 0 && smooth[i - cs] >= 0f && abs(lnSmooth[i - cs] - lm) > STEP_LM) need = true
                 }
                 if (!need) {
                     loop@ for (oy in -1..1) for (ox in -1..1) {
@@ -287,20 +533,52 @@ class MandelbrotSim : Sim {
         if (refIdx.size < count) refIdx = IntArray(count + count / 2)
         if (subMu.size < count * 9) { subMu = FloatArray(count * 9 + count * 4); subDe = FloatArray(subMu.size) }
         for (i in 0 until n) if (refined[i] >= 0) refIdx[refined[i]] = i
-        val fine = cell / 3.0
+    }
+
+    /** Sub-samples [from, to) of the refined cells, nine to a cell. */
+    private fun refineSlice(cs: Int, from: Int, to: Int) {
+        val rs = rows
+        val count = refCount
+        val per = (count + REFINE_SLICES - 1) / REFINE_SLICES
+        val cx = jCx
+        val cy = jCy
+        val scale = jScale
+        val halfW = jHalfW
+        val mi = jMi
+        val fine = jCell / 3.0
         val stepX = 2.0 * scale * halfW / (cs - 1)
         val stepY = 2.0 * scale / (rs - 1)
-        Parallel.forRange(count * 9) { from, to ->
-            for (s in from until to) {
-                val ci = refIdx[s / 9]
-                val sub = s % 9
+        heavyRange(to - from) { a, b ->
+            var pend = -1
+            var px0 = 0.0
+            var py0 = 0.0
+            for (p in from + a until from + b) {
+                val r = (p / 9 % per) * REFINE_SLICES + p / 9 / per
+                if (r >= count) continue
+                val sub = p % 9
+                val s = r * 9 + sub
+                val ci = refIdx[r]
+                if (sub == 4) {
+                    // The centre sub-sample is the coarse sample itself, already
+                    // computed: its raw count, and its distance in sub-cells.
+                    subMu[s] = rawMu(ci)
+                    subDe[s] = (rawDist[ci] * 3f).coerceAtMost(1e6f)
+                    continue
+                }
                 val col = ci % cs
                 val row = ci / cs
                 val x0 = cx + (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW + ((sub % 3) - 1) * stepX / 3.0
                 val y0 = cy + (row.toDouble() / (rs - 1) * 2.0 - 1.0) * scale + ((sub / 3) - 1) * stepY / 3.0
-                escape(x0, y0, mi, fine, subMu, subDe, s)
+                if (pend < 0) { pend = s; px0 = x0; py0 = y0; continue }
+                escapePair(px0, py0, pend, x0, y0, s, mi, fine, subMu, subDe, false)
+                pend = -1
             }
+            if (pend >= 0) escape(px0, py0, mi, fine, subMu, subDe, pend, false)
         }
+    }
+
+    private fun healSubs() {
+        val count = refCount
         // A sub-sample that never escaped, in a block where most did, is a
         // filament finer than a sub-cell (see healSpecks): drawn as boundary.
         for (r in 0 until count) {
@@ -418,15 +696,129 @@ class MandelbrotSim : Sim {
     }
 
     private var glow = FloatArray(0)
+    /** ln(1 + smooth), per cell. */
+    private var lnSmooth = FloatArray(0)
     /** Escape counts for colouring, smoothed near the set (see edgeGlow). */
     private var smooth = FloatArray(0)
 
-    override fun draw(env: SimEnv, g: G, alpha: Float) {
-        val palette = env.palette
-        g.reserveInstances(cols * rows + refCount * 8)
-        val halfW = env.halfWidth
-        val dx = 2f * halfW / cols
+    /*
+     * The tiles of the image on screen (d*) and of the one being built (b*),
+     * at zoom ratio 1: centre, half size, colour. The colours only change when
+     * a new image arrives, so they are worked out once per image instead of
+     * fifty thousand logs and cosines every frame.
+     */
+    private var dX = FloatArray(0)
+    private var dY = FloatArray(0)
+    private var dW = FloatArray(0)
+    private var dH = FloatArray(0)
+    private var dC = IntArray(0)
+    private var dN = 0
+    private var bX = FloatArray(0)
+    private var bY = FloatArray(0)
+    private var bW = FloatArray(0)
+    private var bH = FloatArray(0)
+    private var bC = IntArray(0)
+    private var bN = 0
+
+    private fun pushTile(x: Float, y: Float, w: Float, h: Float, c: Int) {
+        if (bN == bX.size) {
+            val n = max(1024, bN * 3 / 2)
+            bX = bX.copyOf(n); bY = bY.copyOf(n); bW = bW.copyOf(n); bH = bH.copyOf(n); bC = bC.copyOf(n)
+        }
+        bX[bN] = x; bY[bN] = y; bW[bN] = w; bH[bN] = h; bC[bN] = c
+        bN++
+    }
+
+    /** Per coarse cell its colour (0 = inside, not drawn), and per sub-sample. */
+    private var cellColour = IntArray(0)
+    private var subColour = IntArray(0)
+
+    /** Rows [from, to) of the image being built into tiles. */
+    private fun buildRows(palette: Palette, from: Int, to: Int) {
+        if (from == 0) bN = 0
+        val cs = cols
+        if (cellColour.size != cs * rows) cellColour = IntArray(cs * rows)
+        if (subColour.size < subMu.size) subColour = IntArray(subMu.size)
+        val span = max(0.5f, highMu - lowMu)
+        val edgeColour = brightestOf(palette)
+        val hasSubs = refined.size == cs * rows
+        // The colours, across cores: a log, a cosine and a palette lookup per
+        // tile were the dearest part of the image left after the sampling.
+        heavyRange(to - from) { a, b ->
+            for (row in from + a until from + b) {
+                val base = row * cs
+                for (col in 0 until cs) {
+                    val ref = if (hasSubs) refined[base + col] else -1
+                    val mu = smooth[base + col]
+                    if (ref < 0) {
+                        if (iterations[base + col] < 0f) { cellColour[base + col] = 0; continue }
+                        // The lit filament, as weighted by edgeGlow(). A hard
+                        // "within 1.2 cells" threshold switched whole cells on and
+                        // off along sub-cell filaments: a thick, ragged band.
+                        val edge = edgeDist[base + col]
+                        val c = colourAt(palette, lnSmooth[base + col], span)
+                        cellColour[base + col] = if (edge > 0.02f) Palette.lerp(c, edgeColour, 0.9f * edge) else c
+                        continue
+                    }
+                    // A boundary cell, drawn as its nine exact sub-samples. Their
+                    // base colour is the neighbourhood's (a hue per sample was
+                    // confetti); the lit edge comes from each one's own distance.
+                    val ck = crowdK[base + col]
+                    val centre = if (mu >= 0f) mu else neighbourMu(row, col)
+                    val b9 = ref * 9
+                    for (sub in 0 until 9) {
+                        if (subMu[b9 + sub] < 0f) { subColour[b9 + sub] = 0; continue }
+                        val cBase = baseColour(palette, subBase(row, col, sub % 3 - 1, sub / 3 - 1, centre), span)
+                        val d = subDe[b9 + sub] / EDGE_CELLS
+                        val edge = ck / (1f + d * d * d)
+                        subColour[b9 + sub] = if (edge > 0.02f) Palette.lerp(cBase, edgeColour, 0.9f * edge) else cBase
+                    }
+                }
+            }
+        }
+        val halfW = jHalfW
+        val dx = 2f * halfW / cs
         val dy = 2f / rows
+        // Square cells that tile, a fifth oversized so no seam shows between
+        // them. Round point sprites left a dark gap at every corner, which on
+        // a phone read as a grid of beads rather than a picture.
+        val hw = dx * 0.5f * 1.18f
+        val hh = dy * 0.5f * 1.18f
+        val shw = hw / 3f
+        val shh = hh / 3f
+        val sdx = dx / 3f
+        val sdy = dy / 3f
+        for (row in from until to) {
+            val y = -1f + (row + 0.5f) * dy
+            val base = row * cs
+            // A run of plain tiles of one colour is one long rect: same pixels
+            // (each tile is drawn over the one before it), fewer primitives.
+            var runC = 0
+            var runFirst = 0f
+            var runLast = 0f
+            for (col in 0 until cs) {
+                val x = -halfW + (col + 0.5f) * dx
+                val ref = if (hasSubs) refined[base + col] else -1
+                val c = if (ref < 0) cellColour[base + col] else 0
+                if (runC != 0 && c == runC) { runLast = x; continue }
+                if (runC != 0) pushTile((runFirst + runLast) * 0.5f, y, (runLast - runFirst) * 0.5f + hw, hh, runC)
+                runC = c; runFirst = x; runLast = x
+                if (ref < 0) continue
+                val b9 = ref * 9
+                for (sub in 0 until 9) {
+                    val sc = subColour[b9 + sub]
+                    if (sc == 0) continue
+                    pushTile(x + ((sub % 3) - 1) * sdx, y + ((sub / 3) - 1) * sdy, shw, shh, sc)
+                }
+            }
+            if (runC != 0) pushTile((runFirst + runLast) * 0.5f, y, (runLast - runFirst) * 0.5f + hw, hh, runC)
+        }
+    }
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        val n = dN
+        g.reserveInstances(n)
+        val halfW = env.halfWidth
         // The image is recomputed eight times a second and the zoom is
         // continuous, so in between the last image is drawn grown by however
         // far the zoom has gone since — about the centre, which is where the
@@ -434,58 +826,27 @@ class MandelbrotSim : Sim {
         // then jump 2.8%, eight times a second: a zoom that stuttered, on the
         // one sim whose whole subject is a smooth dive.
         val k = (zoom / computedZoom).toFloat().coerceIn(0.5f, 4f)
-        // Square cells that tile, a fifth oversized so no seam shows between
-        // them. Round point sprites left a dark gap at every corner, which on
-        // a phone read as a grid of beads rather than a picture.
-        val hw = dx * 0.5f * k * 1.18f
-        val hh = dy * 0.5f * k * 1.18f
-        val span = max(0.5f, highMu - lowMu)
-        val edgeColour = brightestOf(palette)
-        val shw = hw / 3f
-        val shh = hh / 3f
-        val sdx = dx / 3f * k
-        val sdy = dy / 3f * k
-        val hasSubs = refined.size == cols * rows
-        for (row in 0 until rows) {
-            val y = (-1f + (row + 0.5f) * dy) * k
-            if (abs(y) - hh > 1f) continue
-            val base = row * cols
-            for (col in 0 until cols) {
-                val x = (-halfW + (col + 0.5f) * dx) * k
-                if (abs(x) - hw > halfW) continue
-                val ref = if (hasSubs) refined[base + col] else -1
-                val mu = smooth[base + col]
-                if (ref < 0) {
-                    if (iterations[base + col] < 0f) continue
-                    // The lit filament, as weighted by edgeGlow(). A hard
-                    // "within 1.2 cells" threshold switched whole cells on and
-                    // off along sub-cell filaments: a thick, ragged band.
-                    val edge = edgeDist[base + col]
-                    val c = baseColour(palette, mu, span)
-                    g.rect(x, y, hw, hh, if (edge > 0.02f) Palette.lerp(c, edgeColour, 0.9f * edge) else c)
-                    continue
-                }
-                // A boundary cell, drawn as its nine exact sub-samples. Their
-                // base colour is the neighbourhood's (a hue per sample was
-                // confetti); the lit edge comes from each one's own distance.
-                val ck = crowdK[base + col]
-                val centre = if (mu >= 0f) mu else neighbourMu(row, col)
-                val b = ref * 9
-                for (sub in 0 until 9) {
-                    if (subMu[b + sub] < 0f) continue
-                    val cBase = baseColour(palette, subBase(row, col, sub % 3 - 1, sub / 3 - 1, centre), span)
-                    val d = subDe[b + sub] / EDGE_CELLS
-                    val edge = ck / (1f + d * d * d)
-                    val sx = x + ((sub % 3) - 1) * sdx
-                    val sy = y + ((sub / 3) - 1) * sdy
-                    g.rect(sx, sy, shw, shh, if (edge > 0.02f) Palette.lerp(cBase, edgeColour, 0.9f * edge) else cBase)
-                }
-            }
+        val xs = dX
+        val ys = dY
+        val ws = dW
+        val hs = dH
+        val cs = dC
+        for (i in 0 until n) {
+            val y = ys[i] * k
+            val h = hs[i] * k
+            if (abs(y) - h > 1f) continue
+            val x = xs[i] * k
+            val w = ws[i] * k
+            if (abs(x) - w > halfW) continue
+            g.rect(x, y, w, h, cs[i])
         }
     }
 
-    private fun baseColour(palette: Palette, mu: Float, span: Float): Int {
-        val lm = ln(1f + max(0f, mu))
+    private fun baseColour(palette: Palette, mu: Float, span: Float): Int =
+        colourAt(palette, ln(1f + max(0f, mu)), span)
+
+    /** [baseColour] from the log count lm = ln(1 + mu). */
+    private fun colourAt(palette: Palette, lm: Float, span: Float): Int {
         // Hue cycles smoothly with the log of the escape count — a cosine, so
         // the palette runs out and back with no seam — over most of the
         // palette, leaving its far end to the edge.
@@ -533,6 +894,10 @@ class MandelbrotSim : Sim {
             val scale = 1.4 / zoom
             centreX += (e.x / env.halfWidth) * scale * env.halfWidth
             centreY += e.y * scale
+            // An image half made at the old centre is dropped; the next one
+            // starts at once, at the new.
+            phase = IDLE
+            sinceRecompute = 999f
         }
     }
 
@@ -545,6 +910,20 @@ class MandelbrotSim : Sim {
 
     companion object {
         const val MAX_ITER_DEEP = 1500
+        private const val PERIOD_EPS = 1e-13
+        private const val IDLE = 0
+        private const val COARSE = 1
+        private const val REFINE = 2
+        private const val BUILD = 3
+        private const val POST = 4
+        /**
+         * Steps each stage of an image is spread over: with one for the
+         * healing pass, the 15 of a refresh at 120 Hz. The boundary samples
+         * cost the most, so they get the most steps.
+         */
+        private const val COARSE_SLICES = 4
+        private const val REFINE_SLICES = 7
+        private const val BUILD_SLICES = 3
         private val LN2 = ln(2.0)
         /** Colour cycles per e-fold of escape count: two or three bands across a view. */
         private const val HUE_CYCLES = 0.6f
