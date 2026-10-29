@@ -1144,13 +1144,16 @@ class NewtonsCradleSim : Sim {
         // A spotlight from above: a soft cone widening down onto the plinth
         // and a pool of light on it. It gives the tall screen above the
         // cradle something to be, rather than a black void.
-        val beamTop = 2.4f
-        val bands = 120
-        for (k in 0 until bands) {
-            val f = (k + 0.5f) / bands
-            val y = beamTop + (floorY - beamTop) * f
-            val half = 0.12f + (postX + 0.05f - 0.12f) * f
-            g.rect(0f, y, half, (beamTop - floorY) / bands * 0.5f + 0.001f, SPOT, 0f, 0.018f + 0.03f * f)
+        // Built from overlapping soft glows down the axis, widening as they
+        // go: 120 stacked bands showed every seam where two met, a venetian
+        // blind of fine lines across the cone on the phone.
+        val beamTop = 2.3f
+        val puffs = 56
+        for (k in 0 until puffs) {
+            val f = k / (puffs - 1f)
+            val y = beamTop + (floorY + 0.12f - beamTop) * f
+            val r = 0.24f + (postX * 0.95f - 0.24f) * f
+            g.glow(0f, y, r, SPOT, 0.008f + 0.004f * f)
         }
         g.glow(0f, floorY, postX * 1.1f, SPOT, 0.12f)
         g.rect(0f, floorY - 0.05f, postX + 0.07f, 0.05f, Palette.lerp(dim, 0xFF000000.toInt(), 0.75f))

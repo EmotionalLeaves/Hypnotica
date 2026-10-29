@@ -59,7 +59,11 @@ class LSystemSim : Sim {
         val plant = PLANTS[p.choiceIndex("plant").coerceIn(0, PLANTS.size - 1)]
         val depth = (plant.depth + p.i("growth", 0)).coerceIn(1, 9)
         val angle = (plant.angle + p.f("bend", 0f)) * (PI.toFloat() / 180f)
-        build(expand(plant, depth), angle, env.halfWidth)
+        // The width the wind can push the tips sideways, kept clear at the
+        // edges: fitted edge to edge, the fern's swaying tips crossed the
+        // screen's right edge at every gust.
+        val swayRoom = p.f("sway", 0.35f) * GUST_MAX * SWAY * (FILL + TOP) * (FILL + TOP)
+        build(expand(plant, depth), angle, (env.halfWidth - swayRoom).coerceAtLeast(env.halfWidth * 0.7f))
         grown = 0f
         elapsed = 0f
         fullAt = -1f
@@ -199,9 +203,9 @@ class LSystemSim : Sim {
                 env.emit(EventKind.WRITE, nextNote.toFloat() / NOTES, 0f, 0.35f)
             }
             if (grown >= tallest) {
+                // No DONE of its own: the engine sounds it on the payoff step.
                 fullAt = elapsed
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.9f, 0f, 1f)
             }
         } else if (env.params.f("sway", 0.35f) > 0.01f) {
             // Grown, it was silent for six seconds while it swayed. Each turn
@@ -291,6 +295,8 @@ class LSystemSim : Sim {
         private const val HOLD_SECONDS = 6f
         private const val NOTES = 40
         private const val SWAY = 0.035f
+        /** The most [gust] reaches either way. */
+        private const val GUST_MAX = 0.85f
         private const val TRUNK = 0.012f
         private const val TIP = 0.0022f
         /** Strokes bolder than this get a round joint. */

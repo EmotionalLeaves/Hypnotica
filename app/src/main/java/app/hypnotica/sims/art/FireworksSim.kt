@@ -30,7 +30,8 @@ class FireworksSim : Sim {
 
     private class Rocket(
         var x: Float, var y: Float, var vx: Float, var vy: Float,
-        val burstY: Float, val kind: Int, val tint: Float, val scale: Float
+        val burstY: Float, val kind: Int, val tint: Float, val scale: Float,
+        val closing: Boolean = false
     )
 
     private val rockets = ArrayList<Rocket>()
@@ -96,15 +97,15 @@ class FireworksSim : Sim {
      * screen. Rockets used to go up within the middle 40% of the width and
      * every burst piled into one column.
      */
-    private fun launchAt(env: SimEnv, u: Float, v: Float, scale: Float, kind: Int = -1) {
+    private fun launchAt(env: SimEnv, u: Float, v: Float, scale: Float, kind: Int = -1, closing: Boolean = false) {
         val reach = reachOf(env, scale)
         val xMax = max(0f, halfW - reach * 1.02f)
         val top = min(SKY_TOP, 0.95f - reach)
         val y = SKY_BOTTOM + (top - SKY_BOTTOM) * v.coerceIn(0f, 1f)
-        launch(env, xMax * u.coerceIn(-1f, 1f), y, scale, kind)
+        launch(env, xMax * u.coerceIn(-1f, 1f), y, scale, kind, closing)
     }
 
-    private fun launch(env: SimEnv, x: Float, burstY: Float, scale: Float = 1f, forceKind: Int = -1) {
+    private fun launch(env: SimEnv, x: Float, burstY: Float, scale: Float = 1f, forceKind: Int = -1, closing: Boolean = false) {
         val g = gravity(env)
         // Launched just hard enough to stop where it should burst.
         val rise = burstY - GROUND
@@ -117,7 +118,7 @@ class FireworksSim : Sim {
             3 -> env.rng.int(0, KINDS + 2)
             else -> env.rng.int(0, KINDS)
         }
-        rockets.add(Rocket(x, GROUND, env.rng.range(-0.03f, 0.03f), vy, burstY, kind, env.rng.nextFloat(), scale))
+        rockets.add(Rocket(x, GROUND, env.rng.range(-0.03f, 0.03f), vy, burstY, kind, env.rng.nextFloat(), scale, closing))
         launched++
         env.emit(EventKind.STEP, 0.2f + 0.3f * ((burstY + 1f) / 2f), (x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.2f)
     }
@@ -175,11 +176,15 @@ class FireworksSim : Sim {
             // it when the show ends; it used to be black a second after.
             // Not so long that they sink to the ground: at 1.8x and a gentle
             // drag, the finale fell into one dense heap at the bottom.
-            val hang = if (finale) 1.3f else 1f
+            // The closing three hang longest of all, floating rather than
+            // falling: the show ends on its biggest figure still open in the
+            // sky, where it used to have faded to embers a second after the
+            // payoff, so the last thing seen was a dim smear.
+            val hang = if (r.closing) 1.75f else if (finale) 1.3f else 1f
             maxLife[i] = hang * (if (r.kind == WILLOW) env.rng.range(1.9f, 2.7f) else env.rng.range(1.1f, 1.8f))
             life[i] = maxLife[i]
             drag[i] = if (r.kind == WILLOW) WILLOW_DRAG else PEONY_DRAG
-            fall[i] = if (r.kind == WILLOW) 0.32f else 0.16f
+            fall[i] = (if (r.kind == WILLOW) 0.32f else 0.16f) * (if (r.closing) 0.55f else 1f)
             // Shapes hang together: no stray colours, so the outline reads
             // as one thing while it lasts.
             // Mostly the rocket's own colour, a few strays.
@@ -264,9 +269,9 @@ class FireworksSim : Sim {
                     // on a knot of overlapping rings. The crown goes highest,
                     // so it breaks last.
                     val crownKind = if (env.params.choiceIndex("shells") == 0) PEONY else -1
-                    launchAt(env, 0f, 1f, 1.25f, crownKind)
-                    launchAt(env, -1f, 0.42f + env.rng.range(-0.04f, 0.04f), 0.9f)
-                    launchAt(env, 1f, 0.42f + env.rng.range(-0.04f, 0.04f), 0.9f)
+                    launchAt(env, 0f, 1f, 1.25f, crownKind, closing = true)
+                    launchAt(env, -1f, 0.42f + env.rng.range(-0.04f, 0.04f), 0.9f, closing = true)
+                    launchAt(env, 1f, 0.42f + env.rng.range(-0.04f, 0.04f), 0.9f, closing = true)
                 } else for (k in 0 until count) {
                     val u = ((k + 0.5f + offset * 0.5f) / count) * 2f - 1f
                     // Alternate high and low across the row, rising wave by wave.
@@ -291,9 +296,9 @@ class FireworksSim : Sim {
             }
         }
         if (finaleFired && finaleWave >= FINALE_WAVES && rockets.isEmpty() && doneAt < 0f) {
+            // The engine sounds DONE on this step; one here doubled it.
             doneAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
         for (i in 0 until cap) {
             if (life[i] <= 0f) continue

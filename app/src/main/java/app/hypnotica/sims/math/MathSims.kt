@@ -1054,7 +1054,9 @@ class ChaosGameSim : Sim {
         var lowY = 0f
         var highY = 0f
         for (i in 0 until corners) {
-            val a = -PI.toFloat() / 2f + i * 2f * PI.toFloat() / corners
+            // First corner straight up (y is up): from -90° the triangle hung
+            // upside down, not the Sierpinski triangle anyone recognises.
+            val a = PI.toFloat() / 2f + i * 2f * PI.toFloat() / corners
             cornerX[i] = cos(a) * 0.92f
             cornerY[i] = sin(a) * 0.92f
             lowY = min(lowY, cornerY[i]); highY = max(highY, cornerY[i])

@@ -100,10 +100,11 @@ class MarbleMusicSim : Sim {
                 m.vy = 1.1f * bounce
                 m.vx = (if (m.bar % 2 == 0) -1f else 1f) * (0.1f + 0.1f * env.rng.nextFloat()) * bounce
                 env.emit(EventKind.HIT, m.tint, (m.x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.6f)
+                // No sim-level DONE here: the engine emits it on the payoff step,
+                // and a second one on the same step doubled the chime.
                 if (marbles.none { !it.hit } && next >= song.notes.size && doneAt < 0f) {
                     doneAt = elapsed
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 0.9f, 0f, 1f)
                 }
             }
             if (m.y < -1.3f || abs(m.x) > halfW + RADIUS) it.remove()
@@ -113,9 +114,22 @@ class MarbleMusicSim : Sim {
 
     private fun barLength(t: Float) = 0.5f - 0.26f * t
 
+    /**
+     * The colour of bar [b]. Spectrum is a wheel, and at b / (n - 1) the
+     * highest bar came back round to the lowest bar's red: two red bars at
+     * opposite ends of a rainbow. A wheel is spread over n steps instead.
+     */
+    private fun barColour(palette: Palette, b: Int): Int {
+        val n = pitches.size
+        val wheel = palette.at(0f) == palette.at(1f)
+        return palette.at(b / max(1f, if (wheel) n.toFloat() else n - 1f))
+    }
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val n = pitches.size
+        // After the last note, how far the finale has run (0 before it).
+        val since = if (doneAt >= 0f) elapsed - doneAt else -1f
         // The frame the bars hang on.
         g.line(-reach, FRAME_Y, reach, FRAME_Y, 0.01f, 0xFF3A2E25.toInt())
         // The chute along the top they drop from, and under it a faint lane
@@ -123,7 +137,7 @@ class MarbleMusicSim : Sim {
         g.line(-reach, DROP_Y + 0.04f, reach, DROP_Y + 0.04f, 0.008f, 0xFF5C6373.toInt())
         for (b in 0 until n) {
             val x = barX(b)
-            g.line(x, DROP_Y + 0.02f, x, BAR_TOP + 0.03f, 0.004f, palette.at(b / max(1f, n - 1f)), 0.1f)
+            g.line(x, DROP_Y + 0.02f, x, BAR_TOP + 0.03f, 0.004f, barColour(palette, b), 0.1f)
             g.disc(x, DROP_Y + 0.04f, 0.01f, 0xFF5C6373.toInt())
         }
         // Marbles that have struck their bar bounce back into the machine,
@@ -144,26 +158,35 @@ class MarbleMusicSim : Sim {
             // Longest on the left, as on a real xylophone.
             val len = barLength(t)
             val x = barX(b)
-            val c = palette.at(t)
-            val f = flash[b]
+            val c = barColour(palette, b)
+            // The finale: a glissando of light runs up the bars, low to high,
+            // and they settle lit — the finished machine, not the same dim
+            // rack the tune started on.
+            val sweep = if (since >= 0f) {
+                val d = since - b * 0.06f
+                if (d > 0f) (1f - d * 2.2f).coerceIn(0f, 1f) else 0f
+            } else 0f
+            val f = max(flash[b], sweep)
+            val settled = if (since >= 0f) ((since - b * 0.06f) * 2f).coerceIn(0f, 1f) else 0f
             if (f > 0f) g.glow(x, BAR_TOP - len * 0.4f, barHalf * 3.7f, c, 0.6f * f)
-            val dip = 0.03f * f * f
-            g.rect(x, BAR_TOP - len * 0.5f - dip, barHalf, len * 0.5f, Palette.brighten(c, 0.4f * f))
+            val dip = 0.03f * flash[b] * flash[b]
+            // At rest the bars are the palette's colour sunk toward the dark,
+            // so the one being struck is the brightest thing on screen: as
+            // full-strength slabs every bar shouted at once and a strike
+            // barely read against its neighbours.
+            val rest = Palette.lerp(c, Palette.BG, 0.42f - 0.22f * settled)
+            g.rect(x, BAR_TOP - len * 0.5f - dip, barHalf, len * 0.5f, Palette.lerp(rest, Palette.brighten(c, 0.3f), f))
             // A lit edge along the top, where the marble strikes.
-            g.rect(x, BAR_TOP - 0.006f - dip, barHalf, 0.006f, Palette.brighten(c, 0.35f + 0.4f * f))
+            g.rect(x, BAR_TOP - 0.006f - dip, barHalf, 0.006f, Palette.brighten(c, 0.3f + 0.4f * f))
             // The two pins it hangs from.
             g.disc(x, BAR_TOP - len * 0.15f - dip, barHalf * 0.18f, 0xFFB8BCC6.toInt())
             g.disc(x, BAR_TOP - len * 0.85f - dip, barHalf * 0.18f, 0xFFB8BCC6.toInt())
         }
         for (m in marbles) if (!m.hit) drawMarble(g, palette, m)
-        if (doneAt >= 0f) {
-            val k = (1f - (elapsed - doneAt) * 0.7f).coerceIn(0f, 1f)
-            if (k > 0f) for (b in pitches.indices) g.glow(barX(b), BAR_TOP - 0.15f, barHalf * 3.2f, palette.at(b / max(1f, pitches.size - 1f)), 0.5f * k)
-        }
     }
 
     private fun drawMarble(g: G, palette: Palette, m: Marble) {
-        val c = palette.at(m.tint)
+        val c = barColour(palette, m.bar)
         if (!m.hit) {
             // A short streak above it, the faster it falls the longer.
             for (k in 1..3) {

@@ -674,6 +674,14 @@ class ClothSim : Sim {
         if (wide) {
             rest = min(rest, 1.3f / rows)
             restX = max(rest, min(2f * env.halfWidth * 0.78f / cols, rest * 3f))
+        } else {
+            // On a phone the sheet's width is set by the view (which must
+            // take in its sway), and a curtain as tall as square cells allow
+            // filled barely half the height: a fifth of the screen empty
+            // above it and below. The warp is let out instead, up to half as
+            // long again as the weft, so the curtain hangs most of the way
+            // down the screen.
+            rest = min(PHONE_DROP / rows, restX * 1.45f)
         }
         val startX = -restX * (cols - 1) * 0.5f
         // Hung so the sheet, once it has stretched under its own weight,
@@ -714,7 +722,9 @@ class ClothSim : Sim {
         val drag = Math.pow((1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)).toDouble(), (abs(dt) * 60f).toDouble()).toFloat()
         // A breeze, by default: the hem swings out by the sheet's length
         // times the wind, and at 0.08 the taller curtain swung off the edge.
-        val wind = env.params.f("wind", 0.055f) *
+        // 0.035 since the phone curtain grew longer: its hem swings out
+        // further for the same breeze, and at 0.055 it left the screen.
+        val wind = env.params.f("wind", 0.035f) *
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
         val n = cols * rows
@@ -966,6 +976,8 @@ class ClothSim : Sim {
 
     companion object {
         private val AXLE_DARK = 0xFF07090D.toInt()
+        /** How tall the curtain hangs on an upright phone, before it stretches. */
+        const val PHONE_DROP = 3.3f
         /** A gust's push, in world units a step, at the hem. */
         private const val GUST = 0.012f
 
@@ -1004,7 +1016,7 @@ class ClothSim : Sim {
                 Param.int("rows", "Rows", 2, 200, 44, card = Card.DATA, logScale = true),
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
-                Param.float("wind", "Wind", 0f, 1.5f, 0.055f, card = Card.MOTION),
+                Param.float("wind", "Wind", 0f, 1.5f, 0.035f, card = Card.MOTION),
                 Param.int("stiffness", "Stiffness", 1, 12, 6, card = Card.MOTION)
             ),
             create = { ClothSim() }
@@ -1061,8 +1073,16 @@ class OpticsSim : Sim {
     private fun wy(x: Float, y: Float) = offY + rotS * x + rotC * y
     private fun inView(x: Float, y: Float): Boolean {
         val a = wx(x, y); val b = wy(x, y)
-        return a < viewHalfW && a > -viewHalfW * 1.02f && abs(b) < 1.05f
+        return a < viewHalfW && a > -viewHalfW * 1.02f && b < 1.05f && b > floorY
     }
+
+    /**
+     * Where the light stops. For the prism a wall across the foot of the
+     * screen, so the spectrum lands somewhere and is seen as a band of
+     * colour: running on off the bottom corner, its finale was cut by the
+     * screen edge.
+     */
+    private var floorY = -1.05f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -1075,9 +1095,11 @@ class OpticsSim : Sim {
             pT = PRISM_TOP * ps; pB = PRISM_BOTTOM * ps; pH = PRISM_HALF * ps
             val turn = if (upright) PRISM_TURN_UPRIGHT else PRISM_TURN_WIDE
             rotC = cos(turn); rotS = sin(turn)
-            offX = if (upright) -0.02f else -env.halfWidth * 0.4f
+            offX = if (upright) -0.05f else -env.halfWidth * 0.4f
             offY = if (upright) 0.5f else 0.3f
+            floorY = WALL_Y
         } else {
+            floorY = -1.05f
             pT = PRISM_TOP; pB = PRISM_BOTTOM; pH = PRISM_HALF
             rotC = 1f; rotS = 0f; offX = 0f; offY = 0f
         }
@@ -1351,6 +1373,11 @@ class OpticsSim : Sim {
         // grey outline alone was barely there on a phone, and the lens was
         // drawn as two whole circles rather than the lens they overlap in.
         val edge = Palette.lerp(Palette.TEXT_SECONDARY, 0xFF9FD8FF.toInt(), 0.4f)
+        if (shape == 0) {
+            // The wall the spectrum lands on: a faint floor below a fine edge.
+            g.rect(0f, (floorY - 1.2f) * 0.5f, viewHalfW + 0.05f, (floorY + 1.2f) * 0.5f, Palette.TEXT_SECONDARY, 0f, 0.05f)
+            g.line(-viewHalfW - 0.05f, floorY, viewHalfW + 0.05f, floorY, 0.004f, Palette.TEXT_SECONDARY, 0.4f)
+        }
         when (shape) {
             0 -> {
                 // Filled in thin bands, row by row, under the edges.
@@ -1440,13 +1467,24 @@ class OpticsSim : Sim {
                     g.line(mx0, my0, mx1, my1, wide + 0.002f, col, (0.5f - 0.2f * t0) * min(1f, 0.035f / (wide + 1e-4f)))
                 }
             }
-            // Where each colour leaves the picture, a soft glow, like the
-            // spectrum cast on a wall.
+            // Where each colour meets the wall, a soft glow and a bright
+            // stripe between neighbours: the spectrum cast on the wall.
             for (ray in rays) {
                 if (ray.firstHit < 0) continue
                 val c = Palette.hsv(250f - ray.tint * 240f, 0.8f, 1f)
                 val ex = wx(ray.xs[ray.count - 1], ray.ys[ray.count - 1]); val ey = wy(ray.xs[ray.count - 1], ray.ys[ray.count - 1])
-                g.glow(ex, ey, 0.09f, c, 0.25f)
+                g.glow(ex, ey, 0.07f, c, 0.22f)
+            }
+            for (k in 0 until rays.size - 1) {
+                val ra = rays[k]; val rb = rays[k + 1]
+                if (ra.firstHit < 0 || rb.firstHit < 0) continue
+                val ay = wy(ra.xs[ra.count - 1], ra.ys[ra.count - 1]); val by = wy(rb.xs[rb.count - 1], rb.ys[rb.count - 1])
+                // Only where both landed on the wall, side by side.
+                if (ay > floorY + 0.03f || by > floorY + 0.03f) continue
+                val ax = wx(ra.xs[ra.count - 1], ra.ys[ra.count - 1]); val bx = wx(rb.xs[rb.count - 1], rb.ys[rb.count - 1])
+                if (abs(ax - bx) > 0.2f) continue
+                val col = Palette.lerp(Palette.hsv(250f - ra.tint * 240f, 0.8f, 1f), Palette.hsv(250f - rb.tint * 240f, 0.8f, 1f), 0.5f)
+                g.line(ax, floorY, bx, floorY, 0.012f, col, 0.95f)
             }
         }
         for ((index, ray) in rays.withIndex()) {
@@ -1524,7 +1562,9 @@ class OpticsSim : Sim {
         const val PRISM_AIM = 0.42f + 0.35f * 0.5f
         const val PRISM_SWEEP = 0.5f
         /** The prism's turn on screen, clockwise, upright phone and wide. */
-        const val PRISM_TURN_UPRIGHT = -1.0f
+        const val PRISM_TURN_UPRIGHT = -1.12f
+        /** The wall the prism's spectrum is cast on, near the foot of the screen. */
+        const val WALL_Y = -0.84f
         const val PRISM_TURN_WIDE = -0.3f
         const val DISPERSION = 0.06f
         const val CROWN_RED = 1.51f

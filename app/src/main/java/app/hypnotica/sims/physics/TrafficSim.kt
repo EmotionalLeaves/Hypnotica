@@ -51,6 +51,18 @@ class TrafficSim : Sim {
     private var jamSpeed = 1.0
     /** Lying on its side, on a wide screen: tall and narrow it sat in a strip down the middle. */
     private var flat = false
+    // The infield holds a space-time diagram, the figure from Sugiyama's paper:
+    // where every car is round the lap (across) against time (down, newest at
+    // the top). The empty infield was the biggest thing on a phone screen, and
+    // this is the picture that shows what the ring only hints at — the jam is a
+    // stripe that slides backwards while every car in it moves forwards.
+    private var cols = 0
+    private var stride = 1
+    private var hist = FloatArray(0)
+    private var histV = FloatArray(0)
+    private var rows = 0
+    private var head = 0
+    private var nextSample = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -72,6 +84,13 @@ class TrafficSim : Sim {
         payoffFrame = false
         formed = false
         stops = 0L
+        stride = (n + MAX_COLS - 1) / MAX_COLS
+        cols = (n + stride - 1) / stride
+        hist = FloatArray(ROWS * cols)
+        histV = FloatArray(ROWS * cols)
+        rows = 0
+        head = 0
+        nextSample = 0f
         flat = env.halfWidth > 1f
         if (flat) {
             radius = 0.8f
@@ -138,6 +157,18 @@ class TrafficSim : Sim {
             }
         }
 
+        if (elapsed >= nextSample) {
+            nextSample = elapsed + SAMPLE_SECONDS
+            val base = head * cols
+            for (c in 0 until cols) {
+                val i = c * stride
+                hist[base + c] = (pos[i] / road).toFloat()
+                histV[base + c] = (speed[i] / (2.0 * max(cruise, 0.5))).toFloat().coerceIn(0f, 1f)
+            }
+            head = (head + 1) % ROWS
+            if (rows < ROWS) rows++
+        }
+
         // The payoff: a real jam, several cars stopped at once, from traffic
         // that started flowing.
         if (!formed && elapsed > MIN_SECONDS) {
@@ -146,7 +177,7 @@ class TrafficSim : Sim {
             if (stopped >= max(2, n / 8)) {
                 formed = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+                // No DONE here: the engine sounds it on the payoff frame.
             }
         }
     }
@@ -229,6 +260,7 @@ class TrafficSim : Sim {
             g.ring(bx, by, radius + lane * 0.5f, 0.003f, edge, pi, gapAt)
             g.ring(bx, by, radius - lane * 0.5f + 0.0015f, 0.003f, edge, pi, gapAt)
         }
+        drawDiagram(g, palette, lane)
         for (i in 0 until n) {
             val t = (pos[i] / road).toFloat()
             val (x, y) = place(t)
@@ -246,6 +278,41 @@ class TrafficSim : Sim {
                 g.glow(x, y, carLength * 1.6f, Palette.WARNING, 0.35f)
                 g.disc(x - cos(heading) * carLength * 0.5f, y - sin(heading) * carLength * 0.5f,
                     carLength * 0.16f, Palette.DANGER)
+            }
+        }
+    }
+
+    private fun drawDiagram(g: G, palette: Palette, lane: Float) {
+        if (rows == 0) return
+        val inner = radius - lane * 0.5f
+        // Across is the lap, down is time; on its side the infield is wide, so
+        // the lap runs along the straights there too.
+        val hx = if (flat) straight * 0.9f else inner * 0.74f
+        val hy = if (flat) inner * 0.74f else straight * 0.94f
+        val rowH = 2f * hy / ROWS
+        // A hairline frame so the plot reads as a figure, not as stray dots.
+        val frame = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.14f)
+        g.line(-hx, hy + rowH, hx, hy + rowH, 0.003f, frame)
+        g.line(-hx, -hy - rowH, hx, -hy - rowH, 0.003f, frame)
+        // Sized by the row, not the column: with many cars the dots overlap
+        // sideways into solid bands, where column-sized dots drew a mesh of
+        // separate rows. The overlap is paid back in alpha below.
+        val dot = rowH
+        val crowd = sqrt(min(1f, 36f / max(cols, 1)))
+        g.reservePoints(rows * cols)
+        for (r in 0 until rows) {
+            val slot = ((head - 1 - r) % ROWS + ROWS) % ROWS
+            val y = hy - r * rowH
+            // Older rows recede; flowing cars stay dim so the stopped ones —
+            // the jam stripe — carry the picture.
+            val age = 1f - 0.7f * r / ROWS
+            val base = slot * cols
+            for (c in 0 until cols) {
+                val v = histV[base + c]
+                val x = -hx + 2f * hx * hist[base + c]
+                val hot = (1f - v * 2f).coerceIn(0f, 1f)
+                val a = age * crowd * (0.2f + 0.8f * hot)
+                g.point(x, y, dot, Palette.withAlpha(palette.at(0.05f + 0.9f * v), a))
             }
         }
     }
@@ -278,6 +345,9 @@ class TrafficSim : Sim {
         /** Simulated seconds of traffic per second on screen. */
         const val SIM_SECONDS_PER_SECOND = 4.0f
         const val MIN_SECONDS = 3f
+        const val ROWS = 64
+        const val MAX_COLS = 120
+        const val SAMPLE_SECONDS = 0.3f
         val TARMAC = 0xFF161921.toInt()
 
         fun def(): SimDef = SimDef(

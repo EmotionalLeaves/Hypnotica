@@ -160,7 +160,16 @@ class HanoiSim : Sim {
         // On a tall phone the tower sits low and the move count, in binary,
         // runs across the top (see drawCount); otherwise it is centred.
         val counter = towerH + discH * 3f < 1.35f
-        val baseY = if (counter) -0.78f else -(towerH + discH * 3f) * 0.5f - 0.05f
+        // The counter sits one small gap above the highest a flying disc goes,
+        // and tower + counter are centred as one block: pinned to the top of
+        // the screen with the tower pinned to the bottom, a phone showed a
+        // dead band a third of a screen tall between them.
+        val countR = min(2f * halfW / discs * 0.36f, 0.05f)
+        val liftTopRel = pegLen + discH * 1.4f
+        val barRel = liftTopRel + 0.09f
+        val lampRel = barRel + 0.06f + countR
+        val baseY = if (counter) -(lampRel + countR - 0.04f) * 0.5f
+                    else -(towerH + discH * 3f) * 0.5f - 0.05f
         val pegTop = baseY + pegLen
         val rail = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f)
         val pegW = max(0.006f, min(0.012f, discH * 0.12f))
@@ -203,7 +212,7 @@ class HanoiSim : Sim {
             g.glow(x, y, discWidth(lifting, pegGap) * 1.3f, c, 0.35f)
             pill(g, x, y, discWidth(lifting, pegGap), discH, Palette.brighten(c, 0.15f))
         }
-        if (counter) drawCount(g, palette, halfW, pegTop + discH * 2.2f)
+        if (counter) drawCount(g, palette, halfW, baseY + lampRel, countR, baseY + barRel)
     }
 
     /**
@@ -212,12 +221,8 @@ class HanoiSim : Sim {
      * turns on at k, so the lamp that lights is always the disc in the air.
      * Below it, the share of the 2^n − 1 moves done.
      */
-    private fun drawCount(g: G, palette: Palette, halfW: Float, floor: Float) {
-        val top = 0.86f
-        if (top - floor < 0.12f) return
+    private fun drawCount(g: G, palette: Palette, halfW: Float, y: Float, r: Float, by: Float) {
         val slot = 2f * halfW / discs
-        val r = min(slot * 0.36f, 0.05f)
-        val y = top - r
         val dim = 0xFF262B36.toInt()
         for (d in 1..discs) {
             val bit = d - 1
@@ -228,7 +233,6 @@ class HanoiSim : Sim {
             g.disc(x, y, r, if (lit) c else dim)
             if (!lit) g.ring(x, y, r, r * 0.12f, Palette.withAlpha(c, 0.5f))
         }
-        val by = y - r - 0.06f
         val total = max(1, moves.size)
         val frac = played.toFloat() / total
         g.rect(0f, by, halfW, 0.012f, 0xFF1A1E28.toInt())

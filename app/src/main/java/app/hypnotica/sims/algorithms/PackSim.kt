@@ -54,8 +54,10 @@ class PackSim : Sim {
         cols = env.params.i("cols", 8).coerceIn(3, MAX_COLS)
         val halfW = env.halfWidth
         // Taller than wide on any screen: a box to fill, not a tray.
-        cell = min(2f * halfW * 0.86f / cols, 1.5f / (cols * 1.2f))
-        rows = ((1.5f / cell).toInt()).coerceIn(3, 120)
+        // 1.68 tall, not 1.5: the finished box ended at a third of the way
+        // down from the top of a phone, a band of empty sky over it.
+        cell = min(2f * halfW * 0.86f / cols, BOX_H / (cols * 1.2f))
+        rows = ((BOX_H / cell).toInt()).coerceIn(3, 120)
         ox = -cols * cell * 0.5f
         oy = -0.92f
         blocks = ArrayList()
@@ -194,6 +196,7 @@ class PackSim : Sim {
 
     companion object {
         const val MAX_COLS = 30
+        const val BOX_H = 1.68f
         const val FILL_SECONDS = 11f
         /** A box of a few big blocks still drops them at a steady clip. */
         const val MAX_GAP = 0.9f

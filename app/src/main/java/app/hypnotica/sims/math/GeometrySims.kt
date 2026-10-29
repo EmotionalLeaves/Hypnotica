@@ -110,8 +110,18 @@ class VoronoiSim : Sim {
         if (elapsed > PINCH_EARLIEST && !settled) {
             var nearest = Float.MAX_VALUE
             var ni = -1; var nj = -1
+            // Only seeds well inside the frame can be the pair: a pair at the
+            // edge, where seeds turn back, put the finale's rings half off
+            // the screen. With too few seeds inside, any pair will do.
+            val inX = halfW - PAIR_INSET
+            val inY = 1f - PAIR_INSET
+            var inside = 0
+            for (i in 0 until seeds) if (abs(sx[i]) < inX && abs(sy[i]) < inY) inside++
+            val strict = inside >= 2
             for (i in 0 until seeds) {
+                if (strict && (abs(sx[i]) >= inX || abs(sy[i]) >= inY)) continue
                 for (j in i + 1 until seeds) {
+                    if (strict && (abs(sx[j]) >= inX || abs(sy[j]) >= inY)) continue
                     val d = hypot(sx[i] - sx[j], sy[i] - sy[j])
                     if (d < nearest) { nearest = d; ni = i; nj = j }
                 }
@@ -205,7 +215,9 @@ class VoronoiSim : Sim {
         // sim names is something you can see, fading back into the mosaic.
         if (glint > 0f && pairA >= 0 && pairB >= 0) {
             for (k in intArrayOf(pairA, pairB)) {
-                g.ring(sx[k], sy[k], 0.028f, 0.0045f, Palette.TEXT_PRIMARY, alpha = glint)
+                // A dark halo under the white ring so it reads on any glass.
+                g.ring(sx[k], sy[k], 0.036f, 0.014f, Palette.BG, alpha = glint * 0.8f)
+                g.ring(sx[k], sy[k], 0.031f, 0.005f, Palette.TEXT_PRIMARY, alpha = glint)
             }
         }
     }
@@ -293,6 +305,9 @@ class VoronoiSim : Sim {
     companion object {
         /** Nothing is the closest pair before this much of the run. */
         const val PINCH_EARLIEST = 5f
+
+        /** How far inside the frame both seeds of the closest pair must be. */
+        const val PAIR_INSET = 0.12f
 
         /** How quickly a cell darkens away from its seed, in world units. */
         const val GLOW_FALLOFF = 0.28f
@@ -472,7 +487,10 @@ class RiemannSim : Sim {
             val xMid = (i + 0.5f) / bars
             val h = f(xMid) * height
             val c = palette.at(0.08f + 0.6f * xMid)
-            g.bar(-halfW + (i + 0.5f) * barW, baseY, half, h, c, 0.78f)
+            // Opaque, premixed with the background: translucent bars that
+            // overlap by a hair doubled up at every seam, and four hundred of
+            // them read as a pinstripe over the area.
+            g.bar(-halfW + (i + 0.5f) * barW, baseY, half, h, Palette.lerp(Palette.BG, c, 0.78f))
             // A bright top edge: the rectangle's height, which is the sample.
             if (!gapless) g.rect(-halfW + (i + 0.5f) * barW, baseY + h, half, 0.004f, Palette.brighten(c, 0.3f))
             i += stride

@@ -1025,7 +1025,9 @@ class SlicingSim : Sim {
      * ball's exact radius.
      */
     private fun shadedBall(g: G, cx: Float, cy: Float, r: Float, c: Int) {
-        val steps = 28
+        // 44 steps, from 28: at 28 each step was a visible contour ring, and
+        // the ball read as a stack of plates rather than a smooth sphere.
+        val steps = 44
         for (k in 0 until steps) {
             val t = k / (steps - 1f)
             val rk = r * (1f - 0.86f * t)
@@ -1431,7 +1433,10 @@ class RandomWalkSim : Sim {
                 // the point was stored at.
                 val x = if (oneD) (trailX[idx] - viewCx) * viewScale else screenX(trailX[idx], trailY[idx])
                 val y = if (oneD) rowFix * viewScale else screenY(trailX[idx], trailY[idx])
-                val a = (0.8f - 0.72f * age) * (if (home[w]) 0.45f else 1f)
+                // Trails recede behind the walkers: at 0.8 near the head, forty
+                // trails at one brightness were a tangle of spaghetti in which
+                // the walkers themselves, the thing to follow, got lost.
+                val a = (0.55f - 0.5f * age) * (if (home[w]) 0.45f else 1f)
                 if (!asLines) g.point(x, y, dot * (1.15f - 0.6f * age), Palette.withAlpha(c, a))
                 else if (k > 0) g.line(lx, ly, x, y, dot * (0.6f - 0.3f * age), c, a)
                 lx = x; ly = y

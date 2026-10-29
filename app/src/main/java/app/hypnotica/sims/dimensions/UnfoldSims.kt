@@ -464,7 +464,10 @@ class GrayWalkSim : Sim {
             g.line(sx[from], sy[from], x, y, 0.009f, palette.at((axis + 0.5f) / dims))
         }
         for (i in 0 until n) {
-            if (lit[i]) g.disc(sx[i], sy[i], 0.015f, Palette.brighten(palette.at(i.toFloat() / n), 0.15f + 0.3f * glowAt))
+            // Visited corners in one pale ink: the edges' colours mean an axis,
+            // and corners in a rainbow of their own (by corner number, which
+            // the picture never explains) competed with them as noise.
+            if (lit[i]) g.disc(sx[i], sy[i], 0.015f, Palette.lerp(CORNER, Palette.TEXT_PRIMARY, glowAt))
             else g.disc(sx[i], sy[i], 0.007f, Palette.TEXT_SECONDARY, 0.5f)
         }
         if (!done) {
@@ -477,7 +480,7 @@ class GrayWalkSim : Sim {
         } else if (glowAt > 0f) {
             // The tour closed: every corner rings once, where a glow over the
             // whole cube used to wash it out.
-            for (i in 0 until n) g.glow(sx[i], sy[i], 0.05f, palette.at(i.toFloat() / n), 0.5f * glowAt)
+            for (i in 0 until n) g.glow(sx[i], sy[i], 0.05f, Palette.TEXT_PRIMARY, 0.4f * glowAt)
         }
     }
 
@@ -500,6 +503,8 @@ class GrayWalkSim : Sim {
 
     companion object {
         const val TOUR_SECONDS = 10f
+        /** A visited corner: a pale grey-white, below the walker's pure white. */
+        val CORNER = 0xFFD8DCE6.toInt()
 
         fun def(): SimDef = SimDef(
             id = "dimensions/gray-walk",
