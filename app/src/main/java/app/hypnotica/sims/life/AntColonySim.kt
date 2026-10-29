@@ -29,7 +29,10 @@ import kotlin.math.sqrt
  * sooner, marking it twice while the long way is still being walked once, so
  * the short bridge's scent grows faster, draws more ants, grows faster
  * still — and the colony converges on the shortest path without anyone
- * measuring anything.
+ * measuring anything. A forager carrying food marks its way home more
+ * heavily the shorter its trip was (the rule of Dorigo's ant colony
+ * optimisation, after real foragers that mark a better find more strongly),
+ * which is what makes the outcome reliable rather than usual.
  *
  * The payoff is the moment nearly every ant is choosing the short bridge.
  */
@@ -180,7 +183,7 @@ class AntColonySim : Sim {
                 val before = dist[i]
                 dist[i] += step
                 // At the near fork: pick a bridge.
-                if (before < trunkA && dist[i] >= trunkA) route[i] = choose(env, 0)
+                if (before < trunkA && dist[i] >= trunkA) route[i] = choose(env)
                 if (route[i] >= 0 && dist[i] >= routeLen(route[i])) {
                     // At the food: turn for home with a crumb.
                     dist[i] = routeLen(route[i])
@@ -191,17 +194,11 @@ class AntColonySim : Sim {
                     lastPan = (foodX / halfW).coerceIn(-1f, 1f)
                 }
             } else {
-                val r = route[i]
-                val fork = trunkA + len[r]
-                val before = dist[i]
+                // Home the way it came: a forager retraces its own trail, so
+                // the mark it lays for a quick find goes on the bridge that
+                // gave it. (Choosing afresh at the far fork, a crumb fetched
+                // over the short bridge was as often credited to the long.)
                 dist[i] -= step
-                // At the far fork, coming back: pick again. The distance is
-                // carried over to the new bridge's own length.
-                if (before > fork && dist[i] <= fork) {
-                    val nb = choose(env, 1)
-                    dist[i] = trunkA + len[nb] - (fork - dist[i])
-                    route[i] = nb
-                }
                 if (dist[i] <= 0f) {
                     dist[i] = 0f
                     homeward[i] = false
@@ -258,14 +255,13 @@ class AntColonySim : Sim {
     }
 
     /**
-     * Deneubourg's rule at a fork: each bridge weighed by (k + its pheromone
-     * just past the fork)². [end] 0 is the nest-side fork, 1 the food side.
+     * Deneubourg's rule at the nest-side fork: each bridge weighed by
+     * (k + its pheromone just past the fork)².
      */
-    private fun choose(env: SimEnv, end: Int): Int {
+    private fun choose(env: SimEnv): Int {
         var ps = 0f; var pl = 0f
         for (j in 0 until SNIFF) {
-            val k = if (end == 0) j else SAMPLES - j
-            ps += scent[0][k]; pl += scent[1][k]
+            ps += scent[0][j]; pl += scent[1][j]
         }
         ps /= SNIFF; pl /= SNIFF
         val ws = (CHOICE_K + ps) * (CHOICE_K + ps)
