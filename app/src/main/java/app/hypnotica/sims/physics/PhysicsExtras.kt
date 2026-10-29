@@ -1434,8 +1434,9 @@ class OpticsSim : Sim {
         val edge = Palette.lerp(Palette.TEXT_SECONDARY, 0xFF9FD8FF.toInt(), 0.4f)
         if (shape == 0) {
             // The wall the spectrum lands on: a faint floor below a fine edge.
-            g.rect(0f, (floorY - 1.2f) * 0.5f, viewHalfW + 0.05f, (floorY + 1.2f) * 0.5f, Palette.TEXT_SECONDARY, 0f, 0.05f)
-            g.line(-viewHalfW - 0.05f, floorY, viewHalfW + 0.05f, floorY, 0.004f, Palette.TEXT_SECONDARY, 0.4f)
+            // Edge to edge but no further: past the sides it failed FrameTest.
+            g.rect(0f, (floorY - 1.05f) * 0.5f, viewHalfW, (floorY + 1.05f) * 0.5f, Palette.TEXT_SECONDARY, 0f, 0.05f)
+            g.line(-viewHalfW, floorY, viewHalfW, floorY, 0.004f, Palette.TEXT_SECONDARY, 0.4f)
         }
         when (shape) {
             0 -> {

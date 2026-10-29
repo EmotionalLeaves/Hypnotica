@@ -309,7 +309,9 @@ class ArenaSim : Sim {
         else listOf("standing" to "$aliveCount / $n")
 
     companion object {
-        private val FLOOR = 0xFF0D1118.toInt()
+        // Translucent: glows are drawn under every shape, and an opaque floor
+        // hid the winner's glow inside the ring.
+        private val FLOOR = 0x80141A24.toInt()
         const val MAX_FIGHTERS = 64
         const val SHRINK_AFTER = 4f
         const val SHRINK_RATE = 0.035f

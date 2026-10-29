@@ -228,7 +228,9 @@ class LastOutSim : Sim {
         else listOf("inside" to "$inside / $n")
 
     companion object {
-        private val FLOOR = 0xFF0D1118.toInt()
+        // Translucent: glows are drawn under every shape, and an opaque floor
+        // hid the winner's glow inside the ring.
+        private val FLOOR = 0x80141A24.toInt()
         const val MAX_BALLS = 300
         const val MAX_GAPS = 4
         const val MAX_PICKS = 8
