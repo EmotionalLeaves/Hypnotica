@@ -47,8 +47,8 @@ class DragonCurveSim : Sim {
     private var turn = 0f
     private var pause = LEAD_IN
     private var unfolded = false
-    private var swing = 0f
-    private var landed = 0
+    private var trace = 0f
+    private var fillT = 0f
     private var done = false
     private var payoffFrame = false
     private var sinceDone = 0f
@@ -81,8 +81,8 @@ class DragonCurveSim : Sim {
         turn = 0f
         pause = LEAD_IN
         unfolded = false
-        swing = 0f
-        landed = 0
+        trace = 0f
+        fillT = 0f
         done = false
         payoffFrame = false
         sinceDone = 0f
@@ -102,45 +102,34 @@ class DragonCurveSim : Sim {
                 pause = PAUSE
                 // The crease snaps flat: a note a step higher each time,
                 // from the side of the screen the crease is on.
-                val last = gen >= folds
-                if (last && !four) {
-                    unfolded = true
-                    done = true
-                    payoffFrame = true
-                } else {
-                    env.emit(EventKind.HIT, gen.toFloat() / folds, creasePan(env), 0.5f)
-                    if (last) { unfolded = true; pause = PAUSE * 2f }
-                }
+                env.emit(EventKind.HIT, gen.toFloat() / folds, creasePan(env), 0.5f)
+                if (gen >= folds) { unfolded = true; pause = PAUSE * 2f }
             }
             return
         }
-        // Three more dragons swing round the start point into place.
         if (pause > 0f) { pause -= a * speed; return }
-        swing = min(1f, swing + a * speed / SWING_SECONDS)
-        val now = (0 until 3).count { copyEase(it) >= 1f }
-        if (now > landed) {
-            landed = now
-            if (landed >= 3) {
-                done = true
-                payoffFrame = true
-            } else {
-                env.emit(EventKind.HIT, 0.5f + 0.15f * landed, 0f, 0.55f)
+        // Three more dragons drawn out of the shared start, all at once.
+        if (four && trace < 1f) {
+            val before = trace
+            trace = min(1f, trace + a * speed / TRACE_SECONDS)
+            if ((trace * TRACE_NOTES).toInt() > (before * TRACE_NOTES).toInt() && trace < 1f) {
+                env.emit(EventKind.STEP, 0.3f + 0.6f * trace, 0f, 0.3f)
             }
+            if (trace >= 1f) {
+                // The last pieces close the gaps between them.
+                env.emit(EventKind.HIT, 0.85f, 0f, 0.55f)
+                pause = PAUSE * 2f
+            }
+            return
+        }
+        // Every piece of strip becomes the square tile it is the diagonal of;
+        // the tiles meet without gap or overlap, which is the payoff.
+        fillT = min(1f, fillT + a * speed / FILL_SECONDS)
+        if (fillT >= 1f) {
+            done = true
+            payoffFrame = true
         }
     }
-
-    /**
-     * Copy c's progress. One at a time, each a quarter turn on from the one
-     * before: swung all at once from the first dragon, they passed through
-     * each other in a tangle on the way.
-     */
-    private fun copyEase(c: Int): Float =
-        // At the very end exactly 1: (1 − 2/3)·3 comes out a hair under in
-        // floats, and the last dragon never counted as landed.
-        if (swing >= 1f) 1f else ((swing - c / 3f) * 3f).coerceIn(0f, 1f)
-
-    /** Copy c's angle about the shared start. */
-    private fun copyAngle(c: Int): Float = (c + smooth(copyEase(c))) * PI.toFloat() * 0.5f
 
     /**
      * Where the crease just opened sits across the screen, -1..1: the view
@@ -188,16 +177,30 @@ class DragonCurveSim : Sim {
         }
         // The view turns with the strip, so start-to-end stays put and the
         // two halves open like a book rather than the whole curve wheeling
-        // round by 45° a fold.
+        // round by 45° a fold. Turned from the folded strip's start-to-end to
+        // the opened one's, eased with the fold: the angle of the live end
+        // was undefined while the strip lay folded flat (start and end in one
+        // place), and the picture snapped a quarter turn at every fold.
         val tall = env.halfWidth < 0.9f
-        val rho = -atan2(dy[m], dx[m]) + if (tall) PI.toFloat() * 0.5f else 0f
+        val a0 = atan2(py[n], px[n])
+        var view = a0
+        if (opening) {
+            var d = atan2(py[2 * n], px[2 * n]) - a0
+            while (d > PI) d -= 2f * PI.toFloat()
+            while (d < -PI) d += 2f * PI.toFloat()
+            view = a0 + d * smooth(turn)
+        }
+        val rho = -view + if (tall) PI.toFloat() * 0.5f else 0f
         val cr = cos(rho); val sr = sin(rho)
-        val sw = (0 until 3).map { smooth(copyEase(it)) }
-        val copies = if (unfolded && four) 4 else 1
+        val fourNow = unfolded && four
+        val copies = if (fourNow && trace > 0f) 4 else 1
+        // Framed on the one dragon, then eased out to the four as they draw.
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-        for (c in 0 until copies) {
-            val ang = if (c == 0) 0f else copyAngle(c - 1)
+        var fx0 = 0f; var fx1 = 0f; var fy0 = 0f; var fy1 = 0f
+        val blend = if (fourNow) smooth(trace) else 0f
+        for (c in 0 until (if (blend > 0f) 4 else 1)) {
+            val ang = c * PI.toFloat() * 0.5f
             val ca = cos(ang); val sa = sin(ang)
             for (i in 0..m) {
                 val wx = dx[i] * ca - dy[i] * sa
@@ -207,7 +210,10 @@ class DragonCurveSim : Sim {
                 if (vx < minX) minX = vx; if (vx > maxX) maxX = vx
                 if (vy < minY) minY = vy; if (vy > maxY) maxY = vy
             }
+            if (c == 0) { fx0 = minX; fx1 = maxX; fy0 = minY; fy1 = maxY }
         }
+        minX = fx0 + (minX - fx0) * blend; maxX = fx1 + (maxX - fx1) * blend
+        minY = fy0 + (minY - fy0) * blend; maxY = fy1 + (maxY - fy1) * blend
         val availW = env.halfWidth * 2f * 0.9f
         val availH = 1.82f
         val scale = min(availW / max(1e-3f, maxX - minX), availH / max(1e-3f, maxY - minY)).coerceAtMost(0.5f)
@@ -217,13 +223,14 @@ class DragonCurveSim : Sim {
         // corners pass 0.35 of a side apart, and a fatter line left them a
         // hairline slit apart, a black slash at every touch point.
         val width = (scale * 0.22f).coerceIn(0.0018f, 0.022f)
-        g.reserveInstances(copies * m * 2 + 16)
+        g.reserveInstances(copies * m * 3 + 16)
 
-        val tint = if (unfolded && four) smooth(sw[0] * 1.6f) else 0f
+        val tint = if (fourNow) smooth(trace * 1.6f) else 0f
+        val drawn = (trace * m).toInt().coerceIn(0, m)
         for (c in copies - 1 downTo 0) {
-            val ang = if (c == 0) 0f else copyAngle(c - 1)
-            val show = if (c == 0) 1f else smooth(copyEase(c - 1) * 5f)
-            if (show <= 0f) continue
+            val ang = c * PI.toFloat() * 0.5f
+            val upto = if (c == 0) m else drawn
+            if (upto <= 0) continue
             val ca = cos(ang); val sa = sin(ang)
             val k0 = ca * cr - sa * sr
             val k1 = ca * sr + sa * cr
@@ -254,43 +261,62 @@ class DragonCurveSim : Sim {
             val base = rho + ang
             val half = PI.toFloat() * 0.5f
             val sideLen = scale
-            for (i in 0 until m) {
+            val tile = sideLen * 0.35355f * 0.88f
+            for (i in 0 until upto) {
                 val col = shade[(i * (SHADES - 1)) / m]
+                // The fill sweeps out from the shared start along the strip.
+                val f = if (fillT > 0f) smooth((fillT * (1f + FILL_FRONT) - i.toFloat() / m) / FILL_FRONT) else 0f
+                val lineA = 1f - f
                 // Corners cut at a quarter of each side: the strip's path can
                 // be followed through the places where the curve touches itself.
                 val ax = sx(i); val ay = sy(i); val bx = sx(i + 1); val by = sy(i + 1)
+                if (f > 0f) {
+                    // The square whose diagonal is this piece: the squares of
+                    // all the pieces tile the plane, so the dragons' tiles meet
+                    // edge to edge without a gap or an overlap.
+                    g.rect((ax + bx) * 0.5f, (ay + by) * 0.5f, tile, tile,
+                        Palette.lerp(col, Palette.TEXT_PRIMARY, 0.08f), base + dir[i] * half + half * 0.5f, alpha = f)
+                }
+                if (lineA <= 0.01f) continue
                 val qx = ax + (bx - ax) * 0.25f; val qy = ay + (by - ay) * 0.25f
                 val rx = ax + (bx - ax) * 0.75f; val ry = ay + (by - ay) * 0.75f
+                val last = i + 1 >= upto
                 if (flat) {
-                    val a0 = base + dir[i] * half
-                    g.rect((qx + rx) * 0.5f, (qy + ry) * 0.5f, sideLen * 0.25f + width * 0.5f, width * 0.5f, col, a0, show)
-                    if (i + 1 < m) {
-                        val turn = if (((dir[i + 1] - dir[i]) and 3) == 1) 1f else -1f
+                    val a0r = base + dir[i] * half
+                    g.rect((qx + rx) * 0.5f, (qy + ry) * 0.5f, sideLen * 0.25f + width * 0.5f, width * 0.5f, col, a0r, lineA)
+                    if (!last) {
+                        val turnS = if (((dir[i + 1] - dir[i]) and 3) == 1) 1f else -1f
                         val nx = bx + (sx(i + 2) - bx) * 0.25f
                         val ny = by + (sy(i + 2) - by) * 0.25f
-                        g.rect((rx + nx) * 0.5f, (ry + ny) * 0.5f, sideLen * 0.17678f + width * 0.5f, width * 0.5f, col, a0 + turn * half * 0.5f, show)
+                        g.rect((rx + nx) * 0.5f, (ry + ny) * 0.5f, sideLen * 0.17678f + width * 0.5f, width * 0.5f, col, a0r + turnS * half * 0.5f, lineA)
                     }
                 } else {
-                    cap(g, qx, qy, rx, ry, width, col, show)
-                    if (i + 1 < m) {
+                    cap(g, qx, qy, rx, ry, width, col, lineA)
+                    if (!last) {
                         val nx = bx + (sx(i + 2) - bx) * 0.25f
                         val ny = by + (sy(i + 2) - by) * 0.25f
-                        cap(g, rx, ry, nx, ny, width, col, show)
+                        cap(g, rx, ry, nx, ny, width, col, lineA)
                     }
                 }
             }
+            // The pens drawing the new dragons: steady points, not a pulse.
+            if (c > 0 && trace < 1f) g.disc(sx(upto), sy(upto), max(0.008f, width * 1.1f), Palette.TEXT_PRIMARY, 0.85f)
         }
         // The crease being opened, and the start the four dragons share.
         if (opening) {
-            val ex = ((dx[n] * cr - dy[n] * sr) - cx) * scale
-            val ey = ((dx[n] * sr + dy[n] * cr) - cy) * scale
+            // On the cut corner the line actually takes round the crease, not
+            // the crease point itself, which the cut leaves off the line.
+            val qx = (dx[n - 1] + dx[n + 1]) * 0.125f + dx[n] * 0.75f
+            val qy = (dy[n - 1] + dy[n + 1]) * 0.125f + dy[n] * 0.75f
+            val ex = ((qx * cr - qy * sr) - cx) * scale
+            val ey = ((qx * sr + qy * cr) - cy) * scale
             // A steady marker, not a pulse: the user finds throbbing highlights
             // disorienting.
             g.disc(ex, ey, 0.009f, Palette.TEXT_PRIMARY, 0.75f)
         }
-        if (unfolded && four) {
+        if (fourNow) {
             val ox = (-cx) * scale; val oy = (-cy) * scale
-            g.disc(ox, oy, max(0.009f, width * 1.1f), Palette.TEXT_PRIMARY, smooth(swing * 3f))
+            g.disc(ox, oy, max(0.009f, width * 1.1f), Palette.TEXT_PRIMARY, smooth(trace * 3f) * (1f - 0.6f * fillT))
         }
     }
 
@@ -309,7 +335,7 @@ class DragonCurveSim : Sim {
     override fun counters(): List<Pair<String, String>> = listOf(
         "folds" to "${min(gen, folds)} / $folds",
         "creases" to String.format(java.util.Locale.US, "%,d", (1 shl min(gen, folds)) - 1),
-        "dragons" to if (four) "${1 + landed}" else "1"
+        "dragons" to if (four && trace >= 1f) "4" else "1"
     )
 
     companion object {
@@ -317,7 +343,11 @@ class DragonCurveSim : Sim {
         private const val SHADES = 128
         private const val UNFOLD_SECONDS = 0.78f
         private const val PAUSE = 0.14f
-        private const val SWING_SECONDS = 2.4f
+        private const val TRACE_SECONDS = 2.4f
+        private const val TRACE_NOTES = 10
+        private const val FILL_SECONDS = 1.1f
+        /** Width of the fill's front along the strip, as a share of it. */
+        private const val FILL_FRONT = 0.35f
         private const val HOLD_SECONDS = 3.5f
 
         fun def(): SimDef = SimDef(

@@ -60,6 +60,9 @@ class BirthdayParadoxSim : Sim {
     private var allDone = false
     private var sinceAll = 0f
     private var sinceNote = 1f
+    private var sinceLand = 1f
+    private var spotX = FloatArray(0)
+    private var spotY = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -110,6 +113,7 @@ class BirthdayParadoxSim : Sim {
         payoffFrame = false
         val a = abs(dt)
         sinceNote += a
+        sinceLand += a
         if (allDone) { sinceAll += a; return }
         val r = rate(env)
         if (matchA >= 0) {
@@ -162,6 +166,7 @@ class BirthdayParadoxSim : Sim {
             return
         }
         holder[d] = i
+        sinceLand = 0f
         // Each arrival sounds its day, but no closer together than the ear
         // can follow once the rooms speed up.
         if (sinceNote >= MIN_NOTE_GAP) {
@@ -206,20 +211,12 @@ class BirthdayParadoxSim : Sim {
         return (l.rx + l.rr * cos(a)) to (l.ry + l.rr * sin(a))
     }
 
-    /** Person i's seat in the room: packed like seeds, so any number fit. */
-    private fun seat(i: Int, l: Layout): Pair<Float, Float> {
-        val rIn = l.rr * 0.66f
-        val r = rIn * sqrt((i + 0.5f) / max(span, count))
-        val a = i * 2.39996f + PI.toFloat() * 0.5f
-        return (l.rx + r * cos(a)) to (l.ry + r * sin(a))
-    }
-
     private fun dayColour(pal: Palette, d: Int): Int = pal.at(0.04f + 0.7f * d / days)
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val pal = env.palette
         val l = layoutFor(env)
-        g.reserveInstances(days + count * 4 + span * 4 + rooms * 2 + 64)
+        g.reserveInstances(days + count * count / 2 + count * 4 + span * 4 + rooms * 2 + 64)
         val fade = 1f - clearing.coerceIn(0f, 1f)
         val matched = matchA >= 0
         val glint = if (matched) min(1f, sinceMatch / 0.35f) else 0f
@@ -244,39 +241,54 @@ class BirthdayParadoxSim : Sim {
         }
         g.ring(l.rx, l.ry, l.rr + 0.004f, 0.0025f, Palette.TEXT_SECONDARY, alpha = 0.35f)
 
-        // Threads from each person to their day, then the people and days.
-        val seatR = (l.rr * 0.66f / sqrt(max(span, count).toFloat()) * 0.5f).coerceIn(0.006f, 0.018f)
+        // Each person is a dot at their day, just inside the year, and every
+        // pair of people in the room is a faint chord: the web is the 253
+        // chances that 23 people make, which is the whole paradox. (People
+        // used to sit in a little cluster in the middle with a thread each;
+        // the pairs, the point, were nowhere to be seen.)
         val landed = if (flying >= 0) count - 1 else count
+        if (spotX.size < count + 1) { spotX = FloatArray(count + 8); spotY = FloatArray(count + 8) }
         for (i in 0 until count) {
             val d = dayOf[i]
-            val (px, py) = seat(i, l)
-            val (sx, sy) = slot(d, l)
-            val inPair = matched && (i == matchA || i == matchB)
-            val dim = if (matched && !inPair) 1f - 0.65f * glint else 1f
-            val col = dayColour(pal, d)
-            if (i < landed || (matched && i == matchB)) {
-                g.line(px, py, sx, sy, if (inPair) 0.004f else 0.0022f,
-                    if (inPair) Palette.lerp(col, Palette.TEXT_PRIMARY, glint) else col,
-                    fade * (if (inPair) 0.95f else 0.42f * dim))
-            } else if (i == flying) {
-                val u = (flyT / flyLen).coerceIn(0f, 1f)
-                val e = u * u * (3f - 2f * u)
-                g.line(px, py, px + (sx - px) * e, py + (sy - py) * e, 0.003f, col, 0.75f * fade)
+            val a = angleOf(d.toFloat())
+            // The second of a matching pair stacks just inside the first.
+            val rad = l.rr - 0.034f - (if (matched && i == matchB) 0.028f else 0f)
+            spotX[i] = l.rx + rad * cos(a); spotY[i] = l.ry + rad * sin(a)
+        }
+        val recent = 1f - (sinceLand / 0.6f).coerceIn(0f, 1f)
+        val web = (0.6f / sqrt(max(1, landed).toFloat())).coerceIn(0.07f, 0.3f) * fade * (if (matched) 1f - 0.55f * glint else 1f)
+        val chord = Palette.lerp(pal.at(0.3f), Palette.TEXT_PRIMARY, 0.2f)
+        for (i in 1 until landed) {
+            // The newest person's pairs come in bright and settle.
+            val boost = if (i == landed - 1 && !matched) 1f + 2f * recent * recent else 1f
+            for (j in 0 until i) {
+                g.line(spotX[i], spotY[i], spotX[j], spotY[j], 0.0016f, chord, min(0.85f, web * boost))
             }
-            val grow = if (i == flying) min(1f, flyT / (flyLen * 0.4f)) else 1f
-            g.disc(px, py, seatR * grow * 1.3f, Palette.BG, fade)
-            g.disc(px, py, seatR * grow, if (inPair) Palette.lerp(col, Palette.TEXT_PRIMARY, glint) else col, fade * dim)
+        }
+        if (flying >= 0) {
+            val u = (flyT / flyLen).coerceIn(0f, 1f)
+            val e = u * u * (3f - 2f * u)
+            val col = dayColour(pal, dayOf[flying])
+            val fx = l.rx + (spotX[flying] - l.rx) * e
+            val fy = l.ry + (spotY[flying] - l.ry) * e
+            g.line(l.rx + (fx - l.rx) * 0.4f, l.ry + (fy - l.ry) * 0.4f, fx, fy, 0.0026f, col, 0.55f * fade)
+            g.disc(fx, fy, 0.013f, Palette.BG, fade)
+            g.disc(fx, fy, 0.0095f, col, fade)
         }
         for (i in 0 until landed) {
-            val d = dayOf[i]
-            val (sx, sy) = slot(d, l)
-            g.disc(sx, sy, 0.0105f, Palette.BG, fade)
-            g.disc(sx, sy, 0.0075f, dayColour(pal, d), fade)
+            val inPair = matched && (i == matchA || i == matchB)
+            val col = dayColour(pal, dayOf[i])
+            val dim = if (matched && !inPair) 1f - 0.5f * glint else 1f
+            g.disc(spotX[i], spotY[i], 0.0125f, Palette.BG, fade)
+            g.disc(spotX[i], spotY[i], 0.0088f, if (inPair) Palette.lerp(col, Palette.TEXT_PRIMARY, glint) else col, fade * dim)
         }
         if (matched) {
+            val mx = (spotX[matchA] + spotX[matchB]) * 0.5f
+            val my = (spotY[matchA] + spotY[matchB]) * 0.5f
             val (sx, sy) = slot(dayOf[matchB], l)
-            g.ring(sx, sy, 0.03f, 0.005f, Palette.TEXT_PRIMARY, alpha = glint * fade)
-            g.disc(sx, sy, 0.011f, Palette.TEXT_PRIMARY, glint * fade)
+            // The shared day, ringed, with a spoke out to it on the year.
+            g.line(mx, my, sx, sy, 0.003f, Palette.TEXT_PRIMARY, 0.8f * glint * fade)
+            g.ring(mx, my, 0.034f, 0.004f, Palette.TEXT_PRIMARY, alpha = glint * fade)
         }
         drawChart(g, pal, l, landed)
     }

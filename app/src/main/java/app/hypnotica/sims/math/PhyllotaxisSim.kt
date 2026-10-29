@@ -72,8 +72,13 @@ class PhyllotaxisSim : Sim {
         payoffFrame = false
         angleDeg = env.params.f("angle", GOLDEN_DEG).coerceIn(90f, 180f)
         if (grown) {
+            val before = sinceGrown
             sinceGrown += abs(dt)
             refreshFamilies()
+            // The second family of spirals starts in from the rim (the first
+            // arrives with the payoff's own sound).
+            val bStart = FAMILY_SECONDS * 0.8f
+            if (before < bStart && sinceGrown >= bStart) env.emit(EventKind.CROSS, 0.72f, 0f, 0.45f)
             return
         }
         val speed = env.params.f("speed", 45f).coerceIn(1f, 5000f)
@@ -309,7 +314,7 @@ class PhyllotaxisSim : Sim {
         private const val BANDS = 48
         private const val MAX_STEP = 400
         /** The largest seed spacing, so the first few seeds are not giant blobs. */
-        private const val C_MAX = 0.055f
+        private const val C_MAX = 0.034f
         private const val NOTE_RATE = 7f
         private const val DIAL_SEEDS = 21
         private const val REVEAL_SECONDS = 0.8f

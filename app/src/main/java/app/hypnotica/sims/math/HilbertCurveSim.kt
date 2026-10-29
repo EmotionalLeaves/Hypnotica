@@ -255,7 +255,9 @@ class HilbertCurveSim : Sim {
             }
         }
         val cell = lay.size / (prevSide + (side - prevSide) * e)
-        val width = max(0.0024f, cell * 0.42f)
+        // Capped: at the first orders 0.42 of a cell was a slab a tenth of
+        // the screen wide, and the line read as a few fat blocks.
+        val width = max(0.0024f, cell * 0.42f).coerceAtMost(0.034f)
         // A faint square the curve fills.
         g.rect(lay.cx, lay.cy, lay.size * 0.5f + 0.012f, lay.size * 0.5f + 0.012f, Palette.lerp(Palette.BG, pal.at(0.5f), 0.05f))
         g.reserveInstances(n + 200)
@@ -266,8 +268,10 @@ class HilbertCurveSim : Sim {
             val t = j.toFloat() / max(1, n - 2)
             val col = pal.at(0.04f + 0.74f * t)
             val behind = (tracing || done) && t <= penAt
-            val c = if (behind) Palette.brighten(col, 0.18f * lit) else col
-            segment(g, bx[j], by[j], bx[j + 1], by[j + 1], width, c, if (behind) 1f else 0.88f * ahead)
+            val c = if (behind) Palette.brighten(col, 0.18f * lit) else Palette.lerp(Palette.BG, col, 0.88f * ahead)
+            // Opaque, dimmed by colour: translucent pieces doubled up where
+            // their square caps overlap, a bright block at every corner.
+            segment(g, bx[j], by[j], bx[j + 1], by[j + 1], width, c, 1f)
         }
         if (tracing || done) {
             val (px, py) = penPoint()

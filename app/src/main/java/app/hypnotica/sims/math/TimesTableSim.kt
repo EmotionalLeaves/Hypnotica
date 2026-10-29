@@ -81,14 +81,33 @@ class TimesTableSim : Sim {
                 payoffFrame = true
             }
         } else {
+            // The envelope is drawn in by a point on a small circle rolling
+            // round a fixed one; a note each time the point dips to a cusp,
+            // on the side of the screen the cusp is on.
+            val before = sinceLock
             sinceLock += a
+            val k = target
+            val t0 = 2.0 * PI * (before / TRACE_SECONDS).coerceIn(0f, 1f)
+            val t1 = 2.0 * PI * (sinceLock / TRACE_SECONDS).coerceIn(0f, 1f)
+            for (j in 0 until k - 1) {
+                val tc = (2 * j + 1) * PI / (k - 1)
+                if (tc > t0 && tc <= t1) {
+                    val lay = layout(env)
+                    val ex = (k * cos(tc) + cos(k * tc)) / (k + 1)
+                    val ey = (k * sin(tc) + sin(k * tc)) / (k + 1)
+                    val sx = lay.cx + lay.r * (ex * cos(ROT) - ey * sin(ROT)).toFloat()
+                    env.emit(EventKind.HIT, 0.45f + 0.5f * j / max(1, k - 2), (sx / env.halfWidth).coerceIn(-1f, 1f), 0.45f)
+                }
+            }
         }
         // One chord shown bright, sweeping steadily round the circle, so the
         // rule n → k·n can be read off the picture as it moves (a chord that
         // blinked from place to place was a strobe). It sounds each time it
         // passes another stretch of points, pitched by where its far end
         // lands and panned to that side.
-        if (!locked || sinceLock < TRACE_SECONDS) {
+        // Only while k moves: once locked the chord only fades, and its ticks
+        // ran on over the cusps' notes.
+        if (!locked) {
             val before = sweep
             sweep = (sweep + a * speed * SWEEP_TURNS * points) % points
             val stride = max(1f, points / NOTES_PER_TURN)
@@ -166,7 +185,11 @@ class TimesTableSim : Sim {
         val near = abs(x - x.roundToInt())
         val ghost = if (!locked) ((1f - near / 0.1f).coerceIn(0f, 1f) * 0.55f) else 0f
         if (ghost > 0.01f && x.roundToInt() >= 1) drawEnvelope(g, lay, k.roundToInt().toFloat(), 1f, ghost, pal, false)
-        if (locked) drawEnvelope(g, lay, target.toFloat(), settle, 1f, pal, true)
+        if (locked) {
+            val away = 1f - ((sinceLock - TRACE_SECONDS) / 0.7f).coerceIn(0f, 1f)
+            drawRoller(g, lay, target, settle, away * away * (3f - 2f * away))
+            drawEnvelope(g, lay, target.toFloat(), settle, 1f, pal, true)
+        }
 
         drawRuler(g, pal, lay, k)
     }
@@ -196,6 +219,31 @@ class TimesTableSim : Sim {
             g.glow(px, py, 0.07f, col, 0.7f)
             g.disc(px, py, 0.011f, Palette.TEXT_PRIMARY)
         }
+    }
+
+    /**
+     * Why the chords make an epicycloid: a circle of radius 1/(k+1) rolling
+     * round a fixed one of radius (k−1)/(k+1) carries a point that traces the
+     * same envelope. Shown while the pen draws it, then eased away.
+     */
+    private fun drawRoller(g: G, lay: Layout, k: Int, upTo: Float, a: Float) {
+        if (a <= 0.01f) return
+        val r = lay.r
+        val fixedR = r * (k - 1f) / (k + 1f)
+        val rollR = r / (k + 1f)
+        val t = 2.0 * PI * upTo
+        val ux = (cos(t) * cos(ROT) - sin(t) * sin(ROT)).toFloat()
+        val uy = (cos(t) * sin(ROT) + sin(t) * cos(ROT)).toFloat()
+        val ccx = lay.cx + (fixedR + rollR) * ux
+        val ccy = lay.cy + (fixedR + rollR) * uy
+        val vx = (cos(k * t) * cos(ROT) - sin(k * t) * sin(ROT)).toFloat()
+        val vy = (cos(k * t) * sin(ROT) + sin(k * t) * cos(ROT)).toFloat()
+        val ppx = ccx + rollR * vx; val ppy = ccy + rollR * vy
+        g.ring(lay.cx, lay.cy, fixedR, 0.0026f, Palette.TEXT_SECONDARY, alpha = 0.5f * a)
+        g.disc(ccx, ccy, rollR, Palette.BG, 0.45f * a)
+        g.ring(ccx, ccy, rollR, 0.003f, Palette.TEXT_PRIMARY, alpha = 0.75f * a)
+        g.line(ccx, ccy, ppx, ppy, 0.003f, Palette.TEXT_PRIMARY, 0.75f * a)
+        g.disc(ccx, ccy, 0.006f, Palette.TEXT_PRIMARY, 0.8f * a)
     }
 
     /** A number line for k: the whole numbers it will lock to, and where it is now. */
@@ -244,8 +292,8 @@ class TimesTableSim : Sim {
         /** Turns of the circle a second for the bright chord. */
         private const val SWEEP_TURNS = 0.09f
         private const val NOTES_PER_TURN = 36f
-        private const val TRACE_SECONDS = 1.3f
-        private const val HOLD_SECONDS = 3.6f
+        private const val TRACE_SECONDS = 2.6f
+        private const val HOLD_SECONDS = 4.6f
 
         fun def(): SimDef = SimDef(
             id = "math/times-table",
