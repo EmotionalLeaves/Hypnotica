@@ -2,14 +2,7 @@ package app.hypnotica.sims.math
 
 import app.hypnotica.core.sim.SimDef
 
-/** The second wave of sims for this shelf; each sim lives in its own file. */
+/** Unfinished sims are kept out of builds until their tests pass. */
 object MathMore {
-    fun defs(): List<SimDef> = listOf(
-        PhyllotaxisSim.def(),
-        TimesTableSim.def(),
-        HilbertCurveSim.def(),
-        DragonCurveSim.def(),
-        BirthdayParadoxSim.def(),
-        PenroseTilingSim.def()
-    )
+    fun defs(): List<SimDef> = listOf()
 }
