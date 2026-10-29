@@ -96,10 +96,20 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric reads the app's resources for the screen pictures.
+        unitTests.isIncludeAndroidResources = true
         unitTests.all {
             // The smoke test runs 400,000 particles and a 1024-square grid.
             it.maxHeapSize = "2g"
             it.testLogging { showStandardStreams = true }
+            // The screen pictures run only when asked for (-Pscreens), in their
+            // own CI job: they are slow and they are for looking at, not a gate.
+            if (project.hasProperty("screens")) {
+                it.filter.includeTestsMatching("app.hypnotica.screens.*")
+                it.systemProperty("roborazzi.test.record", "true")
+            } else {
+                it.exclude("app/hypnotica/screens/**")
+            }
         }
     }
 
@@ -127,4 +137,12 @@ dependencies {
     implementation("org.luaj:luaj-jse:3.0.1")
 
     testImplementation("junit:junit:4.13.2")
+    // Screen pictures (see ScreensTest): Compose rendered on the JVM.
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.2")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.32.2")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test:core:1.6.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
