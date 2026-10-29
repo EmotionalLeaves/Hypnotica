@@ -72,9 +72,10 @@ class MandelbrotSim : Sim {
     /**
      * The escape count the colours are measured from. Deep in, every count on
      * screen is in the thousands and ln(1 + count) spans a sliver: one flat
-     * colour. Counted from (a little under) the lowest count in view, a deep
-     * frame is coloured like a shallow one. Shallow, the lowest count is a few
-     * and this is 0: the look there is unchanged.
+     * colour. Counted from [COLOUR_HEADROOM] under the lowest count in view, a
+     * deep frame is coloured like a shallow one (dark far field, bright edge).
+     * Shallow, the lowest count is under that and this is 0: the look there is
+     * unchanged.
      */
     private var muBase = 0f
     private var maxIter = 220
@@ -277,6 +278,7 @@ class MandelbrotSim : Sim {
             if (s.finished) {
                 seek = null
                 val found = s.best
+                if (DEBUG) println("mandel seek done: " + (found?.let { "k=${it.k} p=${it.p} dist=${it.dist}" } ?: "nothing"))
                 if (found == null) {
                     // Nothing repelling within reach of the tap: the dive goes
                     // on elsewhere rather than toward a point that runs dry.
@@ -310,6 +312,7 @@ class MandelbrotSim : Sim {
         val words = j.bits / 32
         j.work(max(4, BIG_WORK_PER_STEP / (words * words)))
         if (j.failed) {
+            if (DEBUG) println("mandel job failed retarget=$jobRetargets bits=${j.bits}")
             job = null
             // A refinement that wanders off its point, or a tapped target that
             // will not sharpen: move on to a dive that is known to be sound.
@@ -317,16 +320,26 @@ class MandelbrotSim : Sim {
         } else if (j.done) {
             job = null
             val nr = j.result()
-            // The view stays where it is; only what its offsets are measured from moves.
-            val ddx = Fix.toDouble(r.cx.shiftLeft(nr.bits - r.bits).subtract(nr.cx), nr.bits)
-            val ddy = Fix.toDouble(r.cy.shiftLeft(nr.bits - r.bits).subtract(nr.cy), nr.bits)
-            offX += ddx; offY += ddy
-            imgOffX += ddx; imgOffY += ddy
-            glideFromX += ddx; glideFromY += ddy
-            glideToX += ddx; glideToY += ddy
-            // An image half made is measured from the old point: it is told
-            // where that is from the new one when it goes on screen.
-            jAdjX += ddx; jAdjY += ddy
+            if (jobRetargets) {
+                // A tap's point, now exact: offsets are re-measured from it,
+                // and the glide ends on it exactly. Ending on the double the
+                // search found would leave the centre ~1e-16 of a view off the
+                // point for good, and a dive 1e16 deeper would run dry there.
+                val ddx = Fix.toDouble(r.cx.shiftLeft(nr.bits - r.bits).subtract(nr.cx), nr.bits)
+                val ddy = Fix.toDouble(r.cy.shiftLeft(nr.bits - r.bits).subtract(nr.cy), nr.bits)
+                offX += ddx; offY += ddy
+                imgOffX += ddx; imgOffY += ddy
+                glideFromX += ddx; glideFromY += ddy
+                glideToX = 0.0; glideToY = 0.0
+                if (!gliding) { offX = 0.0; offY = 0.0 }
+                // An image half made is measured from the old point: it is told
+                // where that is from the new one when it goes on screen.
+                jAdjX += ddx; jAdjY += ddy
+            }
+            // A sharper copy of the same point moves it by less than the old
+            // copy's last bit: the centre follows it, so it stays on the point.
+            // (Keeping the view where it was kept the old copy's error, and at
+            // 1e89 the dive ran off the boundary into a flat field.)
             ref = nr
         }
     }
@@ -512,7 +525,14 @@ class MandelbrotSim : Sim {
                         val fy = (row.toDouble() / (rs - 1) * 2.0 - 1.0) * scale
                         val base = row * cs
                         if (pert) {
-                            for (col in 0 until cs) {
+                            var col = 0
+                            while (col + 1 < cs) {
+                                val fa = (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
+                                val fb = ((col + 1).toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
+                                escapePairP(ox + fa, oy + fy, base + col, ox + fb, oy + fy, base + col + 1, mi, cell, iterations, edgeDist)
+                                col += 2
+                            }
+                            if (col < cs) {
                                 val fx = (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
                                 escapeP(ox + fx, oy + fy, mi, cell, iterations, edgeDist, base + col)
                             }
@@ -809,6 +829,76 @@ class MandelbrotSim : Sim {
         settle(x, y, ddx, ddy, i, jRefX + dcx, jRefY + dcy, cell, 1.0, mu, de, idx)
     }
 
+    /**
+     * Two perturbation samples in one loop, for the same reason as
+     * [escapePair]: two independent chains of multiplies fill the core where
+     * one leaves it idle. Each result is exactly what [escapeP] gives alone.
+     */
+    private fun escapePairP(
+        acx: Double, acy: Double, ia: Int, bcx: Double, bcy: Double, ib: Int,
+        mi: Int, cell: Double, mu: FloatArray, de: FloatArray
+    ) {
+        val zr = jZr
+        val zi = jZi
+        val k = cell * jInvR
+        val sAx = jAx; val sAy = jAy; val sBx = jBx; val sBy = jBy; val sCx = jC3x; val sCy = jC3y
+        // Series start for each (see escapeP).
+        val aux = acx * jInvR; val auy = acy * jInvR
+        var t1x = sCx * aux - sCy * auy + sBx; var t1y = sCx * auy + sCy * aux + sBy
+        var t2x = t1x * aux - t1y * auy + sAx; var t2y = t1x * auy + t1y * aux + sAy
+        var adx = t2x * aux - t2y * auy; var ady = t2x * auy + t2y * aux
+        var u2x = aux * aux - auy * auy; var u2y = 2.0 * aux * auy
+        var aDx = (sAx + 2.0 * (sBx * aux - sBy * auy) + 3.0 * (sCx * u2x - sCy * u2y)) * k
+        var aDy = (sAy + 2.0 * (sBx * auy + sBy * aux) + 3.0 * (sCx * u2y + sCy * u2x)) * k
+        val bux = bcx * jInvR; val buy = bcy * jInvR
+        t1x = sCx * bux - sCy * buy + sBx; t1y = sCx * buy + sCy * bux + sBy
+        t2x = t1x * bux - t1y * buy + sAx; t2y = t1x * buy + t1y * bux + sAy
+        var bdx = t2x * bux - t2y * buy; var bdy = t2x * buy + t2y * bux
+        u2x = bux * bux - buy * buy; u2y = 2.0 * bux * buy
+        var bDx = (sAx + 2.0 * (sBx * bux - sBy * buy) + 3.0 * (sCx * u2x - sCy * u2y)) * k
+        var bDy = (sAy + 2.0 * (sBx * buy + sBy * bux) + 3.0 * (sCx * u2y + sCy * u2x)) * k
+        var an = jSkip; var ai = jSkip; var ax = 0.0; var ay = 0.0; var aOut = false
+        var bn = jSkip; var bi = jSkip; var bx = 0.0; var by = 0.0; var bOut = false
+        var aOn = ai < mi
+        var bOn = bi < mi
+        while (aOn || bOn) {
+            if (aOn) {
+                ax = zr[an] + adx; ay = zi[an] + ady
+                val r2 = ax * ax + ay * ay
+                if (r2 > 4.0) { aOut = true; aOn = false } else {
+                    val t = 2.0 * (ax * aDx - ay * aDy) + cell
+                    aDy = 2.0 * (ax * aDy + ay * aDx); aDx = t
+                    if (r2 < adx * adx + ady * ady) { adx = ax; ady = ay; an = 0 }
+                    val px = 2.0 * zr[an] + adx
+                    val py = 2.0 * zi[an] + ady
+                    val nx = px * adx - py * ady + acx
+                    ady = px * ady + py * adx + acy
+                    adx = nx
+                    an++; ai++
+                    if (ai >= mi) aOn = false
+                }
+            }
+            if (bOn) {
+                bx = zr[bn] + bdx; by = zi[bn] + bdy
+                val r2 = bx * bx + by * by
+                if (r2 > 4.0) { bOut = true; bOn = false } else {
+                    val t = 2.0 * (bx * bDx - by * bDy) + cell
+                    bDy = 2.0 * (bx * bDy + by * bDx); bDx = t
+                    if (r2 < bdx * bdx + bdy * bdy) { bdx = bx; bdy = by; bn = 0 }
+                    val px = 2.0 * zr[bn] + bdx
+                    val py = 2.0 * zi[bn] + bdy
+                    val nx = px * bdx - py * bdy + bcx
+                    bdy = px * bdy + py * bdx + bcy
+                    bdx = nx
+                    bn++; bi++
+                    if (bi >= mi) bOn = false
+                }
+            }
+        }
+        if (aOut) settle(ax, ay, aDx, aDy, ai, jRefX + acx, jRefY + acy, cell, 1.0, mu, de, ia) else { mu[ia] = -1f; de[ia] = 0f }
+        if (bOut) settle(bx, by, bDx, bDy, bi, jRefX + bcx, jRefY + bcy, cell, 1.0, mu, de, ib) else { mu[ib] = -1f; de[ib] = 0f }
+    }
+
     private fun inCardioidOrBulb(x0: Double, y0: Double): Boolean {
         val xq = x0 - 0.25
         val q = xq * xq + y0 * y0
@@ -1004,14 +1094,17 @@ class MandelbrotSim : Sim {
                 val row = ci / cs
                 val fx = (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW + ((sub % 3) - 1) * stepX / 3.0
                 val fy = (row.toDouble() / (rs - 1) * 2.0 - 1.0) * scale + ((sub / 3) - 1) * stepY / 3.0
-                if (pert) { escapeP(ox + fx, oy + fy, mi, fine, subMu, subDe, s); continue }
-                val x0 = cx + fx
-                val y0 = cy + fy
+                val x0 = if (pert) ox + fx else cx + fx
+                val y0 = if (pert) oy + fy else cy + fy
                 if (pend < 0) { pend = s; px0 = x0; py0 = y0; continue }
-                escapePair(px0, py0, pend, x0, y0, s, mi, fine, subMu, subDe, false)
+                if (pert) escapePairP(px0, py0, pend, x0, y0, s, mi, fine, subMu, subDe)
+                else escapePair(px0, py0, pend, x0, y0, s, mi, fine, subMu, subDe, false)
                 pend = -1
             }
-            if (pend >= 0) escape(px0, py0, mi, fine, subMu, subDe, pend, false)
+            if (pend >= 0) {
+                if (pert) escapeP(px0, py0, mi, fine, subMu, subDe, pend)
+                else escape(px0, py0, mi, fine, subMu, subDe, pend, false)
+            }
         }
     }
 
@@ -1701,7 +1794,7 @@ class MandelbrotSim : Sim {
          */
         private const val HUE_SPAN = 0.55f
         /** Counts kept below the lowest in view when colouring (see muBase). */
-        private const val COLOUR_HEADROOM = 3f
+        private const val COLOUR_HEADROOM = 40f
 
         /** The shallow iteration budget's ceiling, as it always was. */
         private const val SHALLOW_ITER_CAP = 1500

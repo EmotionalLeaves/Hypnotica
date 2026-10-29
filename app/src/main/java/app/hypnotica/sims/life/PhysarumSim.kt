@@ -403,8 +403,8 @@ class PhysarumSim : Sim {
         const val TICKS_PER_SECOND = 10f
         const val SENSE = 7f
         const val DEPOSIT = 5f
-        /** Per tick: an agent's nutrient halves in about forty ticks away from food. */
-        const val HUNGER = 0.983f
+        /** Per tick: an agent's nutrient halves in about twenty ticks away from food. */
+        const val HUNGER = 0.965f
         const val FED_FLOOR = 0.12f
         const val FOOD_SMELL = 3f
         const val WALL_ZONE = 14
@@ -413,7 +413,7 @@ class PhysarumSim : Sim {
         const val BLOB = 9f
         const val CHECK_EVERY = 8
         /** Chemical level that counts as a vein for the network test. */
-        const val VEIN = 2.5f
+        const val VEIN = 1.6f
         const val FAINT = 0.15f
         const val BRIGHT = 3f
         const val LEVELS = 14

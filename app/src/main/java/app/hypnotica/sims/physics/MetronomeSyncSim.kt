@@ -65,6 +65,13 @@ class MetronomeSyncSim : Sim {
     private var rowX1 = 0f
     private var tableY = 0f
     private var mScale = 1f
+    private var stripX0 = 0f
+    private var stripX1 = 0f
+    private var stripTop = 0f
+    private var stripBottom = 0f
+    // The last few tick times of each metronome, for the strip under them.
+    private var tickT = FloatArray(0)
+    private var tickHead = IntArray(0)
 
     private val dth = DoubleArray(MAX_N)
     private val dom = DoubleArray(MAX_N)
@@ -93,6 +100,8 @@ class MetronomeSyncSim : Sim {
         paidAt = -1f
         ticks = 0
         trailR = FloatArray(TRAIL)
+        tickT = FloatArray(n * TICKS) { -100f }
+        tickHead = IntArray(n)
         trailHead = 0
         layout()
     }
@@ -109,15 +118,19 @@ class MetronomeSyncSim : Sim {
 
     private fun layout() {
         if (hw < 1f) {
-            ringX = 0f; ringY = 0.42f; ringR = min(0.3f, hw * 0.7f)
+            ringX = 0f; ringY = 0.5f; ringR = min(0.28f, hw * 0.66f)
             rowX0 = -hw * 0.9f; rowX1 = hw * 0.9f
-            tableY = -0.58f
+            tableY = -0.24f
             mScale = 1f
+            stripX0 = -hw * 0.9f; stripX1 = hw * 0.9f
+            stripTop = -0.42f; stripBottom = -0.86f
         } else {
             ringX = -hw * 0.55f; ringY = 0.02f; ringR = 0.55f
             rowX0 = -0.05f; rowX1 = hw * 0.92f
-            tableY = -0.45f
+            tableY = 0.02f
             mScale = 1.35f
+            stripX0 = rowX0; stripX1 = rowX1
+            stripTop = -0.3f; stripBottom = -0.82f
         }
     }
 
@@ -126,7 +139,7 @@ class MetronomeSyncSim : Sim {
 
     private fun derivs(t: DoubleArray, o: DoubleArray, xvel: Double, outT: DoubleArray, outO: DoubleArray, env: SimEnv): Double {
         val omega = baseOmega()
-        val plank = env.params.f("plank", 3f).coerceIn(0.5f, 12f).toDouble()
+        val plank = env.params.f("plank", 5f).coerceIn(1f, 20f).toDouble()
         val free = env.params.b("free", true)
         // Accelerations each pendulum would have with the plank held still.
         var sumA = 0.0
@@ -167,6 +180,8 @@ class MetronomeSyncSim : Sim {
                 // A tick as the rod crosses the centre.
                 if (sth[i] * th[i] < 0.0) {
                     ticks++
+                    tickT[i * TICKS + tickHead[i]] = elapsed - (SUBSTEPS - 1 - s) * sub.toFloat()
+                    tickHead[i] = (tickHead[i] + 1) % TICKS
                     env.emit(EventKind.HIT, 0.5f + 0.04f * i, pan(rodX(i)), 0.35f)
                 }
             }
@@ -233,6 +248,7 @@ class MetronomeSyncSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         drawRing(env, g)
+        drawStrip(env, g)
         val s = mScale
         val shift = plankShift()
         val span = rowX1 - rowX0
@@ -255,8 +271,11 @@ class MetronomeSyncSim : Sim {
         g.rect((rowX0 + rowX1) * 0.5f + shift, plankY + 0.0105f, span * 0.5f + 0.03f, 0.0015f, PLANK_LIT)
         // The metronomes.
         val pitch = span / n
-        val bodyW = min(0.055f * s, pitch * 0.36f)
-        val bodyH = min(0.24f * s, bodyW * 4.6f)
+        // The rods swing about 52° each way, so their length is set by the
+        // spacing: long enough to read, short enough not to cross a neighbour.
+        val rodL = min(0.2f * s, pitch * 0.58f)
+        val bodyW = min(0.05f * s, pitch * 0.3f)
+        val bodyH = rodL * 0.95f
         val base = plankY + 0.012f
         val locked = paidAt >= 0f
         for (i in 0 until n) {
@@ -268,8 +287,7 @@ class MetronomeSyncSim : Sim {
             g.disc(cx, base + bodyH * 0.95f, bodyW * 0.8f, BODY)
             g.rect(cx, base + bodyH * 0.5f, bodyW * 0.62f, bodyH * 0.36f, FACE)
             // The scale behind the rod: a faint arc of the swing.
-            val pivotY = base + bodyH * 0.16f
-            val rodL = bodyH * 0.98f
+            val pivotY = base + bodyH * 0.12f
             val sweep = (AMP * 2).toFloat()
             g.ring(cx, pivotY, rodL * 0.72f, 0.003f, Palette.lerp(c, Palette.BG, 0.6f), gap = 2f * PI.toFloat() - sweep, gapAngle = (PI / 2).toFloat() - sweep / 2 + sweep)
             // The rod and its sliding weight: tipped by θ, pivot near the foot.
@@ -304,6 +322,31 @@ class MetronomeSyncSim : Sim {
         g.disc(ringX, ringY, 0.006f, arrow)
     }
 
+    /**
+     * Every tick of the last few seconds, one row per metronome, scrolling
+     * left: rain to begin with, then columns as they fall into step.
+     */
+    private fun drawStrip(env: SimEnv, g: G) {
+        val rows = n
+        val gap = (stripTop - stripBottom) / rows
+        val span = stripX1 - stripX0
+        val pxPerS = span / STRIP_SECONDS
+        g.rect(stripX1, (stripTop + stripBottom) * 0.5f + gap * 0.5f, 0.002f, (stripTop - stripBottom) * 0.5f, Palette.TEXT_SECONDARY, alpha = 0.5f)
+        for (i in 0 until rows) {
+            val y = stripTop - (i + 0.5f) * gap
+            val c = colour(env, i)
+            g.rect((stripX0 + stripX1) * 0.5f, y, span * 0.5f, 0.0012f, RING)
+            for (k in 0 until TICKS) {
+                val t = tickT[i * TICKS + k]
+                val age = elapsed - t
+                if (age < 0f || age > STRIP_SECONDS) continue
+                val x = stripX1 - age * pxPerS
+                val fade = 1f - age / STRIP_SECONDS
+                g.rect(x, y, 0.0035f, gap * 0.32f, c, alpha = 0.25f + 0.75f * fade)
+            }
+        }
+    }
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = paidAt >= 0f && elapsed - paidAt > 6f
@@ -316,16 +359,19 @@ class MetronomeSyncSim : Sim {
 
     companion object {
         const val MAX_N = 9
-        @JvmField var AMP = 0.6
+        /** About 52° each way, a metronome's real swing; smaller swings settle into splayed, never-locking patterns. */
+        const val AMP = 0.9
         /** van der Pol settles at about twice θ₀. */
-        val THETA0 get() = AMP / 2
-        @JvmField var MU = 0.012
+        const val THETA0 = AMP / 2
+        const val MU = 0.03
         const val PLANK_DRAG = 0.0
         const val CENTRING = 0.2
         const val SUBSTEPS = 2
         const val LOCK = 0.97
         const val LOCK_HOLD = 2f
         const val TRAIL = 240
+        const val TICKS = 16
+        const val STRIP_SECONDS = 4f
         /** World units per metre of plank travel: metronomes are drawn about 1.5× life size. */
         const val PLANK_DRAW = 1.5
         const val TABLE = 0xFF1A1D25.toInt()
@@ -349,11 +395,11 @@ class MetronomeSyncSim : Sim {
             heroLabel = "Knock them out of step",
             heroRestarts = false,
             defaultPalette = "Aurora",
-            typicalSeconds = 20f,
+            typicalSeconds = 22f,
             params = listOf(
                 Param.int("count", "Metronomes", 3, MAX_N, 5, card = Card.DATA),
                 Param.float("spread", "Mismatch", 0f, 3f, 1f, card = Card.DATA, unit = "%"),
-                Param.float("plank", "Plank weight", 0.5f, 12f, 3f, card = Card.MOTION),
+                Param.float("plank", "Plank weight", 1f, 20f, 5f, card = Card.MOTION),
                 Param.float("tempo", "Tempo", 100f, 208f, 176f, card = Card.MOTION, unit = "bpm"),
                 Param.bool("free", "Plank can roll", true, card = Card.MOTION)
             ),
