@@ -55,6 +55,10 @@ class ArenaSim : Sim {
     private var dlife = FloatArray(0)
     private var dtint = FloatArray(0)
     private var dNext = 0
+    // Where and when each fighter went out: a ring that bursts there.
+    private var koX = FloatArray(0)
+    private var koY = FloatArray(0)
+    private var koAt = FloatArray(0)
     // Bumpers, in the Bumpers arena: they kick back whatever hits them.
     private var bx = FloatArray(0)
     private var by = FloatArray(0)
@@ -65,7 +69,7 @@ class ArenaSim : Sim {
         n = env.params.i("fighters", 8).coerceIn(2, MAX_FIGHTERS)
         arena0 = min(env.halfWidth, 1f) * 0.92f
         arena = arena0
-        radius = (arena0 * 0.11f * sqrt(8f / n)).coerceIn(0.012f, 0.1f)
+        radius = (arena0 * 0.125f * sqrt(8f / n)).coerceIn(0.012f, 0.1f)
         x = FloatArray(n); y = FloatArray(n); vx = FloatArray(n); vy = FloatArray(n)
         hp = FloatArray(n) { 1f }; hit = FloatArray(n); gone = BooleanArray(n)
         tint = FloatArray(n) { (it + 0.5f) / n }
@@ -94,6 +98,7 @@ class ArenaSim : Sim {
         winner = -1
         dx = FloatArray(DEBRIS); dy = FloatArray(DEBRIS); dvx = FloatArray(DEBRIS); dvy = FloatArray(DEBRIS)
         dlife = FloatArray(DEBRIS); dtint = FloatArray(DEBRIS); dNext = 0
+        koX = FloatArray(n); koY = FloatArray(n); koAt = FloatArray(n) { -1f }
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -196,8 +201,9 @@ class ArenaSim : Sim {
             dlife[k] -= h
             dvx[k] *= 1f - 2f * h; dvy[k] *= 1f - 2f * h
             dx[k] += dvx[k] * h; dy[k] += dvy[k] * h
-            // Gone at the screen's edge rather than drawn past it.
-            if (abs(dx[k]) > env.halfWidth * 0.98f || abs(dy[k]) > 0.98f) dlife[k] = 0f
+            // Gone at the arena's wall: shards strewn across the whole screen
+            // read as stray specks with nothing to do with the fight.
+            if (dx[k] * dx[k] + dy[k] * dy[k] > arena * arena) dlife[k] = 0f
         }
     }
 
@@ -208,12 +214,14 @@ class ArenaSim : Sim {
         hp[i] = 0f
         aliveCount--
         env.emit(EventKind.STEP, 0.1f, (x[i] / max(0.1f, arena0)).coerceIn(-1f, 1f), 0.9f)
+        koX[i] = x[i]; koY[i] = y[i]; koAt[i] = elapsed
         repeat(DEBRIS_PER_KO) {
             val k = dNext; dNext = (dNext + 1) % DEBRIS
-            val a = env.rng.range(0f, 2f * PI.toFloat())
-            val s = env.rng.range(0.2f, 1.2f)
+            // Evenly round, a little jittered: a burst, not a random spray.
+            val a = 2f * PI.toFloat() * (it + env.rng.range(-0.3f, 0.3f)) / DEBRIS_PER_KO
+            val s = env.rng.range(0.5f, 1.0f)
             dx[k] = x[i]; dy[k] = y[i]; dvx[k] = cos(a) * s; dvy[k] = sin(a) * s
-            dlife[k] = env.rng.range(0.5f, 1.4f); dtint[k] = tint[i]
+            dlife[k] = env.rng.range(0.45f, 0.7f); dtint[k] = tint[i]
         }
         if (aliveCount <= 1 && doneAt < 0f) {
             winner = (0 until n).firstOrNull { hp[it] > 0f } ?: i
@@ -246,20 +254,30 @@ class ArenaSim : Sim {
             g.ring(bx[k], by[k], br[k] * 0.6f, br[k] * 0.14f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.8f))
             g.disc(bx[k], by[k], br[k] * 0.18f, Palette.brighten(Palette.TEXT_PRIMARY, 0.3f * f))
         }
+        // A knockout: a ring bursting out from where the fighter was.
+        for (i in 0 until n) {
+            val age = elapsed - koAt[i]
+            if (koAt[i] < 0f || age > KO_RING) continue
+            val f = age / KO_RING
+            g.ring(koX[i], koY[i], radius * (1f + 2.5f * f), radius * 0.16f * (1f - f) + 0.002f, palette.at(tint[i]), alpha = 1f - f)
+        }
         for (k in 0 until DEBRIS) {
             if (dlife[k] <= 0f) continue
-            g.point(dx[k], dy[k], radius * 0.35f * min(1f, dlife[k] * 2f), palette.at(dtint[k]))
+            // Fading out at full size, not shrinking to a pixel and lingering.
+            g.point(dx[k], dy[k], radius * 0.4f, Palette.withAlpha(palette.at(dtint[k]), min(1f, dlife[k] * 3f)))
         }
         for (i in 0 until n) {
             if (hp[i] <= 0f) continue
             val c = palette.at(tint[i])
-            val r = radius * (1f + 0.25f * hit[i])
-            if (i == winner) g.glow(x[i], y[i], radius * (3f + sin(elapsed * 6f)), c, 0.6f)
+            val r = radius * (1f + 0.2f * hit[i])
+            if (i == winner) g.glow(x[i], y[i], radius * (2.6f + 0.4f * sin(elapsed * 6f)), c, 0.55f)
             g.disc(x[i], y[i], r, if (hit[i] > 0f) Palette.brighten(c, 0.7f * hit[i]) else c)
-            // Health: a ring with the lost share cut away, from the top.
+            // Health: a band round the ball's own rim, the lost share cut away
+            // from the top. Outside the ball, the bands of two fighters
+            // touching drew over each other.
             val lost = (1f - hp[i]).coerceIn(0f, 1f) * 2f * PI.toFloat()
-            g.ring(x[i], y[i], r * 1.45f, r * 0.22f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
-            if (hp[i] > 0f) g.ring(x[i], y[i], r * 1.45f, r * 0.22f, if (hp[i] < 0.3f) Palette.DANGER else Palette.SUCCESS, lost, (PI / 2).toFloat())
+            g.ring(x[i], y[i], r, r * 0.24f, Palette.withAlpha(Palette.BG, 0.75f))
+            if (hp[i] > 0f) g.ring(x[i], y[i], r * 0.97f, r * 0.18f, if (hp[i] < 0.3f) Palette.DANGER else Palette.SUCCESS, lost, (PI / 2).toFloat())
         }
     }
 
@@ -287,7 +305,9 @@ class ArenaSim : Sim {
         const val MAX_SPEED = 2.4f
         const val DAMAGE = 0.15f
         const val DEBRIS = 600
-        const val DEBRIS_PER_KO = 40
+        const val DEBRIS_PER_KO = 18
+        /** How long a knockout's ring takes to burst and fade, in seconds. */
+        const val KO_RING = 0.45f
         const val GIVE_UP_SECONDS = 90f
         const val ZONE_DAMAGE = 0.012f
         const val BUMPER_KICK = 1.12f

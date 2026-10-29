@@ -58,6 +58,8 @@ class GlassBridgeSim : Sim {
     private val svx = FloatArray(SHARDS)
     private val svy = FloatArray(SHARDS)
     private val sr = FloatArray(SHARDS)
+    private val sLife = FloatArray(SHARDS)
+    private val sTurn = FloatArray(SHARDS)
     private var sNext = 0
 
     override fun setup(env: SimEnv) {
@@ -82,7 +84,7 @@ class GlassBridgeSim : Sim {
         doneAt = -1f
         payoffFrame = false
         wait = 0.6f
-        sy.fill(-9f)
+        sLife.fill(0f)
         sNext = 0
     }
 
@@ -98,12 +100,15 @@ class GlassBridgeSim : Sim {
         val h = abs(dt)
         elapsed += h
         val pace = env.params.f("pace", 1f)
+        // Seen from above, the glass falls away from us: the shards spread a
+        // little and shrink out of sight. Falling down the screen, they
+        // rained across the panes still standing below.
         for (i in 0 until SHARDS) {
-            if (sy[i] < -1.5f) continue
-            svy[i] -= 2.5f * h
+            if (sLife[i] <= 0f) continue
+            sLife[i] -= h * SHARD_FADE
+            svx[i] *= 1f - min(1f, 3f * h); svy[i] *= 1f - min(1f, 3f * h)
             sx[i] += svx[i] * h; sy[i] += svy[i] * h
-            // Gone once off the side, rather than drawn out past it.
-            if (abs(sx[i]) > halfW) sy[i] = -9f
+            if (abs(sx[i]) > halfW) sLife[i] = 0f
         }
         if (falling) {
             fallingV -= 5f * h
@@ -138,7 +143,7 @@ class GlassBridgeSim : Sim {
                 open[env.rng.int(0, open.size)]
             }
             fromX = if (row < 0) 0f else sideX(sideOf(row))
-            fromY = if (row < 0) BOTTOM else rowY(row)
+            fromY = if (row < 0) START_Y else rowY(row)
             hop = 0f
             hopping = true
         }
@@ -176,9 +181,11 @@ class GlassBridgeSim : Sim {
             val i = sNext; sNext = (sNext + 1) % SHARDS
             sx[i] = x + env.rng.range(-paneHalf, paneHalf); sy[i] = y + env.rng.range(-paneH, paneH)
             val a = env.rng.range(0f, 2f * PI.toFloat())
-            val s = env.rng.range(0.1f, 0.6f)
-            svx[i] = cos(a) * s; svy[i] = sin(a) * s + 0.2f
-            sr[i] = env.rng.range(0.006f, 0.016f)
+            val s = env.rng.range(0.05f, 0.4f)
+            svx[i] = cos(a) * s; svy[i] = sin(a) * s
+            sr[i] = env.rng.range(0.008f, 0.02f)
+            sLife[i] = 1f
+            sTurn[i] = env.rng.range(0f, 3.14f)
         }
         repeat(4) { env.emit(EventKind.HIT, env.rng.range(0.75f, 1f), (x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.7f) }
     }
@@ -204,38 +211,57 @@ class GlassBridgeSim : Sim {
         for (r in 0 until rows) {
             val y = rowY(r)
             for (s in 0 until lanes) {
-                if (broken[r] and (1 shl s) != 0) continue
+                if (broken[r] and (1 shl s) != 0) {
+                    // Where a pane was: its empty frame.
+                    outline(g, sideX(s), y, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f), 0.003f)
+                    continue
+                }
                 val x = sideX(s)
-                // Known safe panes are lit; the rest are just glass.
-                val glass = if (known[r] && safe[r] == s) Palette.withAlpha(Palette.SUCCESS, 0.45f) else 0x55A8D8FF
-                g.rect(x, y, paneHalf, paneH, glass)
-                g.line(x - paneHalf, y + paneH, x + paneHalf, y + paneH, 0.004f, 0xAAE0F4FF.toInt())
+                // Glass: a pale see-through sheet with a bright rim. Known safe
+                // panes turn green. Opaque slate read as tiles, not glass.
+                val sure = known[r] && safe[r] == s
+                val tintC = if (sure) Palette.SUCCESS else GLASS
+                g.rect(x, y, paneHalf, paneH, Palette.withAlpha(tintC, if (sure) 0.28f else 0.16f))
+                outline(g, x, y, Palette.withAlpha(tintC, if (sure) 0.9f else 0.55f), 0.004f)
+                // A glint across one corner.
+                g.line(x - paneHalf * 0.75f, y - paneH * 0.2f, x - paneHalf * 0.45f, y + paneH * 0.6f, 0.004f, Palette.withAlpha(0xFFFFFFFF.toInt(), if (sure) 0.25f else 0.4f))
             }
         }
-        for (i in 0 until SHARDS) if (sy[i] > -1.5f) g.rect(sx[i], sy[i], sr[i], sr[i] * 0.6f, 0xCCC8ECFF.toInt(), sx[i] * 7f)
-        // The marbles: waiting below, the one on the bridge, the ones across.
+        for (i in 0 until SHARDS) {
+            if (sLife[i] <= 0f) continue
+            val k = sLife[i]
+            g.rect(sx[i], sy[i], sr[i] * k, sr[i] * 0.55f * k, GLASS, sTurn[i] + sx[i] * 7f, alpha = 0.4f + 0.5f * k)
+        }
+        // The marbles: waiting on the start platform, the one on the bridge,
+        // the ones across standing on the finish.
         val r = MARBLE
         // Closer together when there are many, so the whole queue fits the platform.
         val queueStep = min(r * 2.6f, min(halfW, 1f) * 1.2f / max(1, marbles))
         for (m in 0 until marbles) {
             val c = palette.at((m + 0.5f) / marbles)
             when {
-                m == current && falling -> g.disc(fallingX, fallingY, r, c)
+                m == current && falling -> {
+                    // Dropping away beneath the bridge: smaller and darker
+                    // until it is gone, where it broke through.
+                    val depth = ((fallingY + 1.4f) / (rowY(row) + 1.4f)).coerceIn(0f, 1f)
+                    g.disc(fallingX, rowY(row), r * (0.25f + 0.75f * depth), c, alpha = depth)
+                }
                 m == current && row >= -1 && !fell[m] && !crossed[m] -> {
                     val (x, y) = if (hopping) {
                         val tx = sideX(side); val ty = rowY(row + 1)
                         val p = hop.coerceIn(0f, 1f)
-                        (fromX + (tx - fromX) * p) to (fromY + (ty - fromY) * p + 0.06f * sin(p * PI.toFloat()))
-                    } else if (row < 0) 0f to BOTTOM else sideX(lastSide) to rowY(row)
-                    g.glow(x, y, r * 3f, c, 0.5f)
-                    g.disc(x, y + r * 0.5f, r, c)
+                        (fromX + (tx - fromX) * p) to (fromY + (ty - fromY) * p)
+                    } else if (row < 0) 0f to START_Y else sideX(lastSide) to rowY(row)
+                    // A hop seen from above: it grows as it rises toward us.
+                    val lift = if (hopping) sin(hop.coerceIn(0f, 1f) * PI.toFloat()) else 0f
+                    g.glow(x, y, r * 2.6f, c, 0.45f)
+                    g.disc(x, y, r * (1f + 0.35f * lift), c)
                 }
                 crossed[m] -> {
-                    val k = m
-                    g.disc(-min(halfW, 1f) * 0.6f + k * queueStep, TOP + 0.04f + r * 1.6f, r, c)
+                    g.disc(-min(halfW, 1f) * 0.6f + m * queueStep, TOP + 0.04f, r, c)
                 }
                 !fell[m] && m > current -> {
-                    g.disc(-min(halfW, 1f) * 0.6f + (m - current) * queueStep, BOTTOM - 0.04f - r * 1.6f, r, c)
+                    g.disc(-min(halfW, 1f) * 0.6f + (m - current) * queueStep, BOTTOM - 0.04f, r, c)
                 }
             }
         }
@@ -243,6 +269,14 @@ class GlassBridgeSim : Sim {
             val k = (1f - (elapsed - doneAt) * 0.8f).coerceIn(0f, 1f)
             if (k > 0f) g.glow(0f, TOP, 0.5f, palette.at((firstAcross + 0.5f) / marbles), 0.5f * k)
         }
+    }
+
+    private fun outline(g: G, x: Float, y: Float, c: Int, w: Float) {
+        val hx = paneHalf; val hy = paneH
+        g.line(x - hx - w * 0.5f, y + hy, x + hx + w * 0.5f, y + hy, w, c)
+        g.line(x - hx - w * 0.5f, y - hy, x + hx + w * 0.5f, y - hy, w, c)
+        g.line(x - hx, y - hy, x - hx, y + hy, w, c)
+        g.line(x + hx, y - hy, x + hx, y + hy, w, c)
     }
 
     override fun contenders(env: SimEnv): IntArray =
@@ -265,11 +299,15 @@ class GlassBridgeSim : Sim {
         const val MAX_PICKS = 8
         const val BOTTOM = -0.82f
         const val TOP = 0.82f
+        /** Where the one up next stands: clear of the queue on the platform below it. */
+        const val START_Y = BOTTOM + 0.03f
         const val MARBLE = 0.026f
         const val SURE_HOP = 0.12f
         const val GUESS_HOP = 0.3f
         const val GUESS_PAUSE = 0.12f
         const val SHARDS = 400
+        const val SHARD_FADE = 1.4f
+        val GLASS = 0xFFA8D8FF.toInt()
 
         fun def(): SimDef = SimDef(
             id = "physics/glass-bridge",

@@ -190,10 +190,16 @@ class LastOutSim : Sim {
         val palette = env.palette
         // The ring as arcs between the gaps.
         val twoPi = 2f * PI.toFloat()
-        val arc = twoPi / gaps - gapNow
+        // Once it's won the gap is wall, so it is drawn swinging shut: left
+        // open, the winner bounced off thin air at the opening.
+        val shut = if (doneAt < 0f) 1f else (1f - (elapsed - doneAt) / SHUT_SECONDS).coerceIn(0f, 1f)
+        val gapVis = gapNow * shut
+        val arc = twoPi / gaps - gapVis
+        val ringC = if (doneAt >= 0f && winner >= 0) Palette.lerp(Palette.TEXT_PRIMARY, palette.at(tint[winner]), 1f - shut) else Palette.TEXT_PRIMARY
         for (k in 0 until gaps) {
-            val start = gapAngle + k * twoPi / gaps + gapNow
-            g.ring(0f, 0f, ringR + 0.012f, 0.024f, Palette.TEXT_PRIMARY, twoPi - arc, start + arc, 0.9f)
+            val start = gapAngle + k * twoPi / gaps + gapVis + (gapNow - gapVis) * 0.5f
+            if (gapVis <= 1e-4f) g.ring(0f, 0f, ringR + RING_W, RING_W, ringC, alpha = 0.9f)
+            else g.ring(0f, 0f, ringR + RING_W, RING_W, ringC, twoPi - arc, start + arc, 0.9f)
         }
         for (i in 0 until n) {
             if (out[i] && y[i] < -1.4f) continue
@@ -229,6 +235,9 @@ class LastOutSim : Sim {
         const val GRAVITY_SCALE = 0.12f
         const val BOUNCE = 0.85f
         const val GIVE_UP_SECONDS = 90f
+        const val SHUT_SECONDS = 0.35f
+        /** The ring's width, all of it outside ringR: a ring's radius is its outer edge, and centred on the wall it overlapped every ball touching it. */
+        const val RING_W = 0.022f
 
         fun def(): SimDef = SimDef(
             id = "physics/last-out",

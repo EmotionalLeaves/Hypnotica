@@ -38,6 +38,8 @@ class PressSim : Sim {
     private var sb = IntArray(0)
     private var rest = FloatArray(0)
     private var alive = BooleanArray(0)
+    private var axial = BooleanArray(0)
+    private var lastDh = 0f
     private var springs = 0
     private var broken = 0
     private var plate = 0.2f
@@ -107,6 +109,8 @@ class PressSim : Sim {
             sqrt(dx * dx + dy * dy)
         }
         alive = BooleanArray(springs) { true }
+        axial = BooleanArray(springs) { rest[it] < step * 1.2f }
+        lastDh = 0f
         broken = 0
         var top = floor
         for (i in 0 until n) top = max(top, y[i])
@@ -144,11 +148,18 @@ class PressSim : Sim {
         val g = env.laws.gravity * GRAVITY_SCALE
         var strainSum = 0f
         var snapped = 0
-        repeat(sub) {
+        // Verlet keeps a velocity as the last step's move; when the step
+        // changes size (the payoff's slow motion) that move is rescaled to
+        // the new step, or the block ran on at full speed while the press
+        // slowed, and lurched when time came back.
+        val rescale = if (lastDh > 0f) dh / lastDh else 1f
+        lastDh = dh
+        repeat(sub) { pass ->
+            val carry = DAMP * (if (pass == 0) rescale else 1f)
             // Verlet: carry on as before, plus gravity.
             for (i in 0 until n) {
-                val vx = (x[i] - px[i]) * DAMP
-                val vy = (y[i] - py[i]) * DAMP
+                val vx = (x[i] - px[i]) * carry
+                val vy = (y[i] - py[i]) * carry
                 px[i] = x[i]; py[i] = y[i]
                 x[i] += vx
                 y[i] += vy - g * dh * dh
@@ -244,15 +255,18 @@ class PressSim : Sim {
         val palette = env.palette
         // The floor.
         g.rect(0f, FLOOR - 0.03f, halfW, 0.03f, 0xFF1C1F27.toInt())
-        // The block: each spring coloured by how hard it is working.
+        // The block: each spring coloured by how hard it is working. Only
+        // the rows and columns are drawn; the diagonal braces still hold it,
+        // but drawn as well they cross-hatched the block into a mesh that,
+        // crushed, was a tangle. Cracks show as gaps in the grid.
         g.reserveInstances(springs)
         for (s in 0 until springs) {
-            if (!alive[s]) continue
+            if (!alive[s] || !axial[s]) continue
             val a = sa[s]; val b = sb[s]
             val dx = x[b] - x[a]; val dy = y[b] - y[a]
             val st = (abs(sqrt(dx * dx + dy * dy) - rest[s]) / rest[s] / limit).coerceIn(0f, 1f)
             val c = if (st > 0.75f) Palette.brighten(palette.at(0.2f + 0.75f * st), (st - 0.75f) * 2f) else palette.at(0.2f + 0.75f * st)
-            g.line(x[a], y[a], x[b], y[b], size / side * 0.35f, c)
+            g.line(x[a], y[a], x[b], y[b], size / side * 0.42f, c)
         }
         g.reservePoints(n)
         val pc = Palette.withAlpha(palette.at(0.25f), 0.9f)

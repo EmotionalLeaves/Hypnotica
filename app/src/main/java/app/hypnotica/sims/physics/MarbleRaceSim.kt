@@ -128,6 +128,18 @@ class MarbleRaceSim : Sim {
 
     private val finishY: Float get() = -1.2f - length - 0.3f
 
+    /**
+     * The line finished marbles stand in, in the order they came home: a
+     * second row behind the first when they won't fit side by side.
+     */
+    private val perRow: Int get() = max(1, min(count, (1.8f * halfW / (R * 2.4f)).toInt()))
+    private fun slotX(place: Int): Float {
+        val inRow = min(perRow, count - (place - 1) / perRow * perRow)
+        val k = (place - 1) % perRow
+        return R * 2.4f * (k - (inRow - 1) * 0.5f)
+    }
+    private fun slotY(place: Int): Float = finishY - 0.13f - (place - 1) / perRow * R * 2.4f
+
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
@@ -136,7 +148,12 @@ class MarbleRaceSim : Sim {
         val bounce = env.laws.bounce.coerceIn(0.1f, 0.95f) * 0.75f
         val h = abs(dt)
         for (i in 0 until count) {
-            if (done[i]) continue
+            if (done[i]) {
+                // Home: rolled into its place in the line under the finish.
+                x[i] += (slotX(place[i]) - x[i]) * min(1f, h * 6f)
+                y[i] += (slotY(place[i]) - y[i]) * min(1f, h * 6f)
+                continue
+            }
             vy[i] -= g * h
             vx[i] *= 1f - 0.15f * h
             val ox = x[i]; val oy = y[i]
@@ -192,7 +209,10 @@ class MarbleRaceSim : Sim {
         var lead = Float.MAX_VALUE
         for (i in 0 until count) if (!done[i] && y[i] < lead) lead = y[i]
         if (lead == Float.MAX_VALUE) lead = finishY
-        val target = max(lead + 0.35f, finishY + 0.6f).coerceAtMost(-0.4f)
+        // Once someone is home, the camera stays at the finish and the rest
+        // come in to it. Following the next leader, it swung away up the
+        // course the moment the race was won, and the win was never seen.
+        val target = (if (winnerAt >= 0f) finishY + 0.6f else max(lead + 0.35f, finishY + 0.6f)).coerceAtMost(-0.4f)
         camY += (target - camY) * min(1f, h * 3f)
     }
 
@@ -361,17 +381,27 @@ class MarbleRaceSim : Sim {
             val a = paddleSpin[k] * elapsed
             g.rect(paddleX[k], paddleY[k] - camY, PADDLE_LEN, PADDLE_THICK, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.7f), a)
         }
-        // The finish line.
-        if (finishY in bottom..top) {
-            g.rect(0f, finishY - camY, halfW, 0.006f, Palette.SUCCESS, alpha = 0.9f)
+        // The finish line: a chequered band right across.
+        if (finishY in bottom - 0.1f..top + 0.1f) {
+            // Squares of a set size, as many as fit: a set number of them
+            // across a wide screen was a band of slabs.
+            val flags = max(FLAGS, (2f * halfW / FLAG_MAX).toInt())
+            val sq = 2f * halfW / flags
+            for (k in 0 until flags) for (row in 0..1) {
+                if ((k + row) % 2 != 0) continue
+                g.rect(-halfW + sq * (k + 0.5f), finishY - camY + (row - 0.5f) * sq, sq * 0.5f, sq * 0.5f, Palette.TEXT_PRIMARY, alpha = 0.7f)
+            }
         }
         for (i in 0 until count) {
             val c = palette.at(i / max(1f, count - 1f))
-            val yy = if (done[i]) finishY - 0.15f - 0.05f * (place[i] - 1) else y[i]
+            val yy = y[i]
             if (yy > top || yy < bottom) continue
-            g.glow(x[i], yy - camY, R * 3f, c, 0.45f)
+            if (place[i] == 1) {
+                // The winner, ringed, and pulsing once it's home.
+                g.glow(x[i], yy - camY, R * (3.2f + 0.6f * sin(elapsed * 5f)), c, 0.7f)
+                g.ring(x[i], yy - camY, R * 1.55f, R * 0.25f, Palette.TEXT_PRIMARY)
+            } else g.glow(x[i], yy - camY, R * 2.6f, c, 0.4f)
             g.disc(x[i], yy - camY, R, c)
-            if (place[i] == 1) g.disc(x[i], yy - camY, R * 0.4f, Palette.TEXT_PRIMARY)
         }
     }
 
@@ -423,6 +453,9 @@ class MarbleRaceSim : Sim {
         const val WALL_DRAG = 0.8f
         const val WALL_CLEAR = R * 2f + PEG_R * 2f
         const val STUCK_SECONDS = 0.6f
+        /** Squares across the finish line. */
+        const val FLAGS = 20
+        const val FLAG_MAX = 0.05f
 
         fun def(): SimDef = SimDef(
             id = "physics/marble-race",

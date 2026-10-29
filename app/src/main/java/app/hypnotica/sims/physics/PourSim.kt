@@ -38,6 +38,7 @@ class PourSim : Sim {
     private var dvx = FloatArray(0)
     private var dvy = FloatArray(0)
     private var carry = 0f
+    private var stepCarry = 0f
     private var elapsed = 0f
     private var payoffFrame = false
     private var full = false
@@ -68,6 +69,7 @@ class PourSim : Sim {
     private var cellsY = 1
     private var head = IntArray(0)
     private var next = IntArray(0)
+    private var side = IntArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -107,6 +109,7 @@ class PourSim : Sim {
         px = FloatArray(cap); py = FloatArray(cap); dvx = FloatArray(cap); dvy = FloatArray(cap)
         n = 0
         carry = 0f
+        stepCarry = 0f
         elapsed = 0f
         payoffFrame = false
         full = false
@@ -118,11 +121,26 @@ class PourSim : Sim {
         cellsY = max(1, (2.2f / D).toInt() + 2)
         head = IntArray(cellsX * cellsY)
         next = IntArray(cap)
+        side = IntArray(cap)
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        val h = abs(dt)
+        // Always the same fixed step, however slowly time runs. The drops'
+        // speed is read back from how far the push-apart moved them, and the
+        // water under its own weight sits squeezed by an amount that scales
+        // with the step: the payoff's slow motion shrank the step fourfold, the
+        // squeeze sprang back at once, and the full glass erupted out of its
+        // own mouth. Slow motion is drawn by easing between the last two steps.
+        stepCarry += abs(dt)
+        while (stepCarry >= FIXED_STEP * 0.999f) {
+            stepCarry -= FIXED_STEP
+            tick(env, FIXED_STEP)
+        }
+        stepCarry = max(0f, stepCarry)
+    }
+
+    private fun tick(env: SimEnv, h: Float) {
         elapsed += h
         // The tap glides to the next glass, and pours only once it's there.
         val target = if (current < glasses) (gL[current] + gR[current]) * 0.5f else tapX
@@ -243,6 +261,10 @@ class PourSim : Sim {
         // enough to show a water line, splashed out as fast as it came, and
         // the glass never filled.
         val thick = env.params.f("thick", VISCOSITY).coerceIn(MIN_THICK, 0.9f)
+        // Which glass each drop is in, if any: drag never reaches through a
+        // wall, or spill outside clung to the still water inside and hung
+        // halfway up the glass.
+        for (i in 0 until n) side[i] = sideOf(x[i])
         for (i in 0 until n) {
             var sx = 0f; var sy = 0f; var w = 0f
             val cx = ((x[i] + halfW) / D).toInt().coerceIn(0, cellsX - 1)
@@ -252,7 +274,7 @@ class PourSim : Sim {
                 if (gx < 0 || gy < 0 || gx >= cellsX || gy >= cellsY) continue
                 var j = head[gy * cellsX + gx]
                 while (j >= 0) {
-                    if (j != i) {
+                    if (j != i && side[j] == side[i]) {
                         val dx = x[i] - x[j]; val dy = y[i] - y[j]
                         val d2 = dx * dx + dy * dy
                         if (d2 < REACH * REACH) {
@@ -292,6 +314,11 @@ class PourSim : Sim {
                 }
             }
         }
+    }
+
+    private fun sideOf(px: Float): Int {
+        for (k in 0 until glasses) if (px > gL[k] && px < gR[k]) return k
+        return -1
     }
 
     private fun inAnyGlass(px: Float): Boolean {
@@ -387,25 +414,53 @@ class PourSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val wallC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.8f)
+        val wallC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.85f)
         for (k in 0 until glasses) {
             val glassL = gL[k]; val glassR = gR[k]; val glassTop = gTop[k]
-            if (gFull[k]) g.glow((glassL + glassR) * 0.5f, glassTop, (glassR - glassL) * 1.2f, Palette.SUCCESS, 0.35f)
-            g.line(glassL, glassBottom, glassL, glassTop, 0.008f, wallC)
-            g.line(glassR, glassBottom, glassR, glassTop, 0.008f, wallC)
-            g.line(glassL, glassBottom, glassR, glassBottom, 0.008f, wallC)
-            // The brim, marked, so the target is there to be watched.
-            g.line(glassL - 0.02f, glassTop, glassL + 0.04f, glassTop, 0.004f, Palette.SUCCESS, 0.7f)
-            g.line(glassR - 0.04f, glassTop, glassR + 0.02f, glassTop, 0.004f, Palette.SUCCESS, 0.7f)
+            g.line(glassL, glassBottom, glassL, glassTop, WALL, wallC)
+            g.line(glassR, glassBottom, glassR, glassTop, WALL, wallC)
+            g.line(glassL - WALL * 0.5f, glassBottom, glassR + WALL * 0.5f, glassBottom, WALL, wallC)
+            // The brim, marked, so the target is there to be watched; a full
+            // glass lights its brim right across. A glow the glass's own size
+            // sat over it as a dim green fog.
+            if (gFull[k]) {
+                g.line(glassL - 0.02f, glassTop, glassR + 0.02f, glassTop, 0.006f, Palette.SUCCESS)
+                g.glow(glassL, glassTop, 0.05f, Palette.SUCCESS, 0.6f)
+                g.glow(glassR, glassTop, 0.05f, Palette.SUCCESS, 0.6f)
+            } else {
+                g.line(glassL - 0.02f, glassTop, glassL + 0.04f, glassTop, 0.005f, Palette.SUCCESS, 0.8f)
+                g.line(glassR - 0.04f, glassTop, glassR + 0.02f, glassTop, 0.005f, Palette.SUCCESS, 0.8f)
+            }
         }
+        // Between the last two fixed steps, when time runs slow.
+        val t = (stepCarry / FIXED_STEP).coerceIn(0f, 1f)
         g.reservePoints(n)
         for (i in 0 until n) {
             val sp = sqrt(vx[i] * vx[i] + vy[i] * vy[i])
             // Still water deep, moving water bright: the stream and the
-            // splash read against the pool.
-            g.point(x[i], y[i], SPACING * 1.5f, palette.at((0.25f + sp * 0.35f).coerceIn(0f, 1f)))
+            // splash read against the pool. Just wide enough to close the
+            // gaps between packed drops: wider, and the water drew over the
+            // glass's own walls.
+            var dx = px[i] + (x[i] - px[i]) * t
+            var dy = py[i] + (y[i] - py[i]) * t
+            // Drawn clear of the glass: points are drawn over every shape, so
+            // a drop touching a wall hid it, and a full glass lost its sides.
+            val k = side[i]
+            if (k >= 0 && dy < gTop[k]) {
+                dx = dx.coerceIn(gL[k] + DRAW_INSET, gR[k] - DRAW_INSET)
+                if (dy > glassBottom - D) dy = max(dy, glassBottom + DRAW_INSET)
+            } else if (k < 0) {
+                for (q in 0 until glasses) if (dy < gTop[q] && dx > gL[q] - DRAW_INSET && dx < gR[q] + DRAW_INSET) {
+                    dx = if (dx < (gL[q] + gR[q]) * 0.5f) gL[q] - DRAW_INSET else gR[q] + DRAW_INSET
+                }
+            }
+            g.point(dx, dy, D * 1.3f, palette.at((0.25f + sp * 0.35f).coerceIn(0f, 1f)))
         }
-        if (!full) g.rect(tapX, 0.97f, TAP_WIDTH * 2f, 0.02f, Palette.TEXT_SECONDARY, alpha = 0.8f)
+        if (!full) {
+            // The tap: a spout, and the pipe it hangs from.
+            g.rect(tapX, 0.985f, TAP_WIDTH * 1.6f, 0.012f, Palette.TEXT_SECONDARY, alpha = 0.85f)
+            g.rect(tapX, 0.962f, TAP_WIDTH * 0.7f, 0.014f, Palette.TEXT_SECONDARY, alpha = 0.85f)
+        }
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -433,6 +488,9 @@ class PourSim : Sim {
         const val BOUNCE = 0.1f
         const val GRAVITY_SCALE = 0.25f
         const val TAP_WIDTH = 0.04f
+        const val WALL = 0.012f
+        /** How far a drop's centre is drawn from a wall's centre line: half a wall and a drop's drawn radius. */
+        const val DRAW_INSET = WALL * 0.5f + D * 0.65f
         const val TAP_SPEED = 2.2f
         const val FULL_SHARE = 0.975f
         const val MAX_DROPS = 4500
@@ -449,6 +507,8 @@ class PourSim : Sim {
         /** How fast spill on the floor soaks away, as a share per second. */
         const val DRAIN = 0.6f
         const val GIVE_UP = 60f
+        /** The step the water was tuned on: the app's own, at full speed. */
+        const val FIXED_STEP = 1f / 120f
         const val MIN_THICK = 0.03f
         const val OVERFULL = 1.08f
         const val MIN_VOLUME = 0.88f

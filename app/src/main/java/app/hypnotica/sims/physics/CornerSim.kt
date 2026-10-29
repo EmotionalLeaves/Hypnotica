@@ -18,6 +18,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * The old screensaver question: will it hit the corner?
@@ -62,6 +63,10 @@ class CornerSim : Sim {
     private val sparkVy = FloatArray(SPARKS)
     private val sparkT = FloatArray(SPARKS)
     private var sparkLife = 0f
+    /** The corner it hit, as signs: kept, since the badge moves on. */
+    private var hitX = 0
+    private var hitY = 0
+    private var hitTint = 0f
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
@@ -107,6 +112,7 @@ class CornerSim : Sim {
         flash = 0f
         lineT = 0f
         sparkLife = 0f
+        hitX = 0; hitY = 0
         for (k in 0 until count) place(k, 0f)
     }
 
@@ -209,10 +215,12 @@ class CornerSim : Sim {
         // Sparks from the exact corner it touched.
         val sx = if (x[k] > 0f) halfW else -halfW
         val sy = if (y[k] > 0f) 1f else -1f
-        sparkLife = 2.5f
+        hitX = if (sx > 0f) 1 else -1; hitY = if (sy > 0f) 1 else -1
+        hitTint = tint[k]
+        sparkLife = SPARK_LIFE
         for (i in 0 until SPARKS) {
             val a = env.rng.range(0f, 2f * PI.toFloat())
-            val s = env.rng.range(0.2f, 1.2f)
+            val s = env.rng.range(0.3f, 1.4f)
             sparkX[i] = sx; sparkY[i] = sy
             sparkVx[i] = -abs(cos(a)) * s * (if (sx > 0f) 1f else -1f)
             sparkVy[i] = -abs(sin(a)) * s * (if (sy > 0f) 1f else -1f)
@@ -223,6 +231,19 @@ class CornerSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         if (flash > 0f) g.flash(0.25f * flash)
+        // The four corners, marked, so the target is on screen all along —
+        // and the one it hit lit in its colour. A bare black screen gave the
+        // eye nothing to judge "so close" by.
+        for (sx in intArrayOf(-1, 1)) for (sy in intArrayOf(-1, 1)) {
+            val lit = sx == hitX && sy == hitY
+            val c = if (lit) palette.at(hitTint) else Palette.TEXT_SECONDARY
+            val a = if (lit) 1f else 0.35f
+            val w = if (lit) 0.008f else 0.005f
+            val cx = sx * (halfW - w * 0.5f); val cy = sy * (1f - w * 0.5f)
+            g.line(cx, cy, cx - sx * CORNER_MARK, cy, w, c, a)
+            g.line(cx, cy, cx, cy - sy * CORNER_MARK, w, c, a)
+            if (lit) g.glow(sx * halfW, sy * 1f, 0.12f, c, 0.6f)
+        }
         // A wobble, if asked for: a little tilt back and forth as it goes.
         val rot = env.params.f("wobble", 0f) * 0.35f * sin(elapsed * 3f)
         // The round ends reach exactly to the box's edge, so a wall touch is a touch.
@@ -232,16 +253,26 @@ class CornerSim : Sim {
             val won = doneAt >= 0f && k == first
             // The badge: a rounded slab with a ring set in it.
             g.glow(x[k], y[k], bw * 1.6f, c, 0.25f + (if (won || count == 1) 0.5f * flash else 0f))
+            // Sparks before the badge that won, so they fly out from behind it.
+            if (won && sparkLife > 0f) drawSparks(g, palette)
             g.rect(x[k], y[k], bw - bh, bh, c, rot)
             g.disc(x[k] - ex, y[k] - ey, bh, c)
             g.disc(x[k] + ex, y[k] + ey, bh, c)
             g.ring(x[k], y[k], bh * 0.75f, bh * 0.22f, 0xFF07080C.toInt())
             g.rect(x[k], y[k], bw * 0.55f, bh * 0.12f, 0xFF07080C.toInt(), rot)
         }
-        if (sparkLife > 0f) {
-            g.reservePoints(SPARKS)
-            val a = (sparkLife / 2.5f).coerceIn(0f, 1f)
-            for (i in 0 until SPARKS) g.point(sparkX[i], sparkY[i], 0.014f, Palette.withAlpha(palette.at(sparkT[i]), a))
+    }
+
+    /**
+     * Streaks along their flight, bright and quick to go: dots that dimmed
+     * for two and a half seconds spread a grey speckle over the whole screen.
+     */
+    private fun drawSparks(g: G, palette: app.hypnotica.core.render.Palette) {
+        val a = (sparkLife / SPARK_LIFE).coerceIn(0f, 1f)
+        for (i in 0 until SPARKS) {
+            val vx = sparkVx[i]; val vy = sparkVy[i]
+            g.line(sparkX[i], sparkY[i], sparkX[i] - vx * 0.035f, sparkY[i] - vy * 0.035f, 0.006f,
+                Palette.brighten(palette.at(sparkT[i]), 0.3f), sqrt(a))
         }
     }
 
@@ -261,11 +292,14 @@ class CornerSim : Sim {
 
     companion object {
         const val BASE_SPEED = 0.42f
-        const val SPARKS = 400
+        const val SPARKS = 220
+        const val SPARK_LIFE = 1.8f
         const val MAX_BADGES = 4
         /** Closer than this to a corner counts as touching it, to the eye. */
         const val GRAZE = 0.02f
         const val TIE_GAP = 0.6f
+        /** How far each corner's marks run along its two walls. */
+        const val CORNER_MARK = 0.07f
 
         fun def(): SimDef = SimDef(
             id = "physics/corner",

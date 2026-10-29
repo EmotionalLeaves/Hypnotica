@@ -241,7 +241,9 @@ class SoapCutSim : Sim {
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
-        g.rect(0f, FLOOR - 0.02f, halfW, 0.02f, 0xFF20232C.toInt())
+        // The table: its top edge, and the table itself below it.
+        g.rect(0f, (FLOOR - 1f) * 0.5f, halfW, (FLOOR + 1f) * 0.5f, 0xFF0D0F14.toInt())
+        g.rect(0f, FLOOR - 0.006f, halfW, 0.006f, 0xFF2A2E38.toInt())
         val cw = blockW / gridX
         val ch = blockH / gridY
         val perSlice = gridX / slices
@@ -289,7 +291,11 @@ class SoapCutSim : Sim {
     companion object {
         const val MAX_SLICES = 40
         const val CELLS_PER_SLICE = 6
-        const val FLOOR = -0.3f
+        /**
+         * The table top. Low on the screen, so the block and the knife over
+         * it sit in the middle: at -0.3 the bottom third was empty table.
+         */
+        const val FLOOR = -0.45f
         const val MARGIN = 0.03f
         const val DOWN = 1.0f
         const val UP = 0.35f

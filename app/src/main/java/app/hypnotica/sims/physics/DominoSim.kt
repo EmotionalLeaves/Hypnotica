@@ -41,6 +41,7 @@ class DominoSim : Sim {
     private var spin = FloatArray(0)
     private var started = BooleanArray(0)
     private var down = BooleanArray(0)
+    private var rest = FloatArray(0)
     private var fallen = 0
     private var length = 0.06f
     private var thick = 0.01f
@@ -78,6 +79,15 @@ class DominoSim : Sim {
         for (i in 1 until n) widest = max(widest, sqrt((px[i] - px[i - 1]).let { it * it } + (py[i] - py[i - 1]).let { it * it }))
         length = max(gap * 1.6f, widest * 1.15f)
         thick = gap * 0.28f
+        // Where each comes to rest: leaning on the next one, which is where
+        // its top meets the next one's back face — cos(tilt) = thickness /
+        // spacing, exactly, for equal dominoes. Only the last lies flat. All
+        // of them lying flat drew a solid ribbon down the screen, every
+        // domino laid over the next.
+        rest = FloatArray(n) { i ->
+            if (i + 1 >= n) MAX_TILT
+            else kotlin.math.acos((thick / gapTo(i)).coerceIn(0f, 1f)).coerceIn(0.3f, MAX_TILT)
+        }
         tilt = FloatArray(n)
         spin = FloatArray(n)
         started = BooleanArray(n)
@@ -157,8 +167,8 @@ class DominoSim : Sim {
                 started[i + 1] = true
                 spin[i + 1] = spin[i] * HANDOFF
             }
-            if (tilt[i] >= MAX_TILT) {
-                tilt[i] = MAX_TILT
+            if (tilt[i] >= rest[i]) {
+                tilt[i] = rest[i]
                 down[i] = true
                 fallen++
                 // Each one landing is the next note up: the chain plays a run.
@@ -179,25 +189,32 @@ class DominoSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        for (i in 0 until n) {
-            // From above, a standing domino is its thickness; lying down, its
-            // length, lying in the direction it fell.
-            val lean = sin(tilt[i]) * length
-            val half = thick * 0.5f + lean * 0.5f
-            val cx = px[i] + dirX[i] * lean * 0.5f
-            val cy = py[i] + dirY[i] * lean * 0.5f
+        // An edge of background round each tipped domino, so a lying row
+        // reads as dominoes and not as one band of colour.
+        val edge = thick * 0.3f
+        // Last first: each domino lies on top of the one it leans on.
+        for (i in n - 1 downTo 0) {
+            // From above, a domino covers from its back foot to its top: its
+            // thickness standing, nearly its length tipped. It turns about its
+            // front foot.
+            val st = sin(tilt[i]); val ct = cos(tilt[i])
+            val reach = length * st + thick * ct
+            val off = thick * 0.5f + (length * st - thick * ct) * 0.5f
+            val cx = px[i] + dirX[i] * off
+            val cy = py[i] + dirY[i] * off
             val angle = atan2(dirY[i], dirX[i])
             val t = i / max(1f, n - 1f)
-            val c = when {
-                down[i] -> palette.at(0.1f + 0.85f * t)
-                started[i] -> Palette.brighten(palette.at(0.1f + 0.85f * t), 0.4f)
-                else -> Palette.withAlpha(Palette.TEXT_SECONDARY, 0.7f)
+            if (!started[i]) {
+                g.rect(cx, cy, reach * 0.5f, length * WIDTH, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.75f), angle)
+                continue
             }
-            g.rect(cx, cy, half, length * 0.42f, c, angle)
+            val c = if (down[i]) palette.at(0.1f + 0.85f * t) else Palette.brighten(palette.at(0.1f + 0.85f * t), 0.4f)
+            g.rect(cx, cy, reach * 0.5f + edge, length * WIDTH + edge, Palette.BG, angle)
+            g.rect(cx, cy, reach * 0.5f, length * WIDTH, c, angle)
         }
         // The front of the wave glows.
         val front = (0 until n).firstOrNull { started[it] && !down[it] }
-        if (front != null) g.glow(px[front], py[front], length * 2.5f, Palette.TEXT_PRIMARY, 0.35f)
+        if (front != null) g.glow(px[front], py[front], length * 1.4f, Palette.TEXT_PRIMARY, 0.3f)
     }
 
     override fun frameHalfWidth(env: SimEnv): Float =
@@ -217,6 +234,8 @@ class DominoSim : Sim {
 
     companion object {
         const val MAX_DOMINOES = 4000
+        /** Half a domino's width, in its lengths: a real one is half as wide as tall. */
+        const val WIDTH = 0.25f
         /** Row spacing in gaps along a row: room for a domino 1.6 gaps long. */
         const val ROW_ROOM = 1.9f
         const val PUSH = 1.2f

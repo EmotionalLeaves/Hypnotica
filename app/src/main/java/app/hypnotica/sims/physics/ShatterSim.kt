@@ -56,6 +56,7 @@ class ShatterSim : Sim {
     private var svy = FloatArray(0)
     private var spin = FloatArray(0)
     private var turn = FloatArray(0)
+    private var stuck = BooleanArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -104,6 +105,7 @@ class ShatterSim : Sim {
         } else {
             val g = env.laws.gravity * GRAVITY_SCALE
             for (i in sx.indices) {
+                if (stuck[i]) continue
                 val was = sy[i]
                 svy[i] -= g * h
                 sx[i] += svx[i] * h
@@ -144,7 +146,7 @@ class ShatterSim : Sim {
         val n = rings * rays
         shardRing = IntArray(n); shardA0 = FloatArray(n); shardA1 = FloatArray(n)
         sx = FloatArray(n); sy = FloatArray(n); svx = FloatArray(n); svy = FloatArray(n)
-        spin = FloatArray(n); turn = FloatArray(n)
+        spin = FloatArray(n); turn = FloatArray(n); stuck = BooleanArray(n)
         var k = 0
         for (r in 0 until rings) for (j in 0 until rays) {
             val a0 = rayAngle[j]
@@ -156,6 +158,9 @@ class ShatterSim : Sim {
             svx[k] = cos(mid) * push
             svy[k] = sin(mid) * push + 0.4f
             spin[k] = env.rng.range(-6f, 6f)
+            // Some of the outermost pieces stay in the frame, as they do in a
+            // broken window: the run used to end on an empty ring.
+            stuck[k] = r == rings - 1 && env.rng.nextFloat() < STUCK_SHARE
             k++
         }
         // The burst: a scatter of bright notes as the pieces go.
@@ -182,7 +187,7 @@ class ShatterSim : Sim {
             g.disc(0f, 0f, 0.02f, crack, 0.9f)
         } else {
             // The empty frame the glass was in.
-            g.ring(0f, 0f, radius, 0.012f, Palette.withAlpha(glass, 0.4f))
+            g.ring(0f, 0f, radius, 0.012f, Palette.withAlpha(glass, 0.75f))
             for (k in sx.indices) {
                 // Gone once it has fallen out of the frame.
                 if (abs(sx[k]) > radius * 1.8f || abs(sy[k]) > radius * 1.8f + 1f) continue
@@ -194,7 +199,9 @@ class ShatterSim : Sim {
                 // An annular sector, ring-drawn: the shader's gap runs from the
                 // ring's rotation, so the visible arc starts where [gap] ends.
                 val rot = shardA0[k] - gap + turn[k]
-                val c = palette.at(0.2f + 0.7f * r / max(1, rings - 1))
+                // Glass, all of it, a shade lighter ring by ring: each piece
+                // a colour of its own made a confetti of the break.
+                val c = Palette.lerp(glass, Palette.TEXT_PRIMARY, 0.1f + 0.25f * r / max(1, rings - 1))
                 // Turned about the piece's own middle, not the pane's: drawn
                 // about the pane's centre, an outer shard spinning at speed
                 // swung round in a circle and rose against gravity.
@@ -204,7 +211,12 @@ class ShatterSim : Sim {
                 val ct = cos(turn[k]); val st = sin(turn[k])
                 val ox = sx[k] + c0x - (c0x * ct - c0y * st)
                 val oy = sy[k] + c0y - (c0x * st + c0y * ct)
-                g.ring(ox, oy, outer, outer - inner, Palette.withAlpha(c, 0.75f), gap, rot)
+                g.ring(ox, oy, outer, outer - inner, Palette.withAlpha(c, 0.45f), gap, rot)
+                // Its edges catch the light: the outer one, and the crack it
+                // broke along on one side.
+                g.ring(ox, oy, outer, 0.004f, Palette.withAlpha(c, 0.95f), gap, rot)
+                val ea = shardA0[k] + turn[k]
+                g.line(ox + cos(ea) * inner, oy + sin(ea) * inner, ox + cos(ea) * outer, oy + sin(ea) * outer, 0.004f, c, 0.8f)
             }
         }
     }
@@ -226,6 +238,7 @@ class ShatterSim : Sim {
         const val GRAVITY_SCALE = 0.25f
         const val SHATTER_NOTES = 12
         const val FALL_SECONDS = 2.6f
+        const val STUCK_SHARE = 0.4f
 
         fun def(): SimDef = SimDef(
             id = "physics/shatter",

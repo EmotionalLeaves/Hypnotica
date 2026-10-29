@@ -175,7 +175,10 @@ class WheelSim : Sim {
     private fun stepConfetti(env: SimEnv, h: Float) {
         val g = env.laws.gravity * 0.08f
         for (i in cx.indices) {
-            cvx[i] *= 1f - 1.5f * h
+            // Paper: the air stops it sideways sooner than falling. With one
+            // drag for both it flew to the screen's edges and came down there
+            // in two columns, leaving the wheel bare.
+            cvx[i] *= 1f - min(1f, 3.2f * h)
             cvy[i] = cvy[i] * (1f - 1.5f * h) - g * h
             cx[i] += cvx[i] * h
             cy[i] += cvy[i] * h
@@ -201,7 +204,7 @@ class WheelSim : Sim {
             val c = sliceColour(palette, k)
             val won = k == winner
             val pulse = if (won) 0.5f + 0.5f * sin((elapsed - stoppedAt) * 10f) else 0f
-            val col = if (won) Palette.brighten(c, 0.3f + 0.3f * pulse) else if (winner >= 0) Palette.withAlpha(c, 0.45f) else c
+            val col = if (won) Palette.brighten(c, 0.3f + 0.3f * pulse) else if (winner >= 0) Palette.withAlpha(c, 0.55f) else c
             // A wedge: a ring as thick as its radius with everything but this
             // segment's arc cut away.
             g.ring(0f, 0f, radius, radius, col, twoPi - s, a0 + s)
@@ -228,6 +231,11 @@ class WheelSim : Sim {
             val mid = angle + starts[winner] + widths[winner] * 0.5f
             val big = winner == jackpot
             g.glow(cos(mid) * radius * 0.6f, sin(mid) * radius * 0.6f, radius * (if (big) 1.1f else 0.5f), sliceColour(palette, winner), if (big) 0.8f else 0.5f)
+            // The winning slice outlined, so it stands clear of its dimmed
+            // neighbours.
+            val a0 = angle + starts[winner]; val sw = widths[winner]
+            g.ring(0f, 0f, radius, 0.012f, Palette.TEXT_PRIMARY, twoPi - sw, a0 + sw)
+            for (a in floatArrayOf(a0, a0 + sw)) g.line(0f, 0f, cos(a) * radius, sin(a) * radius, 0.01f, Palette.TEXT_PRIMARY)
         }
         // The pegs round the rim.
         for (k in 0 until segments) {
@@ -244,8 +252,14 @@ class WheelSim : Sim {
         g.line(0f, baseY, tipX, radius - 0.02f, 0.022f, Palette.DANGER)
         g.disc(0f, baseY, 0.018f, Palette.DANGER)
         if (cx.isNotEmpty()) {
-            g.reservePoints(cx.size)
-            for (i in cx.indices) g.point(cx[i], cy[i], 0.012f, if (ctint[i] < 0f) Palette.brighten(GOLD, 0.3f * sin(i + elapsed * 9f)) else palette.at(ctint[i]))
+            // Scraps of paper, turning over as they fall and swaying.
+            for (i in cx.indices) {
+                val turn = i * 1.7f + elapsed * 7f
+                val flip = 0.25f + 0.75f * abs(sin(turn * 1.3f))
+                val sway = 0.012f * sin(i * 2.3f + elapsed * 4f)
+                val c = if (ctint[i] < 0f) Palette.brighten(GOLD, 0.3f * abs(sin(i + elapsed * 9f))) else palette.at(ctint[i])
+                g.rect(cx[i] + sway, cy[i], 0.009f, 0.0045f * flip + 0.001f, c, turn)
+            }
         }
     }
 

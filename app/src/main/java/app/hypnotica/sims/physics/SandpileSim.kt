@@ -148,19 +148,26 @@ class SandpileSim : Sim {
         val c1 = palette.at(0.25f)
         val c2 = palette.at(0.6f)
         val c3 = palette.at(0.95f)
-        val c0 = Palette.withAlpha(palette.at(0.05f), 0.35f)
+        val c0 = Palette.lerp(Palette.BG, palette.at(0.05f), 0.45f)
         for (y in half - r..half + r) {
             val wy = (y - half) * cell
             val row = y * n
-            for (x in half - r..half + r) {
-                val h = cells[row + x].toInt()
-                val c = when (h) {
-                    0 -> if (abs(x - half) < reach && abs(y - half) < reach) c0 else continue
+            // Empty sites are drawn only between the row's first and last
+            // grains — inside the pile. Over the whole square the pile had
+            // reached, they framed the round pile in a muddy box.
+            var first = half + r + 1; var last = half - r - 1
+            for (x in half - r..half + r) if (cells[row + x].toInt() != 0) { first = x; break }
+            for (x in half + r downTo half - r) if (cells[row + x].toInt() != 0) { last = x; break }
+            for (x in first..last) {
+                val c = when (cells[row + x].toInt()) {
+                    0 -> c0
                     1 -> c1
                     2 -> c2
                     else -> c3
                 }
-                g.point((x - half) * cell, wy, cell * 1.05f, c)
+                // Wide enough to merge with the neighbours: a dot a cell
+                // across left the dark lattice between dots showing.
+                g.point((x - half) * cell, wy, cell * 1.45f, c)
             }
         }
     }

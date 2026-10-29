@@ -49,6 +49,8 @@ class TrafficSim : Sim {
     private var straight = 0.55f
     private var cruise = 1.0
     private var jamSpeed = 1.0
+    /** Lying on its side, on a wide screen: tall and narrow it sat in a strip down the middle. */
+    private var flat = false
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -70,8 +72,14 @@ class TrafficSim : Sim {
         payoffFrame = false
         formed = false
         stops = 0L
-        radius = min(env.halfWidth * 0.8f, 0.42f)
-        straight = max(0.92f - radius, 0.1f)
+        flat = env.halfWidth > 1f
+        if (flat) {
+            radius = 0.8f
+            straight = max(env.halfWidth * 0.92f - radius, 0.1f)
+        } else {
+            radius = min(env.halfWidth * 0.8f, 0.42f)
+            straight = max(0.92f - radius, 0.1f)
+        }
     }
 
     /** The speed at which a gap of [gap] metres is exactly the gap wanted. */
@@ -150,6 +158,11 @@ class TrafficSim : Sim {
 
     /** Where on screen a share [t] of the way round the stadium is. */
     private fun place(t: Float): Pair<Float, Float> {
+        val (x, y) = placeUpright(t)
+        return if (flat) y to x else x to y
+    }
+
+    private fun placeUpright(t: Float): Pair<Float, Float> {
         val bend = PI.toFloat() * radius
         val total = 4f * straight + 2f * bend
         var d = (t - kotlin.math.floor(t)) * total
@@ -192,15 +205,30 @@ class TrafficSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        // The road.
         val bend = PI.toFloat() * radius
         val total = 4f * straight + 2f * bend
-        val marks = 160
-        for (k in 0 until marks) {
-            val (x, y) = place(k / marks.toFloat())
-            g.disc(x, y, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.35f))
-        }
         val carLength = (CAR / road * total).toFloat().coerceIn(0.006f, 0.06f)
+        // The road: a lane of tarmac with its edges marked. A ring of faint
+        // dots left the cars floating in the dark.
+        val lane = max(carLength * 1.0f, 0.03f)
+        val pi = PI.toFloat()
+        val edge = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f)
+        for (sx in floatArrayOf(-radius, radius)) {
+            if (flat) g.rect(0f, sx, straight, lane * 0.5f, TARMAC) else g.rect(sx, 0f, lane * 0.5f, straight, TARMAC)
+            for (off in floatArrayOf(-lane * 0.5f, lane * 0.5f)) {
+                if (flat) g.line(-straight, sx + off, straight, sx + off, 0.003f, edge)
+                else g.line(sx + off, -straight, sx + off, straight, 0.003f, edge)
+            }
+        }
+        // The bends: the top half of a ring over the top, the bottom half
+        // under — or, lying down, the right half and the left.
+        val bends = if (flat) arrayOf(Triple(straight, 0f, pi / 2f), Triple(-straight, 0f, -pi / 2f))
+        else arrayOf(Triple(0f, straight, -pi), Triple(0f, -straight, 0f))
+        for ((bx, by, gapAt) in bends) {
+            g.ring(bx, by, radius + lane * 0.5f, lane, TARMAC, pi, gapAt)
+            g.ring(bx, by, radius + lane * 0.5f, 0.003f, edge, pi, gapAt)
+            g.ring(bx, by, radius - lane * 0.5f + 0.0015f, 0.003f, edge, pi, gapAt)
+        }
         for (i in 0 until n) {
             val t = (pos[i] / road).toFloat()
             val (x, y) = place(t)
@@ -211,7 +239,8 @@ class TrafficSim : Sim {
             val share = (speed[i] / (2.0 * max(cruise, 0.5))).toFloat().coerceIn(0f, 1f)
             // Slow is the hot end of the palette, flowing the cool end.
             val c = palette.at(0.05f + 0.9f * share)
-            g.rect(x, y, carLength * 0.5f, carLength * 0.28f, c, heading)
+            // Never thinner than a hairline: a few hundred cars drew as dust.
+            g.rect(x, y, carLength * 0.5f, max(carLength * 0.28f, 0.006f), c, heading)
             if (jammed[i]) {
                 // Brake lights.
                 g.glow(x, y, carLength * 1.6f, Palette.WARNING, 0.35f)
@@ -249,6 +278,7 @@ class TrafficSim : Sim {
         /** Simulated seconds of traffic per second on screen. */
         const val SIM_SECONDS_PER_SECOND = 4.0f
         const val MIN_SECONDS = 3f
+        val TARMAC = 0xFF161921.toInt()
 
         fun def(): SimDef = SimDef(
             id = "physics/traffic",

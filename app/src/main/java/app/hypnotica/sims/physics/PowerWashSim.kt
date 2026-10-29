@@ -35,6 +35,8 @@ class PowerWashSim : Sim {
     private var oy = 0f
     private var mural = IntArray(0)
     private var dirt = FloatArray(0)
+    private var grain = FloatArray(0)
+    private var crust = BooleanArray(0)
     private var dirty = 0
     private var nx = 0f
     private var ny = 0f
@@ -83,11 +85,19 @@ class PowerWashSim : Sim {
             }
             dirt[k] = d
         }
+        // A little grain of its own in every cell, so the grime has texture
+        // without the mural showing through it.
+        grain = FloatArray(gx * gy) { env.rng.nextFloat() }
+        crust = BooleanArray(gx * gy)
         repeat(env.rng.int(2, 5)) {
             val c = env.rng.int(1, gx - 1); val r = env.rng.int(1, gy - 1)
-            for (dy in -1..1) for (dx in -1..1) {
+            // A crusted blob, round-cornered: a plain square of it read as a
+            // hole punched through the wall.
+            for (dy in -2..2) for (dx in -2..2) {
+                if (abs(dx) + abs(dy) > 3) continue
+                if (c + dx !in 0 until gx) continue
                 val k = (r + dy) * gx + (c + dx)
-                if (k in dirt.indices) dirt[k] = STUBBORN
+                if (k in dirt.indices) { dirt[k] = STUBBORN; crust[k] = true }
             }
         }
         dirty = gx * gy
@@ -126,7 +136,9 @@ class PowerWashSim : Sim {
         val kind = if (pick == 0) env.rng.int(0, MURALS.size - 1) else pick - 1
         val cx = gx * 0.5f; val cy = gy * 0.5f
         val f1 = env.rng.range(0.15f, 0.35f); val turn = env.rng.range(0f, 6.28f)
-        val bands = env.rng.range(1.6f, 3.2f)
+        // Two or three turns of the palette across the wall: more, and at one
+        // colour step a cell the mural broke into stair-stepped rainbow noise.
+        val bands = env.rng.range(0.9f, 1.6f)
         for (k in 0 until gx * gy) {
             val c = k % gx; val r = k / gx
             val u = (c - cx) / gx; val v = (r - cy) / gx
@@ -228,7 +240,7 @@ class PowerWashSim : Sim {
             // whatever the pace: at four times the speed it shifted none.
             // And a narrower jet blasts harder for the shorter time it's over a cell.
             dirt[k] -= h * BLAST * boost * (1f - d / r * 0.6f)
-            if (env.rng.nextFloat() < h * 25f) spray(env, ox + (c + 0.5f) * cell, oy + (row + 0.5f) * cell, GRIME)
+            if (env.rng.nextFloat() < h * 25f) spray(env, ox + (c + 0.5f) * cell, oy + (row + 0.5f) * cell, if (env.rng.bool()) GRIME_SPRAY else WATER)
             if (dirt[k] <= 0f) {
                 dirt[k] = 0f
                 dirty--
@@ -273,15 +285,25 @@ class PowerWashSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         g.reserveInstances(gx * gy + 8)
-        val half = cell * 0.5f + 0.0004f
+        // Overlapping a little, so no seam shows between cells.
+        val half = cell * 0.54f
         for (k in 0 until gx * gy) {
             val d = dirt[k].coerceIn(0f, 1f)
-            val c = if (d <= 0f) mural[k] else Palette.lerp(mural[k], if (dirt[k] > 1.5f) BAKED else GRIME, 0.35f + 0.65f * d)
+            // Grime is opaque until it is nearly gone: blended by its depth,
+            // the mural's rainbow showed through every cell of it as noise.
+            val c = if (d <= 0f) mural[k] else {
+                // Thicker grime darker; only the baked-on spots their own crust.
+                val baked = crust[k]
+                val base = if (baked) BAKED else Palette.lerp(GRIME, GRIME_DARK, ((dirt[k] - 1f) / 0.8f).coerceIn(0f, 1f))
+                val muck = Palette.lerp(base, GRIME_LIGHT, grain[k] * (if (baked) 0.15f else 0.35f))
+                val show = (1f - d) * (1f - d)
+                Palette.lerp(muck, mural[k], show)
+            }
             g.rect(ox + (k % gx + 0.5f) * cell, oy + (k / gx + 0.5f) * cell, half, half, c)
         }
         for (i in 0 until SPRAY) {
             if (slife[i] <= 0f) continue
-            g.point(sx[i], sy[i], 0.006f, Palette.withAlpha(scol[i], min(1f, slife[i] * 3f)))
+            g.point(sx[i], sy[i], 0.008f, Palette.withAlpha(scol[i], min(1f, slife[i] * 3f) * 0.8f))
         }
         if (doneAt < 0f) {
             // As wide as what it actually cleans, spray setting and all.
@@ -312,10 +334,14 @@ class PowerWashSim : Sim {
         const val SWEEP_SECONDS = 12f
         const val BLAST = 22f
         const val JETS_ACROSS = 13f
-        const val STUBBORN = 3.2f
+        const val STUBBORN = 2.6f
         const val SPRAY = 900
         val GRIME = 0xFF4A4034.toInt()
-        val BAKED = 0xFF2C241C.toInt()
+        val BAKED = 0xFF5A3A22.toInt()
+        val GRIME_LIGHT = 0xFF6A5C48.toInt()
+        val GRIME_DARK = 0xFF2E2820.toInt()
+        val GRIME_SPRAY = 0xFF8A7860.toInt()
+        val WATER = 0xFFBFE6FF.toInt()
 
         fun def(): SimDef = SimDef(
             id = "physics/power-wash",
@@ -329,7 +355,7 @@ class PowerWashSim : Sim {
             heroLabel = "Turbo",
             heroRestarts = false,
             defaultPalette = "Spectrum",
-            typicalSeconds = 16f,
+            typicalSeconds = 19f,
             params = listOf(
                 Param.choice("mural", "Under the dirt", MURALS, 0, card = Card.DATA, input = ParamInput.CHIPS),
                 Param.int("detail", "Detail", 10, MAX_DETAIL, 40, card = Card.DATA),

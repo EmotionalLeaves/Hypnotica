@@ -125,7 +125,10 @@ class BalloonSim : Sim {
         val g = env.laws.gravity * 0.06f
         for (i in cx.indices) {
             if (!popped(cowner[i])) continue
-            cvx[i] *= 1f - 1.2f * h
+            // Paper: air stops it sideways far sooner than it stops it
+            // falling. With one drag for both, the burst carried most of it
+            // to the screen's edges, and it came down there in two columns.
+            cvx[i] *= 1f - min(1f, 4f * h)
             cvy[i] = cvy[i] * (1f - 1.2f * h) - g * h
             val was = cy[i]
             cx[i] += cvx[i] * h
@@ -163,9 +166,11 @@ class BalloonSim : Sim {
             if (cowner[i] != k) continue
             val ux = cx[i]; val uy = cy[i]
             cx[i] = cxs[k] + ux * radius[k]; cy[i] = baseY + uy * radius[k]
-            val v = env.rng.range(0.4f, 1.4f) * (if (count > 1) 0.7f else 1f)
-            val d = sqrt(ux * ux + uy * uy).coerceAtLeast(0.05f)
-            cvx[i] = ux / d * v; cvy[i] = uy / d * v + 0.3f
+            // Faster the further out it was, as a burst flings things: the
+            // cloud swells as a whole. The same speed for every piece left
+            // the middle empty, and the pop read as a ring.
+            val v = env.rng.range(0.8f, 1.2f) * (if (count > 1) 0.7f else 1f)
+            cvx[i] = ux * v; cvy[i] = uy * v + 0.3f
         }
     }
 
@@ -192,22 +197,38 @@ class BalloonSim : Sim {
             g.glow(ox, oy, r * 1.25f, skin, 0.25f + 0.35f * tremble[k])
             // Thinner, so paler, as it stretches.
             g.disc(ox, oy, r, Palette.withAlpha(skin, 0.95f - 0.3f * (r / maxR)))
-            g.disc(ox - r * 0.35f, oy + r * 0.4f, r * 0.16f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
         }
-        g.reservePoints(cx.size)
+        val paper = cx.size <= PAPER_MAX
+        if (!paper) g.reservePoints(cx.size)
         for (i in cx.indices) {
             val k = cowner[i]
             if (!popped(k)) {
-                // The confetti inside, jostling.
+                // The confetti inside, jostling, dimmed by the skin it's behind.
                 val wob = tremble[k] * 0.012f
                 val ox = cxs[k] + sin(elapsed * 47f + k) * wob
                 val oy = baseY + cos(elapsed * 53f + k) * wob
                 val j = 0.04f * sin(cspin[i] + elapsed * (2f + 6f * tremble[k]))
-                g.point(ox + (cx[i] + j) * radius[k], oy + (cy[i] - j) * radius[k], 0.01f, Palette.withAlpha(palette.at(ctint[i]), 0.8f))
+                g.point(ox + (cx[i] + j) * radius[k], oy + (cy[i] - j) * radius[k], 0.01f, Palette.withAlpha(palette.at(ctint[i]), 0.55f))
             } else {
-                val flutter = 0.6f + 0.4f * abs(sin(cspin[i] + elapsed * 9f))
-                g.point(cx[i], cy[i], 0.012f * flutter, palette.at(ctint[i]))
+                val turn = cspin[i] + elapsed * 7f
+                // Swaying as it falls, the way paper does; still once it lands.
+                val sway = if (cy[i] > FLOOR) 0.012f * sin(cspin[i] * 3f + elapsed * 4f) else 0f
+                if (paper) {
+                    // A scrap of paper, turning over: its width flickers as it
+                    // shows its edge.
+                    val flip = 0.25f + 0.75f * abs(sin(turn * 1.3f))
+                    g.rect(cx[i] + sway, cy[i], 0.009f, 0.0045f * flip + 0.001f, palette.at(ctint[i]), turn)
+                } else {
+                    g.point(cx[i] + sway, cy[i], 0.012f * (0.6f + 0.4f * abs(sin(turn))), palette.at(ctint[i]))
+                }
             }
+        }
+        // The shine, over the confetti showing through.
+        for (k in 0 until count) {
+            if (popped(k)) continue
+            val r = radius[k]
+            g.disc(cxs[k] - r * 0.38f, baseY + r * 0.42f, r * 0.11f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.55f))
+            g.disc(cxs[k] - r * 0.22f, baseY + r * 0.55f, r * 0.045f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
         }
     }
 
@@ -237,6 +258,8 @@ class BalloonSim : Sim {
         const val POP_NOTES = 10
         const val FALL_SECONDS = 3f
         const val FLOOR = -0.97f
+        /** Up to this many pieces, confetti is drawn as turning scraps; past it, as dots. */
+        const val PAPER_MAX = 3000
 
         fun def(): SimDef = SimDef(
             id = "physics/balloon",

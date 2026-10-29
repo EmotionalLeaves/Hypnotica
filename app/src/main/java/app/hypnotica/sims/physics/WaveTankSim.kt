@@ -188,19 +188,27 @@ class WaveTankSim : Sim {
         val palette = env.palette
         val cell = 2f / h
         val left = -env.halfWidth
-        g.reservePoints(w * h)
-        val pos = palette.at(0.8f)
-        val neg = palette.at(0.2f)
-        for (y in 0 until h) {
+        // The water, down to the screen: past it is the screen's own business.
+        // Each cell a dot wide enough to merge with its neighbours — a dot one
+        // cell across left a lattice of dark gaps that beat against the
+        // wavefronts into moiré.
+        g.reservePoints(w * (screenRow + 1))
+        val crest = palette.at(0.75f)
+        val trough = palette.at(0.3f)
+        for (y in 0 until screenRow) {
             val wy = 1f - (y + 0.5f) * cell
             val row = y * w
             for (x in 0 until w) {
                 val i = row + x
                 if (wall[i]) continue
-                val v = u[i]
-                val a = (abs(v) / SHOW_AMPLITUDE).coerceIn(0f, 1f)
-                if (a < 0.04f) continue
-                g.point(left + (x + 0.5f) * cell, wy, cell * 1.1f, Palette.withAlpha(if (v > 0f) pos else neg, a))
+                val q = u[i] / SHOW_AMPLITUDE
+                // Crests bright, troughs a dim second colour: the ripples read
+                // as lines of light, the way a ripple tank throws them.
+                val a = if (q > 0f) min(1f, q) else min(1f, -q) * TROUGH
+                if (a < 0.03f) continue
+                // Opaque, faded toward the background instead: see-through
+                // dots doubled up where they overlap and the field went grainy.
+                g.point(left + (x + 0.5f) * cell, wy, cell * 1.45f, Palette.lerp(Palette.BG, if (q > 0f) crest else trough, a))
             }
         }
         // The wall, drawn solid.
@@ -211,17 +219,25 @@ class WaveTankSim : Sim {
             val from = x
             while (x < w && wall[wallRow * w + x]) x++
             val cx = left + (from + x) * 0.5f * cell
-            g.rect(cx, wallY, (x - from) * 0.5f * cell, WALL_ROWS * 0.5f * cell, Palette.TEXT_SECONDARY, alpha = 0.7f)
+            g.rect(cx, wallY, (x - from) * 0.5f * cell, WALL_ROWS * 0.5f * cell, Palette.TEXT_SECONDARY, alpha = 0.8f)
         }
-        // The screen's tally: bars rising from the bottom, the stripes.
+        // The screen: a strip lit where the waves land hardest — the fringes —
+        // and under it, below the water, the tally as a bar chart. The bars
+        // stood in the water before and tangled with the waves.
         var peak = 1e-6f
         for (v in screen) if (v > peak) peak = v
-        val barBase = -1f
+        val screenY = 1f - (screenRow + 0.5f) * cell
+        g.line(left, screenY, -left, screenY, cell * 0.6f, Palette.TEXT_SECONDARY, 0.5f)
+        val barBase = -1f + cell
+        val room = screenY - cell * 4f - barBase
         for (c in 0 until w) {
-            val hgt = sqrt(screen[c] / peak) * SCREEN_HEIGHT
-            if (hgt < 0.002f) continue
-            g.rect(left + (c + 0.5f) * cell, barBase + hgt * 0.5f, cell * 0.45f, hgt * 0.5f,
-                Palette.withAlpha(palette.at(0.6f + 0.35f * hgt / SCREEN_HEIGHT), 0.85f))
+            // Intensity is the wave squared, which is what the screen totals.
+            val lit = screen[c] / peak
+            if (lit < 0.01f) continue
+            val col = palette.at(0.75f)
+            g.rect(left + (c + 0.5f) * cell, screenY, cell * 0.55f, cell * 1.5f, col, alpha = lit)
+            val hgt = lit * room
+            g.rect(left + (c + 0.5f) * cell, barBase + hgt * 0.5f, cell * 0.56f, hgt * 0.5f, col, alpha = 0.35f + 0.5f * lit)
         }
     }
 
@@ -244,6 +260,8 @@ class WaveTankSim : Sim {
         const val UPDATES_PER_SECOND = 70f
         const val SOURCE_AMPLITUDE = 1f
         const val SHOW_AMPLITUDE = 0.7f
+        /** How bright a trough is next to a crest of the same height. */
+        const val TROUGH = 0.4f
         const val ARRIVAL = 0.02f
         const val FORMING_PERIODS = 6f
         const val STONE = 2.5f
