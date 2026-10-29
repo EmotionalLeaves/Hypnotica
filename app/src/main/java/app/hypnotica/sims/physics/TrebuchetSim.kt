@@ -109,26 +109,15 @@ class TrebuchetSim : Sim {
         // One rehearsal swing, recorded, tells every release angle's landing.
         val rec = rehearse()
         val rMax = bestRange(rec)
-        // Near the top of its reach, so the two shots that land on the wall
-        // both sit close to 45° and the flatter of them is a true trebuchet
-        // arc rather than a skimmer. At 0.7–0.86 of the reach the aimer had to
-        // choose a 65° lob: nine seconds of empty sky a hundred metres up.
-        wallX = if (rMax > 30.0) rMax * env.rng.range(0.88f, 0.95f) else 120.0
+        wallX = if (rMax > 30.0) rMax * env.rng.range(0.7f, 0.86f) else 120.0
         releaseAngle = if (autoAim) aim(rec) else p.f("release", 45f).coerceIn(10f, 80f).toDouble()
-        frameMachine(rec)
         reset()
         buildCastle(env)
         // A few still clouds along the way: something fixed in the sky for
         // the following camera to move against.
         cloudX = DoubleArray(CLOUDS) { 20.0 + (wallX - 10.0) * (it + env.rng.range(0.1f, 0.9f)) / CLOUDS }
-        // Clouds at the heights the flight actually passes through, so the
-        // following camera has something to move against.
-        val top = (max(30.0, flightPeak(rec) * 1.1)).toFloat()
-        cloudY = DoubleArray(CLOUDS) { env.rng.range(12f, top).toDouble() }
+        cloudY = DoubleArray(CLOUDS) { env.rng.range(18f, (max(40.0, wallX * 0.45)).toFloat()).toDouble() }
         cloudR = FloatArray(CLOUDS) { env.rng.range(4f, 8f) }
-        // Far hills, drawn smaller and slower than the ground (parallax).
-        hillX = DoubleArray(HILLS) { -60.0 + (wallX + 160.0) * (it + env.rng.range(0.15f, 0.85f)) / HILLS }
-        hillR = FloatArray(HILLS) { env.rng.range(40f, 90f) }
         elapsed = 0f
         payoffFrame = false
         hitAt = -1f
@@ -142,40 +131,13 @@ class TrebuchetSim : Sim {
         started = false
         verdict = ""
         releasedAt = -1f
-        camS = 1.0 / machHalfH
-        camX = machCx; camY = machCy
+        camS = startScale()
+        camX = -1.5; camY = startCamY()
     }
 
-    private var machHalfH = 15.0
-    private var machCx = -1.5
-    private var machCy = 11.5
+    private fun startScale(): Double = (if (hw < 1f) 2.0 / 30.0 else 2.0 / 26.0)
 
-    /**
-     * The opening shot holds the whole swing: the stone's path up to its
-     * release, the beam's sweep and the frame. A fixed 30 m view lost the
-     * sling off the left edge on a phone, and the release happened off screen.
-     */
-    private fun frameMachine(rec: Rec) {
-        var x0 = -7.0; var x1 = 5.0; var y1 = pivotH + longArm + 1.0
-        val end = releaseIndex(rec, releaseAngle).let { if (it < 0) rec.n - 1 else it }
-        for (i in 0..end) {
-            x0 = min(x0, rec.x[i]); x1 = max(x1, rec.x[i]); y1 = max(y1, rec.y[i])
-        }
-        x0 -= 1.5; x1 += 1.5; y1 += 1.5
-        val y0 = -2.5
-        val halfW = (x1 - x0) / 2
-        machHalfH = max(max(13.0, (y1 - y0) / 2), halfW / max(0.2f, hw))
-        machCx = (x0 + x1) / 2
-        machCy = y0 + machHalfH
-    }
-
-    /** Apex of the shot the aim chose, from the rehearsal. */
-    private fun flightPeak(rec: Rec): Double {
-        val i = releaseIndex(rec, releaseAngle)
-        if (i < 0) return 30.0
-        val vy = max(0.0, rec.vy[i])
-        return if (grav > 0) rec.y[i] + vy * vy / (2 * grav) else 60.0
-    }
+    private fun startCamY(): Double = 1.0 / startScale() - 3.5
 
     private fun reset() {
         // Cocked: the long end down behind, its tip 0.8 m off the ground.
@@ -365,10 +327,8 @@ class TrebuchetSim : Sim {
                 if (t > 0) {
                     val y = rec.y[i] + rec.vy[i] * t - 0.5 * grav * t * t
                     val err = abs(y - WALL_H * 0.5)
-                    // Of the two arcs that land, the one nearer 45°: with the
-                    // wall near the top of the range that is the lower,
-                    // shorter flight, and still a proper siege arc.
-                    val score = err + (if (a > 45.0) 3.0 else 0.0)
+                    // Prefer the high lob, as a trebuchet shoots, when it can make it.
+                    val score = err + (if (a < 45.0) 3.0 else 0.0)
                     if (score < bestErr) { bestErr = score; bestA = a }
                 }
             }
@@ -412,8 +372,6 @@ class TrebuchetSim : Sim {
     private var cloudX = DoubleArray(0)
     private var cloudY = DoubleArray(0)
     private var cloudR = FloatArray(0)
-    private var hillX = DoubleArray(0)
-    private var hillR = FloatArray(0)
 
     // ---------------------------------------------------------------- step
 
@@ -470,10 +428,9 @@ class TrebuchetSim : Sim {
                 landed = true
             }
         }
-        // Distance posts every 25 m tick by as it passes them, panned to
-        // where the post stands on screen (the camera leads the stone).
+        // Distance posts every 25 m tick by as it passes them.
         while (sx >= markNext * MARK && markNext * MARK < wallX - 5) {
-            env.emit(EventKind.COMPARE, 0.75f - 0.03f * markNext, panOf(markNext * MARK), 0.2f)
+            env.emit(EventKind.COMPARE, 0.75f - 0.03f * markNext, 0.4f, 0.2f)
             markNext++
         }
         trailTick += h.toFloat()
@@ -553,32 +510,24 @@ class TrebuchetSim : Sim {
         val halfH: Double
         var tx: Double
         var ty: Double
-        val flying = released && hitAt < 0f
-        val rate = if (flying) 4.0 else 2.2
         if (!released) {
-            halfH = machHalfH
-            tx = machCx; ty = machCy
-        } else if (flying) {
-            // Tall enough to hold the ground and the top of the arc at once,
-            // so the posts and hills stream past under the stone the whole
-            // way; only a very high shot (low gravity, a steep hand aim) is
-            // followed upward instead. Pulling back to the whole range
-            // shrank everything to specks, so the width follows the stone.
-            halfH = ((peak + 8.0) / 2).coerceIn(22.0, 60.0)
+            halfH = 1.0 / startScale()
+            tx = -1.5; ty = startCamY()
+        } else if (hitAt < 0f) {
+            // Follow the stone at a fixed 50 m of sky, ground along the bottom
+            // until the stone climbs past it, looking ahead to the castle.
+            // Pulling back to hold the whole arc shrank everything to specks.
+            halfH = FLIGHT_VIEW / 2
             val halfW = halfH * hw
-            // Led by the stone's own speed over the easing rate, so the
-            // eased camera sits on the stone instead of trailing it by
-            // ten metres.
-            tx = min(sx + svx / rate + halfW * 0.3, wallX + 6)
-            ty = max(halfH - 3, sy + 5 - halfH)
+            tx = min(sx + halfW * 0.45, wallX + 6)
+            ty = max(sy, halfH - 4)
         } else {
-            // The finale: the whole castle, tower and flag, in frame.
-            halfH = 17.0
-            tx = wallX + 5.5; ty = halfH - 3
+            halfH = 16.0
+            tx = wallX + 4; ty = halfH - 3
         }
         val targetS = 1.0 / halfH
         // Eased, so the camera glides rather than cuts; zoom and pan together.
-        val k = 1.0 - kotlin.math.exp(-h * rate)
+        val k = 1.0 - kotlin.math.exp(-h * (if (released && hitAt < 0f) 4.0 else 2.2))
         camS += (targetS - camS) * k
         camX += (tx - camX) * k
         camY += (ty - camY) * k
@@ -595,14 +544,6 @@ class TrebuchetSim : Sim {
         val pal = env.palette
         val s = camS.toFloat()
         val groundY = syw(0.0)
-        // Far hills: at four times the distance they drift past at a quarter
-        // of the ground's speed and a quarter of its size.
-        for (i in hillX.indices) {
-            val x = ((hillX[i] - camX) * s / HILL_DEPTH).toFloat()
-            val r = hillR[i] * s / HILL_DEPTH.toFloat()
-            if (abs(x) - r > hw * 1.05f) continue
-            g.disc(x, groundY - r * 0.55f, r, HILL)
-        }
         // Ground.
         g.rect(0f, (groundY - 1.2f) * 0.5f, hw * 1.02f, max(0f, (groundY + 1.2f) * 0.5f), GROUND)
         g.rect(0f, groundY, hw * 1.02f, 0.002f, GROUND_LIT)
@@ -760,9 +701,7 @@ class TrebuchetSim : Sim {
         const val WALL_H = 12.0
         const val TOWER_H = 20.0
         const val MARK = 25.0
-        const val HILLS = 9
-        const val HILL_DEPTH = 4.0
-        const val HILL = 0xFF10141B.toInt()
+        const val FLIGHT_VIEW = 50.0
         const val CLOUDS = 14
         const val TRAIL = 400
         const val GROUND = 0xFF12151B.toInt()
@@ -781,12 +720,12 @@ class TrebuchetSim : Sim {
             title = "Trebuchet",
             shelf = Shelf.PHYSICS,
             family = "Mechanics",
-            blurb = "Four tonnes drop two metres. A stone flies a quarter of a kilometre. Does it hit the wall?",
+            blurb = "Four tonnes drop two metres. A stone flies two hundred metres. Does it hit the wall?",
             formats = listOf(TrapFormat.SNAP, TrapFormat.GUESS),
             lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Load another stone",
             defaultPalette = "Ember",
-            typicalSeconds = 10f,
+            typicalSeconds = 14f,
             params = listOf(
                 Param.float("weight", "Counterweight", 1000f, 10000f, 4000f, card = Card.MOTION, unit = "kg"),
                 Param.choice("aim", "Aim", listOf("Auto-aim", "By hand"), 0, card = Card.DATA, input = ParamInput.TILES),
