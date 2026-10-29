@@ -280,7 +280,7 @@ class ArenaSim : Sim {
             if (hp[i] <= 0f) continue
             val c = palette.at(tint[i])
             val r = radius * (1f + 0.2f * hit[i])
-            if (i == winner) g.glow(x[i], y[i], radius * (2.6f + 0.4f * sin(elapsed * 6f)), c, 0.55f)
+            if (i == winner) g.glow(x[i], y[i], radius * 2.8f, c, 0.55f)
             g.disc(x[i], y[i], r, if (hit[i] > 0f) Palette.brighten(c, 0.7f * hit[i]) else c)
             // Health: a band round the ball's own rim, the lost share cut away
             // from the top. Outside the ball, the bands of two fighters

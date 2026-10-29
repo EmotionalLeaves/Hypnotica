@@ -563,8 +563,12 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
         if (core.payoffFired && !payoffNotified) {
             payoffNotified = true
-            punch = if (safety.reduceMotion) 0f else 1f
-            shake = if (safety.reduceMotion) 0f else 1f
+            // No punch-in and no shake. The user found the whole picture
+            // lurching on its own "fuckin disorienting": a zoom bump and a
+            // jolt arrive from nowhere on screen, over a picture that has
+            // already shown its moment. The payoff is the sim's own drawing.
+            punch = 0f
+            shake = 0f
             // The payoff is time, not fanfare.
             //
             // It used to be slow motion, a punch-in, a shake, a white flash
@@ -591,7 +595,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         val kicksNow = mapping.kicks
         if (kicksNow != kicksSeen) {
             kicksSeen = kicksNow
-            if (!safety.reduceMotion) beat = 1f
+            // The beat no longer moves the picture: a 1.5% zoom on every kick
+            // read as the screen thumping, which is the disorienting half of
+            // "cut to the beat". The sound keeps the beat.
+            beat = 0f
         }
         if (beat > 0f) beat = max(0f, beat - dt / BEAT_SECONDS)
         if (shake > 0f) {
@@ -603,8 +610,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         if (proj == null) {
             // Camera breath: under one percent, slow enough to be felt rather
             // than seen, and off entirely when Reduce motion is on.
-            val breathing =
-                if (safety.reduceMotion) 1f else 1f + BREATH_DEPTH * kotlin.math.sin(breath)
+            // Off: an idle zoom that swells and settles is a slow pulse, and a
+            // steady frame is what a viewer's eye anchors to.
+            val breathing = 1f
             // Squared, so the zoom comes back quickly and then settles.
             //
             // This was linear, and it was the one part of the payoff that was:

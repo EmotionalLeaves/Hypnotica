@@ -214,7 +214,7 @@ class LastOutSim : Sim {
         for (i in 0 until n) {
             if (out[i] && y[i] < -1.4f) continue
             val c = palette.at(tint[i])
-            if (i == winner) g.glow(x[i], y[i], r * (4f + sin(elapsed * 6f)), c, 0.7f)
+            if (i == winner) g.glow(x[i], y[i], r * 4.4f, c, 0.7f)
             g.disc(x[i], y[i], r, if (out[i]) Palette.withAlpha(c, 0.45f) else c)
         }
     }

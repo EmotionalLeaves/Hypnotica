@@ -236,7 +236,8 @@ class CornerSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        if (flash > 0f) g.flash(0.25f * flash)
+        // No whole-screen flash on the hit: the lit corner and the sparks say
+        // it, and a flash over everything read as the screen thumping.
         // The four corners, marked, so the target is on screen all along —
         // and the one it hit lit in its colour. A bare black screen gave the
         // eye nothing to judge "so close" by.

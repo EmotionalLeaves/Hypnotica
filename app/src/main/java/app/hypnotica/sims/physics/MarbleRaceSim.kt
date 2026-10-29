@@ -462,7 +462,7 @@ class MarbleRaceSim : Sim {
             }
             if (place[i] == 1) {
                 // The winner, ringed, and pulsing once it's home.
-                g.glow(x[i], sy, R * (3.2f + 0.6f * sin(elapsed * 5f)), c, 0.7f)
+                g.glow(x[i], sy, R * 3.4f, c, 0.7f)
                 g.ring(x[i], sy, R * 1.55f, R * 0.25f, Palette.TEXT_PRIMARY)
             } else if (i == leader && winnerAt < 0f) {
                 g.glow(x[i], sy, R * 3.4f, c, 0.6f)
