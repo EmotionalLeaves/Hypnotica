@@ -128,24 +128,38 @@ class PolyrhythmSim : Sim {
             }
             g.line(0f, 0f, 0f, outer + 0.04f, 0.0025f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
         } else {
-            val halfW = env.halfWidth * 0.9f
+            val halfW = env.halfWidth * 0.88f
+            // Every dot strikes at the right-hand end, where its phase wraps:
+            // the line it strikes is drawn there, as the rings have theirs.
+            g.line(halfW + 0.03f, -0.93f, halfW + 0.03f, 0.93f, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
             for (i in 0 until count) {
                 val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
                 val y = 0.9f - (i + 0.5f) * (1.8f / count)
                 val c = palette.at(t)
-                g.line(-halfW, y, halfW, y, 0.0018f, Palette.withAlpha(c, 0.3f))
+                val flash = hitFlash[i]
+                g.line(-halfW, y, halfW, y, 0.003f, Palette.withAlpha(c, 0.35f + 0.4f * flash))
                 val phase = (elapsed / cycleSeconds) * loopsFor(i)
                 // A bounce along the line rather than a wrap, so it reads as a pendulum.
-                val x = -halfW + abs(((phase * 2f) % 2f) - 1f) * 2f * halfW
-                val flash = hitFlash[i]
+                val u = ((phase * 2f) % 2f)
+                val x = -halfW + abs(u - 1f) * 2f * halfW
+                // A tail behind it, back the way it came.
+                val dir = if (u < 1f) 1f else -1f
+                for (k in 1..TAIL) {
+                    val bx = (x + dir * k * 0.012f).coerceIn(-halfW, halfW)
+                    g.point(bx, y, 0.028f * (1f - k / (TAIL + 1f)), Palette.withAlpha(c, 0.5f * (1f - k / (TAIL + 1f))))
+                }
                 g.glow(x, y, 0.05f + flash * 0.08f, c, 0.4f + flash * 0.5f)
-                g.disc(x, y, 0.015f, Palette.brighten(c, flash * 0.5f))
+                g.disc(x, y, 0.022f + flash * 0.01f, Palette.brighten(c, flash * 0.5f))
             }
         }
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.95f
+    /**
+     * The rings are drawn at a fixed size; on a phone held upright the view
+     * pulls back to fit them. The lines lay themselves out to the screen, and
+     * pulled back for the rings' sake they were a narrow strip in the middle.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float = if (arcMode) 0.95f else 0f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -205,7 +219,7 @@ class HarmonographSim : Sim {
     override fun setup(env: SimEnv) {
         runFor = 0f
         val params = env.params
-        val len = params.i("trail", 14000).coerceIn(500, 120000)
+        val len = params.i("trail", 36000).coerceIn(500, 120000)
         trailX = FloatArray(len)
         trailY = FloatArray(len)
         head = 0
@@ -227,6 +241,31 @@ class HarmonographSim : Sim {
             amp[i] = env.rng.range(0.32f, 0.47f)
             decay[i] = d * env.rng.range(0.7f, 1.3f)
         }
+        // How far the pen actually swings, found by swinging it: the two
+        // amplitudes' sum, used before, is a reach the figure seldom comes
+        // near, and the view pulled back for it left the drawing small in
+        // the middle of the screen.
+        reachX = 0.05f; reachY = 0.05f
+        var tt = 0f
+        while (tt < MEASURE_TIME) {
+            pen(tt)
+            reachX = max(reachX, abs(penX)); reachY = max(reachY, abs(penY))
+            tt += 0.005f
+        }
+    }
+
+    private var reachX = 0.9f
+    private var reachY = 0.9f
+
+    private var penX = 0f
+    private var penY = 0f
+
+    /** Where the pen is at pendulum time [tf], into [penX] and [penY]: no allocation in the hot loop. */
+    private fun pen(tf: Float) {
+        penX = amp[0] * sin(tf * f[0] + p[0]) * exp(-decay[0] * tf) +
+            amp[1] * sin(tf * f[1] + p[1]) * exp(-decay[1] * tf)
+        penY = amp[2] * sin(tf * f[2] + p[2]) * exp(-decay[2] * tf) +
+            amp[3] * sin(tf * f[3] + p[3]) * exp(-decay[3] * tf)
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -237,13 +276,9 @@ class HarmonographSim : Sim {
         val h = 0.0016
         while (budget-- > 0) {
             t += h
-            val tf = t.toFloat()
-            val x = amp[0] * sin(tf * f[0] + p[0]) * exp(-decay[0] * tf) +
-                amp[1] * sin(tf * f[1] + p[1]) * exp(-decay[1] * tf)
-            val y = amp[2] * sin(tf * f[2] + p[2]) * exp(-decay[2] * tf) +
-                amp[3] * sin(tf * f[3] + p[3]) * exp(-decay[3] * tf)
-            trailX[head] = x
-            trailY[head] = y
+            pen(t.toFloat())
+            trailX[head] = penX
+            trailY[head] = penY
             head = (head + 1) % trailX.size
             if (filled < trailX.size) filled++
         }
@@ -262,7 +297,7 @@ class HarmonographSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         g.reservePoints(filled)
-        val size = env.params.f("dot", 0.0035f)
+        val size = env.params.f("dot", 0.006f)
         for (k in 0 until filled) {
             val idx = (head - 1 - k + trailX.size * 2) % trailX.size
             val age = k.toFloat() / filled
@@ -279,9 +314,9 @@ class HarmonographSim : Sim {
      * the middle. (Following the swing in as it dies cropped the older,
      * wider loops still on screen.)
      */
-    override fun frameHalfWidth(env: SimEnv): Float = amp[0] + amp[1] + MARGIN
+    override fun frameHalfWidth(env: SimEnv): Float = reachX + MARGIN
 
-    override fun frameHalfHeight(env: SimEnv): Float = amp[2] + amp[3] + MARGIN
+    override fun frameHalfHeight(env: SimEnv): Float = reachY + MARGIN
 
     // The figure's own reach each way, from its amplitudes: a fixed 0.56
     // cropped a third of some figures, which reach 0.94.
@@ -295,6 +330,13 @@ class HarmonographSim : Sim {
     companion object {
         const val BACKSTOP_SECONDS = 40f
         const val MARGIN = 0.03f
+        /**
+         * Pendulum time searched for the widest swing. The swing dies from
+         * its start, but two nearly equal frequencies beat, and at a large
+         * detune and light damping the pair can line up wider a little later:
+         * this covers a beat at the slider's widest detune.
+         */
+        const val MEASURE_TIME = 120f
         fun def(): SimDef = SimDef(
             id = "art/harmonograph",
             title = "Harmonograph",
@@ -310,8 +352,13 @@ class HarmonographSim : Sim {
                 Param.float("ratio", "Second frequency", 0.5f, 8f, 3f, card = Card.DATA),
                 Param.float("detune", "Detune", 0f, 0.05f, 0.004f, card = Card.DATA),
                 Param.float("damping", "Damping", 0.004f, 0.2f, 0.05f, card = Card.MOTION),
-                Param.int("trail", "Trail", 500, 120000, 14000, card = Card.LOOK, logScale = true),
-                Param.float("dot", "Line weight", 0.001f, 0.01f, 0.0035f, card = Card.LOOK),
+                // Enough ink to keep the whole drawing, at the shipped speed,
+                // until the swing has died: at 14,000 the wide early loops
+                // were rubbed out as the pen went on, and what was left by
+                // the payoff was a small knot in a frame sized for all of it.
+                Param.int("trail", "Trail", 500, 120000, 36000, card = Card.LOOK, logScale = true),
+                // A pixel wide on a phone at 0.0035, dimmed by the renderer.
+                Param.float("dot", "Line weight", 0.001f, 0.012f, 0.006f, card = Card.LOOK),
                 Param.float("rate", "Speed", 100f, 8000f, 900f, card = Card.MOTION, logScale = true)
             ),
             create = { HarmonographSim() }
@@ -435,10 +482,13 @@ class CirclePackingSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reserveInstances(count * 2)
+        g.reserveInstances(count * 3)
         for (i in 0 until count) {
             val c = palette.at(tint[i])
             if (growing[i]) g.glow(cx[i], cy[i], cr[i] * 2.2f, c, 0.4f)
+            // A faint wash of its colour inside, so each circle reads as a
+            // solid thing and not a hole cut in the dark.
+            g.disc(cx[i], cy[i], cr[i], c, 0.13f)
             g.ring(cx[i], cy[i], cr[i], max(cr[i] * 0.22f, 0.0022f), c, alpha = 0.95f)
         }
     }
@@ -579,9 +629,13 @@ class SpirographSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         g.reservePoints(count)
-        val size = env.params.f("dot", 0.0032f)
+        val size = env.params.f("dot", 0.009f)
+        // Coloured by where on the finished figure each point lies, so a
+        // stretch of line keeps its colour as the pen goes on; by the share
+        // drawn so far, every colour slid along the whole curve every frame.
+        val whole = max(1, trailX.size - 1).toFloat()
         for (i in 0 until count) {
-            g.point(trailX[i], trailY[i], size, palette.at((i.toFloat() / max(1, count)) % 1f))
+            g.point(trailX[i], trailY[i], size, palette.at(i / whole))
         }
         // The rolling wheel, so the mechanism is visible, not just the result.
         val cxw = ((bigR - smallR) * cos(theta)).toFloat()
@@ -623,7 +677,8 @@ class SpirographSim : Sim {
                 // How many times round the wheel may go before it closes: the
                 // fewer, the simpler the rosette the ratio is rounded to.
                 Param.int("turns", "Most turns", 1, 20, MAX_TURNS, card = Card.DATA),
-                Param.float("dot", "Line weight", 0.001f, 0.01f, 0.0032f, card = Card.LOOK),
+                // A pixel wide on a phone at 0.0032, dimmed by the renderer.
+                Param.float("dot", "Line weight", 0.001f, 0.016f, 0.009f, card = Card.LOOK),
                 Param.float("rate", "Speed", 100f, 20000f, 900f, card = Card.MOTION, logScale = true)
             ),
             create = { SpirographSim() }

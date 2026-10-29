@@ -38,6 +38,7 @@ class LSystemSim : Sim {
     /** How far along the plant, from the root, each segment ends. */
     private var reach = FloatArray(0)
     private var segments = 0
+    private var stroke = 1f
     private var tallest = 1f
     private var grown = 0f
     private var elapsed = 0f
@@ -105,6 +106,9 @@ class LSystemSim : Sim {
             ']' -> if (sp > 0) { sp--; x = sx[sp]; y = sy[sp]; a = sa[sp]; d = sd[sp] }
         }
         segments = n
+        // Fewer, longer strokes are drawn bolder, so a plant of a few hundred
+        // reads as solidly as one of thousands instead of as a wire sketch.
+        stroke = kotlin.math.sqrt(STROKE_REFERENCE / max(1, n).toFloat()).coerceIn(0.6f, 2.2f)
         tallest = 1f
         for (i in 0 until n) if (reach[i] > tallest) tallest = reach[i]
 
@@ -173,8 +177,13 @@ class LSystemSim : Sim {
             val ex = ax + (bx - ax) * f
             val ey = y1[i] + (y2[i] - y1[i]) * f
             val share = reach[i] / tallest
-            val width = (TRUNK * (1f - share) + TIP).coerceAtLeast(TIP)
-            g.line(ax, y1[i], ex, ey, width, palette.at(0.15f + 0.8f * share), 0.9f)
+            val width = (stroke * TRUNK * (1f - share) + stroke * TIP).coerceAtLeast(TIP)
+            // Started half a width back along itself, so it overlaps the
+            // stroke it grows from: butt-ended strokes meeting end to end
+            // left hairline seams across the trunk, every segment a band.
+            val len = kotlin.math.hypot(ex - ax, ey - y1[i])
+            val back = if (len > 1e-6f) width * 0.5f / len else 0f
+            g.line(ax - (ex - ax) * back, y1[i] - (ey - y1[i]) * back, ex, ey, width, palette.at(0.15f + 0.8f * share))
         }
     }
 
@@ -193,7 +202,12 @@ class LSystemSim : Sim {
     companion object {
         private val PLANTS = listOf(
             Plant("Fern", "X", mapOf('X' to "F+[[X]-X]-F[-FX]+X", 'F' to "FF"), 25f, 5),
-            Plant("Bush", "F", mapOf('F' to "FF+[+F-F-F]-[-F+F+F]"), 22.5f, 4),
+            // Three rounds, not four. Each round of this rule multiplies the
+            // strokes by eight, where the others multiply by three to five, so
+            // from four the slider's top two rounds both hit the length cap and
+            // drew the same bush, and the one below it was 32,768 strokes.
+            // From three, every round is its own picture and the most is that.
+            Plant("Bush", "F", mapOf('F' to "FF+[+F-F-F]-[-F+F+F]"), 22.5f, 3),
             Plant("Weed", "F", mapOf('F' to "F[+F]F[-F]F"), 25.7f, 4),
             Plant("Tree", "X", mapOf('X' to "F[+X][-X]FX", 'F' to "FF"), 25.7f, 6),
             Plant("Grass", "F", mapOf('F' to "F[+F]F[-F][F]"), 20f, 4)
@@ -207,6 +221,8 @@ class LSystemSim : Sim {
         private const val SWAY = 0.035f
         private const val TRUNK = 0.012f
         private const val TIP = 0.0022f
+        /** The stroke count drawn at the base widths; fewer are drawn bolder. */
+        private const val STROKE_REFERENCE = 1500f
 
         fun def(): SimDef = SimDef(
             id = "art/l-system",

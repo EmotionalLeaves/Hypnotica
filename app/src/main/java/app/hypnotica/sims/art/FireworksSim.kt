@@ -49,6 +49,8 @@ class FireworksSim : Sim {
     private var payoffFrame = false
     private var launched = 0
     private var skyFlash = 0f
+    private var finaleWave = 0
+    private var finaleClock = 0f
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
@@ -60,6 +62,8 @@ class FireworksSim : Sim {
         elapsed = 0f
         nextLaunch = 0.3f
         finaleFired = false
+        finaleWave = 0
+        finaleClock = 0f
         doneAt = -1f
         payoffFrame = false
         launched = 0
@@ -112,7 +116,10 @@ class FireworksSim : Sim {
                 }
                 pvx[i] = cos(a) * s + r.vx; pvy[i] = sin(a) * s
             }
-            maxLife[i] = if (r.kind == WILLOW) env.rng.range(2.2f, 3.2f) else env.rng.range(1.0f, 1.8f)
+            // The finale's shells hang longer, so the sky is still full of
+            // it when the show ends; it used to be black a second after.
+            val hang = if (big > 1f) 1.5f else 1f
+            maxLife[i] = hang * (if (r.kind == WILLOW) env.rng.range(2.2f, 3.2f) else env.rng.range(1.1f, 1.9f))
             life[i] = maxLife[i]
             drag[i] = if (r.kind == WILLOW) 1.6f else 1.1f
             // Shapes hang together: no stray colours, so the outline reads
@@ -165,13 +172,26 @@ class FireworksSim : Sim {
                 nextLaunch = (1.1f - 0.75f * progress) / pace.coerceAtLeast(0.2f) * env.rng.range(0.7f, 1.3f)
             }
             if (elapsed >= showLength) {
-                // The finale: a wall of them, all at once, all the way across.
                 finaleFired = true
-                val count = FINALE
+                finaleWave = 0
+                finaleClock = 0f
+            }
+        }
+        // The finale: a wall of them all the way across, then two more
+        // between and above, half a second apart. One volley of nine was over
+        // in a blink, and the sky the show built to was sparse.
+        if (finaleFired && finaleWave < FINALE_WAVES) {
+            finaleClock -= h
+            if (finaleClock <= 0f) {
+                val count = FINALE - (finaleWave % 2) * 2
                 for (k in 0 until count) {
-                    val x = -halfW * SPREAD + 2f * SPREAD * halfW * (k + 0.5f) / count
-                    launch(env, x, 0.35f + 0.4f * sin(k.toFloat() / (count - 1) * PI.toFloat()))
+                    val u = (k + 0.5f) / count
+                    val x = -halfW * SPREAD + 2f * SPREAD * halfW * u
+                    val arch = sin(u * PI.toFloat())
+                    launch(env, x, 0.3f + 0.12f * finaleWave + 0.3f * arch)
                 }
+                finaleWave++
+                finaleClock = FINALE_GAP
             }
         }
         val g = gravity(env)
@@ -187,7 +207,7 @@ class FireworksSim : Sim {
                 it.remove()
             }
         }
-        if (finaleFired && rockets.isEmpty() && doneAt < 0f) {
+        if (finaleFired && finaleWave >= FINALE_WAVES && rockets.isEmpty() && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
@@ -206,18 +226,28 @@ class FireworksSim : Sim {
         if (skyFlash > 0f) g.glow(0f, 0.4f, 1.6f, Palette.TEXT_PRIMARY, skyFlash * 0.25f)
         // The ground.
         g.rect(0f, GROUND - 0.03f, halfW, 0.03f, 0xFF10121A.toInt())
+        g.reservePoints(cap * 3 + rockets.size * ROCKET_TAIL)
         for (r in rockets) {
-            g.point(r.x, r.y, 0.012f, 0xFFFFE0A0.toInt())
-            g.point(r.x - r.vx * 0.03f, r.y - r.vy * 0.03f, 0.008f, 0x99FFB060.toInt())
+            // A fading spark trail down the climb, not a pair of dots.
+            for (k in ROCKET_TAIL - 1 downTo 1) {
+                val back = k * 0.012f
+                val f = 1f - k.toFloat() / ROCKET_TAIL
+                g.point(r.x - r.vx * back, r.y - r.vy * back, 0.009f * (0.5f + 0.5f * f), Palette.withAlpha(0xFFFFB060.toInt(), 0.7f * f))
+            }
+            g.point(r.x, r.y, 0.013f, 0xFFFFE8B0.toInt())
         }
-        g.reservePoints(cap)
         for (i in 0 until cap) {
             if (life[i] <= 0f) continue
             val k = (life[i] / maxLife[i]).coerceIn(0f, 1f)
             // White-hot at first, its colour as it spreads, fading as it falls.
             val c = if (k > 0.85f) Palette.brighten(palette.at(tint[i]), 0.5f) else palette.at(tint[i])
             val twinkle = if (k < 0.3f && ((i + (elapsed * 30f).toInt()) % 3 == 0)) 0.4f else 1f
-            g.point(px[i], py[i], 0.011f * (0.6f + 0.6f * k), Palette.withAlpha(c, k * twinkle))
+            val size = 0.012f * (0.6f + 0.6f * k)
+            // Each spark streaks back along its flight, so a burst reads as
+            // lines of fire radiating out rather than a scatter of dots.
+            g.point(px[i] - pvx[i] * 0.05f, py[i] - pvy[i] * 0.05f, size * 0.6f, Palette.withAlpha(c, k * twinkle * 0.35f))
+            g.point(px[i] - pvx[i] * 0.025f, py[i] - pvy[i] * 0.025f, size * 0.8f, Palette.withAlpha(c, k * twinkle * 0.6f))
+            g.point(px[i], py[i], size, Palette.withAlpha(c, k * twinkle))
         }
     }
 
@@ -233,9 +263,13 @@ class FireworksSim : Sim {
         const val GRAVITY_SCALE = 0.35f
         const val SHOW_SECONDS = 12f
         const val FINALE = 9
+        const val FINALE_WAVES = 3
+        /** Seconds between the finale's volleys. */
+        const val FINALE_GAP = 0.5f
+        const val ROCKET_TAIL = 6
         /** How far out, as a share of the half-width, rockets go up. */
         const val SPREAD = 0.45f
-        const val SPARKS_PER_BURST = 140f
+        const val SPARKS_PER_BURST = 190f
         const val KINDS = 3
         const val PEONY = 0
         const val RING = 1

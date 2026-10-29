@@ -55,6 +55,7 @@ class TesseractUnfoldSim : Sim {
         viewAngle = 0.5f
         landed.fill(false)
         progress.fill(0f)
+        measureReach()
     }
 
     /** How far through its right-angle turn each cell is, 0 folded to 1 flat. */
@@ -131,16 +132,16 @@ class TesseractUnfoldSim : Sim {
         p[b] = cb + ra * s + rb * c
     }
 
-    override fun draw(env: SimEnv, g: G, alpha: Float) {
-        val palette = env.palette
+    /** Every corner of every cell to the screen, at the current hinges and [angle]. */
+    private fun projectAll(angle: Float) {
         for (c in 0 until CELLS) for (v in 0 until 8) {
             corner(c, v, p4)
             // Centre the finished cross: its long arm runs from y = −5 to 3.
             p4[1] += 1f
             // The 3D view turns slowly and tilts, so depth reads.
             val x = p4[0]; val z = p4[2]
-            p4[0] = x * cos(viewAngle) - z * sin(viewAngle)
-            p4[2] = x * sin(viewAngle) + z * cos(viewAngle)
+            p4[0] = x * cos(angle) - z * sin(angle)
+            p4[2] = x * sin(angle) + z * cos(angle)
             val y = p4[1]; val z2 = p4[2]
             p4[1] = y * cos(TILT) - z2 * sin(TILT)
             p4[2] = y * sin(TILT) + z2 * cos(TILT)
@@ -154,22 +155,59 @@ class TesseractUnfoldSim : Sim {
             val i = c * 8 + v
             sx[i] = p4[0] * kw * kz * SCALE; sy[i] = p4[1] * kw * kz * SCALE; sd[i] = kw * kz
         }
+    }
+
+    /**
+     * How far the drawing ever reaches, found by running a whole fold and
+     * unfold at every side of the view. A fixed 0.66 cut a cell off the side
+     * of an upright phone as it swung through w, and still left the finished
+     * cross smaller than it needed to be.
+     */
+    private fun measureReach() {
+        var mx = 0.1f; var my = 0.1f
+        var t = 0f
+        while (t < CYCLE) {
+            schedule(t)
+            for (k in 0 until 12) {
+                projectAll(k * 2f * PI.toFloat() / 12f)
+                for (i in 0 until CELLS * 8) { mx = max(mx, abs(sx[i])); my = max(my, abs(sy[i])) }
+            }
+            t += 0.1f
+        }
+        reachX = mx; reachY = my
+        progress.fill(0f)
+    }
+
+    private var reachX = 0.66f
+    private var reachY = 1f
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        val palette = env.palette
+        projectAll(viewAngle)
+        val open = paid && progress[LAST] >= 1f
+        val pulse = if (open) (sin(elapsed * 3f) + 1f) * 0.5f else 0f
         for (c in 0 until CELLS) {
             val col = if (c == BASE) Palette.TEXT_PRIMARY else palette.at((c - 0.5f) / (CELLS - 1))
             val moving = progress[c] > 0f && progress[c] < 1f
+            // A cell swinging through w is the thing to watch: drawn bolder,
+            // with its corners marked, while the settled ones stay quieter.
             for (e in 0 until 12) {
                 val a = c * 8 + CUBE_EDGES[2 * e]; val b = c * 8 + CUBE_EDGES[2 * e + 1]
                 val near = ((sd[a] + sd[b]) * 0.5f - 0.8f).coerceIn(0f, 1f)
-                g.line(sx[a], sy[a], sx[b], sy[b], if (moving) 0.006f else 0.0035f, col, 0.45f + 0.45f * near)
+                g.line(
+                    sx[a], sy[a], sx[b], sy[b],
+                    if (moving) 0.012f else 0.0075f, col,
+                    (0.55f + 0.4f * near + 0.1f * pulse).coerceAtMost(1f)
+                )
             }
-        }
-        if (paid && progress[LAST] >= 1f) {
-            val k = ((sin(elapsed * 3f) + 1f) * 0.5f)
-            g.glow(0f, 0f, 0.5f, Palette.SUCCESS, 0.08f + 0.06f * k)
+            val dot = if (moving) 0.012f else 0.0075f
+            for (v in 0 until 8) g.disc(sx[c * 8 + v], sy[c * 8 + v], dot, col)
         }
     }
 
-    override fun frameHalfWidth(env: SimEnv): Float = 0.66f
+    override fun frameHalfWidth(env: SimEnv): Float = reachX + 0.03f
+
+    override fun frameHalfHeight(env: SimEnv): Float = reachY + 0.03f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -277,6 +315,7 @@ class GrayWalkSim : Sim {
         doneAt = -1f
         payoffFrame = false
         paid = false
+        measureReach()
         viewAngle = 0.4f
     }
 
@@ -314,46 +353,89 @@ class GrayWalkSim : Sim {
         }
     }
 
-    override fun draw(env: SimEnv, g: G, alpha: Float) {
-        val palette = env.palette
+    private fun projectAll(angle: Float) {
         val n = 1 shl dims
         for (i in 0 until n) {
             for (k in 0 until dims) tmp[k] = verts[i * dims + k]
             if (dims >= 3) {
-                Nd.rotatePlane(tmp, 1, dims, 0, dims - 1, viewAngle)
+                Nd.rotatePlane(tmp, 1, dims, 0, dims - 1, angle)
                 Nd.rotatePlane(tmp, 1, dims, 1, 2, 0.4f)
-                if (dims >= 4) Nd.rotatePlane(tmp, 1, dims, 2, 3, viewAngle * 0.6f)
+                if (dims >= 4) Nd.rotatePlane(tmp, 1, dims, 2, 3, angle * 0.6f)
             }
             Nd.project(tmp, 0, dims, viewer, proj)
             sx[i] = proj[0] * scale; sy[i] = proj[1] * scale; sd[i] = proj[2]
         }
-        for (e in 0 until edges.size / 2) {
-            val a = edges[2 * e]; val b = edges[2 * e + 1]
-            if (visitedEdge[e]) {
-                // Coloured by when it was walked would need a time per edge;
-                // by which bit it flips reads just as well: one colour per axis.
-                val axis = Integer.numberOfTrailingZeros(a xor b)
-                g.line(sx[a], sy[a], sx[b], sy[b], 0.006f, palette.at((axis + 0.5f) / dims))
-            } else {
-                g.line(sx[a], sy[a], sx[b], sy[b], 0.0025f, Palette.TEXT_SECONDARY, 0.25f)
-            }
+    }
+
+    /**
+     * How far the cube reaches over every turn of the view, found by turning
+     * it: a fixed 0.66 drew the four-cube in under two thirds of an upright
+     * phone's width.
+     */
+    private fun measureReach() {
+        var m = 0.1f
+        val n = 1 shl dims
+        // The view turns at 1 and at 0.6 of the angle, so it repeats only
+        // after five whole turns.
+        for (k in 0 until 240) {
+            projectAll(k * 10f * PI.toFloat() / 240f)
+            for (i in 0 until n) m = max(m, abs(sx[i]))
         }
-        for (i in 0 until n) if (lit[i]) g.disc(sx[i], sy[i], 0.011f, Palette.brighten(palette.at(i.toFloat() / n), 0.15f))
-        // The walker, partway along its edge.
-        if (stepIndex < n) {
+        reach = m
+    }
+
+    private var reach = 0.66f
+
+    override fun draw(env: SimEnv, g: G, alpha: Float) {
+        val palette = env.palette
+        val n = 1 shl dims
+        projectAll(viewAngle)
+        val done = stepIndex >= n
+        val glowAt = if (done) (1f - (elapsed - doneAt)).coerceIn(0f, 1f) else 0f
+        // Edges still to walk, then walked ones over them. A walked edge is
+        // coloured by which bit it flips, one colour per axis: coloured by
+        // when it was walked would need a time per edge, and the axis says
+        // more — every edge of one colour is the same direction in N dimensions.
+        for (e in 0 until edges.size / 2) {
+            if (visitedEdge[e]) continue
+            val a = edges[2 * e]; val b = edges[2 * e + 1]
+            g.line(sx[a], sy[a], sx[b], sy[b], 0.0035f, Palette.TEXT_SECONDARY, 0.3f)
+        }
+        for (e in 0 until edges.size / 2) {
+            if (!visitedEdge[e]) continue
+            val a = edges[2 * e]; val b = edges[2 * e + 1]
+            val axis = Integer.numberOfTrailingZeros(a xor b)
+            g.line(sx[a], sy[a], sx[b], sy[b], 0.009f, Palette.brighten(palette.at((axis + 0.5f) / dims), 0.3f * glowAt))
+        }
+        // The walker, partway along its edge, inking it as it goes: the
+        // edge used to appear whole only once the walker had arrived.
+        if (!done) {
             val from = gray(stepIndex % n); val to = gray((stepIndex + 1) % n)
             val t = along.coerceIn(0f, 1f)
             val x = sx[from] + (sx[to] - sx[from]) * t
             val y = sy[from] + (sy[to] - sy[from]) * t
-            g.glow(x, y, 0.07f, Palette.TEXT_PRIMARY, 0.5f)
-            g.disc(x, y, 0.018f, Palette.TEXT_PRIMARY)
-        } else {
-            val k = (1f - (elapsed - doneAt)).coerceIn(0f, 1f)
-            if (k > 0f) g.glow(0f, 0f, 0.6f, Palette.SUCCESS, 0.35f * k)
+            val axis = Integer.numberOfTrailingZeros(from xor to)
+            g.line(sx[from], sy[from], x, y, 0.009f, palette.at((axis + 0.5f) / dims))
+        }
+        for (i in 0 until n) {
+            if (lit[i]) g.disc(sx[i], sy[i], 0.015f, Palette.brighten(palette.at(i.toFloat() / n), 0.15f + 0.3f * glowAt))
+            else g.disc(sx[i], sy[i], 0.007f, Palette.TEXT_SECONDARY, 0.5f)
+        }
+        if (!done) {
+            val from = gray(stepIndex % n); val to = gray((stepIndex + 1) % n)
+            val t = along.coerceIn(0f, 1f)
+            val x = sx[from] + (sx[to] - sx[from]) * t
+            val y = sy[from] + (sy[to] - sy[from]) * t
+            g.glow(x, y, 0.06f, Palette.TEXT_PRIMARY, 0.5f)
+            g.disc(x, y, 0.02f, Palette.TEXT_PRIMARY)
+        } else if (glowAt > 0f) {
+            // The tour closed: every corner rings once, where a glow over the
+            // whole cube used to wash it out.
+            for (i in 0 until n) g.glow(sx[i], sy[i], 0.05f, palette.at(i.toFloat() / n), 0.5f * glowAt)
         }
     }
 
-    override fun frameHalfWidth(env: SimEnv): Float = 0.66f
+    override fun frameHalfWidth(env: SimEnv): Float = reach + 0.03f
 
     override fun payoff(): Boolean = payoffFrame
 

@@ -184,23 +184,31 @@ class HypercubeSim : Sim {
         val span = (highest - lowest).coerceAtLeast(1e-4f)
         fun nearness(v: Float): Float = ((v - lowest) / span).coerceIn(0f, 1f)
 
-        var e = 0
-        while (e < edges.size) {
+        // Far edges first, so a near edge always crosses over a far one
+        // rather than whichever the edge list happened to name last.
+        val ne = edges.size / 2
+        if (order.size != ne) { order = IntArray(ne) { it }; depthKey = FloatArray(ne) }
+        for (k in 0 until ne) depthKey[k] = screenD[edges[2 * k]] + screenD[edges[2 * k + 1]]
+        sortByKey(order, depthKey)
+        // A six-cube has 64 corners: at a tesseract's glow each they ran
+        // together into one haze, so the glow thins as the corners multiply.
+        val glowShare = sqrt(16f / max(16, n).toFloat())
+        for (k in 0 until ne) {
+            val e = order[k] * 2
             val a = edges[e]
             val b = edges[e + 1]
             val near = (nearness(screenD[a]) + nearness(screenD[b])) * 0.5f
             val c = palette.at(0.15f + near * 0.75f)
             g.line(
                 screenX[a], screenY[a], screenX[b], screenY[b],
-                0.003f + near * 0.005f, c, 0.3f + near * 0.65f
+                0.0045f + near * 0.0065f, c, 0.4f + near * 0.6f
             )
-            e += 2
         }
         for (i in 0 until n) {
             val near = nearness(screenD[i])
             val c = palette.at(0.15f + near * 0.75f)
-            g.glow(screenX[i], screenY[i], 0.03f + 0.045f * near, c, 0.25f + 0.25f * near)
-            g.disc(screenX[i], screenY[i], 0.008f + 0.011f * near, Palette.brighten(c, 0.2f))
+            g.glow(screenX[i], screenY[i], 0.035f + 0.04f * near, c, (0.2f + 0.3f * near) * glowShare)
+            g.disc(screenX[i], screenY[i], 0.009f + 0.012f * near, Palette.brighten(c, 0.2f))
         }
     }
 
@@ -208,8 +216,15 @@ class HypercubeSim : Sim {
         if (e.kind == TouchEvent.Kind.DRAG) manualSpin = (manualSpin + e.x * 0.6f).coerceIn(-3f, 3f)
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.65f
+    private var order = IntArray(0)
+    private var depthKey = FloatArray(0)
+
+    /**
+     * Drawn at a fixed size; on a phone held upright the view pulls back to
+     * fit it. Just the corners' reach and a corner's own radius: 0.65 left a
+     * fifth of the width empty and the shape small in an upright phone.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float = SCREEN_REACH + 0.04f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -576,10 +591,16 @@ class SlicingSim : Sim {
         val lineColour = palette.at(0.75f)
         val sideScale = PANEL / radius
         val worldY = SIDE_Y + cutPos * sideScale
+        val reachX = env.halfWidth * 0.95f
         // ---- Outside: the object with its true height, and the flat world.
-        val ghost = Palette.withAlpha(palette.at(0.3f), 0.5f)
+        // The object from outside was a hairline at half strength, and with
+        // the slice a line across it the frame read as two thin circles in
+        // the dark: drawn now as a solid thing, the flat world as a lit sheet.
+        val body = palette.at(0.3f)
+        val ghost = Palette.withAlpha(body, 0.8f)
         if (shape == 0) {
-            g.ring(0f, SIDE_Y, radius * sideScale, 0.004f, ghost)
+            g.disc(0f, SIDE_Y, radius * sideScale, Palette.withAlpha(body, 0.1f))
+            g.ring(0f, SIDE_Y, radius * sideScale, 0.006f, ghost)
         } else {
             val d = dims
             val nv = verts.size / d
@@ -595,39 +616,63 @@ class SlicingSim : Sim {
             var e = 0
             while (e < edges.size) {
                 val a = edges[e]; val b = edges[e + 1]
-                g.line(sx[a], sy[a], sx[b], sy[b], 0.003f, ghost)
+                g.line(sx[a], sy[a], sx[b], sy[b], 0.004f, ghost)
                 e += 2
             }
+            for (i in 0 until nv) g.disc(sx[i], sy[i], 0.006f, ghost)
         }
-        g.line(-env.halfWidth * 0.95f, worldY, env.halfWidth * 0.95f, worldY, 0.004f, Palette.TEXT_SECONDARY, 0.55f)
+        // The flat world: a soft band with the plane through it.
+        g.rect(0f, worldY, reachX, 0.022f, Palette.withAlpha(lineColour, 0.07f))
+        g.line(-reachX, worldY, reachX, worldY, 0.004f, Palette.TEXT_SECONDARY, 0.7f)
         // Where it cuts, on the line.
         if (shape == 0) {
             val r = sliceRadius()
-            if (r > 0f) g.line(-r * sideScale, worldY, r * sideScale, worldY, 0.008f, lineColour)
+            if (r > 0f) {
+                val half = r * sideScale
+                g.line(-half, worldY, half, worldY, 0.012f, lineColour)
+                g.disc(-half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
+                g.disc(half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
+                // The cut and what the flat world sees of it are drawn to one
+                // scale, so the chord's ends rise straight to the slice's
+                // edge: the measurement carried up, not just asserted.
+                g.line(-half, worldY + 0.02f, -half, TOP_Y, 0.003f, lineColour, 0.4f)
+                g.line(half, worldY + 0.02f, half, TOP_Y, 0.003f, lineColour, 0.4f)
+            }
         } else {
             // On its edge as drawn: the side view's mapping doesn't keep
             // lines straight, so the corner goes where the drawn edge
             // meets the line, the same share of the way along.
             for (i in 0 until sliceN) {
                 val a = sliceA[i]; val b = sliceB[i]
-                g.disc(sx[a] + (sx[b] - sx[a]) * sliceT[i], worldY, 0.009f, lineColour)
+                val x = sx[a] + (sx[b] - sx[a]) * sliceT[i]
+                g.glow(x, worldY, 0.035f, lineColour, 0.4f)
+                g.disc(x, worldY, 0.011f, Palette.brighten(lineColour, 0.2f))
             }
         }
         // ---- Inside: what the flat world sees, in its own dimensions.
         val sliceDims = dims - 1
         val topScale = PANEL / radius
         if (shape == 0) {
+            // The largest the slice ever gets, faintly, so the panel is never
+            // an empty black square while the ball is out of the world and
+            // the slice is seen growing into it.
+            if (sliceDims >= 2) g.ring(0f, TOP_Y, radius * topScale, 0.004f, Palette.withAlpha(lineColour, 0.3f))
+            else g.line(-radius * topScale, TOP_Y, radius * topScale, TOP_Y, 0.004f, Palette.withAlpha(lineColour, 0.3f))
             val r = sliceRadius()
             if (r > 0f) {
                 val content = sliceContent()
                 if (sliceDims == 1) {
-                    g.line(-r * topScale, TOP_Y, r * topScale, TOP_Y, 0.01f, lineColour)
+                    g.line(-r * topScale, TOP_Y, r * topScale, TOP_Y, 0.014f, lineColour)
+                    g.disc(-r * topScale, TOP_Y, 0.012f, Palette.brighten(lineColour, 0.25f))
+                    g.disc(r * topScale, TOP_Y, 0.012f, Palette.brighten(lineColour, 0.25f))
                 } else {
                     // A disc in two dimensions; from three up, a ball, which
                     // seen from anywhere has a round outline of its radius.
-                    g.glow(0f, TOP_Y, r * topScale * 1.2f, lineColour, 0.15f + 0.3f * content)
-                    g.disc(0f, TOP_Y, r * topScale, Palette.withAlpha(lineColour, 0.35f))
-                    g.ring(0f, TOP_Y, r * topScale, 0.005f, lineColour)
+                    // The glow stays inside the outline's reach: at 1.2 times
+                    // it smeared the edge the flat world is measuring.
+                    g.glow(0f, TOP_Y, r * topScale * 1.1f, lineColour, 0.12f + 0.2f * content)
+                    g.disc(0f, TOP_Y, r * topScale, Palette.withAlpha(lineColour, 0.3f))
+                    g.ring(0f, TOP_Y, r * topScale, 0.007f, Palette.brighten(lineColour, 0.1f))
                     if (sliceDims >= 3) g.disc(-r * topScale * 0.35f, TOP_Y + r * topScale * 0.35f, r * topScale * 0.18f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.25f))
                 }
             }
@@ -647,12 +692,13 @@ class SlicingSim : Sim {
                 sy[i] = TOP_Y + (if (sliceDims >= 2) proj[1] else 0f) * topScale
                 sd[i] = proj[2]
             }
+            g.glow(0f, TOP_Y, PANEL * 1.1f, lineColour, 0.08f)
             for (k in 0 until sliceEdgeN) {
                 val a = sliceEdges[2 * k]; val b = sliceEdges[2 * k + 1]
                 val near = ((sd[a] + sd[b]) * 0.5f - 0.6f).coerceIn(0f, 1f)
-                g.line(sx[a], sy[a], sx[b], sy[b], 0.004f + 0.003f * near, lineColour, 0.55f + 0.45f * near)
+                g.line(sx[a], sy[a], sx[b], sy[b], 0.006f + 0.004f * near, lineColour, 0.6f + 0.4f * near)
             }
-            for (i in 0 until sliceN) g.disc(sx[i], sy[i], 0.008f, Palette.brighten(lineColour, 0.2f))
+            for (i in 0 until sliceN) g.disc(sx[i], sy[i], 0.011f, Palette.brighten(lineColour, 0.25f))
         }
     }
 
@@ -746,10 +792,16 @@ class RandomWalkSim : Sim {
         home = BooleanArray(walkers)
         wandered = BooleanArray(walkers)
         val trail = p.i("trail", 6000).coerceIn(500, 40000)
-        trailX = FloatArray(trail)
-        trailY = FloatArray(trail)
+        // Every walker's own recent path, sharing the trail budget. One trail,
+        // the first walker's, was the only line on screen, and that walker is
+        // as likely as any to get home early and stop: the trail shrank to a
+        // knot at the origin and the run was forty loose dots.
+        trailLen = (trail / walkers).coerceIn(MIN_TRAIL, MAX_TRAIL)
+        trailX = FloatArray(trailLen * walkers)
+        trailY = FloatArray(trailLen * walkers)
         trailHead = 0
         trailFill = 0
+        nextTrailAt = 0L
         steps = 0
         returned = 0
         payoffFrame = false
@@ -797,7 +849,7 @@ class RandomWalkSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        updateView()
+        updateView(env.halfWidth)
         carry += abs(dt) * env.params.f("rate", 260f)
         var budget = min(carry.toInt(), 4000)
         carry -= budget
@@ -844,18 +896,23 @@ class RandomWalkSim : Sim {
                 }
             }
 
-            // Record the first walker's path as the visible trail. Stored in
-            // world units at the scale of the moment, so the trail keeps its
-            // shape as the view pulls back.
-            if (walkers > 0) {
-                Nd.project(pos, 0, dims, viewer, proj)
-                // Stored as projected, unscaled: the view pulls back as the
-                // cloud grows, and a trail written at an older scale would fly
-                // off the edges as it did.
-                trailX[trailHead] = proj[0]
-                trailY[trailHead] = proj[1]
-                trailHead = (trailHead + 1) % trailX.size
-                if (trailFill < trailX.size) trailFill++
+            // Record every walker's path. Stored as projected, unscaled: the
+            // view pulls back as the cloud grows, and a trail written at an
+            // older scale would fly off the edges as it did.
+            if (steps >= nextTrailAt) {
+                // Spaced so a trail always spans about the latter half of the
+                // walk so far: at a fixed spacing it covered under two seconds,
+                // and as the view pulled back to hold the spreading cloud every
+                // trail shrank to a blob.
+                nextTrailAt = steps + max(2L, steps / (2L * trailLen))
+                for (w in 0 until walkers) {
+                    Nd.project(pos, w * dims, dims, viewer, proj)
+                    val o = w * trailLen + trailHead
+                    trailX[o] = proj[0]
+                    trailY[o] = proj[1]
+                }
+                trailHead = (trailHead + 1) % trailLen
+                if (trailFill < trailLen) trailFill++
             }
         }
         // The verdict: once the count has stopped climbing for a few seconds,
@@ -902,7 +959,7 @@ class RandomWalkSim : Sim {
      * world was scaled. Keeping the viewer back by [Nd.viewerFor] bounds that
      * factor at about two, and then one scale holds the whole cloud in frame.
      */
-    private fun updateView() {
+    private fun updateView(halfWidth: Float) {
         var furthest = 0f
         var w = 0
         val stride = maxOf(1, walkers / 64)
@@ -913,32 +970,71 @@ class RandomWalkSim : Sim {
         }
         val radius = furthest.coerceAtLeast(0.2f)
         viewer = maxOf(VIEWER, Nd.viewerFor(radius, dims))
-        val target = 0.85f / (radius * PROJECTION_GAIN)
+        // Below three dimensions nothing is in perspective, so the cloud's
+        // reach is its radius; the factor of two the projection can add
+        // from three up held a plane walk to half the frame it had.
+        val gain = if (dims <= 2) 1f else PROJECTION_GAIN
+        // To the screen's own size: across an upright phone, and within the
+        // height on a wide one, where a fixed 0.85 left half of it empty.
+        val room = if (dims == 1) halfWidth * 0.9f else min(halfWidth, 1f) * 0.9f
+        val target = room / (radius * gain)
         // Eases towards the target so the view does not jump every frame.
         viewScale += (target.coerceIn(0.01f, 4f) - viewScale) * 0.06f
     }
 
+    /**
+     * On a line every walker would sit on one row, on top of each other: there
+     * each has a row of its own, stacked up the screen, and home is the
+     * vertical through the middle. The walk itself is untouched.
+     */
+    private fun rowY(w: Int): Float =
+        if (dims == 1 && walkers > 1) (w.toFloat() / (walkers - 1) - 0.5f) * 1.7f / max(viewScale, 1e-3f) else 0f
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reservePoints(trailFill + walkers)
-        for (k in 0 until trailFill) {
-            val idx = (trailHead - 1 - k + trailX.size * 2) % trailX.size
-            val age = k.toFloat() / trailFill
-            g.point(
-                trailX[idx] * viewScale, trailY[idx] * viewScale,
-                0.012f * (1.1f - age),
-                Palette.withAlpha(palette.at(0.2f + age * 0.6f), 1f - age * 0.85f)
-            )
+        val oneD = dims == 1 && walkers > 1
+        g.reservePoints(trailFill * walkers + walkers)
+        // Trails thin as walkers multiply, so a thousand of them are a cloud
+        // of paths rather than a solid blot.
+        val dot = TRAIL_DOT * (if (walkers > 200) 0.6f else 1f)
+        // Joined up while there are few enough segments to draw as lines;
+        // past that, a dot per point, which a thousand walkers' trails fill in.
+        val asLines = trailFill * walkers <= LINE_BUDGET
+        if (asLines) g.reserveInstances(trailFill * walkers)
+        for (w in 0 until walkers) {
+            val c = if (home[w]) Palette.SUCCESS else palette.at(w.toFloat() / max(1, walkers))
+            val rowFix = if (oneD) rowY(w) else 0f
+            var lx = 0f; var ly = 0f
+            for (k in 0 until trailFill) {
+                val idx = w * trailLen + (trailHead - 1 - k + trailLen * 2) % trailLen
+                val age = k.toFloat() / trailLen
+                // Rows are laid out at the scale of the moment, not the one
+                // the point was stored at.
+                val x = trailX[idx] * viewScale
+                val y = (if (oneD) rowFix else trailY[idx]) * viewScale
+                val a = (0.75f - 0.65f * age) * (if (home[w]) 0.5f else 1f)
+                if (!asLines) g.point(x, y, dot * (1.15f - 0.6f * age), Palette.withAlpha(c, a))
+                else if (k > 0) g.line(lx, ly, x, y, dot * (0.8f - 0.4f * age), c, a)
+                lx = x; ly = y
+            }
         }
         for (w in 0 until walkers) {
             Nd.project(pos, w * dims, dims, viewer, proj)
             val c = if (home[w]) Palette.SUCCESS else palette.at(w.toFloat() / max(1, walkers))
             // Big enough to follow on a phone: at a hundredth of the screen
             // they were specks in an empty frame.
-            g.point(proj[0] * viewScale, proj[1] * viewScale, WALKER_SIZE, c)
+            val y = if (oneD) rowY(w) else proj[1]
+            g.point(proj[0] * viewScale, y * viewScale, if (walkers > 200) WALKER_SIZE * 0.6f else WALKER_SIZE, c)
         }
-        // Home, at the same scale as everything else.
-        g.ring(0f, 0f, (0.035f * viewScale).coerceIn(0.012f, 0.1f), 0.004f, Palette.SUCCESS, alpha = 0.8f)
+        // Home, at the same scale as everything else: on a line, the column
+        // every row returns to.
+        if (oneD) {
+            g.line(0f, -0.9f, 0f, 0.9f, 0.004f, Palette.SUCCESS, 0.5f)
+        } else {
+            val r = (0.035f * viewScale).coerceIn(0.02f, 0.1f)
+            g.glow(0f, 0f, r * 3f, Palette.SUCCESS, 0.25f + 0.35f * returned / max(1, walkers))
+            g.ring(0f, 0f, r, 0.005f, Palette.SUCCESS, alpha = 0.9f)
+        }
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -949,8 +1045,17 @@ class RandomWalkSim : Sim {
         "steps" to steps.toString()
     )
 
+    private var trailLen = 150
+    /** The step at which the next trail point is taken. */
+    private var nextTrailAt = 0L
+
     companion object {
         const val WALKER_SIZE = 0.024f
+        const val TRAIL_DOT = 0.009f
+        /** The most trail segments drawn as lines in a frame. */
+        const val LINE_BUDGET = 9000
+        const val MIN_TRAIL = 8
+        const val MAX_TRAIL = 400
         /**
          * Far enough back that a projection never divides by nearly zero. The
          * walk is scaled into view separately, so this only sets how strong the
@@ -1183,20 +1288,41 @@ class NdBounceSim : Sim {
             viewOf(boxVerts, v * dims, spin)
             sx[v] = proj[0] * drawScale; sy[v] = proj[1] * drawScale
         }
+        // Each edge coloured by the axis it runs along: an N-cube's edges
+        // come in N directions, one per pair of walls, so the box shows how
+        // many dimensions it has at a glance. A grey hairline at a third
+        // strength was barely there on a phone.
         var e = 0
         while (e < boxEdges.size) {
             val a = boxEdges[e]; val b = boxEdges[e + 1]
-            g.line(sx[a], sy[a], sx[b], sy[b], 0.003f, Palette.TEXT_SECONDARY, 0.3f)
+            val axis = Integer.numberOfTrailingZeros(a xor b)
+            val c = Palette.lerp(Palette.TEXT_SECONDARY, palette.at((axis + 0.5f) / dims), 0.6f)
+            g.line(sx[a], sy[a], sx[b], sy[b], 0.005f, c, 0.7f)
             e += 2
         }
+        for (v in 0 until nv) g.disc(sx[v], sy[v], 0.006f, Palette.TEXT_SECONDARY, 0.6f)
+        // Far balls first, so a near one passes in front.
+        if (ballOrder.size != count) { ballOrder = IntArray(count) { it }; ballX = FloatArray(count); ballY = FloatArray(count); ballD = FloatArray(count) }
         for (i in 0 until count) {
             viewOf(pos, i * dims, spin)
-            val d = proj[2]
+            ballX[i] = proj[0] * drawScale; ballY[i] = proj[1] * drawScale; ballD[i] = proj[2]
+        }
+        sortByKey(ballOrder, ballD)
+        val glowShare = if (count > 60) 0.4f else 1f
+        for (k in 0 until count) {
+            val i = ballOrder[k]
+            val d = ballD[i]
             val c = palette.at(tint[i])
-            g.glow(proj[0] * drawScale, proj[1] * drawScale, 0.06f * d, c, 0.35f)
-            g.disc(proj[0] * drawScale, proj[1] * drawScale, 0.022f * d, c)
+            g.glow(ballX[i], ballY[i], 0.07f * d, c, 0.35f * glowShare)
+            g.disc(ballX[i], ballY[i], BALL * d, c)
+            g.disc(ballX[i] - BALL * d * 0.3f, ballY[i] + BALL * d * 0.3f, BALL * d * 0.3f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
         }
     }
+
+    private var ballOrder = IntArray(0)
+    private var ballX = FloatArray(0)
+    private var ballY = FloatArray(0)
+    private var ballD = FloatArray(0)
 
     /**
      * "Shake the box": a kick, in every dimension, to the balls already in it.
@@ -1210,8 +1336,12 @@ class NdBounceSim : Sim {
         env.emit(EventKind.HIT, 0.8f, 0f, 0.9f)
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.74f
+    /**
+     * Drawn at a fixed size; on a phone held upright the view pulls back to
+     * fit it — to the box's own reach and a ball's radius, where 0.74 kept a
+     * margin a fifth of the screen wide.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float = BOX_SCREEN + 0.035f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -1229,6 +1359,8 @@ class NdBounceSim : Sim {
         private const val TILT = 0.35f
         /** How far out the box reaches on screen, at its widest. */
         private const val BOX_SCREEN = 0.68f
+        /** A ball's radius on screen, before perspective. */
+        private const val BALL = 0.027f
 
         /** The drop into the box, before there is a rhythm to measure. */
         private const val SETTLE_SECONDS = 1.5f
@@ -1335,6 +1467,22 @@ class BallVolumeSim : Sim {
         val palette = env.palette
         val halfW = env.halfWidth * 0.92f
         val barW = 2f * halfW / upTo
+        val half = barW * 0.38f
+        // Every dimension still to come has its slot marked on the axis, so
+        // the first seconds are a chart waiting to fill, not two bars in a
+        // corner of an empty screen.
+        val first = kotlin.math.ceil(shown).toInt() + 1
+        for (d in max(1, first)..upTo) {
+            val x = -halfW + (d - 0.5f) * barW
+            g.rect(x, BASE - 0.012f, half, 0.006f, Palette.TEXT_SECONDARY, 0f, 0.3f)
+        }
+        // Once the milestone bar has risen, its height stays marked across the
+        // chart, so every bar after it is seen falling short of it.
+        if (milestone <= upTo && shown >= milestone) {
+            val v = (value(milestone) / top).toFloat()
+            val y = BASE + v * HEIGHT
+            g.line(-halfW, y, halfW, y, 0.003f, Palette.SUCCESS, 0.35f)
+        }
         // Each bar rises while its dimension is being counted, rather than
         // appearing whole once it has been: the first bar used to arrive a
         // second and a half in, over an empty screen.
@@ -1342,19 +1490,31 @@ class BallVolumeSim : Sim {
             val v = (value(d) / top).toFloat()
             val rise = (shown - (d - 1)).coerceIn(0f, 1f)
             val eased = 1f - (1f - rise) * (1f - rise)
-            val h = v * 1.5f * eased
+            val h = v * HEIGHT * eased
             val x = -halfW + (d - 0.5f) * barW
             val isPeak = d == milestone
             val c = if (isPeak) Palette.SUCCESS else palette.at(d.toFloat() / upTo)
-            g.bar(x, -0.85f, barW * 0.4f, h, c)
-            if (isPeak) g.glow(x, -0.85f + h, barW * 2.4f, Palette.SUCCESS, 0.5f)
+            // A rounded top, its crown exactly at the value: the bar stops
+            // short by the cap's radius and the cap finishes it.
+            if (h > 2f * half) {
+                g.bar(x, BASE, half, h - half, c)
+                g.disc(x, BASE + h - half, half, c)
+            } else {
+                g.bar(x, BASE, half, h, c)
+            }
+            // A small light at the crown of the milestone bar. It was a glow
+            // two and a half bars wide, a flat green disc behind the chart.
+            if (isPeak) {
+                g.glow(x, BASE + h, barW * 1.1f, Palette.SUCCESS, 0.45f)
+                g.disc(x, BASE + h + half * 1.6f, half * 0.45f, Palette.brighten(Palette.SUCCESS, 0.3f))
+            }
         }
         // For the shares, the line where the story turns: one percent, or half.
         if (measure == 2 || measure == 3) {
-            val y = -0.85f + 1.5f * ((if (measure == 2) 0.01 else 0.5) / top).toFloat()
+            val y = BASE + HEIGHT * ((if (measure == 2) 0.01 else 0.5) / top).toFloat()
             g.line(-halfW, y, halfW, y, 0.003f, Palette.WARNING, 0.5f)
         }
-        g.line(-halfW, -0.85f, halfW, -0.85f, 0.004f, Palette.TEXT_SECONDARY, 0.5f)
+        g.line(-halfW, BASE, halfW, BASE, 0.004f, Palette.TEXT_SECONDARY, 0.5f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -1374,6 +1534,9 @@ class BallVolumeSim : Sim {
     companion object {
         val MEASURES = listOf("Volume", "Surface", "Share of the cube", "Share in the peel")
         const val MAX_UP_TO = 40
+        const val BASE = -0.85f
+        /** The tallest bar's height: up to 0.8, where it stopped at 0.65 with the top fifth empty. */
+        const val HEIGHT = 1.65f
         val NAMES = listOf("volume", "surface", "of the cube", "in the outer tenth")
 
         fun def(): SimDef = SimDef(
@@ -1506,27 +1669,37 @@ class ConcentrationSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth * 0.92f
-        val base = -0.6f
+        val base = -0.5f
         val barW = 2f * halfW / BINS
+        // After the payoff the bars brighten for a moment: the histogram
+        // itself is what changed. A glow eight tenths of a unit across used
+        // to sit behind it, a flat green disc over the chart.
+        val lit = if (paid) (1f - (elapsed - paidAt) * 0.8f).coerceIn(0f, 1f) else 0f
         for (b in 0 until BINS) {
+            val h = shownBins[b] * HIST_HEIGHT
+            if (h < 0.002f) continue
             val x = -halfW + (b + 0.5f) * barW
             val c = palette.at(0.15f + 0.8f * b / BINS)
-            g.bar(x, base, barW * 0.42f, shownBins[b] * 1.3f, c)
+            g.bar(x, base, barW * 0.4f, h, Palette.brighten(c, 0.35f * lit))
         }
         g.line(-halfW, base, halfW, base, 0.004f, Palette.TEXT_SECONDARY, 0.5f)
         // The average distance, where everything ends up.
         val mx = -halfW + (1f / RANGE) * 2f * halfW
-        g.line(mx, base - 0.03f, mx, base + 1.35f, 0.003f, Palette.WARNING, 0.6f)
-        // Nearest and farthest pair, as lengths: they close on each other.
-        val y = base - 0.15f
+        g.line(mx, base - 0.03f, mx, base + HIST_HEIGHT + 0.05f, 0.003f, Palette.WARNING, 0.6f)
+        g.disc(mx, base + HIST_HEIGHT + 0.05f, 0.008f, Palette.WARNING)
+        if (lit > 0f) g.glow(mx, base + HIST_HEIGHT + 0.05f, 0.08f, Palette.WARNING, 0.6f * lit)
+        // Nearest and farthest pair, as lengths from one end: they close on
+        // each other. Capped at both ends so each reads as a measured span.
         val far = halfW * 1.8f
         val near = if (ratio.isFinite()) far / ratio else 0f
-        g.rect(-halfW + far * 0.5f, y, far * 0.5f, 0.012f, palette.at(0.9f), 0f, 0.8f)
-        g.rect(-halfW + near * 0.5f, y - 0.05f, max(0.002f, near * 0.5f), 0.012f, palette.at(0.2f), 0f, 0.9f)
-        if (paid) {
-            val k = (1f - (elapsed - paidAt) * 0.8f).coerceIn(0f, 1f)
-            if (k > 0f) g.glow(mx, base + 0.6f, 0.4f, Palette.SUCCESS, 0.4f * k)
-        }
+        val y = base - 0.17f
+        val farC = palette.at(0.9f)
+        val nearC = palette.at(0.2f)
+        g.rect(-halfW + far * 0.5f, y, far * 0.5f, 0.014f, farC, 0f, 0.85f)
+        g.rect(-halfW + far, y, 0.004f, 0.026f, farC)
+        g.rect(-halfW + max(0.002f, near) * 0.5f, y - 0.07f, max(0.002f, near * 0.5f), 0.014f, nearC, 0f, 0.9f)
+        g.rect(-halfW + near, y - 0.07f, 0.004f, 0.026f, nearC)
+        g.rect(-halfW, y - 0.035f, 0.004f, 0.06f, Palette.TEXT_SECONDARY, 0f, 0.7f)
     }
 
     private var paidAt = -1f
@@ -1543,6 +1716,8 @@ class ConcentrationSim : Sim {
 
     companion object {
         const val BINS = 48
+        /** The fullest bin's height. */
+        const val HIST_HEIGHT = 1.3f
         /**
          * The histogram covers distance from zero to this many times the
          * average: on a line the farthest pair is three times it.
@@ -1584,4 +1759,15 @@ object DimensionSims {
         TesseractUnfoldSim.def(),
         GrayWalkSim.def()
     )
+}
+
+/** Insertion sort of [order] by ascending [key][order]: small lists, nearly sorted frame to frame. */
+internal fun sortByKey(order: IntArray, key: FloatArray) {
+    for (i in 1 until order.size) {
+        val v = order[i]
+        val k = key[v]
+        var j = i - 1
+        while (j >= 0 && key[order[j]] > k) { order[j + 1] = order[j]; j-- }
+        order[j + 1] = v
+    }
 }
