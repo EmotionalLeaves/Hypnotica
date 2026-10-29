@@ -58,6 +58,32 @@ class BallEscapeSim : Sim {
 
     private val balls = ArrayList<Ball>()
 
+    /**
+     * The first ball's whole flight so far, a ring buffer of points: drawn as
+     * a faint string-art web it fills the ring with the run's history. With
+     * only a short comet tail the ring was empty but for one small ball, and
+     * after the escape the frame was an empty hoop.
+     */
+    private val pathX = FloatArray(PATH)
+    private val pathY = FloatArray(PATH)
+    private val pathT = FloatArray(PATH)
+    private var pathHead = 0
+    private var pathN = 0
+    private var pathClock = 0f
+
+    private fun pathPoint(x: Float, y: Float, t: Float) {
+        pathX[pathHead] = x; pathY[pathHead] = y; pathT[pathHead] = t
+        pathHead = (pathHead + 1) % PATH
+        if (pathN < PATH) pathN++
+    }
+
+    /** Shards thrown from the break when the ball gets out, and how old they are. */
+    private val shardX = FloatArray(SHARDS)
+    private val shardY = FloatArray(SHARDS)
+    private val shardVx = FloatArray(SHARDS)
+    private val shardVy = FloatArray(SHARDS)
+    private var shardAge = SHARD_SECONDS
+
     /** Where the last few hits landed on a wall, and how old each is, for the spark there. */
     private val sparkX = FloatArray(SPARKS)
     private val sparkY = FloatArray(SPARKS)
@@ -119,7 +145,7 @@ class BallEscapeSim : Sim {
         }
 
         val count = p.i("balls", 1).coerceIn(1, 64)
-        val speed = p.f("speed0", 1.2f)
+        val speed = p.f("speed0", 1.6f)
         energy = speed
         // The outer gap starts overhead, away from where gravity drops the
         // ball. Started anywhere, it was under the ball one run in ten and the
@@ -128,10 +154,16 @@ class BallEscapeSim : Sim {
         val up = atan2(env.laws.gravityDirY, -env.laws.gravityDirX)
         ringAngle[0] = up - gapWidth * 0.5f
         repeat(count) {
-            val a = env.rng.range(0f, 2f * PI.toFloat())
+            // Started off centre and thrown across, not outwards: a ball
+            // launched from the middle runs along a diameter, and in a circle
+            // a diameter reflects into itself — it ping-ponged on one line
+            // for the whole run. Off centre, its chords build a star.
+            val at = env.rng.range(0f, 2f * PI.toFloat())
+            val off = ringRadius * env.rng.range(0.25f, 0.4f)
+            val a = at + (PI.toFloat() * 0.5f + env.rng.range(-0.6f, 0.6f)) * (if (env.rng.bool()) 1f else -1f)
             balls.add(
                 Ball(
-                    env.rng.range(-0.08f, 0.08f), env.rng.range(-0.08f, 0.08f),
+                    cos(at) * off, sin(at) * off,
                     cos(a) * speed, sin(a) * speed,
                     p.f("size", 0.06f), env.rng.nextFloat()
                 )
@@ -143,6 +175,9 @@ class BallEscapeSim : Sim {
         restSeconds = -1f
         runSeconds = 0f
         burstAge = 2f
+        pathHead = 0; pathN = 0; pathClock = 0f
+        shardAge = SHARD_SECONDS
+        balls.firstOrNull()?.let { pathPoint(it.x, it.y, it.colorT) }
         sparkAge.fill(SPARK_SECONDS)
         sparkNext = 0
     }
@@ -151,6 +186,14 @@ class BallEscapeSim : Sim {
         payoffFrame = false
         runSeconds += abs(dt)
         burstAge += abs(dt)
+        if (shardAge < SHARD_SECONDS) {
+            shardAge += abs(dt)
+            val damp = 1f - (2.2f * abs(dt)).coerceAtMost(0.5f)
+            for (i in 0 until SHARDS) {
+                shardVx[i] *= damp; shardVy[i] *= damp
+                shardX[i] += shardVx[i] * abs(dt); shardY[i] += shardVy[i] * abs(dt)
+            }
+        }
         for (i in 0 until SPARKS) sparkAge[i] += abs(dt)
         // An escaped ball used to vanish the instant it crossed the ring, so
         // the payoff was an empty circle. It now sails on out of the frame.
@@ -162,6 +205,7 @@ class BallEscapeSim : Sim {
         }
         if (restSeconds >= 0f) {
             restSeconds -= abs(dt)
+            recordPath(abs(dt))
             return
         }
         val laws = env.laws
@@ -210,12 +254,24 @@ class BallEscapeSim : Sim {
             b.record()
         }
 
+        recordPath(abs(dt))
         if (balls.none { it.alive } && restSeconds < 0f) restSeconds = 1.2f
 
         if (spawned.isNotEmpty()) {
             balls.addAll(spawned)
             spawned.clear()
         }
+    }
+
+    /** A point on the first ball's flight every few hundredths of a second, until it leaves the frame. */
+    private fun recordPath(h: Float) {
+        val b = balls.firstOrNull() ?: return
+        if (!b.alive && !b.out) return
+        if (b.out && hypot(b.x, b.y) > ringRadius + 0.03f) return
+        pathClock += h
+        if (pathClock < PATH_EVERY) return
+        pathClock = 0f
+        pathPoint(b.x, b.y, b.colorT)
     }
 
     /**
@@ -285,6 +341,16 @@ class BallEscapeSim : Sim {
                     b.out = true
                     if (escaped == 0) {
                         burstX = b.x; burstY = b.y; burstT = b.colorT; burstAge = 0f
+                        // Shards thrown from the break, mostly back into the
+                        // ring and along the wall, so they stay in frame.
+                        val out = atan2(b.y, b.x)
+                        shardAge = 0f
+                        for (i in 0 until SHARDS) {
+                            val a = out + PI.toFloat() + env.rng.range(-1.9f, 1.9f)
+                            val sp = env.rng.range(0.35f, 1.3f)
+                            shardX[i] = b.x; shardY[i] = b.y
+                            shardVx[i] = cos(a) * sp; shardVy[i] = sin(a) * sp
+                        }
                     }
                     escaped++
                     env.emit(EventKind.DONE, b.colorT, (b.x).coerceIn(-1f, 1f), 1f)
@@ -351,6 +417,9 @@ class BallEscapeSim : Sim {
                 b.vy *= k
             }
             b.colorT = (b.colorT + 0.013f) % 1f
+            // The corner of the path exactly where it hit, so the web's
+            // chords meet the wall instead of cutting the corner short.
+            if (b === balls.firstOrNull()) { pathPoint(b.x, b.y, b.colorT); pathClock = 0f }
             hits++
             spark(b.x + nx * b.r, b.y + ny * b.r, b.colorT)
             env.emit(EventKind.HIT, b.colorT, nx.coerceIn(-1f, 1f) * 0.8f, min(1f, 0.4f + b.r * 6f))
@@ -374,16 +443,33 @@ class BallEscapeSim : Sim {
         // reads even in a still frame: a thin ring was a lone dot in a hoop.
         val charge = (hits / 40f).coerceIn(0f, 1f)
         val wall = 0.02f + 0.012f * charge
+        // The escape lights the whole ring up, then it settles back.
+        val afterglow = if (escaped > 0) (1f - burstAge / AFTERGLOW_SECONDS).coerceIn(0f, 1f) else 0f
+        // The web of the first ball's flight, under everything: older chords
+        // faint, the latest few bright, and all of it brightening for the
+        // moment it gets out.
+        if (pathN > 1) {
+            val start = (pathHead - pathN + PATH) % PATH
+            var qx = pathX[start]; var qy = pathY[start]
+            for (j in 1 until pathN) {
+                val idx = (start + j) % PATH
+                val x = pathX[idx]; val y = pathY[idx]
+                val f = j.toFloat() / pathN
+                val a = (0.22f + 0.3f * f * f + 0.25f * afterglow) * (if (f > 0.97f) 1.6f else 1f)
+                g.line(qx, qy, x, y, 0.007f, Palette.brighten(palette.at(pathT[idx]), 0.1f), a.coerceAtMost(0.85f))
+                qx = x; qy = y
+            }
+        }
         for (ri in ringRadii.indices) {
             val c = palette.at(ri.toFloat() / max(1, rings - 1))
             val r = ringRadii[ri]
             if (sides < 3) {
                 // A faint floor inside, and the closed track under the wall,
                 // so a gap opening reads as a door in it, not a missing piece.
-                if (ri == 0) g.disc(0f, 0f, r, c, 0.045f)
+                if (ri == 0) g.disc(0f, 0f, r, c, 0.045f + 0.06f * afterglow)
                 g.ring(0f, 0f, r, wall * 0.5f, c, alpha = 0.14f)
-                g.ring(0f, 0f, r + wall, wall * 2.6f, c, gap, ringAngle[ri], 0.1f + 0.08f * charge)
-                g.ring(0f, 0f, r, wall, c, gap, ringAngle[ri], 0.95f)
+                g.ring(0f, 0f, r + wall, wall * 2.6f, c, gap, ringAngle[ri], 0.1f + 0.08f * charge + 0.3f * afterglow)
+                g.ring(0f, 0f, r, wall, if (afterglow > 0f) Palette.lerp(c, Palette.brighten(c, 0.5f), afterglow) else c, gap, ringAngle[ri], 0.95f)
             } else {
                 // Each side in short pieces, leaving out the ones in the gap.
                 val seg = TWO_PI / sides
@@ -428,6 +514,24 @@ class BallEscapeSim : Sim {
             val ease = 1f - (1f - k) * (1f - k)
             g.ring(burstX, burstY, 0.05f + 0.4f * ease, 0.008f, c, alpha = (1f - k) * 0.9f)
             g.glow(burstX, burstY, 0.12f + 0.25f * ease, c, (1f - k) * 0.6f)
+            // Ripples running in from the wall to the middle: the ring answers.
+            for (w in 0 until 3) {
+                val kk = ((burstAge - w * 0.22f) / (BURST_SECONDS * 0.8f)).coerceIn(0f, 1f)
+                if (kk <= 0f || kk >= 1f) continue
+                g.ring(0f, 0f, ringRadius * (1f - 0.85f * kk * (2f - kk)), 0.006f, c, alpha = (1f - kk) * 0.55f)
+            }
+        }
+        // The break's afterglow, lingering where it got out.
+        if (escaped > 0 && afterglow > 0f) {
+            g.glow(burstX, burstY, 0.22f, Palette.brighten(palette.at(burstT), 0.2f), 0.35f * afterglow)
+        }
+        if (shardAge < SHARD_SECONDS) {
+            val k = shardAge / SHARD_SECONDS
+            val c = Palette.brighten(palette.at(burstT), 0.35f)
+            for (i in 0 until SHARDS) {
+                val tx = shardX[i] - shardVx[i] * 0.05f; val ty = shardY[i] - shardVy[i] * 0.05f
+                g.line(tx, ty, shardX[i], shardY[i], 0.008f * (1f - k) + 0.002f, c, (1f - k * k) * 0.9f)
+            }
         }
         // Trails only while there are few balls; a split storm of 180 would
         // otherwise be a thousand-odd ghost segments.
@@ -489,7 +593,13 @@ class BallEscapeSim : Sim {
         private const val TRAIL = 30
         private const val SPARKS = 8
         private const val SPARK_SECONDS = 0.45f
-        private const val BURST_SECONDS = 0.9f
+        private const val BURST_SECONDS = 1.6f
+        private const val AFTERGLOW_SECONDS = 3f
+        private const val SHARDS = 28
+        private const val SHARD_SECONDS = 1.4f
+        /** Points kept of the first ball's flight, and seconds between them. */
+        private const val PATH = 900
+        private const val PATH_EVERY = 0.05f
         private const val MAX_SPEED = 7.5f
         private const val GIVE_UP = 60f
 
@@ -533,7 +643,7 @@ class BallEscapeSim : Sim {
                 // More rings make a longer, less certain run on purpose.
                 Param.int("rings", "Rings", 1, 12, 1, card = Card.DATA),
                 Param.float("gap", "Gap", 0.12f, 1.6f, 0.42f, card = Card.DATA, unit = "rad"),
-                Param.float("speed0", "Start speed", 0.2f, 3f, 1.2f, card = Card.MOTION),
+                Param.float("speed0", "Start speed", 0.2f, 3f, 1.6f, card = Card.MOTION),
                 // 1.1% a hit grew the ball a tenth over a whole run: the "bigger every
                 // bounce" the blurb promises could not be seen.
                 Param.float("growth", "Growth per hit", 0f, 5f, 2.5f, card = Card.MOTION, unit = "%"),

@@ -22,7 +22,7 @@ import kotlin.math.sin
 
 /**
  * A marbled block, sliced. The knife comes down, crumbs spill from the cut,
- * and the slice tips over and lands on the last one — again and again until
+ * and the slice tips over against a bench stop or the last one — again and again until
  * the block is a row of fallen slices.
  *
  * The block is a grid of little cells coloured by a swirl drawn fresh for
@@ -66,16 +66,24 @@ class SoapCutSim : Sim {
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
         slices = env.params.i("slices", 10).coerceIn(3, MAX_SLICES)
-        // A slice falls over to the right and lies its whole height long, so
-        // the block leaves that much room on its right: it fell off the side
-        // of an upright phone.
-        // Taller than it was (0.36 of the width): the width is spent on the
-        // block plus the first slice lying flat, so height is the only way
-        // the block grows on an upright phone.
-        blockH = min(0.5f, 2f * halfW * 0.42f)
+        // Slices fall over to the right, so the block leaves room on its
+        // right for them: they fell off the side of an upright phone.
+        // The first slice now leans on a bench stop instead of lying flat, so
+        // the fallen slices take about 0.62 of the block's height in width,
+        // not all of it — and the block can be half as tall again. Lying
+        // flat, the block was a small square low on an upright phone.
+        val avail = 2f * halfW - 2f * MARGIN
+        blockH = min(MAX_BLOCK_H, avail * 0.5f / LEAN_REACH)
         floorY = if (halfW < 0.8f) FLOOR_UPRIGHT else FLOOR
-        blockW = min(2f * halfW - blockH - 2f * MARGIN, 1.3f)
-        left = -halfW + MARGIN + ((2f * halfW - blockH - 2f * MARGIN) - blockW) * 0.5f
+        val sw0 = min(avail - blockH * LEAN_REACH, 1.3f) / slices
+        val reach = blockH * sin(LEAN) + sw0 * cos(LEAN)
+        blockW = min(avail - reach - 0.01f, 1.3f)
+        left = -halfW + MARGIN + ((avail - reach) - blockW) * 0.5f
+        // The stop: its top corner touches the first slice's face a little
+        // below its top when the slice leans at [LEAN].
+        stopX = left + blockW + STOP_CONTACT * blockH * sin(LEAN) - 0.002f
+        stopH = STOP_CONTACT * blockH * cos(LEAN)
+        stopW = min(0.06f, blockH * 0.12f)
         gridX = (slices * CELLS_PER_SLICE).coerceAtMost(240)
         gridY = 40
         fx = env.rng.range(2f, 6f); fy = env.rng.range(1.5f, 4f)
@@ -109,11 +117,11 @@ class SoapCutSim : Sim {
         // each overlapped its neighbour by most of its thickness.
         rest = FloatArray(slices)
         for (k in 0 until slices) {
-            if (k == 0) { rest[k] = (PI / 2).toFloat(); continue }
             var lo = 0f; var hi = (PI / 2).toFloat()
             repeat(28) {
                 val m = (lo + hi) * 0.5f
-                if (overlaps(k, m, k - 1, rest[k - 1])) hi = m else lo = m
+                val hit = if (k == 0) { corners(0, m, qa); stopCorners(qb); overlapsQ() } else overlaps(k, m, k - 1, rest[k - 1])
+                if (hit) hi = m else lo = m
             }
             rest[k] = lo
         }
@@ -146,6 +154,22 @@ class SoapCutSim : Sim {
     /** Whether two tipped slices overlap: separating axes over both rectangles' sides. */
     private fun overlaps(a: Int, ta: Float, b: Int, tb: Float): Boolean {
         corners(a, ta, qa); corners(b, tb, qb)
+        return overlapsQ()
+    }
+
+    private var stopX = 0f
+    private var stopH = 0f
+    private var stopW = 0.05f
+
+    private fun stopCorners(out: FloatArray) {
+        out[0] = stopX; out[1] = floorY
+        out[2] = stopX + stopW; out[3] = floorY
+        out[4] = stopX + stopW; out[5] = floorY + stopH
+        out[6] = stopX; out[7] = floorY + stopH
+    }
+
+    /** Whether the quads in [qa] and [qb] overlap. */
+    private fun overlapsQ(): Boolean {
         for (poly in arrayOf(qa, qb)) for (e in 0 until 4) {
             val x1 = poly[2 * e]; val y1 = poly[2 * e + 1]
             val x2 = poly[(2 * e + 2) % 8]; val y2 = poly[(2 * e + 3) % 8]
@@ -209,7 +233,9 @@ class SoapCutSim : Sim {
                 tilt[k] = rest[k]
                 landed[k] = true
                 env.emit(EventKind.HIT, 0.15f + 0.1f * env.rng.nextFloat(), 0.4f, 0.7f)
-                repeat(12) { crumb(env, cutX(k) + sliceW + blockH * 0.8f, floorY + 0.02f) }
+                // A puff of crumbs where its top knocks against what it lands on.
+                corners(k, tilt[k], qa)
+                repeat(12) { crumb(env, qa[4], qa[5]) }
                 if (k == slices - 1) {
                     doneAt = elapsed
                     payoffFrame = true
@@ -285,6 +311,10 @@ class SoapCutSim : Sim {
             }
         }
         g.rect(0f, floorY - 0.006f, halfW, 0.006f, 0xFF2A2E38.toInt())
+        // The bench stop the first slice leans on, and its dim reflection.
+        g.rect(stopX + stopW * 0.5f, floorY - stopH * 0.5f, stopW * 0.5f, stopH * 0.5f, Palette.lerp(TABLE, STOP, 0.25f))
+        g.rect(stopX + stopW * 0.5f, floorY + stopH * 0.5f, stopW * 0.5f, stopH * 0.5f, STOP)
+        g.rect(stopX + stopW * 0.5f, floorY + stopH - 0.003f, stopW * 0.5f, 0.003f, Palette.brighten(STOP, 0.12f))
         for (c in 0 until standing.coerceAtMost(gridX)) for (r in 0 until gridY) {
             g.rect(left + (c + 0.5f) * cw, floorY + (r + 0.5f) * ch, cw * 0.5f + 0.0005f, ch * 0.5f + 0.0005f, colors[r * gridX + c])
         }
@@ -310,8 +340,10 @@ class SoapCutSim : Sim {
             val d = knifeDepth(phase)
             val x = cutX(cut)
             val tip = floorY + blockH * (1f - d)
-            g.rect(x, tip + 0.22f, 0.006f, 0.22f, 0xFFC9CED8.toInt())
-            g.rect(x, tip + 0.5f, 0.018f, 0.07f, 0xFF3A3F4B.toInt())
+            // Shorter than it was, so over the taller block the handle stays
+            // on screen at the top of the stroke.
+            g.rect(x, tip + 0.17f, 0.006f, 0.17f, 0xFFC9CED8.toInt())
+            g.rect(x, tip + 0.4f, 0.018f, 0.06f, 0xFF3A3F4B.toInt())
         }
     }
 
@@ -331,7 +363,15 @@ class SoapCutSim : Sim {
          */
         const val FLOOR = -0.45f
         /** On an upright phone: the block in the middle and the table's sheen below it. */
-        const val FLOOR_UPRIGHT = -0.28f
+        const val FLOOR_UPRIGHT = -0.4f
+        /** How far over, from upright, the first slice leans on the stop. */
+        const val LEAN = 0.62f
+        /** Width the leaning slices take, as a share of the block's height (about sin LEAN). */
+        const val LEAN_REACH = 0.62f
+        /** Where up the first slice's face the stop touches it. */
+        const val STOP_CONTACT = 0.45f
+        const val MAX_BLOCK_H = 0.7f
+        private val STOP = 0xFF3B3F4C.toInt()
         const val MARGIN = 0.03f
         const val DOWN = 1.0f
         const val UP = 0.35f

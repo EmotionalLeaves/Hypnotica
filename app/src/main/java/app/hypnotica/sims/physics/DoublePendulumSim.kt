@@ -241,7 +241,14 @@ class DoublePendulumSim : Sim {
         val after = if (split) (1f - (elapsed - splitAt) / 3f).coerceIn(0.3f, 1f) else 1f
         val faint = (3f / sqrt(drawn.toFloat())).coerceIn(0.05f, 0.6f) * after
         val asPoints = count > DRAWN_AS_POINTS
-        g.reserveInstances(drawn * 2 + (if (asPoints) 0 else count) + 2 * TRAIL + 8)
+        g.reserveInstances(drawn * 2 + (if (asPoints) 0 else count) + 2 * TRAIL + 16)
+        // A faint dial round the pivot — how far the lower bob can reach, and
+        // the upper bob's circle inside it — so the frame has its shape
+        // before the fan opens: until the split the screen was one thin line
+        // in the dark.
+        val dial = palette.at(0.6f)
+        g.ring(0f, 0f, arm * 2f, 0.003f, dial, alpha = 0.22f)
+        g.ring(0f, 0f, arm, 0.0025f, dial, alpha = 0.12f)
         if (asPoints) g.reservePoints(count)
         val bob = if (count > 40) 0.01f else 0.022f
         val size = (0.014f - count / 2_000_000f).coerceIn(0.005f, 0.014f)
@@ -265,12 +272,13 @@ class DoublePendulumSim : Sim {
         // the seconds before the split, when the fan is one thin pendulum.
         if (trailFilled > 1) {
             for (slot in 0 until (if (split && count > 1) 2 else 1)) {
-                val c = palette.at(if (slot == 0) 0f else 1f)
+                val c = palette.at(markT(palette, slot == 0))
+                val tc = Palette.brighten(c, 0.12f)
                 for (j in 1 until trailFilled) {
                     val a = (trailHead - trailFilled + j - 1 + TRAIL * 2) % TRAIL
                     val b = (a + 1) % TRAIL
                     val f = j.toFloat() / trailFilled
-                    g.line(trailX[slot][a], trailY[slot][a], trailX[slot][b], trailY[slot][b], 0.004f + 0.004f * f, c, 0.6f * f * f)
+                    g.line(trailX[slot][a], trailY[slot][a], trailX[slot][b], trailY[slot][b], 0.005f + 0.009f * f, tc, 0.2f + 0.75f * f * f)
                 }
             }
         }
@@ -279,23 +287,39 @@ class DoublePendulumSim : Sim {
             val c = palette.at(0f)
             val x1 = (sin(a1[0]) * arm).toFloat(); val y1 = (-cos(a1[0]) * arm).toFloat()
             val x2 = x1 + (sin(a2[0]) * arm).toFloat(); val y2 = y1 + (-cos(a2[0]) * arm).toFloat()
-            g.line(0f, 0f, x1, y1, 0.012f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f), 0.85f)
-            g.line(x1, y1, x2, y2, 0.01f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f), 0.85f)
-            g.disc(x1, y1, 0.016f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f))
+            // Bold, a solid rod and joint: six hundred pendulums in one.
+            val rod = Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f)
+            g.line(0f, 0f, x1, y1, 0.05f, c, 0.16f)
+            g.line(x1, y1, x2, y2, 0.046f, c, 0.16f)
+            g.line(0f, 0f, x1, y1, 0.024f, rod, 0.95f)
+            g.line(x1, y1, x2, y2, 0.02f, rod, 0.95f)
+            g.disc(x1, y1, 0.028f, rod)
+            g.disc(x1, y1, 0.01f, Palette.BG, 0.6f)
         }
         // The first and the last pendulum, the two furthest apart at the
         // start, marked: one bright bob while they agree, two once they part.
         if (count > 1) {
             for (k in intArrayOf(0, count - 1)) {
-                val c = palette.at(if (k == 0) 0f else 1f)
+                val c = palette.at(markT(palette, k == 0))
                 val x2 = (sin(a1[k]) * arm + sin(a2[k]) * arm).toFloat()
                 val y2 = (-cos(a1[k]) * arm - cos(a2[k]) * arm).toFloat()
                 g.glow(x2, y2, 0.07f, c, 0.45f)
                 g.disc(x2, y2, 0.018f, Palette.brighten(c, 0.3f))
             }
         }
-        g.disc(0f, 0f, 0.012f, Palette.TEXT_SECONDARY, 0.8f)
+        // The pivot: a mount, not a speck.
+        g.disc(0f, 0f, 0.022f, Palette.TEXT_SECONDARY, 0.9f)
+        g.disc(0f, 0f, 0.009f, Palette.BG)
     }
+
+    /**
+     * Where on the palette each marked pendulum's colour sits. A hue wheel
+     * comes back round, so its far end is the same red as its start and the
+     * two marked bobs and their traces were indistinguishable: half way is
+     * the opposite hue.
+     */
+    private fun markT(p: Palette, first: Boolean): Float =
+        if (first) 0f else if (p.at(0f) == p.at(0.999f)) 0.5f else 1f
 
     /** Both arms reach out from the pivot in every direction. */
     override fun frameHalfWidth(env: SimEnv): Float = ARM * 2f + 0.05f
@@ -336,7 +360,7 @@ class DoublePendulumSim : Sim {
         const val MAX_ARMS = 800
         const val VOICES = 40
         /** Steps of the marked bobs' traced path. */
-        const val TRAIL = 150
+        const val TRAIL = 330
         const val SPREAD_SAMPLES = 256
 
         fun def(): SimDef = SimDef(

@@ -139,40 +139,97 @@ class SandpileSim : Sim {
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
-        val palette = env.palette
         val half = n / 2
         // Only the part of the grid the pile has reached is walked.
         val r = min(half, reach + 1)
-        val cell = 2f * VIEW / n
-        g.reservePoints((2 * r + 1) * (2 * r + 1))
-        val c1 = palette.at(0.25f)
-        val c2 = palette.at(0.6f)
-        val c3 = palette.at(0.95f)
-        val c0 = Palette.lerp(Palette.BG, palette.at(0.05f), 0.45f)
+        val view = view(env)
+        val cell = 2f * view / n
+        val tones = tones(env.palette)
+        if (n > RUN_LIMIT) {
+            // A huge grid is a pixel or less a cell: soft points are the cheap
+            // path and look the same at that size.
+            g.reservePoints((2 * r + 1) * (2 * r + 1))
+            for (y in half - r..half + r) {
+                val row = y * n
+                var first = half + r + 1; var last = half - r - 1
+                for (x in half - r..half + r) if (cells[row + x].toInt() != 0) { first = x; break }
+                for (x in half + r downTo half - r) if (cells[row + x].toInt() != 0) { last = x; break }
+                for (x in first..last) g.point((x - half) * cell, (y - half) * cell, cell * 1.45f, tones[cells[row + x].toInt().coerceIn(0, 3)])
+            }
+            return
+        }
+        // Crisp square cells, one rect per run of equal counts along a row:
+        // the fractal is the exact 0-3 counts, and soft round dots of four
+        // near tones read as orange noise. A run is a fraction of a cell
+        // taller and wider than its cells so neighbouring rows and runs
+        // overlap instead of leaving an anti-aliased seam between them.
+        val pad = cell * 0.06f
         for (y in half - r..half + r) {
-            val wy = (y - half) * cell
             val row = y * n
-            // Empty sites are drawn only between the row's first and last
-            // grains — inside the pile. Over the whole square the pile had
-            // reached, they framed the round pile in a muddy box.
             var first = half + r + 1; var last = half - r - 1
             for (x in half - r..half + r) if (cells[row + x].toInt() != 0) { first = x; break }
             for (x in half + r downTo half - r) if (cells[row + x].toInt() != 0) { last = x; break }
-            for (x in first..last) {
-                val c = when (cells[row + x].toInt()) {
-                    0 -> c0
-                    1 -> c1
-                    2 -> c2
-                    else -> c3
-                }
-                // Wide enough to merge with the neighbours: a dot a cell
-                // across left the dark lattice between dots showing.
-                g.point((x - half) * cell, wy, cell * 1.45f, c)
+            if (first > last) continue
+            val wy = (y - half) * cell
+            var x = first
+            while (x <= last) {
+                val v = cells[row + x].toInt().coerceIn(0, 3)
+                var e = x
+                while (e < last && cells[row + e + 1].toInt().coerceIn(0, 3) == v) e++
+                val x0 = (x - half - 0.5f) * cell
+                val x1 = (e - half + 0.5f) * cell
+                g.rect((x0 + x1) * 0.5f, wy, (x1 - x0) * 0.5f + pad, cell * 0.5f + pad, tones[v])
+                x = e + 1
             }
         }
     }
 
-    override fun frameHalfWidth(env: SimEnv): Float = VIEW + 0.03f
+    /** Half the side of the grid on screen: the full width of a phone held upright. */
+    private fun view(env: SimEnv): Float = min(env.halfWidth, 1f) * 0.97f
+
+    /**
+     * Four clearly different tones for the counts 0..3, 0 a deep shade just
+     * off the background — the nested triangles and diamonds then stand out
+     * from one another. Picked
+     * from four evenly spaced places on the palette and sorted, because which
+     * end of a palette is light differs from palette to palette.
+     */
+    private var tonesFor: Palette? = null
+    private var toneCache = IntArray(4)
+    private fun tones(p: Palette): IntArray {
+        if (tonesFor === p) return toneCache
+        // A hue wheel comes back round to where it began: quarter it instead.
+        val wraps = p.at(0f) == p.at(0.999f)
+        val picks = if (wraps) intArrayOf(p.at(0.08f), p.at(0.33f), p.at(0.58f), p.at(0.83f))
+        else intArrayOf(p.at(0f), p.at(0.34f), p.at(0.67f), p.at(0.999f))
+        val sorted = picks.sortedBy { luma(it) }
+        // Most settled sites hold 3 or 2, so 3 gets a rich mid tone as the
+        // ground and 2 the brightest, which lights the nested triangles; with
+        // 3 brightest the whole disc washed out to one colour.
+        toneCache = intArrayOf(
+            Palette.lerp(Palette.BG, sorted[0], 0.35f),
+            sorted[2],
+            Palette.brighten(sorted[3], 0.06f),
+            sorted[1]
+        )
+        tonesFor = p
+        return toneCache
+    }
+
+    private fun luma(c: Int): Float =
+        0.299f * ((c ushr 16) and 0xFF) + 0.587f * ((c ushr 8) and 0xFF) + 0.114f * (c and 0xFF)
+
+    override fun frameHalfWidth(env: SimEnv): Float = view(env) + 0.01f
+
+    /**
+     * The view closes in on the pile while it is small and pulls back as it
+     * grows, so it always fills the width: early on it was a small disc in
+     * an empty screen.
+     */
+    override fun focus(env: SimEnv): Float {
+        val cell = 2f * view(env) / n
+        return max((min(n / 2, reach + 1) + 1.5f) * cell / 0.96f, 1e-3f)
+    }
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -185,8 +242,8 @@ class SandpileSim : Sim {
     )
 
     companion object {
-        /** Half the side of the grid on screen, in world units. */
-        const val VIEW = 0.9f
+        /** Past this grid size cells are a pixel or less: drawn as points. */
+        const val RUN_LIMIT = 401
         const val MAX_SIZE = 801
         /** Grown this far towards the edge, the pattern is complete enough. */
         const val PAYOFF_REACH = 0.82f
@@ -205,7 +262,10 @@ class SandpileSim : Sim {
             blurb = "Drop grains one at a time. Four make a cell spill. A fractal falls out.",
             formats = listOf(TrapFormat.CHAIN, TrapFormat.GROW, TrapFormat.FILL),
             heroLabel = "Start a new pile",
-            defaultPalette = "Ember",
+            // Ocean: four counts as four clear steps of one cool family. Ember's
+            // ramp is all orange-red and the fractal blurred into one warm
+            // disc; Aurora's four hues were legible but garish.
+            defaultPalette = "Ocean",
             typicalSeconds = 20f,
             params = listOf(
                 Param.int("size", "Pile size", 51, MAX_SIZE, 161, card = Card.DATA),

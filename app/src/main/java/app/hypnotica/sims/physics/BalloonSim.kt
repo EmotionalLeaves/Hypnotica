@@ -59,6 +59,10 @@ class BalloonSim : Sim {
     private var ctint = FloatArray(0)
     private var cspin = FloatArray(0)
     private var cowner = IntArray(0)
+    /** Where each piece comes to rest, and the angle it lies at once it has. */
+    private var crest = FloatArray(0)
+    private var cland = FloatArray(0)
+    private var cdrag = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
@@ -89,12 +93,21 @@ class BalloonSim : Sim {
         val n = env.params.i("confetti", 600).coerceIn(20, 20000)
         cx = FloatArray(n); cy = FloatArray(n); cvx = FloatArray(n); cvy = FloatArray(n)
         ctint = FloatArray(n); cspin = FloatArray(n); cowner = IntArray(n) { it % count }
+        crest = FloatArray(n); cland = FloatArray(n) { Float.NaN }; cdrag = FloatArray(n)
         for (i in 0 until n) {
             val a = env.rng.range(0f, 2f * PI.toFloat())
             val r = sqrt(env.rng.nextFloat()) * 0.85f
             cx[i] = cos(a) * r; cy[i] = sin(a) * r
             ctint[i] = env.rng.nextFloat()
             cspin[i] = env.rng.range(0f, 6.28f)
+            // A shallow, loose drift on the floor, thinning towards its top,
+            // instead of every piece on one line: they landed as a solid
+            // stripe along the bottom of the screen.
+            val u = env.rng.nextFloat()
+            crest[i] = FLOOR + DRIFT * u * u
+            // Some scraps catch the air more than others, so the cloud
+            // stretches out as it falls instead of coming down as one sheet.
+            cdrag[i] = env.rng.range(0.8f, 1.7f)
         }
     }
 
@@ -129,17 +142,24 @@ class BalloonSim : Sim {
             // falling. With one drag for both, the burst carried most of it
             // to the screen's edges, and it came down there in two columns.
             cvx[i] *= 1f - min(1f, 4f * h)
-            cvy[i] = cvy[i] * (1f - 1.2f * h) - g * h
+            if (!cland[i].isNaN()) continue
+            cvy[i] = cvy[i] * (1f - cdrag[i] * h) - g * h
             val was = cy[i]
             cx[i] += cvx[i] * h
             cy[i] += cvy[i] * h
             // The pitter-patter of it landing, one piece in twenty heard.
-            if (i % 20 == 0 && was >= FLOOR && cy[i] < FLOOR) {
+            if (i % 20 == 0 && was >= crest[i] && cy[i] < crest[i]) {
                 env.emit(EventKind.HIT, 0.6f + 0.4f * ctint[i], (cx[i] / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.25f)
             }
             // And it lands: the floor the sound said it hit is the bottom of
             // the screen, where it now lies instead of falling on out of view.
-            if (cy[i] < FLOOR) { cy[i] = FLOOR; cvy[i] = 0f; cvx[i] *= 0.5f }
+            if (cy[i] < crest[i] && cvy[i] < 0f) {
+                cy[i] = crest[i]; cvy[i] = 0f; cvx[i] = 0f
+                // It lies where it fell, flat, at whatever angle it came down:
+                // still spinning on the floor, the drift flickered.
+                cx[i] += 0.012f * sin(cspin[i] * 3f + elapsed * 4f) * swayOf(i)
+                cland[i] = (cspin[i] + elapsed * 7f) % PI.toFloat()
+            }
             // The screen's edges are walls; confetti piles against them
             // rather than leaving.
             if (abs(cx[i]) > halfW) { cx[i] = cx[i].coerceIn(-halfW, halfW); cvx[i] = -cvx[i] * 0.3f }
@@ -210,16 +230,20 @@ class BalloonSim : Sim {
                 val j = 0.04f * sin(cspin[i] + elapsed * (2f + 6f * tremble[k]))
                 g.point(ox + (cx[i] + j) * radius[k], oy + (cy[i] - j) * radius[k], 0.01f, Palette.withAlpha(palette.at(ctint[i]), 0.55f))
             } else {
-                val turn = cspin[i] + elapsed * 7f
+                val down = !cland[i].isNaN()
+                val turn = if (down) cland[i] else cspin[i] + elapsed * 7f
                 // Swaying as it falls, the way paper does; still once it lands.
-                val sway = if (cy[i] > FLOOR) 0.012f * sin(cspin[i] * 3f + elapsed * 4f) else 0f
+                val sway = if (!down) 0.012f * sin(cspin[i] * 3f + elapsed * 4f) * swayOf(i) else 0f
+                // Landed pieces a shade dimmer, so the drift sits back and
+                // the falling ones stay the subject.
+                val col = if (down) Palette.lerp(palette.at(ctint[i]), Palette.BG, 0.25f) else palette.at(ctint[i])
                 if (paper) {
                     // A scrap of paper, turning over: its width flickers as it
-                    // shows its edge.
-                    val flip = 0.25f + 0.75f * abs(sin(turn * 1.3f))
-                    g.rect(cx[i] + sway, cy[i], 0.009f, 0.0045f * flip + 0.001f, palette.at(ctint[i]), turn)
+                    // shows its edge. Lying flat, it shows its face.
+                    val flip = if (down) 0.8f else 0.25f + 0.75f * abs(sin(turn * 1.3f))
+                    g.rect(cx[i] + sway, cy[i], 0.009f, 0.0045f * flip + 0.001f, col, turn)
                 } else {
-                    g.point(cx[i] + sway, cy[i], 0.012f * (0.6f + 0.4f * abs(sin(turn))), palette.at(ctint[i]))
+                    g.point(cx[i] + sway, cy[i], 0.012f * (if (down) 0.8f else 0.6f + 0.4f * abs(sin(turn))), col)
                 }
             }
         }
@@ -231,6 +255,9 @@ class BalloonSim : Sim {
             g.disc(cxs[k] - r * 0.22f, baseY + r * 0.55f, r * 0.045f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
         }
     }
+
+    /** How widely a piece sways as it falls: the light ones flutter more. */
+    private fun swayOf(i: Int): Float = 0.6f + 0.9f * (cdrag[i] - 0.8f) / 0.9f
 
     override fun frameHalfWidth(env: SimEnv): Float = 0f
 
@@ -256,8 +283,11 @@ class BalloonSim : Sim {
         const val PUMP_EVERY = 0.55f
         const val PUMP_VOLUME = 0.035f
         const val POP_NOTES = 10
-        const val FALL_SECONDS = 3f
+        /** Long enough for most of it to land: at 3 s the run ended with the cloud hanging mid-screen. */
+        const val FALL_SECONDS = 4.5f
         const val FLOOR = -0.97f
+        /** How deep the drift of landed confetti is. */
+        const val DRIFT = 0.07f
         /** Up to this many pieces, confetti is drawn as turning scraps; past it, as dots. */
         const val PAPER_MAX = 3000
 

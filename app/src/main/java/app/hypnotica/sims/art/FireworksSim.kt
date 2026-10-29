@@ -28,7 +28,10 @@ import kotlin.math.sqrt
  */
 class FireworksSim : Sim {
 
-    private class Rocket(var x: Float, var y: Float, var vx: Float, var vy: Float, val burstY: Float, val kind: Int, val tint: Float)
+    private class Rocket(
+        var x: Float, var y: Float, var vx: Float, var vy: Float,
+        val burstY: Float, val kind: Int, val tint: Float, val scale: Float
+    )
 
     private val rockets = ArrayList<Rocket>()
     private var px = FloatArray(0)
@@ -79,7 +82,25 @@ class FireworksSim : Sim {
         skyFlash = 0f
     }
 
-    private fun launch(env: SimEnv, x: Float, burstY: Float) {
+    /** How far a burst of [scale] reaches from where it broke, in world units. */
+    private fun reachOf(env: SimEnv, scale: Float): Float =
+        BURST_REACH * scale * env.params.f("size", 1f).coerceIn(0.4f, 2f) * min(0.62f, halfW)
+
+    /**
+     * A rocket somewhere in the sky: [u] across the whole width (-1..1) and
+     * [v] up the upper two thirds (0..1), kept in so its burst stays on
+     * screen. Rockets used to go up within the middle 40% of the width and
+     * every burst piled into one column.
+     */
+    private fun launchAt(env: SimEnv, u: Float, v: Float, scale: Float) {
+        val reach = reachOf(env, scale)
+        val xMax = max(0f, halfW - reach * 1.02f)
+        val top = min(SKY_TOP, 0.95f - reach)
+        val y = SKY_BOTTOM + (top - SKY_BOTTOM) * v.coerceIn(0f, 1f)
+        launch(env, xMax * u.coerceIn(-1f, 1f), y, scale)
+    }
+
+    private fun launch(env: SimEnv, x: Float, burstY: Float, scale: Float = 1f) {
         val g = gravity(env)
         // Launched just hard enough to stop where it should burst.
         val rise = burstY - GROUND
@@ -92,20 +113,31 @@ class FireworksSim : Sim {
             3 -> env.rng.int(0, KINDS + 2)
             else -> env.rng.int(0, KINDS)
         }
-        rockets.add(Rocket(x, GROUND, env.rng.range(-0.05f, 0.05f), vy, burstY, kind, env.rng.nextFloat()))
+        rockets.add(Rocket(x, GROUND, env.rng.range(-0.03f, 0.03f), vy, burstY, kind, env.rng.nextFloat(), scale))
         launched++
         env.emit(EventKind.STEP, 0.2f + 0.3f * ((burstY + 1f) / 2f), (x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.2f)
     }
 
     private fun gravity(env: SimEnv) = max(0.3f, abs(env.laws.gravity)) * GRAVITY_SCALE
 
-    private fun burst(env: SimEnv, r: Rocket, big: Float) {
-        val n = (SPARKS_PER_BURST * big * env.params.f("size", 1f)).toInt().coerceIn(20, 1200)
+    private fun burst(env: SimEnv, r: Rocket, finale: Boolean) {
+        // A ring is one line of stars, and at a shell's full count it drew
+        // as a solid neon hoop: half as many read as sparks.
+        val share = if (r.kind == RING) 0.5f else 1f
+        val n = (SPARKS_PER_BURST * share * (0.5f + 0.5f * r.scale) * env.params.f("size", 1f)).toInt().coerceIn(20, 1200)
         // Sized to the screen's width: a burst made for a wide sky spread
-        // past both sides of an upright phone. Up to about a third of the
-        // width across on a phone, which a show of them fills; they were a
-        // fifth, and the sky stayed mostly empty.
-        val speed = (0.6f + 0.25f * big) * env.params.f("size", 1f).coerceIn(0.4f, 2f) * min(0.62f, halfW) * 1.05f
+        // past both sides of an upright phone. Thrown out fast against a
+        // strong drag, so a shell blooms open in a fraction of a second and
+        // then hangs, as real stars do — slow and steady, a fresh burst sat
+        // for a moment as a solid white disc. Stars travel speed / drag.
+        val reach = reachOf(env, r.scale)
+        val speed = reach * PEONY_DRAG
+        // A ring is a flat disc of stars at some tilt to us: an ellipse
+        // turned to any angle. Face-on every time, the big circles looked
+        // drawn with a compass.
+        val tilt = env.rng.range(0.35f, 1f)
+        val spin = env.rng.range(0f, PI.toFloat())
+        val cs = cos(spin); val sn = sin(spin)
         for (k in 0 until n) {
             val i = pNext; pNext = (pNext + 1) % cap
             px[i] = r.x; py[i] = r.y
@@ -115,11 +147,13 @@ class FireworksSim : Sim {
                 // the burst grows as that shape and holds it while it spreads.
                 val t = k.toFloat() / n
                 val (ox, oy) = if (r.kind == HEART) heart(t) else star(t)
-                pvx[i] = ox * speed + r.vx; pvy[i] = oy * speed
+                pvx[i] = ox * speed * 0.85f + r.vx; pvy[i] = oy * speed * 0.85f
             } else {
                 if (r.kind == RING) {
                     // A ring: every spark the same speed, in the sky's plane.
-                    pvx[i] = cos(a) * speed + r.vx; pvy[i] = sin(a) * speed
+                    val ex = cos(a) * speed * 0.8f
+                    val ey = sin(a) * speed * 0.8f * tilt
+                    pvx[i] = ex * cs - ey * sn + r.vx; pvy[i] = ex * sn + ey * cs
                 } else {
                     // A peony or a willow is a shell: every star thrown out at
                     // nearly one speed in every direction in 3D, seen from the
@@ -127,27 +161,31 @@ class FireworksSim : Sim {
                     // flat disc, it read as a blob of dots.
                     val z = env.rng.range(-1f, 1f)
                     val across = sqrt(1f - z * z)
-                    val s = speed * (if (r.kind == WILLOW) 0.7f else 1f) * env.rng.range(0.88f, 1f)
+                    // A willow is thrown softer and drags harder than a peony
+                    // but droops much further: the same reach, a long fall.
+                    val s = (if (r.kind == WILLOW) reach * WILLOW_DRAG * 0.8f else speed) * env.rng.range(0.88f, 1f)
                     pvx[i] = cos(a) * across * s + r.vx; pvy[i] = sin(a) * across * s
                 }
             }
             // The finale's shells hang longer, so the sky is still full of
             // it when the show ends; it used to be black a second after.
-            val hang = if (big > 1f) 1.8f else 1f
-            maxLife[i] = hang * (if (r.kind == WILLOW) env.rng.range(2.2f, 3.2f) else env.rng.range(1.1f, 1.9f))
+            // Not so long that they sink to the ground: at 1.8x and a gentle
+            // drag, the finale fell into one dense heap at the bottom.
+            val hang = if (finale) 1.3f else 1f
+            maxLife[i] = hang * (if (r.kind == WILLOW) env.rng.range(1.9f, 2.7f) else env.rng.range(1.1f, 1.8f))
             life[i] = maxLife[i]
-            drag[i] = if (r.kind == WILLOW) 1.6f else 1.1f
-            fall[i] = if (r.kind == WILLOW) 0.3f else 0.13f
+            drag[i] = if (r.kind == WILLOW) WILLOW_DRAG else PEONY_DRAG
+            fall[i] = if (r.kind == WILLOW) 0.32f else 0.16f
             // Shapes hang together: no stray colours, so the outline reads
             // as one thing while it lasts.
             // Mostly the rocket's own colour, a few strays.
             tint[i] = if (r.kind >= HEART || env.rng.nextFloat() < 0.85f) r.tint else env.rng.nextFloat()
         }
-        skyFlash = max(skyFlash, 0.25f * big)
+        skyFlash = max(skyFlash, if (finale) 0.3f else 0.22f)
         flashX[flashNext] = r.x; flashY[flashNext] = r.y; flashT[flashNext] = r.tint; flashAge[flashNext] = 0f
         flashNext = (flashNext + 1) % FLASHES
         val height = ((r.y + 1f) / 2f).coerceIn(0f, 1f)
-        env.emit(EventKind.HIT, 0.15f + 0.6f * height, (r.x / max(0.1f, halfW)).coerceIn(-1f, 1f), (0.5f + 0.3f * big).coerceAtMost(1f))
+        env.emit(EventKind.HIT, 0.15f + 0.6f * height, (r.x / max(0.1f, halfW)).coerceIn(-1f, 1f), (0.45f + 0.3f * r.scale + if (finale) 0.15f else 0f).coerceAtMost(1f))
     }
 
     /** The heart curve, [t] from 0 to 1 round it, about one unit across. */
@@ -182,13 +220,17 @@ class FireworksSim : Sim {
         if (!finaleFired) {
             nextLaunch -= h
             if (nextLaunch <= 0f) {
-                // Quicker and quicker as the show goes on: four at a time at
+                // Quicker and quicker as the show goes on: three at a time at
                 // the end, at heights from the middle of the sky to the top,
                 // so the bursts fill it rather than stacking in one band.
                 val progress = (elapsed / showLength).coerceIn(0f, 1f)
-                val volley = 1 + (progress * 3.2f).toInt()
-                repeat(volley) {
-                    launch(env, env.rng.range(-halfW * SPREAD, halfW * SPREAD), env.rng.range(0f, 0.68f))
+                val volley = 1 + (progress * 2.6f).toInt()
+                // A volley shares the width out, one slot each, so its
+                // shells go up apart rather than on top of one another.
+                val slot0 = env.rng.nextFloat()
+                repeat(volley) { k ->
+                    val u = ((slot0 + k.toFloat() / volley) % 1f) * 2f - 1f
+                    launchAt(env, u + env.rng.range(-0.15f, 0.15f), env.rng.range(0.1f, 1f), env.rng.range(0.7f, 1.15f))
                 }
                 nextLaunch = (0.85f - 0.55f * progress) / pace.coerceAtLeast(0.2f) * env.rng.range(0.7f, 1.3f)
             }
@@ -198,21 +240,27 @@ class FireworksSim : Sim {
                 finaleClock = 0f
             }
         }
-        // The finale: a wall of them all the way across, then two more
-        // between and above, half a second apart. One volley of nine was over
-        // in a blink, and the sky the show built to was sparse.
+        // The finale: volleys that come quicker and climb, each spread
+        // across the whole sky at staggered heights, ending on the biggest
+        // shells highest up — a crescendo that fills the sky. Launched in a
+        // wall from the middle at one height, it piled up low on one side.
         if (finaleFired && finaleWave < FINALE_WAVES) {
             finaleClock -= h
             if (finaleClock <= 0f) {
-                val count = FINALE - (finaleWave % 2) * 2
+                val last = finaleWave == FINALE_WAVES - 1
+                val count = if (last) 3 else FINALE - (finaleWave % 2)
+                val climb = finaleWave / (FINALE_WAVES - 1f)
+                val offset = if (finaleWave % 2 == 0) 0f else 0.5f
                 for (k in 0 until count) {
-                    val u = (k + 0.5f) / count
-                    val x = -halfW * SPREAD + 2f * SPREAD * halfW * u
-                    val arch = sin(u * PI.toFloat())
-                    launch(env, x, 0.05f + 0.14f * finaleWave + 0.25f * arch)
+                    val u = ((k + 0.5f + offset * 0.5f) / count) * 2f - 1f
+                    // Alternate high and low across the row, rising wave by wave.
+                    val v = if (last) 0.85f + 0.15f * env.rng.nextFloat()
+                    else (0.15f + 0.45f * climb + (if (k % 2 == 0) 0.35f else 0f) + env.rng.range(-0.1f, 0.1f))
+                    val scale = if (last) 1.25f else env.rng.range(0.65f, 1.05f)
+                    launchAt(env, u + env.rng.range(-0.08f, 0.08f), v, scale)
                 }
                 finaleWave++
-                finaleClock = FINALE_GAP
+                finaleClock = FINALE_GAP * (1f - 0.4f * climb)
             }
         }
         val g = gravity(env)
@@ -223,7 +271,7 @@ class FireworksSim : Sim {
             r.vy -= g * h
             r.x += r.vx * h; r.y += r.vy * h
             if (r.vy <= 0f || r.y >= r.burstY) {
-                burst(env, r, if (finaleFired) 1.5f else 1f)
+                burst(env, r, finaleFired)
                 burstNow++
                 it.remove()
             }
@@ -298,19 +346,24 @@ class FireworksSim : Sim {
         const val GROUND = -0.92f
         const val GRAVITY_SCALE = 0.35f
         const val SHOW_SECONDS = 12f
-        const val FINALE = 9
-        const val FINALE_WAVES = 4
-        /** Seconds between the finale's volleys. */
-        const val FINALE_GAP = 0.5f
+        const val FINALE = 6
+        const val FINALE_WAVES = 6
+        /** Seconds between the finale's first volleys; they quicken. */
+        const val FINALE_GAP = 0.55f
+        /** Where in the sky shells break: the upper two thirds. */
+        const val SKY_BOTTOM = -0.3f
+        const val SKY_TOP = 0.75f
+        /** A burst's reach, as a share of the screen's half-width. */
+        const val BURST_REACH = 0.48f
+        const val PEONY_DRAG = 2.6f
+        const val WILLOW_DRAG = 3.2f
         const val ROCKET_TAIL = 6
-        /** How far out, as a share of the half-width, rockets go up. */
-        const val SPREAD = 0.4f
         const val FLASHES = 24
         /** Points in each spark's streak, and the seconds of flight between them. */
         const val TAIL = 5
         const val TAIL_STEP = 0.018f
         const val FLASH_SECONDS = 0.35f
-        const val SPARKS_PER_BURST = 190f
+        const val SPARKS_PER_BURST = 150f
         const val KINDS = 3
         const val PEONY = 0
         const val RING = 1
@@ -342,6 +395,6 @@ class FireworksSim : Sim {
     /** One more, right now. */
     override fun hero(env: SimEnv) {
         if (finaleFired) return
-        launch(env, env.rng.range(-halfW * 0.7f, halfW * 0.7f), env.rng.range(0.3f, 0.7f))
+        launchAt(env, env.rng.range(-1f, 1f), env.rng.range(0.35f, 1f), env.rng.range(0.8f, 1.1f))
     }
 }
