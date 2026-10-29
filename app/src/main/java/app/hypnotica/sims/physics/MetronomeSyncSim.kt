@@ -92,8 +92,8 @@ class MetronomeSyncSim : Sim {
         w = DoubleArray(n) { 1.0 + spread * (env.rng.range(-1f, 1f)) }
         th = DoubleArray(n)
         om = DoubleArray(n)
-        scatter(env)
         x = 0.0; xv = 0.0
+        scatter(env)
         elapsed = 0f
         lockedFor = 0f
         payoffFrame = false
@@ -114,6 +114,14 @@ class MetronomeSyncSim : Sim {
             th[i] = AMP * cos(ph)
             om[i] = -AMP * omega * w[i] * sin(ph)
         }
+        // The plank starts with the opposite of the metronomes' sideways
+        // momentum, so the whole rig is at rest; otherwise it set off at a
+        // steady walk and rolled the row off the screen.
+        var p = 0.0
+        for (i in 0 until n) p += om[i] * cos(th[i])
+        val plank = env.params.f("plank", 5f).coerceIn(1f, 20f).toDouble()
+        len = 9.81 / (omega * omega)
+        xv = if (env.params.b("free", true)) -len * p / (plank * n + n) else 0.0
     }
 
     private fun layout() {

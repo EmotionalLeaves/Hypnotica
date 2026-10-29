@@ -58,6 +58,7 @@ class AntColonySim : Sim {
     private var homeward = BooleanArray(0)
     private var side = FloatArray(0)     // its own lane offset, so they are not one file
     private var legs = FloatArray(0)
+    private var excite = FloatArray(0)   // how short its last trip out was, 1 for the short bridge
 
     /** The last choices, newest at [recentHead]: 0 short, 1 long. */
     private val recent = IntArray(WINDOW)
@@ -78,11 +79,12 @@ class AntColonySim : Sim {
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
         wide = halfW > 0.9f
-        layout(env.params.i("detour", 2).coerceIn(1, 4))
+        layout(env.params.i("detour", 3).coerceIn(1, 5))
         n = env.params.i("ants", 120).coerceIn(10, MAX_ANTS)
         route = IntArray(n); dist = FloatArray(n); homeward = BooleanArray(n)
         side = FloatArray(n) { env.rng.range(-1f, 1f) }
         legs = FloatArray(n) { env.rng.range(0.9f, 1.1f) }
+        excite = FloatArray(n) { 1f }
         for (b in 0..1) scent[b].fill(0f)
         spawned = 0
         spawnCarry = 0f
@@ -123,7 +125,7 @@ class AntColonySim : Sim {
             for (i in 0..fine) {
                 val t = i / fine.toFloat()
                 val u = -FORK + 2f * FORK * t
-                val env = sin(PI.toFloat() * t)
+                val env = sin(PI.toFloat() * t).coerceAtLeast(0f)
                 val v = if (b == 0) -SHORT_BOW * env
                 // Out to the far side and back and forth across it: the
                 // envelope keeps both ends on the forks.
@@ -183,6 +185,7 @@ class AntColonySim : Sim {
                     // At the food: turn for home with a crumb.
                     dist[i] = routeLen(route[i])
                     homeward[i] = true
+                    excite[i] = routeLen(0) / routeLen(route[i])
                     arrivals++
                     lastBridge = route[i]
                     lastPan = (foodX / halfW).coerceIn(-1f, 1f)
@@ -206,15 +209,21 @@ class AntColonySim : Sim {
                     delivered++
                 }
             }
-            // Pheromone, laid both ways, wherever on a bridge it is.
+            // Pheromone, wherever on a bridge it is: a little on the way out,
+            // and on the way home with food, more the shorter the trip that
+            // found it — Dorigo's ant-colony-optimisation rule, after real
+            // foragers that mark the way to a better find more heavily. Marked
+            // the same both ways, the bridges' scent only follows how many
+            // ants take each, and the colony as often settled on the long one.
             val r = route[i]
             if (r >= 0) {
+                val amount = if (homeward[i]) HOME_MARK * excite[i] else OUT_MARK
                 val s = dist[i] - trunkA
                 if (s in 0f..len[r]) {
                     val k = (s / len[r] * SAMPLES).toInt().coerceIn(0, SAMPLES)
                     // Per unit of ground covered, so a long bridge is not
                     // marked more just for being sampled more coarsely.
-                    scent[r][k] += DEPOSIT * step / (len[r] / SAMPLES)
+                    scent[r][k] += amount * step / (len[r] / SAMPLES)
                 }
             }
         }
@@ -240,7 +249,9 @@ class AntColonySim : Sim {
             env.emit(EventKind.HIT, if (heldNote == 0) 0.75f else 0.3f, heldPan, 0.45f)
             heldNote = -1
         }
-        if (doneAt < 0f && choices >= MIN_CHOICES && shortShare >= CONVERGED) {
+        // Only once the returning ants have had their say: before any come
+        // back, a lead is only the luck of the first few outbound choices.
+        if (doneAt < 0f && delivered >= MIN_DELIVERED && shortShare >= CONVERGED) {
             doneAt = elapsed
             payoffFrame = true
         }
@@ -362,17 +373,18 @@ class AntColonySim : Sim {
         const val MAX_ANTS = 600
         const val FORK = 0.66f
         const val SHORT_BOW = 0.28f
-        const val LONG_MID = 0.62f
-        const val LONG_SWING = 0.3f
+        const val LONG_MID = 0.58f
+        const val LONG_SWING = 0.4f
         const val SPEED = 0.42f
         const val SPAWN_PER_SECOND = 14f
-        const val DEPOSIT = 1f
-        const val EVAPORATE = 0.05f
+        const val OUT_MARK = 0.3f
+        const val HOME_MARK = 1.2f
+        const val EVAPORATE = 0.12f
         const val SPREAD = 0.05f
         const val SNIFF = 6
-        const val CHOICE_K = 4f
+        const val CHOICE_K = 50f
         const val WINDOW = 40
-        const val MIN_CHOICES = 80
+        const val MIN_DELIVERED = 40
         const val CONVERGED = 0.85f
         const val NOTES_PER_SECOND = 5f
         const val SATURATE = 30f
@@ -396,7 +408,7 @@ class AntColonySim : Sim {
             typicalSeconds = 20f,
             params = listOf(
                 Param.int("ants", "Ants", 20, MAX_ANTS, 120, card = Card.DATA),
-                Param.int("detour", "Long-way loops", 1, 4, 2, card = Card.DATA),
+                Param.int("detour", "Long-way loops", 1, 5, 3, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 3f, 1f, card = Card.MOTION)
             ),
             create = { AntColonySim() }

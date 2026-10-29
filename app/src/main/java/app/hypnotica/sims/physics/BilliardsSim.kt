@@ -1,6 +1,7 @@
 package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
@@ -628,14 +629,14 @@ class BilliardsSim : Sim {
         const val ROLL_DECEL = 0.2f
         /** A ball hit without spin rolls, once it stops skidding, at 5/7 of its speed. */
         const val ROLL_SHARE = 5f / 7f
-        const val STOP = 0.03f
+        const val STOP = 0.04f
         const val CLICK_MIN = 0.06f
         const val MAX_CUT_COS = 0.34f
         const val ARRIVE = 0.45f
         const val MAX_SHOT = 6.5f
         const val SUBSTEPS = 12
         const val BREAK_WAIT = 1.2f
-        const val AIM_TIME = 0.75f
+        const val AIM_TIME = 0.6f
         const val SINK_TIME = 0.18f
         const val RAIL = 0xFF2B211B.toInt()
         const val FELT_BASE = 0xFF0B0D12.toInt()
@@ -658,7 +659,9 @@ class BilliardsSim : Sim {
             lawKnobs = setOf(LawKnob.BOUNCE),
             heroLabel = "Rack them up",
             defaultPalette = "Spectrum",
-            typicalSeconds = 60f,
+            typicalSeconds = 50f,
+            // The one live dial, offered in Simple mode too.
+            macros = listOf(Macro("power-macro", "Break power", Card.MOTION, mapOf("power" to 3f..10f))),
             params = listOf(
                 Param.choice("rack", "Rack", listOf("15 balls", "10 balls", "6 balls"), 1, card = Card.DATA, input = ParamInput.TILES),
                 Param.float("power", "Break power", 3f, 10f, 7f, card = Card.MOTION, unit = "m/s")

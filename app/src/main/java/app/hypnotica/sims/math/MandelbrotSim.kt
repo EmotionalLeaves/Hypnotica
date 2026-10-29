@@ -366,9 +366,9 @@ class MandelbrotSim : Sim {
         if (next == diveIndex) next = (next + 1) % CATALOGUE.size
         val prevLog = logBase + ln(zoom / 0.6)
         diveIndex = next
-        // Not from the whole set: a few hundred to a few thousand times in, so
+        // Not from the whole set: three thousand to a hundred thousand times in, so
         // the new dive already looks like the deep one it replaces.
-        val z0 = 0.6 * Math.pow(10.0, 2.3 + 1.2 * env.rng.nextFloat())
+        val z0 = 0.6 * Math.pow(10.0, 3.5 + 1.5 * env.rng.nextFloat())
         startDive(next, z0)
         logBase = prevLog - ln(z0 / 0.6)
         lastLowCount = 0f
@@ -456,7 +456,18 @@ class MandelbrotSim : Sim {
         val spread = (lastWork / WORK_PER_IMAGE).coerceIn(1.0, MAX_SPREAD.toDouble())
         jCoarseSlices = (COARSE_SLICES * spread).toInt()
         jRefineSlices = (REFINE_SLICES * spread).toInt()
-        if (jPert) prepareReference(r)
+        if (jPert) {
+            prepareReference(r)
+            // The budget must reach well past where the series hands over,
+            // whatever the last image said (a new dive, a tap, a jump in
+            // depth): below it, every pixel "ran out" at once — a black frame.
+            val floor = jSkip + (maxIter * (2.0 + depth / 40.0)).toInt()
+            if (jMi < floor) jMi = min(floor, MAX_ITER_CAP)
+            if (jMi >= MAX_ITER_CAP) handoffWanted = true
+            r.ensure(jMi + 8)
+            jZr = r.zr
+            jZi = r.zi
+        }
         if (rawDist.size != cols * rows) rawDist = FloatArray(cols * rows)
         phase = COARSE
         cursor = 0
@@ -472,8 +483,6 @@ class MandelbrotSim : Sim {
      */
     private fun prepareReference(r: Ref) {
         r.ensure(jMi + 8)
-        jZr = r.zr
-        jZi = r.zi
         // hypot, not sqrt(x² + y²): past 1e154 the squares underflow to 0.
         val rad = 1.05 * Math.hypot(abs(jOffX) + jScale * jHalfW, abs(jOffY) + jScale)
         jInvR = 1.0 / rad
@@ -484,10 +493,11 @@ class MandelbrotSim : Sim {
         var n = 0
         jSkip = 0
         jAx = 0.0; jAy = 0.0; jBx = 0.0; jBy = 0.0; jC3x = 0.0; jC3y = 0.0
-        val limit = jMi - 2
-        val zr = jZr
-        val zi = jZi
+        val limit = MAX_ITER_CAP - 2
+        var zr = r.zr
+        var zi = r.zi
         while (n < limit) {
+            if (n + 2 >= zr.size) { r.ensure(zr.size * 2); zr = r.zr; zi = r.zi }
             val tx = 2.0 * zr[n]
             val ty = 2.0 * zi[n]
             val nax = tx * ax - ty * ay + rad
@@ -1435,15 +1445,26 @@ class MandelbrotSim : Sim {
             var c = cs[i]
             if (blend) {
                 // The old dive's colour under this tile, from its last picture
-                // grown by its own zoom: one opaque layer, so no seams.
-                val oc = ((x / kOld + oldPanX + halfW) / oDx).toInt().coerceIn(0, ocs - 1)
-                val or = ((y / kOld + oldPanY + 1f) / oDy).toInt().coerceIn(0, ors - 1)
-                val old = oldGrid[or * ocs + oc].let { if (it == 0) Palette.BG else it }
-                c = Palette.lerp(old, c, t)
+                // grown by its own zoom: one opaque layer, so no seams. Blended
+                // between its cells: nearest-cell, the old picture showed as
+                // coarse blocks while it faded.
+                val fx = ((x / kOld + oldPanX + halfW) / oDx - 0.5f).coerceIn(0f, ocs - 1.001f)
+                val fy = ((y / kOld + oldPanY + 1f) / oDy - 0.5f).coerceIn(0f, ors - 1.001f)
+                val c0 = fx.toInt()
+                val r0 = fy.toInt()
+                val c1 = min(c0 + 1, ocs - 1)
+                val r1 = min(r0 + 1, ors - 1)
+                val tx = fx - c0
+                val ty = fy - r0
+                val top = Palette.lerp(oldAt(r0 * ocs + c0), oldAt(r0 * ocs + c1), tx)
+                val bot = Palette.lerp(oldAt(r1 * ocs + c0), oldAt(r1 * ocs + c1), tx)
+                c = Palette.lerp(Palette.lerp(top, bot, ty), c, t)
             }
             g.rect(x, y, w, h, c)
         }
     }
+
+    private fun oldAt(i: Int): Int = oldGrid[i].let { if (it == 0) Palette.BG else it }
 
     private fun baseColour(palette: Palette, mu: Float, span: Float): Int =
         colourAt(palette, ln(1f + max(0f, mu - muBase)), span)

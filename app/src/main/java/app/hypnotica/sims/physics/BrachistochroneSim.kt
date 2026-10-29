@@ -1,6 +1,7 @@
 package app.hypnotica.sims.physics
 
 import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
@@ -477,6 +478,8 @@ class BrachistochroneSim : Sim {
             heroLabel = "Race again",
             defaultPalette = "Aurora",
             typicalSeconds = 6f,
+            // The one live dial, offered in Simple mode too.
+            macros = listOf(Macro("height-macro", "Ramp height", Card.MOTION, mapOf("height" to 2f..60f))),
             params = listOf(
                 Param.choice("mode", "Mode", listOf("Race the ramps", "Same-time drop"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.float("height", "Ramp height", 2f, 60f, 20f, card = Card.MOTION, unit = "m"),
