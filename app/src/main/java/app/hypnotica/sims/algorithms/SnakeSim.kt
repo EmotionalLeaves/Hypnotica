@@ -213,9 +213,11 @@ class SnakeSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        // The board.
+        // The board, its edge lit green once the snake fills it.
+        val full = doneAt >= 0f && len >= cells
+        val k = if (full) ((elapsed - doneAt) * 1.5f).coerceIn(0f, 1f) else 0f
         g.rect(0f, oy + rows * cell * 0.5f, cols * cell * 0.5f + 0.006f, rows * cell * 0.5f + 0.006f,
-            Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
+            Palette.lerp(Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f), Palette.SUCCESS, k))
         g.rect(0f, oy + rows * cell * 0.5f, cols * cell * 0.5f, rows * cell * 0.5f, 0xFF0B0D12.toInt())
         val half = cell * 0.5f
         // Tail dim to head bright, along the palette.
@@ -224,7 +226,7 @@ class SnakeSim : Sim {
             val t = if (len > 1) i / (len - 1f) else 1f
             val x = ox + (c % cols) * cell + half
             val y = oy + (c / cols) * cell + half
-            g.rect(x, y, half * 0.9f, half * 0.9f, palette.at(0.15f + 0.8f * t))
+            g.rect(x, y, half * 0.9f, half * 0.9f, palette.at(BODY_LO + BODY_SPAN * t))
         }
         // Joints, so it reads as one body and not beads.
         for (i in 1 until len) {
@@ -232,13 +234,18 @@ class SnakeSim : Sim {
             val ax = ox + (a % cols) * cell + half; val ay = oy + (a / cols) * cell + half
             val bx = ox + (b % cols) * cell + half; val by = oy + (b / cols) * cell + half
             val t = i / max(1f, len - 1f)
-            g.rect((ax + bx) * 0.5f, (ay + by) * 0.5f, if (ax != bx) half * 0.5f else half * 0.9f, if (ay != by) half * 0.5f else half * 0.9f, palette.at(0.15f + 0.8f * t))
+            g.rect((ax + bx) * 0.5f, (ay + by) * 0.5f, if (ax != bx) half * 0.5f else half * 0.9f, if (ay != by) half * 0.5f else half * 0.9f, palette.at(BODY_LO + BODY_SPAN * t))
         }
         if (len > 0) {
             val hd = head()
             val x = ox + (hd % cols) * cell + half
             val y = oy + (hd / cols) * cell + half
-            g.glow(x, y, cell * (1.5f + 2f * eatFlash), palette.at(0.95f), 0.4f + 0.4f * eatFlash)
+            val hc = palette.at(BODY_LO + BODY_SPAN)
+            g.glow(x, y, cell * (1.3f + 1.2f * eatFlash), hc, 0.3f + 0.4f * eatFlash)
+            // The head a shade brighter, with a pale centre, so it reads as the
+            // front of the snake and not one more square of it.
+            g.rect(x, y, half * 0.9f, half * 0.9f, Palette.brighten(hc, 0.2f))
+            g.disc(x, y, half * 0.32f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.9f))
         }
         for (i in apples.indices) {
             val apple = apples[i]
@@ -249,10 +256,6 @@ class SnakeSim : Sim {
             val col = if (golden[i]) GOLD else Palette.DANGER
             g.glow(x, y, cell * (if (golden[i]) 2.4f else 1.4f), col, 0.5f)
             g.disc(x, y, half * 0.75f * pulse, col)
-        }
-        if (doneAt >= 0f && len >= cells) {
-            val k = ((elapsed - doneAt) * 1.5f).coerceIn(0f, 1f)
-            g.glow(0f, oy + rows * cell * 0.5f, cols * cell * k, Palette.SUCCESS, 0.3f * k)
         }
     }
 
@@ -274,6 +277,13 @@ class SnakeSim : Sim {
         const val GOLD_GROWTH = 5
         const val GOLD = 0xFFFFC23A.toInt()
         const val INITIAL_LENGTH = 3
+        /**
+         * The body runs over this stretch of the palette, tail to head. It
+         * ran to 0.95, where Spectrum wraps back to red: the head was the
+         * apple's colour.
+         */
+        const val BODY_LO = 0.12f
+        const val BODY_SPAN = 0.66f
         const val GROW_PER_APPLE = 1
         const val SLACK = 3
         const val CUT_UNTIL = 0.55f

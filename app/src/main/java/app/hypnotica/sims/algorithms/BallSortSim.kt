@@ -95,7 +95,8 @@ class BallSortSim : Sim {
         // one row the balls were specks with the top of the screen empty.
         layoutRows = if (tubes > 5 && halfW < 0.9f) 2 else 1
         perRow = (tubes + layoutRows - 1) / layoutRows
-        spacing = min(2f * halfW * 0.92f / perRow, 0.22f)
+        // Capped so a wide screen gets bigger tubes, not a strip of small ones.
+        spacing = min(2f * halfW * 0.92f / perRow, 0.34f)
         tubeW = spacing * 0.36f
         ballR = tubeW * 0.82f
         // And by height: the rows, the gap between them, and the lift over
@@ -258,10 +259,24 @@ class BallSortSim : Sim {
             val bottom = base(t)
             val top = topY(t)
             if (ring[t] > 0f && height[t] > 0) g.glow(x, (bottom + top) * 0.5f, tubeW * 4f, palette.at((state[t][0] + 0.5f) / colors), 0.6f * ring[t])
-            g.line(x - tubeW, bottom, x - tubeW, top, 0.006f, glass)
-            g.line(x + tubeW, bottom, x + tubeW, top, 0.006f, glass)
-            g.disc(x, bottom, tubeW, glass)
-            g.disc(x, bottom, tubeW - 0.006f, 0xFF07080C.toInt())
+            // A test tube: straight sides into a round bottom centred on the
+            // lowest ball, so the ball sits in it. The bottom used to be a
+            // whole circle centred below the ball, which drew a ring hanging
+            // off the end of every tube.
+            val curve = slotY(t, 0)
+            val glassW = 0.006f
+            g.rect(x, (curve + top) * 0.5f, tubeW, (top - curve) * 0.5f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.06f))
+            g.ring(x, curve, tubeW, tubeW, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.06f), gap = PI_F, gapAngle = 0f)
+            g.line(x - tubeW + glassW * 0.5f, curve, x - tubeW + glassW * 0.5f, top, glassW, glass)
+            g.line(x + tubeW - glassW * 0.5f, curve, x + tubeW - glassW * 0.5f, top, glassW, glass)
+            g.ring(x, curve, tubeW, glassW, glass, gap = PI_F, gapAngle = 0f)
+            // A lip at the rim.
+            g.line(x - tubeW - glassW, top, x - tubeW + glassW, top, glassW, glass)
+            g.line(x + tubeW - glassW, top, x + tubeW + glassW, top, glassW, glass)
+            if (done[t] && height[t] == cap) {
+                // A sorted tube keeps a coloured base line, so the end reads as finished.
+                g.ring(x, curve, tubeW + glassW * 1.5f, glassW, palette.at((state[t][0] + 0.5f) / colors), gap = PI_F, gapAngle = 0f)
+            }
             for (i in 0 until height[t]) {
                 val c = palette.at((state[t][i] + 0.5f) / colors)
                 g.disc(x, slotY(t, i), ballR, c)
@@ -306,6 +321,7 @@ class BallSortSim : Sim {
         const val TARGET_SECONDS = 12f
         const val LEAD = 0.8f
         const val LOWER = 2f
+        const val PI_F = 3.1415927f
 
         fun def(): SimDef = SimDef(
             id = "algorithms/ball-sort",

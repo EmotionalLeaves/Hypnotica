@@ -219,61 +219,99 @@ class MazeSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val halfW = env.halfWidth * 0.95f
-        val cellW = (2f * halfW) / w
+        // Cells may stretch a little to fill the screen. Square cells left a
+        // 24 x 36 maze using two thirds of a phone's height: a dim block in
+        // the middle of a black screen.
+        val cellW = (2f * env.halfWidth * 0.95f) / w
         val cellH = 1.9f / h
-        val size = min(cellW, cellH)
-        val originX = -size * w * 0.5f
-        val originY = -size * h * 0.5f
-        val wall = max(size * 0.1f, 0.0016f)
+        val sx = min(cellW, cellH * STRETCH)
+        val sy = min(cellH, cellW * STRETCH)
+        val size = min(sx, sy)
+        val originX = -sx * w * 0.5f
+        val originY = -sy * h * 0.5f
+        val wall = max(size * 0.14f, 0.0022f)
+        val reach = (w + h) * FLOOD_SPAN
+        g.reserveInstances(w * h * 3 + 16)
 
-        // Visited cells as a soft fill, so the carve reads as a growing shape.
+        // The board under the maze, so the uncarved part reads as rock.
+        g.rect(0f, 0f, sx * w * 0.5f, sy * h * 0.5f, 0xFF0D1018.toInt())
+
+        // Carved cells as a soft fill, so the carve reads as a growing shape;
+        // the flood in palette colour by distance, held (dimmed) under the
+        // solution rather than wiped to a flat tint.
+        val carvedC = Palette.withAlpha(palette.at(0.5f), 0.16f)
         for (i in 0 until w * h) {
             if (!visited[i]) continue
-            val cx = originX + (i % w + 0.5f) * size
-            val cy = originY + (i / w + 0.5f) * size
+            val cx = originX + (i % w + 0.5f) * sx
+            val cy = originY + (i / w + 0.5f) * sy
             val d = dist[i]
             val c = when {
-                solved -> Palette.withAlpha(palette.at(0.2f), 0.18f)
-                d >= 0 -> Palette.withAlpha(palette.at((d.toFloat() / (w + h)).coerceIn(0f, 1f)), 0.75f)
-                else -> Palette.withAlpha(palette.at(0.15f), 0.16f)
+                d >= 0 -> Palette.withAlpha(
+                    palette.at(FLOOD_LO + (FLOOD_HI - FLOOD_LO) * (d / reach).coerceIn(0f, 1f)),
+                    if (solved) 0.32f else 0.8f
+                )
+                else -> carvedC
             }
-            g.rect(cx, cy, size * 0.48f, size * 0.48f, c)
+            g.rect(cx, cy, sx * 0.5f, sy * 0.5f, c)
         }
 
-        // Walls: a line wherever a cell has no opening.
+        // Walls: a line wherever a cell has no opening, run on by half a wall
+        // at each end so corners meet instead of leaving notches.
+        val wallC = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.62f)
+        val ext = wall * 0.5f
+        // Walls inside uncarved rock are faint: at full strength the rock was
+        // a bright mesh that out-shone the maze being carved through it.
+        val rockC = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.14f)
         for (i in 0 until w * h) {
-            val cx = originX + (i % w) * size
-            val cy = originY + (i / w) * size
-            val c = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
-            if (cells[i] and WALL_N == 0) g.line(cx, cy, cx + size, cy, wall, c)
-            if (cells[i] and WALL_W == 0) g.line(cx, cy, cx, cy + size, wall, c)
+            val cx = originX + (i % w) * sx
+            val cy = originY + (i / w) * sy
+            val x = i % w
+            val y = i / w
+            if (cells[i] and WALL_N == 0) {
+                val live = visited[i] || (y > 0 && visited[i - w])
+                g.line(cx - ext, cy, cx + sx + ext, cy, wall, if (live) wallC else rockC)
+            }
+            if (cells[i] and WALL_W == 0) {
+                val live = visited[i] || (x > 0 && visited[i - 1])
+                g.line(cx, cy - ext, cx, cy + sy + ext, wall, if (live) wallC else rockC)
+            }
         }
-        g.line(originX, originY + size * h, originX + size * w, originY + size * h, wall, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f))
-        g.line(originX + size * w, originY, originX + size * w, originY + size * h, wall, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f))
+        g.line(originX - ext, originY + sy * h, originX + sx * w + ext, originY + sy * h, wall, wallC)
+        g.line(originX + sx * w, originY - ext, originX + sx * w, originY + sy * h + ext, wall, wallC)
+
+        // Start and exit.
+        g.disc(originX + 0.5f * sx, originY + 0.5f * sy, size * 0.26f, Palette.TEXT_PRIMARY)
+        g.ring(originX + (w - 0.5f) * sx, originY + (h - 0.5f) * sy, size * 0.34f, size * 0.1f, Palette.SUCCESS)
 
         // Carving head.
         if (carving && sp > 0) {
             val c = stack[sp - 1]
-            g.glow(originX + (c % w + 0.5f) * size, originY + (c / w + 0.5f) * size, size * 2.2f, Palette.ACCENT, 0.7f)
+            val x = originX + (c % w + 0.5f) * sx
+            val y = originY + (c / w + 0.5f) * sy
+            g.glow(x, y, size * 2.4f, palette.at(0.5f), 0.7f)
+            g.disc(x, y, size * 0.3f, Palette.TEXT_PRIMARY)
         }
 
-        // The solution, drawn in as it is revealed.
+        // The solution, drawn in as one continuous line: dots at every cell
+        // read as a string of beads, and in a dense maze as noise.
         if (solved) {
-            val show = min(pathLength, revealed.toInt())
+            val show = min(pathLength, revealed.toInt() + 1)
+            val lw = size * 0.38f
+            val pathC = Palette.brighten(Palette.SUCCESS, 0.1f)
+            var px = 0f
+            var py = 0f
             for (k in 0 until show) {
                 val c = pathCells[k]
-                val x = originX + (c % w + 0.5f) * size
-                val y = originY + (c / w + 0.5f) * size
-                g.disc(x, y, size * 0.3f, Palette.SUCCESS)
+                val x = originX + (c % w + 0.5f) * sx
+                val y = originY + (c / w + 0.5f) * sy
+                if (k > 0) g.line(px, py, x, y, lw, pathC)
+                // Round joints, so the turns are not notched.
+                g.disc(x, y, lw * 0.5f, pathC)
+                px = x; py = y
             }
-            if (show > 0) {
-                val c = pathCells[min(show, pathLength - 1)]
-                g.glow(
-                    originX + (c % w + 0.5f) * size,
-                    originY + (c / w + 0.5f) * size,
-                    size * 2.6f, Palette.SUCCESS, 0.8f
-                )
+            if (show > 0 && show < pathLength) {
+                g.glow(px, py, size * 2.6f, Palette.SUCCESS, 0.8f)
+                g.disc(px, py, lw * 0.75f, Palette.TEXT_PRIMARY)
             }
         }
     }
@@ -288,6 +326,14 @@ class MazeSim : Sim {
     )
 
     companion object Factory {
+        /** How far a cell may stretch from square to fill the screen. */
+        private const val STRETCH = 1.3f
+        /** Flood colour runs over this many (w + h) of distance, and only this
+         *  part of the palette, whose far end is near-black on some palettes. */
+        private const val FLOOD_SPAN = 2.5f
+        private const val FLOOD_LO = 0.05f
+        private const val FLOOD_HI = 0.8f
+
         fun def(): SimDef = SimDef(
             id = "algorithms/maze",
             title = "Maze, carved and solved",
@@ -497,34 +543,71 @@ class PathfindingSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val halfW = env.halfWidth * 0.95f
-        val size = min((2f * halfW) / w, 1.9f / h)
-        val originX = -size * w * 0.5f
-        val originY = -size * h * 0.5f
+        // Cells stretch a little to fill the screen, as the maze's do.
+        val cellW = (2f * env.halfWidth * 0.95f) / w
+        val cellH = 1.9f / h
+        val sx = min(cellW, cellH * STRETCH)
+        val sy = min(cellH, cellW * STRETCH)
+        val size = min(sx, sy)
+        val originX = -sx * w * 0.5f
+        val originY = -sy * h * 0.5f
         val usePoints = w * h > 6000
-        if (usePoints) g.reservePoints(w * h) else g.reserveInstances(w * h)
+        if (usePoints) g.reservePoints(w * h) else g.reserveInstances(w * h + 8)
+        // Distances run to about w + h on an open grid; colour by the share of
+        // that, kept off the palette's dark far end.
+        val reach = (w + h).toFloat()
 
+        // The ground, so the open floor is a surface and the walls stand on it.
+        g.rect(0f, 0f, sx * w * 0.5f, sy * h * 0.5f, 0xFF0D1018.toInt())
+        // Walls solid and quiet; explored ground bright; the frontier white-hot.
+        // Walls at a fifth of grey were a dim speckle, the map unreadable.
+        val wallC = 0xFF2C3346.toInt()
+        val frontierC = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.7f)
         for (i in 0 until w * h) {
-            val x = originX + (i % w + 0.5f) * size
-            val y = originY + (i / w + 0.5f) * size
+            val x = originX + (i % w + 0.5f) * sx
+            val y = originY + (i / w + 0.5f) * sy
             val c = when {
-                blocked[i] -> Palette.withAlpha(Palette.TEXT_SECONDARY, 0.2f)
-                closed[i] -> palette.at((dist[i] / (w + h)).coerceIn(0f, 1f))
-                dist[i] < Float.MAX_VALUE -> Palette.withAlpha(Palette.ACCENT, 0.7f)
+                blocked[i] -> wallC
+                closed[i] -> {
+                    val col = palette.at(0.05f + 0.75f * (dist[i] / reach).coerceIn(0f, 1f))
+                    if (found) Palette.lerp(col, 0xFF0D1018.toInt(), 0.45f) else col
+                }
+                dist[i] < Float.MAX_VALUE -> frontierC
                 else -> continue
             }
-            if (usePoints) g.point(x, y, size, c) else g.rect(x, y, size * 0.45f, size * 0.45f, c)
+            // Walls fill their whole cell, so neighbouring walls join into
+            // solid shapes; with a gap round every square the obstacles were
+            // a field of separate specks.
+            val k = if (blocked[i]) 0.5f else 0.44f
+            if (usePoints) g.point(x, y, size * 1.1f, c)
+            else g.rect(x, y, sx * k, sy * k, c)
         }
 
+        // The route, as one line with round joints.
         if (found) {
-            val show = min(pathLength, revealed.toInt())
+            val show = min(pathLength, revealed.toInt() + 1)
+            val lw = size * 0.55f
+            var px = 0f
+            var py = 0f
             for (k in 0 until show) {
                 val c = pathCells[k]
-                g.disc(originX + (c % w + 0.5f) * size, originY + (c / w + 0.5f) * size, size * 0.42f, Palette.SUCCESS)
+                val x = originX + (c % w + 0.5f) * sx
+                val y = originY + (c / w + 0.5f) * sy
+                if (k > 0) g.line(px, py, x, y, lw, Palette.TEXT_PRIMARY)
+                g.disc(x, y, lw * 0.5f, Palette.TEXT_PRIMARY)
+                px = x; py = y
             }
+            if (show in 1 until pathLength) g.glow(px, py, size * 4f, Palette.TEXT_PRIMARY, 0.6f)
         }
-        g.disc(originX + (start % w + 0.5f) * size, originY + (start / w + 0.5f) * size, size * 0.6f, Palette.SUCCESS)
-        g.glow(originX + (goal % w + 0.5f) * size, originY + (goal / w + 0.5f) * size, size * 3f, Palette.WARNING, 0.8f)
+        val sxp = originX + (start % w + 0.5f) * sx
+        val syp = originY + (start / w + 0.5f) * sy
+        val gx = originX + (goal % w + 0.5f) * sx
+        val gy = originY + (goal / w + 0.5f) * sy
+        // Markers sized to be seen on a fine grid, kept inside the board.
+        val mark = max(size * 1.4f, 0.022f)
+        g.disc(sxp + mark * 0.5f - size * 0.5f, syp + mark * 0.5f - size * 0.5f, mark * 0.55f, Palette.SUCCESS)
+        g.glow(gx, gy, mark * 3f, Palette.WARNING, 0.7f)
+        g.ring(gx - mark * 0.5f + size * 0.5f, gy - mark * 0.5f + size * 0.5f, mark * 0.6f, mark * 0.22f, Palette.WARNING)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -537,6 +620,8 @@ class PathfindingSim : Sim {
     )
 
     companion object Factory {
+        private const val STRETCH = 1.3f
+
         fun def(): SimDef = SimDef(
             id = "algorithms/pathfinding",
             title = "Finding the way",

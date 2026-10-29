@@ -239,49 +239,70 @@ class MazeRaceSim : Sim {
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
-        val palette = env.palette
-        val wallC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
+        val wallC = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.5f)
         val t = shown.toInt()
+        val wall = cell * 0.13f
+        val ext = wall * 0.5f
+        g.reserveInstances(SOLVERS * (cells * 3 + 16))
         for (s in 0 until SOLVERS) {
             val px = -panelW * layoutCols * 0.5f + panelW * (s % layoutCols) + panelW * 0.5f
             val py = 0.93f - panelH * (s / layoutCols) - panelH * 0.5f
             val ox = px - cols * cell * 0.5f
             val oy = py - rows * cell * 0.5f - 0.02f
+            val mw = cols * cell * 0.5f
+            val mh = rows * cell * 0.5f
+            val mcy = oy + mh
             val c = contender(env, s)
-            val lit = Palette.brighten(c, 0.35f)
+            val lit = Palette.brighten(c, 0.4f)
             val won = doneAt >= 0f && s == winner
-            if (won) g.glow(px, py, panelW * 0.6f, c, 0.35f)
+            // The winner's maze framed in its colour; a glow behind it used
+            // to bleed over the neighbouring mazes.
+            if (won) g.rect(px, mcy, mw + cell * 0.45f, mh + cell * 0.45f, c)
+            g.rect(px, mcy, mw + (if (won) cell * 0.3f else 0f), mh + (if (won) cell * 0.3f else 0f), 0xFF0D1018.toInt())
             // Visited cells, oldest dim, the newest bright.
             val upto = min(t, length[s])
+            val trail = Palette.lerp(c, 0xFF0D1018.toInt(), if (doneAt >= 0f) 0.55f else 0.35f)
             for (i in 0 until upto) {
                 val k = order[s][i]
                 val x = ox + (k % cols + 0.5f) * cell
                 val y = oy + (rows - 1 - k / cols + 0.5f) * cell
                 val age = (upto - i).toFloat()
-                g.rect(x, y, cell * 0.5f, cell * 0.5f, if (age < 6f) lit else c, alpha = if (age < 6f) 1f else 0.55f)
+                g.rect(x, y, cell * 0.5f, cell * 0.5f, if (age < 6f && doneAt < 0f) lit else trail)
             }
-            // The walls.
-            g.line(ox, oy, ox + cols * cell, oy, cell * 0.12f, wallC)
-            g.line(ox, oy + rows * cell, ox + cols * cell, oy + rows * cell, cell * 0.12f, wallC)
-            g.line(ox, oy, ox, oy + rows * cell, cell * 0.12f, wallC)
-            g.line(ox + cols * cell, oy, ox + cols * cell, oy + rows * cell, cell * 0.12f, wallC)
+            // The walls, run on by half their width so corners meet.
+            g.line(ox - ext, oy, ox + cols * cell + ext, oy, wall, wallC)
+            g.line(ox - ext, oy + rows * cell, ox + cols * cell + ext, oy + rows * cell, wall, wallC)
+            g.line(ox, oy - ext, ox, oy + rows * cell + ext, wall, wallC)
+            g.line(ox + cols * cell, oy - ext, ox + cols * cell, oy + rows * cell + ext, wall, wallC)
             for (k in 0 until cells) {
                 val x = k % cols; val y = rows - 1 - k / cols
                 if (walls[k] and 1 != 0 && x + 1 < cols)
-                    g.line(ox + (x + 1) * cell, oy + y * cell, ox + (x + 1) * cell, oy + (y + 1) * cell, cell * 0.12f, wallC)
+                    g.line(ox + (x + 1) * cell, oy + y * cell - ext, ox + (x + 1) * cell, oy + (y + 1) * cell + ext, wall, wallC)
                 if (walls[k] and 2 != 0 && k / cols + 1 < rows)
-                    g.line(ox + x * cell, oy + y * cell, ox + (x + 1) * cell, oy + y * cell, cell * 0.12f, wallC)
+                    g.line(ox + x * cell - ext, oy + y * cell, ox + (x + 1) * cell + ext, oy + y * cell, wall, wallC)
             }
-            // The exit, and once the race is over, each solver's route out
-            // as far as it got: the winner's whole way.
-            g.disc(ox + (goal % cols + 0.5f) * cell, oy + (rows - 1 - goal / cols + 0.5f) * cell, cell * 0.4f, Palette.SUCCESS)
+            // Once the race is over, each solver's route out as far as it got
+            // — the winner's whole way — as one line, not a string of squares.
             if (doneAt >= 0f && upto > 0) {
+                val lw = cell * 0.32f
+                val routeC = if (won) Palette.TEXT_PRIMARY else Palette.brighten(c, 0.3f)
                 var k = order[s][upto - 1]
+                var lx = Float.NaN
+                var ly = 0f
                 while (k >= 0) {
-                    g.rect(ox + (k % cols + 0.5f) * cell, oy + (rows - 1 - k / cols + 0.5f) * cell, cell * 0.22f, cell * 0.22f, Palette.TEXT_PRIMARY)
+                    val x = ox + (k % cols + 0.5f) * cell
+                    val y = oy + (rows - 1 - k / cols + 0.5f) * cell
+                    if (!lx.isNaN()) g.line(lx, ly, x, y, lw, routeC)
+                    g.disc(x, y, lw * 0.5f, routeC)
+                    lx = x; ly = y
                     k = parent[s][k]
                 }
             }
+            // The exit, on top.
+            val ex = ox + (goal % cols + 0.5f) * cell
+            val ey = oy + (rows - 1 - goal / cols + 0.5f) * cell
+            g.disc(ex, ey, cell * 0.42f, Palette.SUCCESS)
+            g.ring(ex, ey, cell * 0.42f, cell * 0.1f, Palette.TEXT_PRIMARY, alpha = 0.8f)
         }
     }
 

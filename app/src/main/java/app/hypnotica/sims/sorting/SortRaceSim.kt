@@ -154,32 +154,52 @@ class SortRaceSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val halfW = env.halfWidth * 0.94f
-        val gap = 0.06f
-        val laneH = (2f * 0.94f - gap * (LANES - 1)) / LANES
-        val barW = 2f * halfW / n
+        // Each lane is a panel of its own: a faint tinted card with a floor
+        // line, the bars inset from its edges, and a header strip on the left
+        // for the finishing place. The lanes used to touch, bars running from
+        // edge to edge, the place dots sitting on the tallest bars, and the
+        // winner marked by a glow blob that smeared over its neighbours.
+        val halfW = env.halfWidth * 0.95f
+        val gap = 0.05f
+        val laneH = (2f * 0.95f - gap * (LANES - 1)) / LANES
+        val pad = min(0.025f, halfW * 0.05f)
+        val innerW = halfW - pad
+        val barW = 2f * innerW / n
+        val barHalf = max(barW * 0.4f, 0.0012f)
+        val tall = laneH * 0.8f
+        val dotR = min(0.013f, laneH * 0.04f)
+        g.reserveInstances(LANES * (n + 8))
         for (k in 0 until LANES) {
-            val top = 0.94f - k * (laneH + gap)
+            val top = 0.95f - k * (laneH + gap)
             val bottom = top - laneH
+            val cy = bottom + laneH * 0.5f
             val tint = k / (LANES - 1f)
             val colour = palette.at(0.08f + 0.84f * tint)
             val arr = lanes[k]
             val done = !running[k]
-            if (done && place[k] == 1) g.glow(0f, bottom + laneH * 0.5f, laneH * 0.9f, colour, 0.25f)
+            val won = done && place[k] == 1
+            // The card; the winner's outlined in its own colour.
+            if (won) g.rect(0f, cy, halfW + 0.006f, laneH * 0.5f + 0.006f, colour, alpha = 0.9f)
+            g.rect(0f, cy, halfW, laneH * 0.5f, 0xFF0C0E14.toInt())
+            g.rect(0f, cy, halfW, laneH * 0.5f, colour, alpha = if (won) 0.12f else 0.05f)
+            val floor = bottom + pad
+            g.rect(0f, floor - 0.002f, innerW, 0.002f, colour, alpha = 0.35f)
             for (i in 0 until n) {
-                val h = arr.get(i) * laneH * 0.92f
+                val h = max(arr.get(i) * tall, 0.002f)
                 val hot = i == arr.lastA || i == arr.lastB
                 val c = when {
-                    hot -> Palette.brighten(colour, 0.5f)
-                    done -> colour
-                    else -> Palette.withAlpha(colour, 0.75f)
+                    hot -> Palette.brighten(colour, 0.55f)
+                    done -> Palette.lerp(Palette.lerp(colour, Palette.BG, 0.35f), Palette.brighten(colour, 0.15f), arr.get(i))
+                    else -> Palette.lerp(colour, Palette.BG, 0.25f)
                 }
-                g.rect(-halfW + (i + 0.5f) * barW, bottom + h * 0.5f, max(barW * 0.42f, 0.0015f), h * 0.5f, c)
+                g.bar(-innerW + (i + 0.5f) * barW, floor, barHalf, h, c)
             }
-            // The finishing place, as dots at the lane's end: one for first.
+            // The finishing place, as dots in the lane's top-left corner —
+            // one for first — where sorted bars are shortest.
             if (done) {
+                val dotC = if (won) Palette.TEXT_PRIMARY else colour
                 for (d in 0 until place[k]) {
-                    g.disc(halfW - d * 0.03f, top - 0.025f, 0.01f, if (place[k] == 1) Palette.SUCCESS else colour)
+                    g.disc(-innerW + dotR + d * dotR * 2.8f, top - pad - dotR, dotR, dotC)
                 }
             }
         }

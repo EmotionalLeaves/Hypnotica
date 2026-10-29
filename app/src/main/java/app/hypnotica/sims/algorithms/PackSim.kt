@@ -153,7 +153,11 @@ class PackSim : Sim {
         val palette = env.palette
         val bw = cols * cell; val bh = rows * cell
         // The box: three sides, open at the top.
-        val wall = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.7f)
+        val wall = Palette.lerp(Palette.withAlpha(Palette.TEXT_SECONDARY, 0.7f), Palette.SUCCESS, if (doneAt >= 0f) 1f else 0f)
+        // The sweep of light across the finished box, as blocks lighting up
+        // as it passes. It was a pair of glows — one the height of the box —
+        // that smeared a grey column over the wall and the screen beside it.
+        val sx = ox + bw * (1f - shine) * 1.4f - bw * 0.2f
         g.line(ox - 0.01f, oy - 0.01f, ox - 0.01f, oy + bh + 0.02f, 0.008f, wall)
         g.line(ox + bw + 0.01f, oy - 0.01f, ox + bw + 0.01f, oy + bh + 0.02f, 0.008f, wall)
         g.line(ox - 0.01f, oy - 0.01f, ox + bw + 0.01f, oy - 0.01f, 0.008f, wall)
@@ -164,16 +168,11 @@ class PackSim : Sim {
             val sq = b.squash
             val cx = ox + b.c * cell + w * 0.5f
             val cy = b.y + hh * 0.5f * (1f - sq * 0.5f)
-            val c = palette.at(b.tint)
+            val lit = if (shine > 0f) (1f - abs(cx - sx) / (bw * 0.35f)).coerceIn(0f, 1f) else 0f
+            val c = Palette.brighten(palette.at(b.tint), 0.35f * lit)
             g.rect(cx, cy, w * 0.5f * (1f + sq * 0.15f) - gap, hh * 0.5f * (1f - sq * 0.5f) - gap, c)
             // A lighter top edge, so stacked blocks read as solid things.
             g.rect(cx, cy + hh * 0.5f * (1f - sq * 0.5f) - gap - cell * 0.06f, w * 0.5f - gap * 2f, cell * 0.05f, Palette.brighten(c, 0.35f))
-        }
-        if (shine > 0f) {
-            // The sweep of light across the finished block.
-            val sx = ox + bw * (1f - shine) * 1.4f - bw * 0.2f
-            g.glow(sx, oy + bh * 0.5f, bh * 0.45f, Palette.TEXT_PRIMARY, 0.35f * shine)
-            g.glow(0f, oy + bh * 0.5f, bw * 0.9f, Palette.SUCCESS, 0.25f * shine)
         }
     }
 

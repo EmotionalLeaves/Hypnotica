@@ -203,6 +203,23 @@ class BallEscapeSim : Sim {
         }
     }
 
+    /**
+     * The gap as it stands now: shut for the first few seconds, opening, and
+     * widening if the run has gone on long.
+     *
+     * Open from the first frame, a ball launched towards it left at a second
+     * with no bounces at all, and on an unlucky seed a ball could rattle for a
+     * minute and never find it — measured, escapes ran from 1 s to never
+     * across six seeds. Shut first, every run has its build; widening late,
+     * every run has its ending.
+     */
+    private fun gapNow(): Float {
+        val open = ((runSeconds - GAP_SEALED) / GAP_OPENING).coerceIn(0f, 1f)
+        val eased = open * open * (3f - 2f * open)
+        val wider = ((runSeconds - GAP_WIDEN_AFTER) / GAP_WIDENING).coerceIn(0f, 1f)
+        return (gapWidth * eased * (1f + 2f * wider)).coerceAtMost(PI.toFloat())
+    }
+
     private fun collideRings(env: SimEnv, b: Ball) {
             // Rings are checked outside in; the ball normally sits inside the
             // smallest one and works its way out through the gaps.
@@ -228,7 +245,7 @@ class BallEscapeSim : Sim {
                 val angNow = atan2(b.y, b.x)
                 var relNow = angNow - ringAngle[ri]
                 relNow = ((relNow % TWO_PI) + TWO_PI) % TWO_PI
-                val atGap = relNow < gapWidth
+                val atGap = relNow < gapNow()
                 if (ri > 0 && d >= rr) {
                     // Outside an inner ring, already through it: its wall
                     // stops the ball from this side too, or a bounce off the
@@ -241,7 +258,7 @@ class BallEscapeSim : Sim {
                     val ang = atan2(b.y, b.x)
                     var rel = ang - ringAngle[ri]
                     rel = ((rel % TWO_PI) + TWO_PI) % TWO_PI
-                    if (rel < gapWidth) {
+                    if (rel < gapNow()) {
                         // Through the gap: this ring is spent for this ball.
                         continue
                     }
@@ -339,7 +356,7 @@ class BallEscapeSim : Sim {
         for (ri in ringRadii.indices) {
             val c = palette.at(ri.toFloat() / max(1, rings - 1))
             if (sides < 3) {
-                g.ring(0f, 0f, ringRadii[ri], 0.012f, c, gapWidth, ringAngle[ri], 0.95f)
+                g.ring(0f, 0f, ringRadii[ri], 0.012f, c, gapNow(), ringAngle[ri], 0.95f)
             } else {
                 // Each side in short pieces, leaving out the ones in the gap.
                 val seg = TWO_PI / sides
@@ -351,7 +368,7 @@ class BallEscapeSim : Sim {
                     val x1 = cos(a0) + (cos(a1) - cos(a0)) * t1; val y1 = sin(a0) + (sin(a1) - sin(a0)) * t1
                     var rel = atan2((y0 + y1) * 0.5f, (x0 + x1) * 0.5f) - ringAngle[ri]
                     rel = ((rel % TWO_PI) + TWO_PI) % TWO_PI
-                    if (rel < gapWidth) continue
+                    if (rel < gapNow()) continue
                     val r = ringRadii[ri]
                     g.line(x0 * r, y0 * r, x1 * r, y1 * r, 0.012f, c, 0.95f)
                 }
@@ -421,6 +438,18 @@ class BallEscapeSim : Sim {
         private const val BURST_SECONDS = 0.9f
         private const val MAX_SPEED = 7.5f
         private const val GIVE_UP = 60f
+
+        /** Seconds the gap stays shut, so every run starts with a build. */
+        const val GAP_SEALED = 3f
+
+        /** Seconds it takes to open. */
+        const val GAP_OPENING = 1.5f
+
+        /** After this the gap starts to widen, so a run cannot go on for ever. */
+        const val GAP_WIDEN_AFTER = 7f
+
+        /** Seconds to reach three times its width. */
+        const val GAP_WIDENING = 6f
         /** Sides for each Shape choice; 0 is a round ring. */
         private val SHAPE_SIDES = intArrayOf(0, 3, 4, 6)
         private const val EDGE_PIECES = 10
@@ -776,6 +805,9 @@ class PendulumWaveSim : Sim {
 }
 
 /** Newton's cradle: equal masses in a row, momentum passing straight through. */
+/** When the cradle pays off whether or not its clicks have kept a round count. */
+private const val CRADLE_LATE = 13f
+
 class NewtonsCradleSim : Sim {
 
     private var n = 5
@@ -871,6 +903,13 @@ class NewtonsCradleSim : Sim {
                     payoffFrame = true
                 }
             }
+        }
+        // A sticky cradle clumps and its clicks die away before the count
+        // lands on a whole round, so it never paid off at all. Past the
+        // rhythm's window, the beat comes anyway.
+        if (!payoffDone && elapsed > CRADLE_LATE) {
+            payoffDone = true
+            payoffFrame = true
         }
     }
 

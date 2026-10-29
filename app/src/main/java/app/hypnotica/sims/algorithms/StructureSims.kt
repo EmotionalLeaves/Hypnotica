@@ -44,6 +44,10 @@ class HanoiSim : Sim {
     private var liftProgress = 0f
     private var fromPeg = 0
     private var toPeg = 0
+    private var liftFrom = 0
+
+    /** The most the tower may take of the screen's height of two. */
+    private val TOWER_HEIGHT = 1.2f
 
     override fun setup(env: SimEnv) {
         discs = env.params.i("discs", 7).coerceIn(1, 18)
@@ -56,6 +60,7 @@ class HanoiSim : Sim {
         payoffFrame = false
         restSeconds = -1f
         lifting = -1
+        liftProgress = 1f
     }
 
     private fun plan(n: Int, from: Int, to: Int, via: Int) {
@@ -70,6 +75,8 @@ class HanoiSim : Sim {
         payoffFrame = false
         if (restSeconds >= 0f) {
             restSeconds -= abs(dt)
+            // The last disc finishes landing while the tower rests.
+            liftProgress = min(1f, liftProgress + abs(dt) * 4f)
             return
         }
         // 2^n - 1 moves: at eighteen discs that is a quarter of a million, so
@@ -91,6 +98,7 @@ class HanoiSim : Sim {
             fromPeg = m[0]
             toPeg = m[1]
             val disc = pegs[fromPeg].removeAt(pegs[fromPeg].size - 1)
+            liftFrom = pegs[fromPeg].size
             pegs[toPeg].add(disc)
             lifting = disc
             liftProgress = 0f
@@ -107,7 +115,9 @@ class HanoiSim : Sim {
                 )
             }
         }
-        liftProgress = min(1f, liftProgress + abs(dt) * 6f)
+        // A move takes the time until the next one, but never longer than
+        // a third of a second.
+        liftProgress = min(1f, liftProgress + abs(dt) * max(3f, rate * 1.15f))
         if (played >= moves.size && restSeconds < 0f) {
             payoffFrame = true
             restSeconds = 1.5f
@@ -122,25 +132,70 @@ class HanoiSim : Sim {
         // the gap is two thirds of the width: at the full width the biggest
         // discs on the outer pegs ran off both edges of the screen.
         val pegGap = halfW / 1.5f
-        val baseY = -0.75f
-        val discH = min(0.085f, 1.3f / discs)
+        // Discs as tall as the screen allows: at a fixed 0.085 the shipped
+        // seven made a small tower at the bottom of a big empty screen.
+        val discH = min(0.115f, TOWER_HEIGHT / discs)
+        val towerH = discs * discH
+        val pegLen = towerH + discH * 1.2f
+        val baseY = -(towerH + discH * 3f) * 0.5f - 0.05f
+        val pegTop = baseY + pegLen
+        val rail = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f)
+        val pegW = max(0.006f, min(0.012f, discH * 0.12f))
         for (i in 0 until 3) {
             val x = (i - 1) * pegGap
-            g.rect(x, baseY + 0.55f, 0.008f, 0.55f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.45f))
+            g.rect(x, baseY + pegLen * 0.5f, pegW, pegLen * 0.5f, rail)
+            g.disc(x, pegTop, pegW, rail)
         }
-        g.rect(0f, baseY - 0.02f, halfW, 0.018f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
+        val slab = 0.02f
+        g.rect(0f, baseY - slab, halfW, slab, rail)
+        g.disc(-halfW, baseY - slab, slab, rail)
+        g.disc(halfW, baseY - slab, slab, rail)
+        val flying = lifting >= 0 && liftProgress < 1f
         for (i in 0 until 3) {
             val x = (i - 1) * pegGap
             for ((level, disc) in pegs[i].withIndex()) {
-                val w = (0.1f + 0.82f * disc / discs) * pegGap * 0.5f
-                val y = baseY + level * discH + discH * 0.5f
-                val c = palette.at(disc.toFloat() / discs)
-                val justMoved = disc == lifting && level == pegs[i].size - 1
-                g.rect(x, y, w, discH * 0.42f, if (justMoved) Palette.brighten(c, 0.3f) else c)
-                if (justMoved) g.glow(x, y, w * 1.4f, c, 0.5f * (1f - liftProgress))
+                val top = level == pegs[i].size - 1
+                // The disc in flight is drawn on its way, below.
+                if (flying && top && i == toPeg && disc == lifting) continue
+                pill(g, x, baseY + level * discH + discH * 0.5f, discWidth(disc, pegGap), discH, palette.at(disc.toFloat() / discs))
             }
         }
+        if (flying) {
+            // Up off its peg, over, and down onto the next: the move is the
+            // thing to see, and the disc used to jump there in one frame.
+            val p = liftProgress
+            val x0 = (fromPeg - 1) * pegGap
+            val x1 = (toPeg - 1) * pegGap
+            val y0 = baseY + liftFrom * discH + discH * 0.5f
+            val y1 = baseY + (pegs[toPeg].size - 1) * discH + discH * 0.5f
+            val lift = pegTop + discH * 0.9f
+            val x: Float
+            val y: Float
+            when {
+                p < 0.3f -> { x = x0; y = y0 + (lift - y0) * ease(p / 0.3f) }
+                p < 0.7f -> { x = x0 + (x1 - x0) * ease((p - 0.3f) / 0.4f); y = lift }
+                else -> { x = x1; y = lift + (y1 - lift) * ease((p - 0.7f) / 0.3f) }
+            }
+            val c = palette.at(lifting.toFloat() / discs)
+            g.glow(x, y, discWidth(lifting, pegGap) * 1.3f, c, 0.35f)
+            pill(g, x, y, discWidth(lifting, pegGap), discH, Palette.brighten(c, 0.15f))
+        }
     }
+
+    /** From a third of the widest up: thinner, the small discs were balls. */
+    private fun discWidth(disc: Int, pegGap: Float) = (0.3f + 0.62f * disc / discs) * pegGap * 0.5f
+
+    /** A rounded disc: a bar with round ends and a lit top edge. */
+    private fun pill(g: G, x: Float, y: Float, hw: Float, discH: Float, c: Int) {
+        val r = discH * 0.42f
+        val body = max(0f, hw - r)
+        g.rect(x, y, body, r, c)
+        g.disc(x - body, y, r, c)
+        g.disc(x + body, y, r, c)
+        g.rect(x, y + r * 0.55f, body, r * 0.14f, Palette.brighten(c, 0.3f), alpha = 0.8f)
+    }
+
+    private fun ease(t: Float): Float = t * t * (3f - 2f * t)
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -203,6 +258,7 @@ class NQueensSim : Sim {
     private var carry = 0f
     private var restSeconds = -1f
     private var lastRejected = -1
+    private var lastRejectedRow = -1
     private var elapsed = 0f
 
     override fun setup(env: SimEnv) {
@@ -217,6 +273,7 @@ class NQueensSim : Sim {
         carry = 0f
         restSeconds = -1f
         lastRejected = -1
+        lastRejectedRow = -1
     }
 
     private fun safe(r: Int, c: Int): Boolean {
@@ -274,6 +331,7 @@ class NQueensSim : Sim {
                     break
                 }
                 lastRejected = c
+                lastRejectedRow = row
                 c++
             }
             if (!placed) {
@@ -294,16 +352,31 @@ class NQueensSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val size = min(2f * env.halfWidth * 0.92f / n, 1.84f / n)
-        val originX = -size * n * 0.5f
-        val originY = -size * n * 0.5f
+        val half = size * n * 0.5f
+        val originX = -half
+        val originY = -half
+        g.reserveInstances(n * n + n * 3 + 8)
+        // A frame, lit green once the board is solved.
+        val frame = if (solved) Palette.SUCCESS else Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
+        val fw = max(0.004f, size * 0.06f)
+        g.rect(0f, 0f, half + fw, half + fw, frame)
+        // Solid squares: the board used to be a tenth and a twenty-fifth of
+        // grey over black, which on a phone was barely a board at all.
         for (r in 0 until n) {
             for (c in 0 until n) {
-                val dark = (r + c) % 2 == 0
                 g.rect(
                     originX + (c + 0.5f) * size, originY + (r + 0.5f) * size,
                     size * 0.5f, size * 0.5f,
-                    Palette.withAlpha(Palette.TEXT_SECONDARY, if (dark) 0.1f else 0.04f)
+                    if ((r + c) % 2 == 0) DARK_SQUARE else LIGHT_SQUARE
                 )
+            }
+        }
+        if (row in 0 until n && !solved) {
+            g.rect(0f, originY + (row + 0.5f) * size, half, size * 0.5f, Palette.ACCENT, alpha = 0.22f)
+            // The square just tried and refused, in the row being filled.
+            if (lastRejectedRow == row && lastRejected in 0 until n) {
+                g.rect(originX + (lastRejected + 0.5f) * size, originY + (row + 0.5f) * size,
+                    size * 0.42f, size * 0.42f, Palette.DANGER, alpha = 0.45f)
             }
         }
         for (r in 0 until n) {
@@ -311,16 +384,11 @@ class NQueensSim : Sim {
             if (c < 0) continue
             val x = originX + (c + 0.5f) * size
             val y = originY + (r + 0.5f) * size
-            val col = palette.at(r.toFloat() / n)
-            g.glow(x, y, size * 1.1f, col, 0.5f)
-            g.disc(x, y, size * 0.33f, col)
-        }
-        if (row in 0 until n) {
-            g.rect(
-                0f, originY + (row + 0.5f) * size,
-                size * n * 0.5f, size * 0.5f,
-                Palette.withAlpha(Palette.ACCENT, 0.12f)
-            )
+            val col = palette.at(0.72f * r / max(1, n - 1))
+            g.glow(x, y, size * (if (solved) 1.0f else 0.75f), col, if (solved) 0.6f else 0.4f)
+            g.disc(x, y, size * 0.36f, col)
+            g.ring(x, y, size * 0.36f, size * 0.06f, Palette.brighten(col, 0.4f))
+            g.disc(x, y, size * 0.12f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.85f))
         }
     }
 
@@ -334,6 +402,9 @@ class NQueensSim : Sim {
     )
 
     companion object {
+        private const val DARK_SQUARE = 0xFF141821.toInt()
+        private const val LIGHT_SQUARE = 0xFF252B39.toInt()
+
         fun def(): SimDef = SimDef(
             id = "algorithms/n-queens",
             title = "N-queens",
@@ -471,18 +542,23 @@ class BinaryTreeSim : Sim {
         // Place by key so the in-order layout is the sorted order.
         val edgeStride = maxOf(1, size / Draw.MAX_EDGES)
         for (i in 0 until size) xs[i] = -halfW + keys[i] * 2f * halfW
+        // Depth runs over most of the palette, not into its far end, which on
+        // Ocean is navy: the deepest nodes were black on black.
+        fun shade(d: Int) = palette.at(Draw.DEPTH_SPAN * d / levels)
+        g.reserveInstances(if (size > Draw.AS_POINTS) min(size, Draw.MAX_EDGES) * 2 else size * 4)
         for (i in 0 until size) {
             val x = xs[i]
             val y = 0.88f - depth[i] * rowH
             val l = left[i]
             val r = right[i]
-            val c = palette.at(depth[i].toFloat() / levels)
             if (edgeStride == 1 || i % edgeStride == 0) {
-                if (l in 0 until size) g.line(x, y, xs[l], 0.88f - depth[l] * rowH, 0.0022f, c, 0.6f)
-                if (r in 0 until size) g.line(x, y, xs[r], 0.88f - depth[r] * rowH, 0.0022f, c, 0.6f)
+                if (l in 0 until size) g.line(x, y, xs[l], 0.88f - depth[l] * rowH, 0.003f, shade(depth[l]), 0.55f)
+                if (r in 0 until size) g.line(x, y, xs[r], 0.88f - depth[r] * rowH, 0.003f, shade(depth[r]), 0.55f)
             }
         }
-        val dotSize = max(0.004f, min(0.016f, 2.4f / size))
+        // Smaller than they were: at the shipped 220 the nodes of a level
+        // piled into each other in clumps.
+        val dotSize = max(0.004f, min(0.014f, 1.9f / size))
         // A hundred thousand nodes are a texture, not a diagram: past the
         // threshold the nodes go through the point path and the edges thin out.
         if (size > Draw.AS_POINTS) {
@@ -494,12 +570,22 @@ class BinaryTreeSim : Sim {
                     // World units, like every point size: 1.6 was the size of
                     // the whole screen, clamped to the renderer's largest dot.
                     dotSize * 1.6f,
-                    palette.at(depth[i].toFloat() / levels)
+                    shade(depth[i])
                 )
             }
         } else
         for (i in 0 until size) {
-            g.disc(xs[i], 0.88f - depth[i] * rowH, dotSize, palette.at(depth[i].toFloat() / levels))
+            val y = 0.88f - depth[i] * rowH
+            // A dark rim, so neighbours that touch stay two nodes, not a blob.
+            g.disc(xs[i], y, dotSize * 1.3f, Palette.BG)
+            g.disc(xs[i], y, dotSize, shade(depth[i]))
+        }
+        // The newest node, lit.
+        if (size > 1 && size <= Draw.AS_POINTS) {
+            val k = size - 1
+            val y = 0.88f - depth[k] * rowH
+            g.glow(xs[k], y, dotSize * 5f, Palette.TEXT_PRIMARY, 0.5f)
+            g.disc(xs[k], y, dotSize * 1.1f, Palette.TEXT_PRIMARY)
         }
     }
 
@@ -514,6 +600,8 @@ class BinaryTreeSim : Sim {
     )
 
     private object Draw {
+        const val DEPTH_SPAN = 0.8f
+
         /** Above this many nodes, the tree is painted as points. */
         const val AS_POINTS = 2_000
 
@@ -626,44 +714,81 @@ class LogicGatesSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val halfW = env.halfWidth * 0.9f
-        val colW = 2f * halfW / bits
+        // Drawn as the circuit it is: one full-adder cell per bit, most
+        // significant on the left, A and B wired in from above, the sum wired
+        // out below, and the carry wire running cell to cell from the right —
+        // with the carry out of the top cell on its own lamp at the far left.
+        // It used to be four rows of unconnected squares and dots, which said
+        // nothing about where the carry goes.
+        val halfW = env.halfWidth * 0.94f
+        val colW = 2f * halfW / (bits + 1)
+        fun colX(i: Int) = -halfW + (i + 1.5f) * colW   // column of bit (bits - 1 - i)
+        val dim = 0xFF3A4050.toInt()
+        val inA = palette.at(0.15f)
+        val inB = palette.at(0.55f)
+        val carryC = Palette.WARNING
         val on = Palette.SUCCESS
-        val off = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.28f)
-        val rows = listOf(0.6f, 0.3f, -0.1f, -0.5f)
-        val labels = listOf(a, b)
-        for ((rowIndex, value) in labels.withIndex()) {
-            for (i in 0 until bits) {
-                val bit = (value shr (bits - 1 - i)) and 1 == 1
-                g.rect(
-                    -halfW + (i + 0.5f) * colW, rows[rowIndex],
-                    colW * 0.35f, 0.07f, if (bit) palette.at(0.3f + rowIndex * 0.3f) else off
-                )
-            }
-        }
+        val wire = max(0.004f, min(0.008f, colW * 0.05f))
+        val yA = 0.66f
+        val yB = 0.46f
+        val yBox = 0.04f
+        val boxHW = colW * 0.27f
+        val boxHH = min(0.13f, colW * 0.75f)
+        val ySum = -0.44f
+        val off = colW * 0.13f
+        val bitHW = min(colW * 0.11f, 0.035f)
+        val bitHH = bitHW * 1.2f
+        g.reserveInstances(bits * 16 + 24)
         // How far along the chain the carry has got in this tick: one gate
         // delay per bit, so bit k's carry and sum settle after the k below
         // it. Everything further up still shows what it showed before.
         val stage = tick.coerceIn(0f, 1f) * (bits + 1)
         fun carryAt(k: Int) = if (k <= stage) carryBits[k] else prevCarry.getOrElse(k) { false }
         fun sumAt(k: Int) = if (k + 1 <= stage) sumBits[k] else prevSum.getOrElse(k) { false }
-        // Carry chain.
         for (i in 0 until bits) {
-            val c = carryAt(bits - 1 - i)
-            val x = -halfW + (i + 0.5f) * colW
-            g.disc(x, rows[2], 0.02f, if (c) Palette.WARNING else off)
-            if (i < bits - 1) {
-                g.line(x, rows[2], x + colW, rows[2], 0.004f,
-                    if (c) Palette.WARNING else off, if (c) 1f else 0.4f)
-            }
+            val k = bits - 1 - i
+            val x = colX(i)
+            val aBit = (a shr k) and 1 == 1
+            val bBit = (b shr k) and 1 == 1
+            // Input wires, then the input bits on top of them.
+            g.line(x - off, yA, x - off, yBox + boxHH, wire, if (aBit) inA else dim)
+            g.line(x + off, yB, x + off, yBox + boxHH, wire, if (bBit) inB else dim)
+            g.rect(x - off, yA, bitHW, bitHH, if (aBit) inA else dim)
+            g.rect(x + off, yB, bitHW, bitHH, if (bBit) inB else dim)
+            // Carry in from the cell to the right (bit k - 1), or the 0 fed
+            // into the bottom bit.
+            val cin = carryAt(k)
+            val rightEdge = if (i == bits - 1) x + colW * 0.5f else colX(i + 1) - boxHW
+            if (cin) g.glow((x + boxHW + rightEdge) * 0.5f, yBox, colW * 0.35f, carryC, 0.45f)
+            g.line(x + boxHW, yBox, rightEdge, yBox, wire * 1.8f, if (cin) carryC else dim)
+            // The sum wire and lamp.
+            val sb = sumAt(k)
+            g.line(x, yBox - boxHH, x, ySum, wire, if (sb) on else dim)
+            if (sb) g.glow(x, ySum, colW * 0.55f, on, 0.35f)
+            g.rect(x, ySum, colW * 0.3f, 0.075f, if (sb) on else dim)
+            // The adder cell, edged in the carry colour while the ripple is
+            // passing through it.
+            val front = stage.toInt() == k && tick < 1f && carryBits[k + 1]
+            g.rect(x, yBox, boxHW + 0.006f, boxHH + 0.006f, if (front) carryC else 0xFF555C6C.toInt())
+            g.rect(x, yBox, boxHW, boxHH, 0xFF10131A.toInt())
+            // A plus sign, so the box reads as an adder.
+            val ps = boxHW * 0.45f
+            g.rect(x, yBox, ps, wire * 0.8f, Palette.TEXT_SECONDARY, alpha = 0.7f)
+            g.rect(x, yBox, wire * 0.8f, ps, Palette.TEXT_SECONDARY, alpha = 0.7f)
         }
-        // Sum.
-        for (i in 0 until bits) {
-            val bit = sumAt(bits - 1 - i)
-            val x = -halfW + (i + 0.5f) * colW
-            if (bit) g.glow(x, rows[3], colW * 0.7f, on, 0.45f)
-            g.rect(x, rows[3], colW * 0.35f, 0.07f, if (bit) on else off)
-        }
+        // Carry out of the top bit: the count rolling over.
+        val cout = carryAt(bits)
+        val xo = -halfW + 0.5f * colW
+        g.line(xo, yBox, colX(0) - boxHW, yBox, wire * 1.8f, if (cout) carryC else dim)
+        if (cout) g.glow(xo, yBox, colW * 0.8f, carryC, 0.5f)
+        g.disc(xo, yBox, colW * 0.22f, if (cout) carryC else dim)
+        // The count as a gauge filling towards the roll-over.
+        val full = 1 shl bits
+        val gy = -0.72f
+        val gw = halfW
+        g.rect(0f, gy, gw, 0.022f, 0xFF1A1E28.toInt())
+        val frac = a.toFloat() / full
+        if (frac > 0f) g.rect(-gw + gw * frac, gy, gw * frac, 0.022f, palette.at(0.35f))
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -770,8 +895,11 @@ class GradientDescentSim : Sim {
         for (i in 0 until walkers) {
             vx[i] = vx[i] * momentum - gradX(wx[i], wy[i]) * rate
             vy[i] = vy[i] * momentum - gradY(wx[i], wy[i]) * rate
-            wx[i] = (wx[i] + vx[i] * dt * 6f).coerceIn(-env.halfWidth, env.halfWidth)
-            wy[i] = (wy[i] + vy[i] * dt * 6f).coerceIn(-1f, 1f)
+            // Kept a walker's width inside the screen: pinned on the very edge,
+            // half of it was drawn off the side.
+            val edgeX = env.halfWidth - EDGE_INSET
+            wx[i] = (wx[i] + vx[i] * dt * 6f).coerceIn(-edgeX, edgeX)
+            wy[i] = (wy[i] + vy[i] * dt * 6f).coerceIn(-1f + EDGE_INSET, 1f - EDGE_INSET)
             val l = loss(wx[i], wy[i])
             if (l < lowest) lowest = l
             // Each walker lands with its own note, pitched by how deep its dip
@@ -829,20 +957,31 @@ class GradientDescentSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth
-        g.reservePoints(gridX * gridY + walkers)
+        g.reserveInstances(gridX * gridY + walkers * 3)
         val dx = 2f * halfW / gridX
         val dy = 2f / gridY
+        // The surface as solid tiles, dimmed so the walkers
+        // stand out. It was a grid of round points at 60%, which on a phone
+        // read as a moiré of dots with the walkers lost in it.
+        val lo = -0.25f
+        val hi = (halfW * halfW + 1f) * 0.6f + 0.22f
         for (r in 0 until gridY) {
             val y = -1f + (r + 0.5f) * dy
             for (c in 0 until gridX) {
                 val x = -halfW + (c + 0.5f) * dx
-                val l = loss(x, y)
-                g.point(x, y, max(dx, dy) * 1.05f, Palette.withAlpha(palette.at((l / 1.6f).coerceIn(0f, 1f)), 0.6f))
+                // Square-rooted, to spread the low ground — most of the screen,
+                // and where the dips are — over more of the palette.
+                val t = sqrt(((loss(x, y) - lo) / (hi - lo)).coerceIn(0f, 1f))
+                // Lower ground darker, so the eye falls into the valleys.
+                val c0 = Palette.lerp(palette.at(t), Palette.BG, 0.6f - 0.3f * t)
+                g.rect(x, y, dx * 0.5f + 0.0005f, dy * 0.5f + 0.0005f, c0)
             }
         }
+        val r = 0.014f
         for (i in 0 until walkers) {
-            g.glow(wx[i], wy[i], 0.045f, Palette.SUCCESS, 0.5f)
-            g.disc(wx[i], wy[i], 0.013f, Palette.brighten(Palette.SUCCESS, 0.25f))
+            if (!settled[i]) g.glow(wx[i], wy[i], 0.05f, Palette.TEXT_PRIMARY, 0.35f)
+            g.disc(wx[i], wy[i], r * 1.45f, Palette.BG)
+            g.disc(wx[i], wy[i], r, if (settled[i]) Palette.SUCCESS else Palette.TEXT_PRIMARY)
         }
     }
 
@@ -856,6 +995,7 @@ class GradientDescentSim : Sim {
     companion object {
         /** The ground has to be about level, too, for a walker to have landed. */
         const val SETTLE_SLOPE = 0.03f
+        const val EDGE_INSET = 0.022f
         fun def(): SimDef = SimDef(
             id = "algorithms/gradient-descent",
             title = "Gradient descent",
@@ -969,9 +1109,18 @@ class GraphLayoutSim : Sim {
         val spring = env.params.f("spring", 1f) * 2.2f
         val ideal = (1.4f / sqrt(n.toFloat())).coerceIn(0.03f, 0.4f)
 
+        // Pulled to the centre harder across the screen's short side than its
+        // long one, so the graph settles into the screen's shape. Pulled
+        // evenly it settled round, and a round graph on an upright phone was
+        // framed by the width: a knot across the middle, the top and bottom
+        // thirds empty.
+        val hwScreen = env.halfWidth.coerceIn(0.2f, 5f)
+        val aniso = hwScreen * hwScreen * hwScreen
+        val kx = if (hwScreen < 1f) 0.25f / aniso else 0.25f
+        val ky = if (hwScreen < 1f) 0.25f else 0.25f * aniso
         for (i in 0 until n) {
-            var fx = -px[i] * 0.25f
-            var fy = -py[i] * 0.25f
+            var fx = -px[i] * kx
+            var fy = -py[i] * ky
             for (j in 0 until n) {
                 if (i == j) continue
                 val dx = px[i] - px[j]
@@ -1055,20 +1204,26 @@ class GraphLayoutSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val s = fitScale
-        g.reserveInstances(edges + n)
+        g.reserveInstances(edges + n * 2)
+        // Neutral edges, so the nodes carry the colour.
+        val edgeC = Palette.withAlpha(Palette.lerp(Palette.TEXT_SECONDARY, palette.at(0.4f), 0.35f), 0.42f)
         for (e in 0 until edges) {
             val a = edgeA[e]
             val b = edgeB[e]
             g.line(
                 (px[a] - fitX) * s, (py[a] - fitY) * s, (px[b] - fitX) * s, (py[b] - fitY) * s,
-                0.0018f * min(s, 2f), Palette.withAlpha(palette.at(0.35f), 0.5f)
+                0.003f, edgeC
             )
         }
         // Grown with the framing, but not all the way: at full scale the
-        // shipped nodes would be coins.
-        val r = max(0.005f, min(0.02f, 0.9f / sqrt(n.toFloat()))) * kotlin.math.sqrt(s)
+        // shipped nodes would be coins, and at 0.02 they overlapped in clumps.
+        val r = (max(0.004f, min(0.013f, 0.1f / sqrt(n.toFloat()))) * kotlin.math.sqrt(s)).coerceAtMost(0.02f)
         for (i in 0 until n) {
-            g.disc((px[i] - fitX) * s, (py[i] - fitY) * s, r, palette.at(i.toFloat() / n))
+            val x = (px[i] - fitX) * s
+            val y = (py[i] - fitY) * s
+            // A dark rim keeps nodes that touch apart.
+            g.disc(x, y, r * 1.3f, Palette.BG)
+            g.disc(x, y, r, palette.at(i.toFloat() / n))
         }
     }
 

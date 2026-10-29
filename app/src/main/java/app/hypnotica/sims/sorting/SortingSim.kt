@@ -176,12 +176,29 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
         when (view) {
             SortView.BARS -> drawBars(g, palette, halfW, sweepIndex, usePoints)
             SortView.DOTS -> drawDots(g, palette, halfW, sweepIndex, usePoints)
-            SortView.WHEEL -> drawWheel(g, palette, sweepIndex, usePoints)
-            SortView.SPIRAL -> drawSpiral(g, palette, sweepIndex, usePoints)
-            SortView.DISPARITY -> drawDisparity(g, palette, sweepIndex, usePoints)
+            SortView.WHEEL -> drawWheel(g, palette, sweepIndex, usePoints, roundScale(env))
+            SortView.SPIRAL -> drawSpiral(g, palette, sweepIndex, usePoints, roundScale(env))
+            SortView.DISPARITY -> drawDisparity(g, palette, sweepIndex, usePoints, roundScale(env))
         }
 
     }
+
+    /**
+     * A verified bar: green, shaded by its value so the finished staircase keeps
+     * its depth. One flat green turned the end into a single solid slab.
+     */
+    private fun verified(v: Float): Int =
+        Palette.lerp(Palette.lerp(Palette.SUCCESS, Palette.BG, 0.45f), Palette.brighten(Palette.SUCCESS, 0.18f), v)
+
+    /**
+     * The round views are laid out to a radius of 0.9 and scaled to fit the
+     * screen's narrow side. Unscaled they were twice the width of a phone,
+     * the wheel and the disparity ring cut off at both edges.
+     */
+    private fun roundScale(env: SimEnv): Float = min(env.halfWidth, 1f) * 0.96f / 0.9f
+
+    /** A dot's radius on a round view, by how much track each dot has. */
+    private fun roundDot(s: Float): Float = max(2.2f * s / n, 0.0045f).coerceAtMost(0.02f)
 
     private fun highlight(index: Int): Boolean = index == array.lastA || index == array.lastB
 
@@ -194,7 +211,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             for (i in 0 until n) {
                 val v = values[i]
                 val x = -halfW + (i + 0.5f) * barW
-                val c = if (i < sweepIndex) Palette.SUCCESS else palette.at(v)
+                val c = if (i < sweepIndex) verified(v) else palette.at(v)
                 g.point(x, baseY + v * 1.78f * 0.5f, size * 2f, c)
             }
             return
@@ -205,32 +222,40 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val v = values[i]
             val x = -halfW + (i + 0.5f) * barW
             val h = v * 1.78f
-            var c = if (i < sweepIndex) Palette.SUCCESS else palette.at(v)
+            var c = if (i < sweepIndex) verified(v) else palette.at(v)
             if (highlight(i)) c = Palette.brighten(c, 0.55f)
             g.bar(x, baseY, hw, h, c)
         }
-        if (n <= 400) {
+        if (n <= 400 && sweepIndex < 0) {
             if (array.lastA in 0 until n) g.glow(
                 -halfW + (array.lastA + 0.5f) * barW,
                 baseY + values[array.lastA] * 1.78f,
                 barW * 4f, palette.at(values[array.lastA]), 0.7f
             )
         }
+        // The verify sweep's leading edge: the few bars it has just passed,
+        // lit. It used to be a full-height line with a 0.12 glow centred on
+        // the screen, which read as a green blob smeared over the bars.
         if (sweepIndex in 1 until n) {
-            val x = -halfW + sweepIndex * barW
-            g.rect(x, 0f, barW * 0.6f, 1f, Palette.SUCCESS, 0f, 0.5f)
-            g.glow(x, 0f, 0.12f, Palette.SUCCESS, 0.8f)
+            val lead = max(2, n / 40)
+            for (i in max(0, sweepIndex - lead) until sweepIndex) {
+                val k = 1f - (sweepIndex - 1 - i).toFloat() / lead
+                g.bar(-halfW + (i + 0.5f) * barW, baseY, hw, values[i] * 1.78f,
+                    Palette.brighten(Palette.SUCCESS, 0.5f * k))
+            }
         }
     }
 
     private fun drawDots(g: G, palette: Palette, halfW: Float, sweepIndex: Int, usePoints: Boolean) {
         val step = 2f * halfW / n
-        val r = max(step * 0.4f, 0.002f)
+        // Big enough to see on a phone: at 0.4 of a step the shipped 220 were
+        // specks a pixel or two across.
+        val r = max(step * 0.55f, 0.0045f).coerceAtMost(0.02f)
         if (usePoints) {
             g.reservePoints(n)
             for (i in 0 until n) {
                 val v = values[i]
-                val c = if (i < sweepIndex) Palette.SUCCESS else palette.at(v)
+                val c = if (i < sweepIndex) verified(v) else palette.at(v)
                 g.point(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r * 2.2f, c)
             }
             return
@@ -238,14 +263,14 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
         g.reserveInstances(n)
         for (i in 0 until n) {
             val v = values[i]
-            var c = if (i < sweepIndex) Palette.SUCCESS else palette.at(v)
+            var c = if (i < sweepIndex) verified(v) else palette.at(v)
             if (highlight(i)) c = Palette.brighten(c, 0.6f)
             g.disc(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r, c)
         }
     }
 
-    private fun drawWheel(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean) {
-        val radius = 0.86f
+    private fun drawWheel(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {
+        val radius = 0.86f * s
         if (usePoints) g.reservePoints(n) else g.reserveInstances(n)
         for (i in 0 until n) {
             val v = values[i]
@@ -253,29 +278,29 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = radius * (0.35f + 0.65f * v)
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = if (i < sweepIndex) Palette.SUCCESS else Palette.hsv(v * 360f, 0.75f, 1f)
+            var c = if (i < sweepIndex) verified(v) else Palette.hsv(v * 360f, 0.75f, 1f)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
-            if (usePoints) g.point(x, y, 0.01f, c) else g.disc(x, y, max(0.9f / n, 0.004f), c)
+            if (usePoints) g.point(x, y, 0.01f, c) else g.disc(x, y, roundDot(s), c)
         }
     }
 
-    private fun drawSpiral(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean) {
+    private fun drawSpiral(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {
         if (usePoints) g.reservePoints(n) else g.reserveInstances(n)
         val turns = 5f
         for (i in 0 until n) {
             val t = if (n <= 1) 0f else i.toFloat() / (n - 1)
             val v = values[i]
             val ang = t * turns * 2f * PI.toFloat()
-            val rr = 0.12f + 0.78f * sqrt(t) * (0.55f + 0.45f * v)
+            val rr = (0.12f + 0.78f * sqrt(t) * (0.55f + 0.45f * v)) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = if (i < sweepIndex) Palette.SUCCESS else palette.at(v)
+            var c = if (i < sweepIndex) verified(v) else palette.at(v)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
-            if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, max(0.8f / n, 0.0045f), c)
+            if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }
     }
 
-    private fun drawDisparity(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean) {
+    private fun drawDisparity(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {
         if (usePoints) g.reservePoints(n) else g.reserveInstances(n)
         for (i in 0 until n) {
             val t = if (n <= 1) 0f else i.toFloat() / (n - 1)
@@ -283,14 +308,14 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val ang = t * 2f * PI.toFloat()
             // Radius shows how far a value is from where it belongs.
             val err = kotlin.math.abs(v - t)
-            val rr = 0.9f - err * 0.78f
+            val rr = (0.9f - err * 0.78f) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = if (i < sweepIndex) Palette.SUCCESS else palette.at(v)
+            var c = if (i < sweepIndex) verified(v) else palette.at(v)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
-            if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, max(0.8f / n, 0.0045f), c)
+            if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }
-        g.ring(0f, 0f, 0.9f, 0.004f, Palette.TEXT_SECONDARY, alpha = 0.35f)
+        g.ring(0f, 0f, 0.9f * s, 0.004f, Palette.TEXT_SECONDARY, alpha = 0.35f)
     }
 
     override fun payoff(): Boolean = payoffFrame
