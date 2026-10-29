@@ -129,7 +129,7 @@ fun LibraryScreen(state: AppState) {
             shelfIndex == SAVED_SHELF -> emptyList()
             else -> shelves.getOrNull(shelfIndex)?.let { shelf ->
                 base.filter { it.shelf == shelf }
-            } ?: base
+            } ?: if (query.isBlank()) mixed(base) else base
         }
     }
 
@@ -310,4 +310,20 @@ private fun EmptyState(glyph: String, message: String) {
             textAlign = TextAlign.Center
         )
     }
+}
+
+/**
+ * Every shelf in turn, for the All view. In registry order it opened on fifteen
+ * sorting sims in a row — a wall of near-identical bar charts as the first
+ * thing the Library showed of eighty-nine sims.
+ */
+private fun mixed(all: List<SimDef>): List<SimDef> {
+    val byShelf = all.groupBy { it.shelf }.values.map { it.toMutableList() }
+    val out = ArrayList<SimDef>(all.size)
+    var round = 0
+    while (out.size < all.size) {
+        for (list in byShelf) if (round < list.size) out.add(list[round])
+        round++
+    }
+    return out
 }

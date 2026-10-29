@@ -266,25 +266,23 @@ fun SettingsScreen(state: AppState, versionName: String) {
                 style = MaterialTheme.typography.bodySmall
             )
         }
+        // Meant to be found rather than advertised, but each door says what
+        // it is under its mark: a caption line of characters beneath them
+        // drew the marks a second time, from fallback fonts, half the size.
         Row(
             Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            QuietGlyph("◷") { state.screen = Screen.TICKTOCK }
-            Spacer(Modifier.width(24.dp))
-            QuietGlyph("✇") { state.screen = Screen.STUDIO }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                QuietGlyph("◷") { state.screen = Screen.TICKTOCK }
+                Text("endless scroll", color = Tokens.TextSecondary.copy(alpha = 0.4f), style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.width(32.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                QuietGlyph("✇") { state.screen = Screen.STUDIO }
+                Text("make a video", color = Tokens.TextSecondary.copy(alpha = 0.4f), style = MaterialTheme.typography.bodySmall)
+            }
         }
-        // The glyphs are meant to be found rather than advertised, but they
-        // composite at about 1.4:1 against the background — invisible outdoors.
-        // A line this quiet keeps them a discovery and stops them being lost
-        // for good.
-        Text(
-            "◷ endless scroll   ✇ make a video",
-            color = Tokens.TextSecondary.copy(alpha = 0.33f),
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        )
         Spacer(Modifier.height(36.dp))
     }
 }
