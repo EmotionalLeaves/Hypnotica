@@ -37,6 +37,8 @@ class LSystemSim : Sim {
     private var y2 = FloatArray(0)
     /** How far along the plant, from the root, each segment ends. */
     private var reach = FloatArray(0)
+    /** How far the longest branch carries on past each segment, itself included. */
+    private var onward = FloatArray(0)
     private var segments = 0
     private var stroke = 1f
     private var tallest = 1f
@@ -87,6 +89,9 @@ class LSystemSim : Sim {
         reach = FloatArray(count)
         val sx = FloatArray(MAX_STACK); val sy = FloatArray(MAX_STACK)
         val sa = FloatArray(MAX_STACK); val sd = FloatArray(MAX_STACK)
+        val sl = IntArray(MAX_STACK)
+        val parent = IntArray(count)
+        var last = -1
         var sp = 0
         var x = 0f; var y = 0f; var a = PI.toFloat() / 2f; var d = 0f
         var n = 0
@@ -97,15 +102,23 @@ class LSystemSim : Sim {
                 x1[n] = x; y1[n] = y; x2[n] = nx; y2[n] = ny
                 d += 1f
                 reach[n] = d
+                parent[n] = last
+                last = n
                 n++
                 x = nx; y = ny
             }
             '+' -> a += angle
             '-' -> a -= angle
-            '[' -> if (sp < MAX_STACK) { sx[sp] = x; sy[sp] = y; sa[sp] = a; sd[sp] = d; sp++ }
-            ']' -> if (sp > 0) { sp--; x = sx[sp]; y = sy[sp]; a = sa[sp]; d = sd[sp] }
+            '[' -> if (sp < MAX_STACK) { sx[sp] = x; sy[sp] = y; sa[sp] = a; sd[sp] = d; sl[sp] = last; sp++ }
+            ']' -> if (sp > 0) { sp--; x = sx[sp]; y = sy[sp]; a = sa[sp]; d = sd[sp]; last = sl[sp] }
         }
         segments = n
+        // Each stroke as thick as the wood it carries: a child always comes
+        // after its parent, so one pass back up passes every tip's reach
+        // down to the root.
+        val far = FloatArray(n) { reach[it] }
+        for (i in n - 1 downTo 0) { val p = parent[i]; if (p >= 0 && far[i] > far[p]) far[p] = far[i] }
+        onward = FloatArray(n) { far[it] - reach[it] + 1f }
         // Fewer, longer strokes are drawn bolder, so a plant of a few hundred
         // reads as solidly as one of thousands instead of as a wire sketch.
         stroke = kotlin.math.sqrt(STROKE_REFERENCE / max(1, n).toFloat()).coerceIn(0.6f, 2.2f)
@@ -220,7 +233,11 @@ class LSystemSim : Sim {
             val ex = ax + (bx - ax) * f
             val ey = y1[i] + (y2[i] - y1[i]) * f
             val share = reach[i] / tallest
-            val width = (stroke * TRUNK * (1f - share) + stroke * TIP).coerceAtLeast(TIP)
+            // Tapered by what grows on past it, not by height: tapered by
+            // height, a twig sprouting low on a grass stem was as thick as
+            // the stem and only a stroke long, and the stem bristled with
+            // stubby wedges.
+            val width = (stroke * TRUNK * (onward[i] / tallest) + stroke * TIP).coerceAtLeast(TIP)
             // Started half a width back along itself, so it overlaps the
             // stroke it grows from: butt-ended strokes meeting end to end
             // left hairline seams across the trunk, every segment a band.
