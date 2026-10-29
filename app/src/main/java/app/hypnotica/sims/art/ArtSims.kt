@@ -358,7 +358,11 @@ class HarmonographSim : Sim {
 
     companion object {
         const val BACKSTOP_SECONDS = 40f
-        const val MARGIN = 0.03f
+        /**
+         * Breathing room round the figure. At 0.03 the widest loop's ink
+         * touched the screen's edge on an upright phone.
+         */
+        const val MARGIN = 0.08f
         /**
          * Pendulum time searched for the widest swing. The swing dies from
          * its start, but two nearly equal frequencies beat, and at a large

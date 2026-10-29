@@ -276,7 +276,11 @@ class MazeRaceSim : Sim {
             g.rect(px, mcy, mw + (if (won) cell * 0.3f else 0f), mh + (if (won) cell * 0.3f else 0f), 0xFF0D1018.toInt())
             // Visited cells, oldest dim, the newest bright.
             val upto = min(t, length[s])
-            val trail = Palette.lerp(c, 0xFF0D1018.toInt(), if (doneAt >= 0f) 0.55f else 0.35f)
+            // Explored ground a deep tint, so the walls stay legible over it and
+            // the lit head reads as the one moving thing; at 35 % the flood was
+            // a slab of saturated colour (orange went to mud brown) that buried
+            // the maze it was exploring.
+            val trail = Palette.lerp(c, 0xFF0D1018.toInt(), if (doneAt >= 0f) 0.74f else 0.6f)
             for (i in 0 until upto) {
                 val k = order[s][i]
                 val x = ox + (k % cols + 0.5f) * cell

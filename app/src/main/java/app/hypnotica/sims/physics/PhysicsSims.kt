@@ -874,7 +874,7 @@ class PendulumWaveSim : Sim {
             val size = (top * 2f / count * 1.6f).coerceIn(0.003f, 0.012f)
             for (i in 0 until count) {
                 val t = i.toFloat() / (count - 1)
-                g.point(sin(angles[i]) * reach, top - t * top * 2f, size, palette.at(t))
+                g.point(sin(angles[i]) * reach, top - t * top * 2f, size, palette.at(t * HUE_SPAN))
             }
             return
         }
@@ -900,7 +900,9 @@ class PendulumWaveSim : Sim {
             val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
             val y = if (count <= 1) 0f else top - t * top * 2f
             val bx = sin(angles[i]) * reach
-            val c = palette.at(t)
+            // Short of the palette's far end: on the spectrum wheel 1 is 0
+            // again, and the first and last bobs were the same red.
+            val c = palette.at(t * HUE_SPAN)
             g.line(0f, y, bx, y, 0.003f, Palette.TEXT_SECONDARY, 0.3f)
             g.glow(bx, y, bob * 3.2f, c, 0.5f)
             g.disc(bx, y, bob, c)
@@ -926,6 +928,8 @@ class PendulumWaveSim : Sim {
     )
 
     companion object {
+        /** How far along the palette the bobs run, top to bottom. */
+        const val HUE_SPAN = 0.86f
         private const val GRAVITY_SIM = 9.81f
 
         /** Below this the wave is standing still, not swinging slowly. */
@@ -1175,7 +1179,7 @@ class NewtonsCradleSim : Sim {
             val anchorX = startX + i * spacing
             val bx = anchorX + sin(pos[i]) * l
             val by = top - cos(pos[i]) * l
-            val c = palette.at(i.toFloat() / max(1, n - 1))
+            val c = ballColour(palette, i)
             // Reflection in the polished plinth, squashed and dim.
             g.disc(bx, 2f * floorY - by, radius * 0.92f, c, 0.12f)
         }
@@ -1183,7 +1187,7 @@ class NewtonsCradleSim : Sim {
             val anchorX = startX + i * spacing
             val bx = anchorX + sin(pos[i]) * l
             val by = top - cos(pos[i]) * l
-            val c = palette.at(i.toFloat() / max(1, n - 1))
+            val c = ballColour(palette, i)
             // Two threads in a V from the rail, as a real cradle hangs them,
             // which keeps every ball swinging in one plane.
             g.line(anchorX - radius * 0.45f, railY, bx, by + radius * 0.9f, 0.003f, dim, 0.55f)
@@ -1203,6 +1207,13 @@ class NewtonsCradleSim : Sim {
             g.glow(x0 + radius, y0, radius * 1.4f, Palette.TEXT_PRIMARY, 0.6f * spark[i])
         }
     }
+
+    /**
+     * A run of neighbouring hues rather than the whole palette: spread from 0
+     * to 1 the spectrum wheel came back round, so both end balls were red,
+     * and five unrelated colours read as toys rather than one set of balls.
+     */
+    private fun ballColour(palette: Palette, i: Int): Int = palette.at(0.42f + 0.3f * i / max(1, n - 1))
 
     override fun payoff(): Boolean = payoffFrame
 

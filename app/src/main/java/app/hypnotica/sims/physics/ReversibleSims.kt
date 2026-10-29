@@ -131,6 +131,11 @@ class TowerSim : Sim {
         val whole = exact.toInt().coerceIn(0, bricks)
         val partial = exact - whole
 
+        // Topped out: a soft light over the last course for the finale.
+        if (progress > 0.95f) {
+            val topY = floorY + (rows - 1) * brickH
+            g.glow(0f, topY, env.halfWidth * 0.9f, palette.at(0.3f), (progress - 0.95f) * 20f * 0.35f)
+        }
         g.line(
             -env.halfWidth * 0.95f, floorY - brickH * 0.6f,
             env.halfWidth * 0.95f, floorY - brickH * 0.6f,
@@ -149,7 +154,7 @@ class TowerSim : Sim {
             val left = slotX(0, env.halfWidth) - brickW * 0.5f
             val right = slotX(perRow - 1, env.halfWidth) + brickW * 0.5f
             for (row in 0 until fullRows) {
-                val c = palette.at(((row.toFloat() / max(1, rows)) * 0.8f + 0.1f).coerceIn(0f, 1f))
+                val c = palette.at(((row.toFloat() / max(1, rows)) * RAMP + 0.1f).coerceIn(0f, 1f))
                 g.rect((left + right) * 0.5f, floorY + row * brickH, (right - left) * 0.5f, brickH * 0.45f, c)
             }
         }
@@ -172,7 +177,11 @@ class TowerSim : Sim {
         val fall = (FALL_SECONDS * bricks / buildSeconds).coerceIn(1f, MAX_IN_FLIGHT.toFloat())
         val last = min(bricks - 1, (exact + fall).toInt())
         for (k in whole..last) {
-            val t = ((exact - (k + 1 - fall)) / fall).coerceIn(0f, 1f)
+            // Each brick its own fall time and height (still landing exactly
+            // at count k + 1): with one of each, the shower lined up into a
+            // rigid diagonal of bricks across the sky.
+            val fk = fall * (0.55f + 0.45f * tint[k])
+            val t = ((exact - (k + 1 - fk)) / fk).coerceIn(0f, 1f)
             if (t <= 0f) continue
             val col = k % perRow
             val row = k / perRow
@@ -180,17 +189,24 @@ class TowerSim : Sim {
             val restY = floorY + row * brickH
             // Dropped from rest, so it gathers speed all the way down.
             val x = restX + jitter[k] * brickW * 0.8f * (1f - t)
-            val y = restY + DROP_HEIGHT * (1f - t * t)
+            val y = restY + DROP_HEIGHT * (0.6f + 0.5f * abs(jitter[k])) * (1f - t * t)
             // The colour it will have in the wall, so it does not change hue
             // the moment it lands.
             val c = Palette.brighten(brickColour(palette, k, rows), 0.25f * (1f - t))
-            g.rect(x, y, brickW * 0.5f, max(brickH * 0.42f, 0.002f), c)
+            // Faded in over the first part of the drop and tipped a little,
+            // settling square as it lands: appearing whole at a fixed height
+            // they drew a hard diagonal line of bricks across the sky.
+            val tilt = jitter[k] * 0.5f * (1f - t)
+            g.rect(x, y, brickW * 0.5f, max(brickH * 0.42f, 0.002f), c, tilt, min(1f, t * 3.5f))
         }
 
     }
 
+    // The ramp stops short of the palette's far end: Ocean ends in a navy
+    // that all but vanished on black, so the top of a finished tower - the
+    // newest bricks, where the eye goes - was the dimmest part of it.
     private fun brickColour(palette: Palette, i: Int, rows: Int): Int =
-        palette.at((((i / perRow).toFloat() / max(1, rows)) * 0.8f + tint[i] * 0.2f).coerceIn(0f, 1f))
+        palette.at((((i / perRow).toFloat() / max(1, rows)) * RAMP + 0.04f + tint[i] * 0.12f).coerceIn(0f, 1f))
 
     private fun slotX(col: Int, halfWidth: Float): Float =
         -halfWidth * 0.85f + (col + 0.5f) * (1.7f * halfWidth / perRow)
@@ -218,6 +234,8 @@ class TowerSim : Sim {
         const val FALL_SECONDS = 0.45f
         const val DROP_HEIGHT = 0.55f
         const val MAX_IN_FLIGHT = 60
+        /** How far along the palette the tower climbs, bottom to top. */
+        const val RAMP = 0.62f
 
         fun def(): SimDef = SimDef(
             id = "physics/tower",

@@ -241,6 +241,20 @@ class WaveTankSim : Sim {
             val hgt = lit * room
             g.rect(left + (c + 0.5f) * cell, barBase + hgt * 0.5f, cell * 0.56f, hgt * 0.5f, col, alpha = 0.35f + 0.5f * lit)
         }
+        // The fringe pattern's outline, crisp and bright over the bars: the
+        // curve is the result, and as soft-edged bars alone it read as a
+        // blurred blue shape rather than the interference peaks.
+        if (peak > 1e-5f) {
+            val edge = Palette.brighten(palette.at(0.45f), 0.15f)
+            var lx = left + 0.5f * cell
+            var ly = barBase + screen[0] / peak * room
+            for (c in 1 until w) {
+                val nx = left + (c + 0.5f) * cell
+                val ny = barBase + screen[c] / peak * room
+                if (ly > barBase + room * 0.01f || ny > barBase + room * 0.01f) g.line(lx, ly, nx, ny, 0.006f, edge, 0.9f)
+                lx = nx; ly = ny
+            }
+        }
     }
 
     override fun payoff(): Boolean = payoffFrame

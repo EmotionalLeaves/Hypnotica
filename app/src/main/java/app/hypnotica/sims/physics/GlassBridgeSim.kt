@@ -113,7 +113,10 @@ class GlassBridgeSim : Sim {
         payoffFrame = false
         val h = abs(dt)
         elapsed += h
-        val pace = env.params.f("pace", 1f)
+        // Once someone is across, every safe pane is known and the rest
+        // follow at a trot: at walking pace the run ended with one frozen
+        // mid-bridge and the others still queueing at the start.
+        val pace = env.params.f("pace", 1f) * (if (firstAcross >= 0) FOLLOW_PACE else 1f)
         // Seen from above, the glass falls away from us: the shards spread a
         // little and shrink out of sight. Falling down the screen, they
         // rained across the panes still standing below.
@@ -319,7 +322,8 @@ class GlassBridgeSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f && !falling
+    override fun finished(): Boolean =
+        doneAt >= 0f && elapsed - doneAt > 3f && !falling && (current >= marbles || elapsed - doneAt > FOLLOW_SECONDS)
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "fallen" to fell.count { it }.toString(),
@@ -339,6 +343,9 @@ class GlassBridgeSim : Sim {
         const val GUESS_HOP = 0.3f
         const val GUESS_PAUSE = 0.12f
         const val SHARDS = 400
+        /** How much faster the rest cross once the way is known, and how long they get. */
+        const val FOLLOW_PACE = 2.5f
+        const val FOLLOW_SECONDS = 9f
         const val SHARD_FADE = 1.4f
         val GLASS = 0xFFA8D8FF.toInt()
 

@@ -1743,10 +1743,16 @@ class NdBounceSim : Sim {
         // The box: all 2·dims walls of it, as an N-cube seen in perspective.
         val nv = 1 shl dims
         if (sx.size != nv) { sx = FloatArray(nv); sy = FloatArray(nv) }
+        if (sd.size != nv) sd = FloatArray(nv)
+        var dLo = Float.MAX_VALUE; var dHi = -Float.MAX_VALUE
         for (v in 0 until nv) {
             viewOf(boxVerts, v * dims, spin)
-            sx[v] = proj[0] * drawScale; sy[v] = proj[1] * drawScale
+            sx[v] = proj[0] * drawScale; sy[v] = proj[1] * drawScale; sd[v] = proj[2]
+            dLo = min(dLo, proj[2]); dHi = max(dHi, proj[2])
         }
+        // A flat box (two dimensions) has no depth: drawn as all near.
+        val flat = dHi - dLo < 1e-3f
+        val dSpan = max(1e-4f, dHi - dLo)
         // Each edge coloured by the axis it runs along: an N-cube's edges
         // come in N directions, one per pair of walls, so the box shows how
         // many dimensions it has at a glance. A grey hairline at a third
@@ -1756,10 +1762,17 @@ class NdBounceSim : Sim {
             val a = boxEdges[e]; val b = boxEdges[e + 1]
             val axis = Integer.numberOfTrailingZeros(a xor b)
             val c = Palette.lerp(Palette.TEXT_SECONDARY, palette.at((axis + 0.5f) / dims), 0.6f)
-            g.line(sx[a], sy[a], sx[b], sy[b], 0.005f, c, 0.7f)
+            // Depth: the near edges drawn bolder and brighter, the far ones
+            // receding. All alike, the box read as a flat tangle of lines
+            // with no front or back.
+            val near = if (flat) 1f else ((sd[a] + sd[b]) * 0.5f - dLo) / dSpan
+            g.line(sx[a], sy[a], sx[b], sy[b], 0.0035f + 0.0045f * near, c, 0.35f + 0.55f * near)
             e += 2
         }
-        for (v in 0 until nv) g.disc(sx[v], sy[v], 0.006f, Palette.TEXT_SECONDARY, 0.6f)
+        for (v in 0 until nv) {
+            val near = if (flat) 1f else (sd[v] - dLo) / dSpan
+            g.disc(sx[v], sy[v], 0.004f + 0.005f * near, Palette.TEXT_SECONDARY, 0.35f + 0.45f * near)
+        }
         // Far balls first, so a near one passes in front.
         if (ballOrder.size != count) { ballOrder = IntArray(count) { it }; ballX = FloatArray(count); ballY = FloatArray(count); ballD = FloatArray(count) }
         for (i in 0 until count) {
@@ -1778,6 +1791,8 @@ class NdBounceSim : Sim {
         }
     }
 
+    /** Each box corner's depth factor, near larger. */
+    private var sd = FloatArray(0)
     private var ballOrder = IntArray(0)
     private var ballX = FloatArray(0)
     private var ballY = FloatArray(0)
@@ -2053,8 +2068,14 @@ class ConcentrationSim : Sim {
     private var shownBins = FloatArray(BINS)
     private var spread = 1f
     private var ratio = 1f
+    /** Each pair's distance over the average. */
+    private var rel = FloatArray(0)
+    private var range = RANGE
+    private var rangeTarget = RANGE
 
     override fun setup(env: SimEnv) {
+        range = RANGE
+        rangeTarget = RANGE
         pairs = env.params.i("pairs", 4000).coerceIn(200, 20000)
         maxDims = env.params.i("upto", 1000).coerceIn(10, 5000)
         sumSq = DoubleArray(pairs)
@@ -2089,13 +2110,18 @@ class ConcentrationSim : Sim {
         }
         mean /= pairs
         var v = 0.0
-        java.util.Arrays.fill(bins, 0)
+        if (rel.size != pairs) rel = FloatArray(pairs)
         for (i in 0 until pairs) {
             val d = Math.sqrt(sumSq[i])
             v += (d - mean) * (d - mean)
-            val b = ((d / mean) / RANGE * BINS).toInt()
-            if (b in 0 until BINS) bins[b]++
+            rel[i] = (d / mean).toFloat()
         }
+        // The axis runs to just past the farthest pair, between twice and
+        // three times the average. Fixed at three, the average sat a third of
+        // the way across and once the distances had bunched the spike stood
+        // in the left third with two thirds of the screen empty; now it
+        // slides to the middle as the tail it made room for disappears.
+        rangeTarget = ((hi / mean).toFloat() * 1.06f).coerceIn(2f, RANGE)
         spread = (Math.sqrt(v / pairs) / mean).toFloat()
         ratio = if (lo > 1e-9) (hi / lo).toFloat() else Float.POSITIVE_INFINITY
     }
@@ -2121,6 +2147,13 @@ class ConcentrationSim : Sim {
                 if (dims >= maxDims) doneAt = elapsed
             }
         }
+        // The axis eases, and the counts are re-binned on it every frame.
+        range += (rangeTarget - range) * min(1f, h * 3f)
+        java.util.Arrays.fill(bins, 0)
+        for (i in 0 until pairs) {
+            val b = (rel[i] / range * BINS).toInt()
+            if (b in 0 until BINS) bins[b]++
+        }
         // The bars ease to the new counts.
         val most = max(1, bins.max())
         for (b in 0 until BINS) shownBins[b] += (bins[b].toFloat() / most - shownBins[b]) * min(1f, h * 8f)
@@ -2144,7 +2177,7 @@ class ConcentrationSim : Sim {
         }
         g.line(-halfW, base, halfW, base, 0.004f, Palette.TEXT_SECONDARY, 0.5f)
         // The average distance, where everything ends up.
-        val mx = -halfW + (1f / RANGE) * 2f * halfW
+        val mx = -halfW + (1f / range) * 2f * halfW
         g.line(mx, base - 0.03f, mx, base + HIST_HEIGHT + 0.05f, 0.003f, Palette.WARNING, 0.6f)
         g.disc(mx, base + HIST_HEIGHT + 0.05f, 0.008f, Palette.WARNING)
         if (lit > 0f) g.glow(mx, base + HIST_HEIGHT + 0.05f, 0.08f, Palette.WARNING, 0.6f * lit)
@@ -2179,8 +2212,8 @@ class ConcentrationSim : Sim {
         /** The fullest bin's height. */
         const val HIST_HEIGHT = 1.3f
         /**
-         * The histogram covers distance from zero to this many times the
-         * average: on a line the farthest pair is three times it.
+         * The histogram covers distance from zero to at most this many times
+         * the average: on a line the farthest pair is three times it.
          */
         const val RANGE = 3f
         const val TICK = 0.45f

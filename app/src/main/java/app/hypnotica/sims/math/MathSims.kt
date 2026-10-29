@@ -750,7 +750,10 @@ class MandelbrotSim : Sim {
         if (cellColour.size != cs * rows) cellColour = IntArray(cs * rows)
         if (subColour.size < subMu.size) subColour = IntArray(subMu.size)
         val span = max(0.5f, highMu - lowMu)
-        val edgeColour = brightestOf(palette)
+        // The filament is white-hot with only a breath of the palette's
+        // lightest colour: lerped at 90 % into the bands, Aurora's yellow edge
+        // turned every teal band green and the picture into rainbow confetti.
+        val edgeColour = Palette.lerp(brightestOf(palette), Palette.TEXT_PRIMARY, 0.6f)
         val hasSubs = refined.size == cs * rows
         // The colours, across cores: a log, a cosine and a palette lookup per
         // tile were the dearest part of the image left after the sampling.
@@ -863,7 +866,9 @@ class MandelbrotSim : Sim {
         val hue = HUE_SPAN * (0.5f - 0.5f * cos(lm * HUE_CYCLES * 2f * PI.toFloat()))
         // Brightness rises towards the boundary.
         val near = ((lm - lowMu) / span).coerceIn(0f, 1f)
-        val lit = 0.17f + 0.77f * near * sqrt(near)
+        // Far field nearly black: at 17 % its violet read as a muddy haze
+        // behind everything, and the set's edge had no darkness to glow from.
+        val lit = 0.07f + 0.85f * near * sqrt(near)
         return Palette.lerp(Palette.BG, palette.at(hue), lit)
     }
 
@@ -943,7 +948,12 @@ class MandelbrotSim : Sim {
         private const val STEP_LM = 0.06f
         /** How many cells out from the set the lit edge reaches. */
         private const val EDGE_CELLS = 0.35f
-        private const val HUE_SPAN = 0.78f
+        /**
+         * How much of the palette the bands use: a related run of hues (teal,
+         * blue, violet on Aurora) rather than the whole ramp, which cycled
+         * through five colours every e-fold.
+         */
+        private const val HUE_SPAN = 0.55f
 
         /** The palette's lightest colour, for the edge of the set: white on Mono, yellow on Viridis. */
         fun brightestOf(p: Palette): Int {

@@ -479,11 +479,12 @@ class PourSim : Sim {
             val tone = (0.25f + sp * 0.35f).coerceIn(0f, 1f)
             g.point(dx, dy, D * 1.3f, palette.at(if (lightUp) tone else 0.6f - tone * 0.6f))
         }
-        if (!full) {
-            // The tap: a spout, and the pipe it hangs from.
-            g.rect(tapX, tapTop, TAP_WIDTH * 1.6f, 0.012f, Palette.TEXT_SECONDARY, alpha = 0.85f)
-            g.rect(tapX, tapTop - 0.023f, TAP_WIDTH * 0.7f, 0.014f, Palette.TEXT_SECONDARY, alpha = 0.85f)
-        }
+        // The tap: a spout, and the pipe it hangs from. Kept once the glass
+        // is full, dimmed: hidden at the brim, the last of the stream fell
+        // from nowhere in the payoff frame.
+        val tapA = if (full) 0.5f else 0.85f
+        g.rect(tapX, tapTop, TAP_WIDTH * 1.6f, 0.012f, Palette.TEXT_SECONDARY, alpha = tapA)
+        g.rect(tapX, tapTop - 0.023f, TAP_WIDTH * 0.7f, 0.014f, Palette.TEXT_SECONDARY, alpha = tapA)
         g.zoomSince(mark, zoom, 0f, -1f)
     }
 

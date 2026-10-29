@@ -245,7 +245,14 @@ class ArenaSim : Sim {
         val palette = env.palette
         // The arena, and where it started, faintly.
         g.ring(0f, 0f, arena0, 0.004f, Palette.TEXT_SECONDARY, alpha = 0.25f)
-        g.ring(0f, 0f, arena, 0.012f, if (arena < arena0) Palette.DANGER else Palette.TEXT_SECONDARY, alpha = 0.85f)
+        // Won, the closing zone stops being a threat and takes the winner's
+        // colour: the fight is resolved, and the picture says whose it is.
+        val wall = when {
+            winner >= 0 -> Palette.lerp(Palette.DANGER, palette.at(tint[winner]), ((elapsed - doneAt) / 0.6f).coerceIn(0f, 1f))
+            arena < arena0 -> Palette.DANGER
+            else -> Palette.TEXT_SECONDARY
+        }
+        g.ring(0f, 0f, arena, 0.012f, wall, alpha = 0.85f)
         for (k in bx.indices) {
             val f = bFlash[k]
             if (f > 0f) g.glow(bx[k], by[k], br[k] * 2.5f, Palette.TEXT_PRIMARY, 0.6f * f)
@@ -277,7 +284,9 @@ class ArenaSim : Sim {
             // touching drew over each other.
             val lost = (1f - hp[i]).coerceIn(0f, 1f) * 2f * PI.toFloat()
             g.ring(x[i], y[i], r, r * 0.24f, Palette.withAlpha(Palette.BG, 0.75f))
-            if (hp[i] > 0f) g.ring(x[i], y[i], r * 0.97f, r * 0.18f, if (hp[i] < 0.3f) Palette.DANGER else Palette.SUCCESS, lost, (PI / 2).toFloat())
+            // White, turning red when low: a green band on every ball fought
+            // the fighters' own colours (and vanished on the green ones).
+            if (hp[i] > 0f) g.ring(x[i], y[i], r * 0.97f, r * 0.18f, if (hp[i] < 0.3f) Palette.DANGER else Palette.TEXT_PRIMARY, lost, (PI / 2).toFloat(), if (hp[i] < 0.3f) 1f else 0.85f)
         }
     }
 

@@ -263,6 +263,8 @@ class PressSim : Sim {
         val mark = g.drawMark()
         // The floor.
         g.rect(0f, FLOOR - 0.03f, halfW, 0.03f, 0xFF1C1F27.toInt())
+        // Its lit top edge: the anvil face the block is crushed against.
+        g.rect(0f, FLOOR - 0.002f, halfW, 0.002f, 0xFF3A404D.toInt())
         // The block: each spring coloured by how hard it is working. Only
         // the rows and columns are drawn; the diagonal braces still hold it,
         // but drawn as well they cross-hatched the block into a mesh that,
@@ -280,9 +282,20 @@ class PressSim : Sim {
         val pc = Palette.withAlpha(palette.at(0.25f), 0.9f)
         for (i in 0 until n) g.point(x[i], y[i], size / side * 0.5f, pc)
         // The press: a plate and the ram above it.
-        val plateC = 0xFF8A93A6.toInt()
-        g.rect(0f, plate + 0.03f, min(halfW * 0.95f, size * 0.9f), 0.03f, plateC)
-        g.rect(0f, (plate + 0.06f + 1.1f) * 0.5f, 0.06f, (1.1f - plate - 0.06f) * 0.5f, 0xFF5C6373.toInt())
+        // Shaded like steel lit from above (a bright top edge, a dark face
+        // underneath, a highlight down the ram): flat grey slabs read as a
+        // placeholder rather than a machine.
+        val plateC = 0xFF7D879A.toInt()
+        val pw = min(halfW * 0.95f, size * 0.9f)
+        g.rect(0f, plate + 0.03f, pw, 0.03f, plateC)
+        g.rect(0f, plate + 0.058f, pw, 0.003f, 0xFFB8C0CF.toInt())
+        g.rect(0f, plate + 0.004f, pw, 0.004f, 0xFF4A5160.toInt())
+        val ramBase = plate + 0.06f
+        g.rect(0f, (ramBase + 1.1f) * 0.5f, 0.06f, (1.1f - ramBase) * 0.5f, 0xFF4E5564.toInt())
+        g.rect(-0.03f, (ramBase + 1.1f) * 0.5f, 0.008f, (1.1f - ramBase) * 0.5f, 0xFF6C7486.toInt())
+        // The collar where the ram is bolted to the plate.
+        g.rect(0f, ramBase + 0.018f, 0.1f, 0.018f, 0xFF666E80.toInt())
+        g.rect(0f, ramBase + 0.034f, 0.1f, 0.002f, 0xFF9AA3B4.toInt())
         if (gaveAt >= 0f && broken > 0) {
             val k = (1f - (elapsed - gaveAt) * 2f).coerceIn(0f, 1f)
             if (k > 0f) g.glow(0f, (plate + FLOOR) * 0.5f, size, Palette.TEXT_PRIMARY, 0.5f * k)

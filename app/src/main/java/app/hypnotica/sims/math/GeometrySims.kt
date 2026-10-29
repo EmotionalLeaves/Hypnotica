@@ -47,6 +47,9 @@ class VoronoiSim : Sim {
     private var payoffFrame = false
     private var sinceRecompute = 999f
     private var manhattan = false
+    private var pairA = -1
+    private var pairB = -1
+    private var sinceSettled = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -72,11 +75,14 @@ class VoronoiSim : Sim {
         elapsed = 0f
         payoffFrame = false
         sinceRecompute = 999f
+        pairA = -1; pairB = -1
+        sinceSettled = 0f
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
+        if (settled) sinceSettled += abs(dt)
         val halfW = env.halfWidth
         for (i in 0 until seeds) {
             sx[i] += svx[i] * dt
@@ -103,14 +109,16 @@ class VoronoiSim : Sim {
         // picture at all.
         if (elapsed > PINCH_EARLIEST && !settled) {
             var nearest = Float.MAX_VALUE
+            var ni = -1; var nj = -1
             for (i in 0 until seeds) {
                 for (j in i + 1 until seeds) {
                     val d = hypot(sx[i] - sx[j], sy[i] - sy[j])
-                    if (d < nearest) nearest = d
+                    if (d < nearest) { nearest = d; ni = i; nj = j }
                 }
             }
             if (nearest < closestPair) {
                 closestPair = nearest
+                pairA = ni; pairB = nj
                 pinchHeld = 0f
             } else {
                 pinchHeld += abs(dt)
@@ -179,16 +187,34 @@ class VoronoiSim : Sim {
                 }
                 val x = -halfW + (c + 0.5f) * dx
                 val toSeed = hypot(x - sx[k], y - sy[k])
-                val lit = 0.3f + 0.62f * Math.exp((-toSeed / GLOW_FALLOFF).toDouble()).toFloat()
-                g.rect(x, y, hw, hh, Palette.lerp(Palette.BG, palette.at(tint[k]), lit))
+                // Deep glass lit from the seed, not a mid-tone fill: the old
+                // 30–92 % mix of a pastel into the black read as olive and
+                // salmon mud, and left the luminous walls nothing to stand on.
+                val lit = 0.10f + 0.42f * Math.exp((-toSeed / GLOW_FALLOFF).toDouble()).toFloat()
+                g.rect(x, y, hw, hh, Palette.lerp(Palette.BG, tintColour(palette, k), lit))
             }
         }
-        if (!manhattan) drawWalls(g, halfW, max(dx, dy) * 1.25f)
+        val glint = if (settled) (1f - sinceSettled / HIGHLIGHT_SECONDS).coerceIn(0f, 1f) else 0f
+        if (!manhattan) drawWalls(g, halfW, max(dx, dy) * 1.25f, palette, glint)
         for (i in 0 until seeds) {
-            g.disc(sx[i], sy[i], 0.012f, Palette.BG)
-            g.disc(sx[i], sy[i], 0.007f, Palette.brighten(palette.at(tint[i]), 0.55f))
+            val col = Palette.brighten(tintColour(palette, i), 0.35f)
+            g.disc(sx[i], sy[i], 0.010f, Palette.BG)
+            g.disc(sx[i], sy[i], 0.0065f, col)
+        }
+        // The payoff is the closest pair: ring the two seeds so the moment the
+        // sim names is something you can see, fading back into the mosaic.
+        if (glint > 0f && pairA >= 0 && pairB >= 0) {
+            for (k in intArrayOf(pairA, pairB)) {
+                g.ring(sx[k], sy[k], 0.028f, 0.0045f, Palette.TEXT_PRIMARY, alpha = glint)
+            }
         }
     }
+
+    /**
+     * A cell's colour from the first four-fifths of the palette: Aurora's
+     * yellow end, darkened to glass, came out as mustard among the jewel tones.
+     */
+    private fun tintColour(palette: Palette, k: Int): Int = palette.at(tint[k] * 0.8f)
 
     private var px = FloatArray(64); private var py = FloatArray(64); private var pt = IntArray(64)
     private var qx = FloatArray(64); private var qy = FloatArray(64); private var qt = IntArray(64)
@@ -199,7 +225,7 @@ class VoronoiSim : Sim {
      * two seeds it divides. Anti-aliased lines, so the walls are clean and
      * straight at any resolution.
      */
-    private fun drawWalls(g: G, halfW: Float, width: Float) {
+    private fun drawWalls(g: G, halfW: Float, width: Float, palette: Palette, glint: Float) {
         g.reserveInstances(seeds * 8)
         for (i in 0 until seeds) {
             var n = 4
@@ -236,7 +262,17 @@ class VoronoiSim : Sim {
                 val j = pt[k]
                 if (j <= i) continue
                 val k2 = (k + 1) % n
+                // Leaded glass with a lit edge: a dark came, then a thin core in
+                // the two cells' shared colour, so the walls are the brightest
+                // lines in the picture and every border reads crisply.
                 g.line(px[k], py[k], px[k2], py[k2], width, Palette.BG, 0.92f)
+                val edge = Palette.lerp(tintColour(palette, i), tintColour(palette, j), 0.5f)
+                val isPair = glint > 0f && ((i == pairA && j == pairB) || (i == pairB && j == pairA))
+                if (isPair) {
+                    g.line(px[k], py[k], px[k2], py[k2], width * 0.55f, Palette.lerp(edge, Palette.TEXT_PRIMARY, glint), 1f)
+                } else {
+                    g.line(px[k], py[k], px[k2], py[k2], width * 0.32f, edge, 0.75f)
+                }
             }
         }
     }
@@ -261,6 +297,9 @@ class VoronoiSim : Sim {
         /** How quickly a cell darkens away from its seed, in world units. */
         const val GLOW_FALLOFF = 0.28f
 
+        /** How long the closest pair stays ringed after the payoff. */
+        const val HIGHLIGHT_SECONDS = 4f
+
         /** How long the closest pair has to hold before it is the one. */
         const val PINCH_HELD = 0.7f
 
@@ -281,7 +320,7 @@ class VoronoiSim : Sim {
             blurb = "Every point belongs to its nearest seed. The walls slide.",
             formats = listOf(TrapFormat.COLOR_BATTLE, TrapFormat.REVEAL),
             heroLabel = "New seeds",
-            defaultPalette = "Candy",
+            defaultPalette = "Aurora",
             typicalSeconds = 10f,
             params = listOf(
                 Param.choice("metric", "Distance", listOf("Straight line", "City blocks"), 0,

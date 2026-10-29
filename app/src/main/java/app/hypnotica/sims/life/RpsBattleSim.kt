@@ -214,6 +214,15 @@ class RpsBattleSim : Sim {
                 ax -= hx / d * fear; ay -= hy / d * fear
             }
             ax += sepX * SPACING; ay += sepY * SPACING
+            // A soft push off the walls. A side on the run fled straight into
+            // the nearest wall and lay there in rows two and three deep, a
+            // ragged frame of shapes round an empty middle; nudged back in,
+            // they slip along it and out of the corner instead.
+            val wx = halfW - size; val wy = 0.86f - size; val near = WALL_ZONE * size
+            if (x[i] < -wx + near) ax += WALL_PUSH * (1f - (x[i] + wx) / near)
+            if (x[i] > wx - near) ax -= WALL_PUSH * (1f - (wx - x[i]) / near)
+            if (y[i] < -1f + size + near) ay += WALL_PUSH * (1f - (y[i] + 1f - size) / near)
+            if (y[i] > wy - near) ay -= WALL_PUSH * (1f - (wy - y[i]) / near)
             ax += env.rng.range(-JITTER, JITTER)
             ay += env.rng.range(-JITTER, JITTER)
             val am = sqrt(ax * ax + ay * ay).coerceAtLeast(1e-4f)
@@ -393,6 +402,9 @@ class RpsBattleSim : Sim {
         const val JITTER = 0.35f
         /** How hard a piece keeps clear of its own side. */
         const val SPACING = 2.5f
+        /** Wall push at the wall itself, against a chase or flight of 1, and its reach in piece sizes. */
+        const val WALL_PUSH = 1.6f
+        const val WALL_ZONE = 3f
         const val RAMP_SECONDS = 20f
         const val GIVE_UP_SECONDS = 60f
         const val QUIET_SECONDS = 3f

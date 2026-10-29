@@ -393,6 +393,7 @@ class GearsSim : Sim {
     private var lastTooth = 0
     /** True once the train has turned a full revolution: the payoff. */
     private var cycled = false
+    private var cycledAt = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -503,6 +504,7 @@ class GearsSim : Sim {
         val slowest = gears.lastOrNull()
         if (!cycled && slowest != null && abs(slowest.angle - slowest.base) >= 2f * PI.toFloat()) {
             cycled = true
+            cycledAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.7f, 0f, 1f)
         }
@@ -539,6 +541,36 @@ class GearsSim : Sim {
             g.disc(gear.x, gear.y, hub, Palette.brighten(c, 0.2f))
             g.disc(gear.x, gear.y, hub * 0.4f, AXLE)
         }
+        // The payoff is the last wheel's full turn, and nothing on screen
+        // showed it: a mark on the driver and on the last wheel, one spoke
+        // each, and round the last wheel's hub an arc filling as it turns.
+        // The ratio is then something you watch: the driver's mark spins
+        // round while the last one creeps, and the ring closes on the beat.
+        val first = gears.firstOrNull() ?: return
+        val last = gears.last()
+        if (gears.size < 2) return
+        for (gear in listOf(first, last)) {
+            val rim = gear.radius - gear.addendum - max(gear.radius * 0.12f, gear.addendum * 1.1f) * 0.5f
+            val a = gear.angle + 0.5f * 2f * PI.toFloat() / SPOKES
+            g.disc(gear.x + cos(a) * rim, gear.y + sin(a) * rim, max(0.01f, gear.radius * 0.07f), MARK)
+        }
+        val turned = abs(last.angle - last.base)
+        val share = (turned / (2f * PI.toFloat())).coerceIn(0f, 1f)
+        val ringR = last.radius * 0.3f
+        val ringW = max(0.006f, last.radius * 0.045f)
+        g.ring(last.x, last.y, ringR, ringW, MARK, alpha = 0.18f)
+        if (share >= 1f) {
+            val since = elapsed - cycledAt
+            val f = (1f - since / 1.2f).coerceIn(0f, 1f)
+            if (f > 0f) g.glow(last.x, last.y, last.radius * (0.7f + 0.5f * (1f - f)), MARK, 0.5f * f)
+            g.ring(last.x, last.y, ringR, ringW, MARK, alpha = 0.9f)
+        } else if (share > 0.005f) {
+            // From the top, the way the wheel turns: the arc runs with it.
+            val top = (PI / 2).toFloat()
+            val length = share * 2f * PI.toFloat()
+            val ccw = (last.angle - last.base) > 0f
+            g.ring(last.x, last.y, ringR, ringW, MARK, 2f * PI.toFloat() - length, if (ccw) top + length else top, 0.9f)
+        }
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -558,6 +590,8 @@ class GearsSim : Sim {
         /** A gear's teeth reach this far out, as a share of its radius. */
         private const val SPOKES = 5
         private val AXLE = 0xFF07090D.toInt()
+        /** The one warm accent on the monochrome train: the marks and the turn arc. */
+        private val MARK = Palette.WARNING
         private const val FILL = 0.9f
 
         fun def(): SimDef = SimDef(
@@ -618,7 +652,7 @@ class ClothSim : Sim {
         peakMotion = 0f
         elapsed = 0f
         cols = p.i("cols", 26).coerceIn(3, 200)
-        rows = p.i("rows", 34).coerceIn(2, 200)
+        rows = p.i("rows", 44).coerceIn(2, 200)
         val n = cols * rows
         x = FloatArray(n); y = FloatArray(n)
         ox = FloatArray(n); oy = FloatArray(n)
@@ -627,7 +661,9 @@ class ClothSim : Sim {
         // A curtain, taller than wide: an upright phone has twice as much
         // height as width, and a square sheet hung in it as a small net in
         // the upper half with the rest of the screen empty.
-        rest = min(1.5f / cols, 2.1f / rows)
+        // Up to 2.7 tall: at 2.1 the sheet filled under half an upright
+        // phone, with empty bands above and below it.
+        rest = min(1.5f / cols, 2.7f / rows)
         restX = rest
         // On a wide screen a banner instead: a curtain laid out for a phone
         // hung as a narrow strip in the middle of a landscape frame, the
@@ -676,7 +712,9 @@ class ClothSim : Sim {
         // Air drag per second, not per step, so a faster screen doesn't
         // make the air thicker.
         val drag = Math.pow((1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)).toDouble(), (abs(dt) * 60f).toDouble()).toFloat()
-        val wind = env.params.f("wind", 0.08f) *
+        // A breeze, by default: the hem swings out by the sheet's length
+        // times the wind, and at 0.08 the taller curtain swung off the edge.
+        val wind = env.params.f("wind", 0.055f) *
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
         val n = cols * rows
@@ -913,13 +951,13 @@ class ClothSim : Sim {
      * smaller, because a smaller sheet is a different sheet — it falls and
      * settles on another clock.
      */
-    override fun frameHalfWidth(env: SimEnv): Float = if (wide) restX * (cols - 1) * 0.5f + 0.12f else 1.02f
+    override fun frameHalfWidth(env: SimEnv): Float = if (wide) restX * (cols - 1) * 0.5f + 0.12f else 1.1f
 
     /**
-     * The curtain hangs about 2.4 tall; the view pulls back to show its hem.
+     * The curtain hangs about 2.8 tall; the view pulls back to show its hem.
      * The wide banner is laid out to hang within the height.
      */
-    override fun frameHalfHeight(env: SimEnv): Float = if (wide) 1f else 1.3f
+    override fun frameHalfHeight(env: SimEnv): Float = if (wide) 1f else 1.5f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -963,10 +1001,10 @@ class ClothSim : Sim {
             typicalSeconds = 48f,
             params = listOf(
                 Param.int("cols", "Columns", 3, 200, 26, card = Card.DATA, logScale = true),
-                Param.int("rows", "Rows", 2, 200, 34, card = Card.DATA, logScale = true),
+                Param.int("rows", "Rows", 2, 200, 44, card = Card.DATA, logScale = true),
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
-                Param.float("wind", "Wind", 0f, 1.5f, 0.08f, card = Card.MOTION),
+                Param.float("wind", "Wind", 0f, 1.5f, 0.055f, card = Card.MOTION),
                 Param.int("stiffness", "Stiffness", 1, 12, 6, card = Card.MOTION)
             ),
             create = { ClothSim() }
@@ -1696,6 +1734,20 @@ class ChargesSim : Sim {
             px[i] = env.rng.range(-env.halfWidth, env.halfWidth)
             py[i] = env.rng.range(-1f, 1f)
             alive[i] = true
+            // The field where it now is: it kept the one it felt where it
+            // died, beside a charge, and was drawn for a frame as a bright
+            // dash pointing the wrong way out in the weak field — a scatter
+            // of stray yellow specks across the whole picture.
+            var ex = 0f
+            var ey = 0f
+            for (k in 0 until count) {
+                val dx = px[i] - cx[k]
+                val dy = py[i] - cy[k]
+                val r2 = dx * dx + dy * dy + 0.0008f
+                val f = charges[k] * strength / (r2 * sqrt(r2))
+                ex += dx * f; ey += dy * f
+            }
+            fx[i] = ex * sign; fy[i] = ey * sign
         }
         // The tracers a charge swallows, gathered into a soft tick every
         // SWALLOW_GAP and heard from the charges that took them. Both notes
@@ -1740,7 +1792,9 @@ class ChargesSim : Sim {
             if (dashes && len > 1e-7f) {
                 val ux = fx[i] / len * dash * 0.5f
                 val uy = fy[i] / len * dash * 0.5f
-                g.line(px[i] - ux, py[i] - uy, px[i] + ux, py[i] + uy, 0.0035f, c, 0.35f + 0.6f * t)
+                // The weak far field recedes, so the lines bunched between
+                // the charges are what the eye lands on.
+                g.line(px[i] - ux, py[i] - uy, px[i] + ux, py[i] + uy, 0.0035f, c, 0.2f + 0.75f * t * t.coerceAtLeast(0.6f))
             } else {
                 g.point(px[i], py[i], 0.004f, c)
             }

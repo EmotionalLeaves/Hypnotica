@@ -942,7 +942,14 @@ class FallingSandSim : Sim {
             for (y in h - 2 downTo 0) {
                 val row = y * w
                 val below = (y + 1) * w
-                for (x in 0 until w) {
+                // The sweep direction alternates by row and pass. Always
+                // left to right, a grain's left-hand landing cell had already
+                // been claimed by its neighbours' falls and slides, its right
+                // one never: the heap grew lopsided, its peak drifting right
+                // of the spout with a sheer cliff standing on the left.
+                val flip = ((y + pass) and 1) == 1
+                for (i in 0 until w) {
+                    val x = if (flip) w - 1 - i else i
                     if (grid[row + x].toInt() == 0) continue
                     if (grid[below + x].toInt() == 0 && vacated[below + x] != pass) {
                         grid[below + x] = 1; grid[row + x] = 0

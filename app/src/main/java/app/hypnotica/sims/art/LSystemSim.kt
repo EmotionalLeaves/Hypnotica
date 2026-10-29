@@ -112,6 +112,45 @@ class LSystemSim : Sim {
         tallest = 1f
         for (i in 0 until n) if (reach[i] > tallest) tallest = reach[i]
 
+        // Stood up: turned about the root to whatever lean lets it be drawn
+        // largest on this screen. The fern's rule bends every frond the same
+        // way, so grown from a vertical first stroke it sprawled off to the
+        // right: fitted to the width, it filled the lower half of an upright
+        // phone and its tips brushed the edge. A turn has to earn its place
+        // (a tenth larger), so symmetric plants stay upright.
+        if (n > 0) {
+            fun fitAt(turn: Float): Float {
+                val c = cos(turn); val s0 = sin(turn)
+                var lx = 0f; var hx = 0f; var ly = 0f; var hy = 0f
+                for (i in 0 until n) {
+                    val px = x2[i] * c - y2[i] * s0; val py = x2[i] * s0 + y2[i] * c
+                    if (px < lx) lx = px; if (px > hx) hx = px
+                    if (py < ly) ly = py; if (py > hy) hy = py
+                }
+                val fit = min(2f * halfWidth * FILL / max(1e-3f, hx - lx), (FILL + TOP) / max(1e-3f, hy - ly))
+                // The root kept near the middle: turned as far as fits best,
+                // the fern stood in the bottom corner like a cut frond.
+                val rootOff = abs(0f - (lx + hx) * 0.5f) * fit
+                return if (rootOff > halfWidth * FILL * ROOT_OFFSET) 0f else fit
+            }
+            var best = 0f
+            var bestFit = fitAt(0f) * 1.1f
+            var k = -MAX_TURN
+            while (k <= MAX_TURN + 1e-4f) {
+                val f = fitAt(k)
+                if (f > bestFit) { bestFit = f; best = k }
+                k += 0.04f
+            }
+            if (best != 0f) {
+                val c = cos(best); val s0 = sin(best)
+                for (i in 0 until n) {
+                    val ax = x1[i]; val ay = y1[i]; val bx = x2[i]; val by = y2[i]
+                    x1[i] = ax * c - ay * s0; y1[i] = ax * s0 + ay * c
+                    x2[i] = bx * c - by * s0; y2[i] = bx * s0 + by * c
+                }
+            }
+        }
+
         // Fit: the whole plant inside the width and the height, its root on
         // the ground at the bottom of the screen.
         var minX = 0f; var maxX = 0f; var minY = 0f; var maxY = 0f
@@ -216,6 +255,10 @@ class LSystemSim : Sim {
         )
         private const val MAX_LENGTH = 400_000
         private const val MAX_STACK = 256
+        /** The most the plant is turned to stand it up, in radians (about 35°). */
+        private const val MAX_TURN = 0.6f
+        /** How far off the middle the root may stand, as a share of the half-width. */
+        private const val ROOT_OFFSET = 0.45f
         private const val FILL = 0.92f
         private const val TOP = 0.86f
         private const val GROW_SECONDS = 9f

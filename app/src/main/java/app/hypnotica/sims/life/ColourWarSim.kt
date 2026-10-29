@@ -323,8 +323,10 @@ class ColourWarSim : Sim {
         val glowK = if (decided) (1f - (elapsed - decidedAt) / 1.2f).coerceIn(0f, 1f) else 0f
         val fill = IntArray(teams) {
             val base = Palette.lerp(Palette.BG, colours[it], 0.78f)
-            // The verdict: the winner's ground lights up, and fades back.
-            if (it == winnerTeam && glowK > 0f) Palette.lerp(base, Palette.brighten(colours[it], 0.2f), glowK) else base
+            // The verdict: the winner's ground lights up, and fades back. Up
+            // to its own full colour: brightened past it, half the board
+            // flashed a raw neon that swamped the balls.
+            if (it == winnerTeam && glowK > 0f) Palette.lerp(base, colours[it], glowK * 0.8f) else base
         }
         for (r in 0 until rows) {
             val y = 1f - (r + 0.5f) * cell

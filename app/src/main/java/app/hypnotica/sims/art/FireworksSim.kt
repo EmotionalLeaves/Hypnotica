@@ -96,22 +96,22 @@ class FireworksSim : Sim {
      * screen. Rockets used to go up within the middle 40% of the width and
      * every burst piled into one column.
      */
-    private fun launchAt(env: SimEnv, u: Float, v: Float, scale: Float) {
+    private fun launchAt(env: SimEnv, u: Float, v: Float, scale: Float, kind: Int = -1) {
         val reach = reachOf(env, scale)
         val xMax = max(0f, halfW - reach * 1.02f)
         val top = min(SKY_TOP, 0.95f - reach)
         val y = SKY_BOTTOM + (top - SKY_BOTTOM) * v.coerceIn(0f, 1f)
-        launch(env, xMax * u.coerceIn(-1f, 1f), y, scale)
+        launch(env, xMax * u.coerceIn(-1f, 1f), y, scale, kind)
     }
 
-    private fun launch(env: SimEnv, x: Float, burstY: Float, scale: Float = 1f) {
+    private fun launch(env: SimEnv, x: Float, burstY: Float, scale: Float = 1f, forceKind: Int = -1) {
         val g = gravity(env)
         // Launched just hard enough to stop where it should burst.
         val rise = burstY - GROUND
         val vy = sqrt(2f * g * max(0.2f, rise))
         // What kind of shell: any of the classic three, or the shapes the
         // show is set to, now and then a classic among them.
-        val kind = when (env.params.choiceIndex("shells")) {
+        val kind = if (forceKind >= 0) forceKind else when (env.params.choiceIndex("shells")) {
             1 -> if (env.rng.bool(0.75f)) HEART else env.rng.int(0, KINDS)
             2 -> if (env.rng.bool(0.75f)) STAR else env.rng.int(0, KINDS)
             3 -> env.rng.int(0, KINDS + 2)
@@ -255,13 +255,23 @@ class FireworksSim : Sim {
                 val count = if (last) 3 else FINALE - (finaleWave % 2)
                 val climb = finaleWave / (FINALE_WAVES - 1f)
                 val offset = if (finaleWave % 2 == 0) 0f else 0.5f
-                for (k in 0 until count) {
+                if (last) {
+                    // The closing three as one figure: a crown shell, the
+                    // largest, high in the middle, over a pair to either side.
+                    // Three big shells in a row only fit a wide sky; on an
+                    // upright phone they were squeezed into a fifth of the
+                    // width and broke on top of one another, the show ending
+                    // on a knot of overlapping rings. The crown goes highest,
+                    // so it breaks last.
+                    val crownKind = if (env.params.choiceIndex("shells") == 0) PEONY else -1
+                    launchAt(env, 0f, 1f, 1.25f, crownKind)
+                    launchAt(env, -1f, 0.42f + env.rng.range(-0.04f, 0.04f), 0.9f)
+                    launchAt(env, 1f, 0.42f + env.rng.range(-0.04f, 0.04f), 0.9f)
+                } else for (k in 0 until count) {
                     val u = ((k + 0.5f + offset * 0.5f) / count) * 2f - 1f
                     // Alternate high and low across the row, rising wave by wave.
-                    val v = if (last) 0.85f + 0.15f * env.rng.nextFloat()
-                    else (0.15f + 0.45f * climb + (if (k % 2 == 0) 0.35f else 0f) + env.rng.range(-0.1f, 0.1f))
-                    val scale = if (last) 1.25f else env.rng.range(0.65f, 1.05f)
-                    launchAt(env, u + env.rng.range(-0.08f, 0.08f), v, scale)
+                    val v = 0.15f + 0.45f * climb + (if (k % 2 == 0) 0.35f else 0f) + env.rng.range(-0.1f, 0.1f)
+                    launchAt(env, u + env.rng.range(-0.08f, 0.08f), v, env.rng.range(0.65f, 1.05f))
                 }
                 finaleWave++
                 finaleClock = FINALE_GAP * (1f - 0.4f * climb)

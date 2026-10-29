@@ -306,8 +306,10 @@ class PowerWashSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         g.reserveInstances(gx * gy + 8)
-        // Overlapping a little, so no seam shows between cells.
-        val half = cell * 0.54f
+        // Overlapping by a good margin: at 0.54 the overlap was under a
+        // pixel, two anti-aliased edges met in it and a dark grid showed
+        // across the finished mural.
+        val half = cell * 0.62f
         for (k in 0 until gx * gy) {
             val d = dirt[k].coerceIn(0f, 1f)
             // Grime is opaque until it is nearly gone: blended by its depth,
@@ -322,6 +324,12 @@ class PowerWashSim : Sim {
             }
             g.rect(ox + (k % gx + 0.5f) * cell, oy + (k / gx + 0.5f) * cell, half, half, c)
         }
+        // A thin frame round the wall, so the finished mural sits in the
+        // screen like a hung picture rather than a bare rectangle.
+        val wx = gx * cell * 0.5f + cell * 0.6f; val wy = gy * cell * 0.5f + cell * 0.6f
+        val fw = 0.006f
+        g.line(-wx, -wy, wx, -wy, fw, FRAME); g.line(-wx, wy, wx, wy, fw, FRAME)
+        g.line(-wx, -wy - fw * 0.5f, -wx, wy + fw * 0.5f, fw, FRAME); g.line(wx, -wy - fw * 0.5f, wx, wy + fw * 0.5f, fw, FRAME)
         for (i in 0 until SPRAY) {
             if (slife[i] <= 0f) continue
             g.point(sx[i], sy[i], 0.008f, Palette.withAlpha(scol[i], min(1f, slife[i] * 3f) * 0.8f))
@@ -332,7 +340,13 @@ class PowerWashSim : Sim {
             g.glow(nx, ny, r * 1.6f, 0xFFBFE6FF.toInt(), 0.5f)
             g.ring(nx, ny, r, 0.004f, Palette.TEXT_PRIMARY, alpha = 0.6f)
             // The lance, from below the screen to the nozzle.
-            g.line(nx + 0.1f, -1.2f, nx, ny - r * 0.3f, 0.012f, 0xFF3A3F4B.toInt())
+            // Leaning in towards the middle, so at the right-hand edge it no
+            // longer runs off the screen; a dark body with a lit edge, so it
+            // reads as a metal lance rather than a scratch on the mural.
+            val bx = nx * 0.6f
+            g.line(bx, -1.2f, nx, ny - r * 0.3f, 0.016f, 0xFF262A33.toInt())
+            g.line(bx - 0.004f, -1.2f, nx - 0.004f, ny - r * 0.3f, 0.004f, 0xFF6E7685.toInt())
+            g.disc(nx, ny - r * 0.3f, 0.012f, 0xFF6E7685.toInt())
         } else {
             val k = ((elapsed - doneAt) * 0.8f).coerceIn(0f, 1f)
             val sweepX = ox + gx * cell * (k * 1.4f - 0.2f)
@@ -365,6 +379,7 @@ class PowerWashSim : Sim {
         val GRIME_DARK = 0xFF2E2820.toInt()
         val GRIME_SPRAY = 0xFF8A7860.toInt()
         val WATER = 0xFFBFE6FF.toInt()
+        val FRAME = 0xFF3A404C.toInt()
 
         fun def(): SimDef = SimDef(
             id = "physics/power-wash",

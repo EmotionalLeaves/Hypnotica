@@ -219,8 +219,15 @@ class BalloonSim : Sim {
             g.line(ox, oy - r, ox + 0.02f, -0.98f, 0.003f, Palette.TEXT_SECONDARY, 0.6f)
             g.rect(ox, oy - r - 0.012f, 0.014f, 0.012f, skin, PI.toFloat() / 4f)
             g.glow(ox, oy, r * 1.25f, skin, 0.25f + 0.35f * tremble[k])
-            // Thinner, so paler, as it stretches.
-            g.disc(ox, oy, r, Palette.withAlpha(skin, 0.95f - 0.3f * (r / maxR)))
+            // Thinner, so paler, as it stretches. Shaded as a sphere lit from
+            // the upper left — a darker limb, the body, a lit cap toward the
+            // shine — in see-through layers: one flat disc read as a paper
+            // circle, not a skin full of air.
+            val thin = r / maxR
+            val limb = Palette.lerp(skin, Palette.BG, 0.35f)
+            g.disc(ox, oy, r, Palette.withAlpha(limb, 0.9f - 0.25f * thin))
+            g.disc(ox - r * 0.07f, oy + r * 0.07f, r * 0.88f, Palette.withAlpha(skin, 0.75f - 0.25f * thin))
+            g.disc(ox - r * 0.2f, oy + r * 0.22f, r * 0.55f, Palette.withAlpha(Palette.brighten(skin, 0.12f), 0.35f))
         }
         val paper = cx.size <= PAPER_MAX
         if (!paper) g.reservePoints(cx.size)
@@ -255,10 +262,19 @@ class BalloonSim : Sim {
         for (k in 0 until count) {
             if (popped(k)) continue
             val r = radius[k]
-            g.disc(cxs[k] - r * 0.38f, baseY + r * 0.42f, r * 0.11f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.55f))
-            g.disc(cxs[k] - r * 0.22f, baseY + r * 0.55f, r * 0.045f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
+            // On the trembling skin, not left behind where it started.
+            val wob = tremble[k] * 0.012f
+            val ox = cxs[k] + sin(elapsed * 47f + k) * wob
+            val oy = baseY + cos(elapsed * 53f + k) * wob
+            g.disc(ox - r * 0.38f, oy + r * 0.42f, r * 0.11f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.55f))
+            g.disc(ox - r * 0.22f, oy + r * 0.55f, r * 0.045f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.45f))
+            // A thin bright rim on the shadowed side: light through the skin
+            // at its edge, which is what makes a balloon look inflated.
+            g.ring(ox, oy, r, max(0.003f, r * 0.025f), Palette.brighten(skin(env, k), 0.25f), PI.toFloat(), PI.toFloat() * 0.25f, 0.55f)
         }
     }
+
+    private fun skin(env: SimEnv, k: Int): Int = env.palette.at(hue[k])
 
     /** How widely a piece sways as it falls: the light ones flutter more. */
     private fun swayOf(i: Int): Float = 0.6f + 0.9f * (cdrag[i] - 0.8f) / 0.9f

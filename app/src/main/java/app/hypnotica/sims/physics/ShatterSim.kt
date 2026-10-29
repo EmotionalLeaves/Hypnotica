@@ -168,6 +168,13 @@ class ShatterSim : Sim {
             stuck[k] = r == rings - 1 && env.rng.nextFloat() < STUCK_SHARE
             k++
         }
+        // Behind a piece that stayed in the frame, sometimes the piece inside
+        // it stays too: a jagged edge of glass, as in a real broken window,
+        // rather than a neat band of identical arcs round the rim.
+        if (rings >= 2) for (j in 0 until rays) {
+            val outer = (rings - 1) * rays + j
+            if (stuck[outer] && env.rng.nextFloat() < 0.45f) stuck[outer - rays] = true
+        }
         // The burst: a scatter of bright notes as the pieces go.
         repeat(SHATTER_NOTES) {
             env.emit(EventKind.HIT, env.rng.range(0.5f, 1f), env.rng.range(-0.8f, 0.8f), env.rng.range(0.3f, 0.8f))
@@ -181,6 +188,9 @@ class ShatterSim : Sim {
         if (!broken) {
             g.disc(0f, 0f, radius, Palette.withAlpha(glass, 0.18f))
             g.ring(0f, 0f, radius, 0.012f, Palette.withAlpha(glass, 0.9f))
+            // A sheen at the top left: the cue that says glass, not a flat disc.
+            val sheen = 0.9f
+            g.ring(0f, 0f, radius * 0.86f, 0.006f, Palette.TEXT_PRIMARY, 2f * PI.toFloat() - sheen, 1.85f - (2f * PI.toFloat() - sheen), 0.22f)
             // The straight cracks, out as far as the strikes have driven them.
             for (j in 0 until rays) {
                 val a = rayAngle[j]
@@ -222,6 +232,10 @@ class ShatterSim : Sim {
                 g.ring(ox, oy, outer, 0.004f, Palette.withAlpha(c, 0.95f), gap, rot)
                 val ea = shardA0[k] + turn[k]
                 g.line(ox + cos(ea) * inner, oy + sin(ea) * inner, ox + cos(ea) * outer, oy + sin(ea) * outer, 0.004f, c, 0.8f)
+                // And the other crack, fainter, so a piece left in the frame
+                // reads as a closed shard instead of an open bracket.
+                val eb = shardA1[k] + turn[k]
+                g.line(ox + cos(eb) * inner, oy + sin(eb) * inner, ox + cos(eb) * outer, oy + sin(eb) * outer, 0.003f, c, 0.5f)
             }
         }
     }

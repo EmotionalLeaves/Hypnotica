@@ -291,7 +291,7 @@ class SoapCutSim : Sim {
         for (c in 0 until standing.coerceAtMost(gridX)) for (r in 0 until gridY / rr) {
             val k = r * rr
             val fade = 0.22f * (1f - k.toFloat() / gridY)
-            g.rect(left + (c + 0.5f) * cw, floorY - (k + rr * 0.5f) * ch, cw * 0.5f + 0.0005f, ch * rr * 0.5f + 0.0005f,
+            g.rect(left + (c + 0.5f) * cw, floorY - (k + rr * 0.5f) * ch, cw * 0.5f + PAD, ch * rr * 0.5f + PAD,
                 Palette.lerp(TABLE, colors[k * gridX + c], fade))
         }
         for (k in 0 until min(cut + 1, slices)) {
@@ -307,7 +307,7 @@ class SoapCutSim : Sim {
                 val yy = lx * sa + ly * ca
                 // Mixed into the table's colour rather than drawn see-through:
                 // overlapping translucent cells showed the grid as dark seams.
-                g.rect(px + lx * ca - ly * sa, floorY - yy, cw * 0.5f + 0.0005f, ch * rr * 0.5f + 0.0005f,
+                g.rect(px + lx * ca - ly * sa, floorY - yy, cw * 0.5f + PAD, ch * rr * 0.5f + PAD,
                     Palette.lerp(TABLE, colors[kk * gridX + c], 0.22f * (1f - (yy / blockH).coerceIn(0f, 1f))), -a)
             }
         }
@@ -317,7 +317,7 @@ class SoapCutSim : Sim {
         g.rect(stopX + stopW * 0.5f, floorY + stopH * 0.5f, stopW * 0.5f, stopH * 0.5f, STOP)
         g.rect(stopX + stopW * 0.5f, floorY + stopH - 0.003f, stopW * 0.5f, 0.003f, Palette.brighten(STOP, 0.12f))
         for (c in 0 until standing.coerceAtMost(gridX)) for (r in 0 until gridY) {
-            g.rect(left + (c + 0.5f) * cw, floorY + (r + 0.5f) * ch, cw * 0.5f + 0.0005f, ch * 0.5f + 0.0005f, colors[r * gridX + c])
+            g.rect(left + (c + 0.5f) * cw, floorY + (r + 0.5f) * ch, cw * 0.5f + PAD, ch * 0.5f + PAD, colors[r * gridX + c])
         }
         // The cut slices: each pivots on its far bottom corner.
         for (k in 0 until min(cut + 1, slices)) {
@@ -329,7 +329,7 @@ class SoapCutSim : Sim {
             for (c in c0 until c0 + perSlice) for (r in 0 until gridY) {
                 val lx = left + (c + 0.5f) * cw - px
                 val ly = (r + 0.5f) * ch
-                g.rect(px + lx * ca - ly * sa, py + lx * sa + ly * ca, cw * 0.5f + 0.0005f, ch * 0.5f + 0.0005f, colors[r * gridX + c], a)
+                g.rect(px + lx * ca - ly * sa, py + lx * sa + ly * ca, cw * 0.5f + PAD, ch * 0.5f + PAD, colors[r * gridX + c], a)
             }
         }
         if (cn > 0) {
@@ -343,8 +343,13 @@ class SoapCutSim : Sim {
             val tip = floorY + blockH * (1f - d)
             // Shorter than it was, so over the taller block the handle stays
             // on screen at the top of the stroke.
-            g.rect(x, tip + 0.17f, 0.006f, 0.17f, 0xFFC9CED8.toInt())
-            g.rect(x, tip + 0.4f, 0.018f, 0.06f, 0xFF3A3F4B.toInt())
+            // A blade with a bright cutting edge and a handle with a lit
+            // side: two flat rectangles read as a stick and a box.
+            g.rect(x, tip + 0.17f, 0.007f, 0.17f, 0xFF9AA1AE.toInt())
+            g.rect(x - 0.0045f, tip + 0.17f, 0.0025f, 0.17f, 0xFFE6EAF0.toInt())
+            g.rect(x, tip + 0.345f, 0.012f, 0.006f, 0xFF5A606E.toInt())
+            g.rect(x, tip + 0.4f, 0.018f, 0.06f, 0xFF2E333E.toInt())
+            g.rect(x - 0.012f, tip + 0.4f, 0.004f, 0.056f, 0xFF4A5060.toInt())
         }
     }
 
@@ -357,6 +362,12 @@ class SoapCutSim : Sim {
     companion object {
         const val MAX_SLICES = 40
         private val TABLE = 0xFF0D0F14.toInt()
+        /**
+         * How far each cell overlaps the next. At 0.0005 that was a fifth of
+         * a pixel, two anti-aliased edges met inside it, and every row of the
+         * soap showed as a faint dark line.
+         */
+        const val PAD = 0.0016f
         const val CELLS_PER_SLICE = 6
         /**
          * The table top. Low on the screen, so the block and the knife over

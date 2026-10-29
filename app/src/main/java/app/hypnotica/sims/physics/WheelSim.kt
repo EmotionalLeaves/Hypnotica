@@ -168,7 +168,14 @@ class WheelSim : Sim {
             val a = env.rng.range(0.2f, PI.toFloat() - 0.2f)
             val v = env.rng.range(0.6f, 1.8f)
             cvx[i] = cos(a) * v; cvy[i] = sin(a) * v
-            ctint[i] = if (winner == jackpot) -1f else env.rng.nextFloat()
+            // The winner's own colour, its neighbours on the palette and a
+            // little white: a full rainbow of 400 scraps buried the result
+            // it was celebrating.
+            ctint[i] = when {
+                winner == jackpot -> -1f
+                env.rng.nextFloat() < 0.2f -> -2f
+                else -> ((winner + 0.5f) / segments + env.rng.range(-0.07f, 0.07f) + 1f) % 1f
+            }
         }
     }
 
@@ -204,10 +211,18 @@ class WheelSim : Sim {
             val c = sliceColour(palette, k)
             val won = k == winner
             val pulse = if (won) 0.5f + 0.5f * sin((elapsed - stoppedAt) * 10f) else 0f
-            val col = if (won) Palette.brighten(c, 0.3f + 0.3f * pulse) else if (winner >= 0) Palette.withAlpha(c, 0.55f) else c
+            // Losers go dark but stay solid: translucent, the glow under them
+            // turned every slice to brown and olive mud.
+            val col = if (won) Palette.brighten(c, 0.2f + 0.25f * pulse) else if (winner >= 0) Palette.lerp(c, FACE, 0.68f) else c
             // A wedge: a ring as thick as its radius with everything but this
             // segment's arc cut away.
             g.ring(0f, 0f, radius, radius, col, twoPi - s, a0 + s)
+        }
+        // Hairline seams between slices, so the wheel reads as made of parts
+        // rather than a smeared colour disc.
+        for (k in 0 until segments) {
+            val a = angle + starts[k]
+            g.line(cos(a) * radius * 0.12f, sin(a) * radius * 0.12f, cos(a) * radius, sin(a) * radius, 0.006f, FACE)
         }
         if (jackpot >= 0) {
             // The jackpot glints, so the eye keeps going back to it.
@@ -257,7 +272,7 @@ class WheelSim : Sim {
                 val turn = i * 1.7f + elapsed * 7f
                 val flip = 0.25f + 0.75f * abs(sin(turn * 1.3f))
                 val sway = 0.012f * sin(i * 2.3f + elapsed * 4f)
-                val c = if (ctint[i] < 0f) Palette.brighten(GOLD, 0.3f * abs(sin(i + elapsed * 9f))) else palette.at(ctint[i])
+                val c = if (ctint[i] < -1.5f) Palette.TEXT_PRIMARY else if (ctint[i] < 0f) Palette.brighten(GOLD, 0.3f * abs(sin(i + elapsed * 9f))) else palette.at(ctint[i])
                 g.rect(cx[i] + sway, cy[i], 0.009f, 0.0045f * flip + 0.001f, c, turn)
             }
         }
@@ -298,7 +313,8 @@ class WheelSim : Sim {
         /** Below this speed a peg can throw the wheel back. */
         const val ROCK_SPEED = 2.5f
         const val STOP_SPEED = 0.02f
-        const val CONFETTI = 400
+        const val CONFETTI = 260
+        const val FACE = 0xFF0B0D12.toInt()
         const val MAX_PICKS = 8
         /** The jackpot slice, against an ordinary one. */
         const val JACKPOT_SHARE = 0.4f

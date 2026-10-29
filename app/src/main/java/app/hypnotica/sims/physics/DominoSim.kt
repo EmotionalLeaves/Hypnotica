@@ -108,15 +108,23 @@ class DominoSim : Sim {
         // and the whole snake read as one solid slab.
         val gap = sqrt(1.8f * 2f * hw / (ROW_ROOM * count))
         val rows = max(2, (1.8f / (ROW_ROOM * gap)).toInt())
-        val perRow = max(2, count / rows)
+        // One more than fits evenly, so the last row is a short one and the
+        // finale domino falls flat along it, inside the screen. Rounded down,
+        // the leftovers started an extra row below the bottom; a full last
+        // row ended on a turn piece that fell flat, diagonally, off the
+        // bottom corner.
+        val perRow = max(2, count / rows + 1)
+        val used = (count + perRow - 1) / perRow
         val out = FloatArray(count * 2)
-        val rowGap = 1.8f / rows
+        // The rows spread over the whole height, top row to bottom row.
+        val rowGap = 1.8f / max(1, used - 1)
         for (i in 0 until count) {
             val row = i / perRow
             val k = i % perRow
             val t = k / max(1f, perRow - 1f)
             val x = -hw + 2f * hw * (if (row % 2 == 0) t else 1f - t)
-            val y = 0.9f - row * rowGap - (if (k == perRow - 1) rowGap * 0.5f else 0f)
+            val turn = k == perRow - 1 && i < count - 1
+            val y = 0.9f - row * rowGap - (if (turn) rowGap * 0.5f else 0f)
             out[i * 2] = x
             out[i * 2 + 1] = y.coerceAtLeast(-0.95f)
         }

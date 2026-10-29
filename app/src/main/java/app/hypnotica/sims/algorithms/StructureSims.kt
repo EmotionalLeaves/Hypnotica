@@ -152,12 +152,14 @@ class HanoiSim : Sim {
         val pegGap = halfW / 1.5f
         // Discs as tall as the screen allows: at a fixed 0.085 the shipped
         // seven made a small tower at the bottom of a big empty screen.
-        val discH = min(0.115f, TOWER_HEIGHT / discs)
+        // 0.13, not 0.115: the shipped seven left a dead band half a screen
+        // tall between the move counter and the peg tops on a phone.
+        val discH = min(0.13f, TOWER_HEIGHT / discs)
         val towerH = discs * discH
         val pegLen = towerH + discH * 1.2f
         // On a tall phone the tower sits low and the move count, in binary,
         // runs across the top (see drawCount); otherwise it is centred.
-        val counter = towerH + discH * 3f < 1.25f
+        val counter = towerH + discH * 3f < 1.35f
         val baseY = if (counter) -0.78f else -(towerH + discH * 3f) * 0.5f - 0.05f
         val pegTop = baseY + pegLen
         val rail = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f)
@@ -636,6 +638,11 @@ class BinaryTreeSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        // Nodes glide to their new columns as the tree grows rather than jump —
+        // through the rest as well: it used to stop with the last insert, so
+        // the final nodes froze mid-glide as long stray edges across the tree.
+        val ease = min(1f, abs(dt) * 10f)
+        for (i in 0 until size) shownU[i] += (rankU[i] - shownU[i]) * ease
         if (restSeconds >= 0f) {
             restSeconds -= abs(dt)
             return
@@ -646,15 +653,17 @@ class BinaryTreeSim : Sim {
         // run — and TickTock's generated clips, which pick up to four thousand
         // nodes, needed two and a half minutes to pay off and were thrown away.
         carry += abs(dt) * target / TREE_SECONDS * env.params.f("rate", 1f).coerceIn(0.05f, 40f)
+        val firstNew = size
         while (carry >= 1f && size < target) {
             carry -= 1f
             val key = if (sorted) size.toFloat() / target else env.rng.nextFloat()
             insert(key, env)
         }
         if (layoutDirty) relayout()
-        // Nodes glide to their new columns as the tree grows rather than jump.
-        val ease = min(1f, abs(dt) * 10f)
-        for (i in 0 until size) shownU[i] += (rankU[i] - shownU[i]) * ease
+        // Every node added this step appears where it belongs. Only the last
+        // one did, so on a big tree (several inserts a step) the rest slid in
+        // from the top edge, trailing edges across the whole picture.
+        for (i in firstNew until size) shownU[i] = rankU[i]
         if (size >= target && restSeconds < 0f) {
             payoffFrame = true
             restSeconds = 1.5f
@@ -812,12 +821,36 @@ class BinaryTreeSim : Sim {
             g.disc(xs[i], ys[i], dotSize * 1.25f, Palette.BG)
             g.disc(xs[i], ys[i], dotSize, shade(depth[i]))
         }
+        val complete = size >= target
         // The newest node, lit.
-        if (size > 1 && size <= Draw.AS_POINTS) {
+        if (size > 1 && size <= Draw.AS_POINTS && !complete) {
             val k = size - 1
             g.glow(xs[k], ys[k], dotSize * 5f, Palette.TEXT_PRIMARY, 0.5f)
             g.disc(xs[k], ys[k], dotSize * 1.1f, Palette.TEXT_PRIMARY)
         }
+        // The finished tree's answer: its longest search, root to deepest
+        // leaf, traced in white. "depth" in the counter is this path, and it
+        // is what random vs sorted keys is about; the finale used to leave the
+        // last-inserted node lit instead, a node that meant nothing.
+        if (complete && size > 1 && size <= Draw.AS_POINTS) drawDeepest(g, dotSize, edgeW)
+    }
+
+    private fun drawDeepest(g: G, dotSize: Float, edgeW: Float) {
+        var deepest = 0
+        for (i in 0 until size) if (depth[i] > depth[deepest]) deepest = i
+        val key = keys[deepest]
+        var v = 0
+        var guard = size
+        val w = max(edgeW * 2.2f, 0.004f)
+        while (guard-- > 0) {
+            val next = if (v == deepest) -1 else if (key < keys[v]) left[v] else right[v]
+            if (next < 0 || next >= size) break
+            g.line(xs[v], ys[v], xs[next], ys[next], w, Palette.TEXT_PRIMARY, 0.9f)
+            g.disc(xs[v], ys[v], dotSize * 1.05f, Palette.TEXT_PRIMARY)
+            v = next
+        }
+        g.glow(xs[deepest], ys[deepest], dotSize * 5f, Palette.TEXT_PRIMARY, 0.45f)
+        g.disc(xs[deepest], ys[deepest], dotSize * 1.3f, Palette.TEXT_PRIMARY)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -1324,7 +1357,10 @@ class GradientDescentSim : Sim {
                 val gx = gradX(x, y) * RELIEF
                 val gy = gradY(x, y) * RELIEF
                 val lambert = ((gx * 0.5f - gy * 0.5f + 0.707f) / sqrt(gx * gx + gy * gy + 1f)).coerceIn(0f, 1f)
-                val base = Palette.lerp(palette.at(t), Palette.BG, 0.62f - 0.3f * t)
+                // Only the cool first half of the ramp, and kept low: Viridis'
+                // yellow-green peaks were the brightest thing on screen and the
+                // same hues as the amber and green landing marks they hid.
+                val base = Palette.lerp(palette.at(TERRAIN_T0 + TERRAIN_SPAN * t), Palette.BG, 0.74f - 0.3f * t)
                 val shaded = if (lambert >= 0.707f) Palette.lerp(base, Palette.TEXT_PRIMARY, (lambert - 0.707f) * 0.35f)
                     else Palette.lerp(base, Palette.BG, (0.707f - lambert) * 0.9f)
                 // Overlapping by a fifth: a hair over left a faint tile grid.
@@ -1336,7 +1372,7 @@ class GradientDescentSim : Sim {
             val o = k * 5
             val t = contours[o + 4]
             g.line(contours[o], contours[o + 1], contours[o + 2], contours[o + 3], 0.0028f,
-                Palette.lerp(palette.at(t), Palette.TEXT_PRIMARY, 0.35f), 0.28f + 0.2f * t)
+                Palette.lerp(palette.at(TERRAIN_T0 + TERRAIN_SPAN * t), Palette.TEXT_PRIMARY, 0.35f), 0.22f + 0.2f * t)
         }
         // The true bottom, marked, so it is plain which walkers found it.
         g.ring(minX, minY, 0.03f, 0.004f, Palette.SUCCESS, alpha = 0.55f)
@@ -1450,6 +1486,9 @@ class GradientDescentSim : Sim {
         const val CONTOURS = 14
         /** How steep the slopes look to the light: enough to model the bumps. */
         const val RELIEF = 0.9f
+        /** The stretch of the palette the terrain takes its colour from. */
+        const val TERRAIN_T0 = 0.08f
+        const val TERRAIN_SPAN = 0.52f
         fun def(): SimDef = SimDef(
             id = "algorithms/gradient-descent",
             title = "Gradient descent",

@@ -195,8 +195,13 @@ class CornerSim : Sim {
         if (doneAt < 0f && u >= cornerAt[first]) corner(env)
         if (sparkLife > 0f) {
             sparkLife -= h
+            // Air slows them, so the burst blooms out of the corner and hangs
+            // there: undamped, they rained down through the middle of the
+            // screen as a field of streaks with nothing to do with the hit.
+            val drag = 1f - min(1f, 2.2f * h)
             for (i in 0 until SPARKS) {
-                sparkVy[i] -= 0.8f * h
+                sparkVx[i] *= drag; sparkVy[i] *= drag
+                sparkVy[i] -= 0.5f * h
                 sparkX[i] += sparkVx[i] * h; sparkY[i] += sparkVy[i] * h
             }
         }
@@ -293,8 +298,11 @@ class CornerSim : Sim {
         val a = (sparkLife / SPARK_LIFE).coerceIn(0f, 1f)
         for (i in 0 until SPARKS) {
             val vx = sparkVx[i]; val vy = sparkVy[i]
-            g.line(sparkX[i], sparkY[i], sparkX[i] - vx * 0.035f, sparkY[i] - vy * 0.035f, 0.006f,
-                Palette.brighten(palette.at(sparkT[i]), 0.3f), sqrt(a))
+            // The winner's own colour, a shade either way, with one in four
+            // white-hot: a rainbow of sparks belonged to nobody.
+            val c = palette.at(((hitTint + (sparkT[i] - 0.5f) * 0.12f) % 1f + 1f) % 1f)
+            val col = if (i % 4 == 0) Palette.lerp(c, Palette.TEXT_PRIMARY, 0.7f) else Palette.brighten(c, 0.15f)
+            g.line(sparkX[i], sparkY[i], sparkX[i] - vx * 0.05f, sparkY[i] - vy * 0.05f, 0.006f, col, sqrt(a))
         }
     }
 

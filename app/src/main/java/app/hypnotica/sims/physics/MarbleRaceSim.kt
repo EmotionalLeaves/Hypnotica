@@ -41,6 +41,7 @@ class MarbleRaceSim : Sim {
     private var done = BooleanArray(0)
     private var place = IntArray(0)
     private var placed = 0
+    private var lastHomeAt = 0f
 
     // The course: pegs in rows, paddles between some of them.
     private var pegX = FloatArray(0)
@@ -187,6 +188,7 @@ class MarbleRaceSim : Sim {
             if (y[i] < finishY) {
                 done[i] = true
                 place[i] = ++placed
+                lastHomeAt = elapsed
                 env.emit(EventKind.HIT, 1f - (placed - 1f) / count, (x[i] / halfW).coerceIn(-1f, 1f), if (placed == 1) 1f else 0.5f)
                 if (placed == 1) {
                     winnerAt = elapsed
@@ -444,7 +446,7 @@ class MarbleRaceSim : Sim {
         var leader = -1
         for (i in 0 until count) if (!done[i] && (leader < 0 || y[i] < y[leader])) leader = i
         for (i in 0 until count) {
-            val c = palette.at(i / max(1f, count - 1f))
+            val c = palette.at(hueOf(i))
             val yy = y[i]
             if (yy > top || yy < bottom) continue
             val sy = yy - camY
@@ -478,20 +480,29 @@ class MarbleRaceSim : Sim {
         g.rect(trackX, trackBottom, 0.016f, 0.004f, Palette.TEXT_PRIMARY, 0f, 0.7f)
         for (i in 0 until count) {
             val f = ((-0.6f - y[i]) / (-0.6f - finishY)).coerceIn(0f, 1f)
-            val c = palette.at(i / max(1f, count - 1f))
+            val c = palette.at(hueOf(i))
             g.disc(trackX, trackTop + (trackBottom - trackTop) * f, if (i == leader || place[i] == 1) 0.013f else 0.009f, c, if (done[i] && place[i] != 1) 0.6f else 1f)
         }
     }
 
+    /**
+     * Each marble's place on the palette. Spread over i / (count - 1), the
+     * first and last both landed on the ends of the default wheel palette,
+     * and the race had two red marbles.
+     */
+    private fun hueOf(i: Int): Float = i / count.coerceAtLeast(1).toFloat()
+
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean =
-        (placed == count && winnerAt >= 0f && elapsed - winnerAt > 2.5f) || (winnerAt >= 0f && elapsed - winnerAt > 10f) ||
+        // And the last one home given time to roll into its place: ended the
+        // moment it crossed, the run froze with it sitting on the line.
+        (placed == count && winnerAt >= 0f && elapsed - winnerAt > 2.5f && elapsed - lastHomeAt > 1.2f) || (winnerAt >= 0f && elapsed - winnerAt > 10f) ||
             // A race nobody can finish — no gravity to fall by — is let go.
             (winnerAt < 0f && elapsed > GIVE_UP_SECONDS + GIVE_UP_PER_LENGTH * length)
 
     override fun contenders(env: SimEnv): IntArray =
-        if (count > 8) app.hypnotica.core.sim.NO_CONTENDERS else IntArray(count) { env.palette.at(it / max(1f, count - 1f)) }
+        if (count > 8) app.hypnotica.core.sim.NO_CONTENDERS else IntArray(count) { env.palette.at(hueOf(it)) }
 
     override fun winner(): Int = if (count > 8) -1 else place.indexOfFirst { it == 1 }
 
