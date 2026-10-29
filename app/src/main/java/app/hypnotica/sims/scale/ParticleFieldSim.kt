@@ -166,6 +166,19 @@ class ParticleFieldSim : Sim {
                 }
             }
 
+            // In a walled box, a soft push back from the last stretch before
+            // each wall. The flow field drives into the corners, and without
+            // it most of the cloud ended up packed against two walls, the rest
+            // of the screen emptied to a few stragglers.
+            if (!wrap) {
+                val ex = w - EDGE
+                if (px[i] > ex) ax -= EDGE_PUSH * (px[i] - ex) / EDGE
+                else if (px[i] < -ex) ax -= EDGE_PUSH * (px[i] + ex) / EDGE
+                val ey = 1f - EDGE
+                if (py[i] > ey) ay -= EDGE_PUSH * (py[i] - ey) / EDGE
+                else if (py[i] < -ey) ay -= EDGE_PUSH * (py[i] + ey) / EDGE
+            }
+
             var nvx = (vx[i] + ax * dt) * dragF
             var nvy = (vy[i] + ay * dt) * dragF
 
@@ -208,14 +221,21 @@ class ParticleFieldSim : Sim {
         val spread = if (stride > 1) sqrt(stride.toFloat()) else 1f
         g.reservePoints(n / stride + 1)
         var i = 0
+        // Colour follows speed, with only a little per-particle variety, so
+        // a stream reads as one ribbon. Half the colour was a random tint per
+        // particle, and every stream was salt-and-pepper grain. Slow ones are
+        // dimmer: what gravity and the field herd into a corner sits there
+        // quietly instead of being the brightest thing on screen.
         while (i < n) {
             val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 0.55f)
-            val c = palette.at((tint[i] * 0.5f + speed * 0.5f) % 1f)
-            g.point(px[i], py[i], dotSize * sizeScale * spread * (0.7f + speed * 0.8f), c)
+            val c = Palette.withAlpha(palette.at((0.12f + 0.72f * speed + (tint[i] - 0.5f) * 0.1f).coerceIn(0f, 1f)), 0.3f + 0.65f * speed)
+            g.point(px[i], py[i], dotSize * sizeScale * spread * (0.8f + speed * 0.6f), c)
             i += stride
         }
         for (a in 0 until attractors) {
-            g.glow(attractorX[a], attractorY[a], 0.16f, if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER, 0.22f)
+            val c = if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER
+            g.glow(attractorX[a], attractorY[a], 0.09f, c, 0.28f)
+            g.ring(attractorX[a], attractorY[a], 0.022f, 0.004f, c, alpha = 0.6f)
         }
     }
 
@@ -245,6 +265,9 @@ class ParticleFieldSim : Sim {
         private const val MAX_SPEED = 3.2f
         private const val MAX_SPEED2 = MAX_SPEED * MAX_SPEED
         private const val PAYOFF_AT = 18f
+        /** How far in from a wall its soft push reaches, and how hard it pushes at the wall. */
+        private const val EDGE = 0.1f
+        private const val EDGE_PUSH = 3f
 
         fun def(): SimDef = SimDef(
             id = "life/particle-field",
@@ -301,8 +324,15 @@ class GameOfLifeSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         val side = p.i("grid", 160).coerceIn(16, 1024)
-        w = side
-        h = side
+        // Square cells on any screen, with as many cells as a side × side
+        // grid. A square grid stretched over an upright phone drew every cell
+        // 2.2 times taller than wide, and every glider and blinker squashed
+        // with it. The count is kept, not the side: fewer cells settled the
+        // soup differently and its payoff moved out of its window.
+        val aspect = env.aspect.coerceIn(0.1f, 10f)
+        val root = sqrt(aspect)
+        w = max(8, kotlin.math.round(side * root).toInt())
+        h = max(8, kotlin.math.round(side / root).toInt())
         cells = ByteArray(w * h)
         next = ByteArray(w * h)
         val density = p.f("density", 0.32f)
@@ -402,14 +432,30 @@ class GameOfLifeSim : Sim {
         val cellW = (2f * halfW) / w
         val cellH = 2f / h
         val size = max(cellW, cellH)
-        g.reservePoints(alive)
+        // Crisp square cells with a hairline gap while they are big enough to
+        // show one; points past that, where a cell is a pixel or two.
+        val squares = max(w, h) <= SQUARES_UP_TO
+        if (squares) g.reserveInstances(alive * 2) else g.reservePoints(alive)
+        val hwC = cellW * 0.43f
+        val hhC = cellH * 0.43f
+        // After a step [next] holds the generation before, so each cell can
+        // tell whether it was just born — drawn brighter — or just died,
+        // left as a faint ghost for one generation: the motion shows.
         for (y in 0 until h) {
             val row = y * w
             val cy = -1f + (y + 0.5f) * cellH
             for (x in 0 until w) {
-                if (cells[row + x].toInt() == 0) continue
+                val now = cells[row + x].toInt() != 0
+                val was = generation > 0 && next[row + x].toInt() != 0
+                if (!now && !was) continue
                 val cx = -halfW + (x + 0.5f) * cellW
-                g.point(cx, cy, size, palette.at((x + y).toFloat() / (w + h)))
+                val base = palette.at((x + y).toFloat() / (w + h))
+                val c = when {
+                    now && !was -> Palette.brighten(base, 0.3f)
+                    now -> base
+                    else -> Palette.withAlpha(base, 0.22f)
+                }
+                if (squares) g.rect(cx, cy, hwC, hhC, c) else g.point(cx, cy, size, c)
             }
         }
     }
@@ -422,6 +468,8 @@ class GameOfLifeSim : Sim {
     )
 
     companion object {
+        /** Grids up to this many cells along the long side draw as squares. */
+        private const val SQUARES_UP_TO = 420
         fun def(): SimDef = SimDef(
             id = "life/game-of-life",
             title = "Game of Life",
@@ -587,18 +635,32 @@ class LorenzSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reservePoints(filled)
         val size = env.params.f("dot", 0.006f)
-        for (k in 0 until filled) {
-            val idx = (head - 1 - k + trailX.size * 2) % trailX.size
+        // The trail as joined strokes, oldest first so the newest lies on
+        // top. As separate dots the fast outer loops broke into dotted lines
+        // and the slow inner ones clumped into beads.
+        g.reserveInstances(filled)
+        for (k in filled - 1 downTo 1) {
+            val a = (head - 1 - k + trailX.size * 2) % trailX.size
+            val b = (a + 1) % trailX.size
             val age = k.toFloat() / filled
-            val c = Palette.withAlpha(palette.at(0.15f + age * 0.7f), (1f - age) * 0.9f + 0.1f)
-            g.point(trailX[idx], trailY[idx], size * (1.1f - age * 0.6f), c)
+            g.line(trailX[a], trailY[a], trailX[b], trailY[b], size * (0.8f - age * 0.45f),
+                palette.at(0.15f + age * 0.7f), (1f - age) * 0.9f + 0.1f)
+        }
+        if (filled > 0) {
+            val last = (head - 1 + trailX.size) % trailX.size
+            val pen = Palette.brighten(palette.at(0.15f), 0.3f)
+            g.glow(trailX[last], trailY[last], 0.05f, pen, 0.6f)
+            g.disc(trailX[last], trailY[last], size * 1.2f, pen)
         }
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.6f
+    /**
+     * Drawn at a fixed size; on a phone held upright the view pulls back to
+     * fit it. The wings reach x = ±20 or so, 0.68 on screen: at 0.6 the
+     * outer loops of both wings were cut off at the sides.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float = 0.72f
 
     override fun payoff(): Boolean = payoffFrame
 

@@ -17,6 +17,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -62,7 +63,7 @@ class VoronoiSim : Sim {
             svy[i] = env.rng.range(-drift, drift)
             tint[i] = env.rng.nextFloat()
         }
-        rows = p.i("resolution", 150).coerceIn(30, 420)
+        rows = p.i("resolution", 200).coerceIn(30, 420)
         cols = max(8, (rows * env.aspect).toInt())
         owner = IntArray(cols * rows)
         settled = false
@@ -142,19 +143,34 @@ class VoronoiSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth
-        g.reservePoints(cols * rows)
+        g.reserveInstances(cols * rows + seeds * 2)
         val dx = 2f * halfW / cols
         val dy = 2f / rows
-        val size = max(dx, dy) * 1.05f
+        // Tiled squares, not round dots: the dots left a dark bead-grid
+        // between them. Each cell is shaded like stained glass — lit at its
+        // seed, falling away to a dark wall where it meets its neighbour —
+        // rather than one flat block of saturated colour per cell.
+        val hw = dx * 0.515f
+        val hh = dy * 0.515f
         for (r in 0 until rows) {
             val y = -1f + (r + 0.5f) * dy
             val base = r * cols
             for (c in 0 until cols) {
-                g.point(-halfW + (c + 0.5f) * dx, y, size, palette.at(tint[owner[base + c]]))
+                val k = owner[base + c]
+                // A wall wherever the owner changes to the right or above: the
+                // diagram's own edges, one cell thick, in either metric.
+                val isWall = (c + 1 < cols && owner[base + c + 1] != k) ||
+                    (r + 1 < rows && owner[base + cols + c] != k)
+                if (isWall) continue
+                val x = -halfW + (c + 0.5f) * dx
+                val toSeed = hypot(x - sx[k], y - sy[k])
+                val lit = 0.3f + 0.62f * Math.exp((-toSeed / GLOW_FALLOFF).toDouble()).toFloat()
+                g.rect(x, y, hw, hh, Palette.lerp(Palette.BG, palette.at(tint[k]), lit))
             }
         }
         for (i in 0 until seeds) {
-            g.disc(sx[i], sy[i], 0.009f, Palette.TEXT_PRIMARY)
+            g.disc(sx[i], sy[i], 0.012f, Palette.BG)
+            g.disc(sx[i], sy[i], 0.007f, Palette.brighten(palette.at(tint[i]), 0.55f))
         }
     }
 
@@ -174,6 +190,9 @@ class VoronoiSim : Sim {
     companion object {
         /** Nothing is the closest pair before this much of the run. */
         const val PINCH_EARLIEST = 5f
+
+        /** How quickly a cell darkens away from its seed, in world units. */
+        const val GLOW_FALLOFF = 0.28f
 
         /** How long the closest pair has to hold before it is the one. */
         const val PINCH_HELD = 0.7f
@@ -201,7 +220,7 @@ class VoronoiSim : Sim {
                 Param.choice("metric", "Distance", listOf("Straight line", "City blocks"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.int("seeds", "Seeds", 2, 300, 28, card = Card.DATA, logScale = true),
-                Param.int("resolution", "Resolution", 30, 420, 150, card = Card.LOOK),
+                Param.int("resolution", "Resolution", 30, 420, 200, card = Card.LOOK),
                 Param.float("drift", "Drift", 0f, 0.5f, 0.1f, card = Card.MOTION)
             ),
             create = { VoronoiSim() }
@@ -225,11 +244,46 @@ class RiemannSim : Sim {
     private var converged = false
     private var restSeconds = -1f
 
+    /**
+     * Every division the run will pass through, and the midpoint rule's error
+     * at each, worked out in doubles up front: the error trace under the
+     * picture. On log axes it falls as a straight line of slope −2, the
+     * midpoint rule's 1/n² — which is why the total stops moving.
+     */
+    private var stepsN = IntArray(0)
+    private var stepsErr = DoubleArray(0)
+    private var stepCount = 0
+
+    private fun fD(x: Double): Double = when (curve) {
+        0 -> x * x
+        1 -> kotlin.math.sin(x * PI)
+        else -> kotlin.math.sqrt(max(0.0, 1.0 - x * x))
+    }
+
+    private fun nextBars(b: Int): Int = min(maxBars, (b * 1.16f).toInt() + 1)
+
+    private fun buildErrors() {
+        val ns = ArrayList<Int>()
+        var b = 2
+        ns.add(b)
+        while (b < maxBars) { b = nextBars(b); ns.add(b) }
+        stepsN = ns.toIntArray()
+        stepsErr = DoubleArray(stepsN.size)
+        val exactD = exactArea()
+        for (k in stepsN.indices) {
+            val n = stepsN[k]
+            var sum = 0.0
+            for (i in 0 until n) sum += fD((i + 0.5) / n)
+            stepsErr[k] = max(1e-15, abs(sum / n - exactD))
+        }
+    }
+
     override fun setup(env: SimEnv) {
         val p = env.params
         curve = p.choiceIndex("curve")
         bars = 2
         maxBars = p.i("maxbars", 400).coerceIn(8, 200_000)
+        buildErrors()
         carry = 0f
         payoffFrame = false
         converged = false
@@ -273,7 +327,7 @@ class RiemannSim : Sim {
         carry += abs(dt) * env.params.f("rate", 2.6f)
         while (carry >= 1f && bars < maxBars) {
             carry -= 1f
-            bars = min(maxBars, (bars * 1.16f).toInt() + 1)
+            bars = nextBars(bars)
             recompute()
             env.emit(
                 EventKind.WRITE,
@@ -291,20 +345,28 @@ class RiemannSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val halfW = env.halfWidth * 0.9f
-        val baseY = -0.7f
-        val height = 1.4f
+        val halfW = env.halfWidth * 0.88f
+        // On a tall screen the curve takes the upper half and the error trace
+        // the lower; the curve alone left a lone ramp in the middle of a
+        // mostly empty screen.
+        val tall = env.halfWidth < 0.8f
+        val baseY = if (tall) 0.02f else -0.7f
+        val height = if (tall) min(0.86f, 2f * halfW * 1.05f) else 1.4f
         val barW = 2f * halfW / bars
         val show = min(bars, 1200)
         val stride = max(1, bars / show)
+        // Gaps between bars only while there is room for them; at hundreds of
+        // bars the thin gaps beat against the pixels into stripes.
+        val gapless = barW * stride < 0.012f
+        val half = if (gapless) barW * stride * 0.5f * 1.04f else barW * 0.44f
         var i = 0
         while (i < bars) {
             val xMid = (i + 0.5f) / bars
             val h = f(xMid) * height
-            g.bar(
-                -halfW + (i + 0.5f) * barW, baseY, max(barW * 0.46f, 0.0012f), h,
-                Palette.withAlpha(palette.at(xMid), 0.8f)
-            )
+            val c = palette.at(0.08f + 0.6f * xMid)
+            g.bar(-halfW + (i + 0.5f) * barW, baseY, half, h, c, 0.78f)
+            // A bright top edge: the rectangle's height, which is the sample.
+            if (!gapless) g.rect(-halfW + (i + 0.5f) * barW, baseY + h, half, 0.004f, Palette.brighten(c, 0.3f))
             i += stride
         }
         // The curve itself, drawn over the bars.
@@ -314,11 +376,48 @@ class RiemannSim : Sim {
             val t = k / 160f
             val x = -halfW + t * 2f * halfW
             val y = baseY + f(t) * height
-            g.line(prevX, prevY, x, y, 0.004f, Palette.SUCCESS)
+            g.line(prevX, prevY, x, y, 0.007f, Palette.WARNING)
             prevX = x
             prevY = y
         }
         g.line(-halfW, baseY, halfW, baseY, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f))
+        if (tall) drawErrors(g, palette, halfW, -0.9f, -0.16f)
+    }
+
+    /** log(error) against log(rectangles): the run's whole path faint, the part travelled bright. */
+    private fun drawErrors(g: G, palette: Palette, halfW: Float, bottom: Float, top: Float) {
+        val count = stepsN.size
+        if (count < 2) return
+        val frame = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.35f)
+        g.line(-halfW, bottom, halfW, bottom, 0.003f, frame)
+        g.line(-halfW, bottom, -halfW, top, 0.003f, frame)
+        val lx0 = ln(stepsN[0].toDouble())
+        val lx1 = max(lx0 + 1e-6, ln(stepsN[count - 1].toDouble()))
+        var ly0 = Double.MAX_VALUE
+        var ly1 = -Double.MAX_VALUE
+        for (e in stepsErr) { val l = ln(e); ly0 = min(ly0, l); ly1 = max(ly1, l) }
+        if (ly1 - ly0 < 1e-6) ly1 = ly0 + 1.0
+        fun px(k: Int) = (-halfW + 2f * halfW * ((ln(stepsN[k].toDouble()) - lx0) / (lx1 - lx0))).toFloat()
+        fun py(k: Int) = (bottom + 0.03f + (top - bottom - 0.06f) * ((ln(stepsErr[k]) - ly0) / (ly1 - ly0))).toFloat()
+        // A faint rule at every power of ten of error: each one crossed is
+        // another correct decimal place in the total.
+        val ln10 = ln(10.0)
+        var dec = kotlin.math.ceil(ly0 / ln10)
+        while (dec * ln10 <= ly1) {
+            val y = (bottom + 0.03f + (top - bottom - 0.06f) * ((dec * ln10 - ly0) / (ly1 - ly0))).toFloat()
+            g.line(-halfW, y, halfW, y, 0.002f, Palette.TEXT_SECONDARY, 0.16f)
+            dec += 1.0
+        }
+        val lit = Palette.brighten(palette.at(0.25f), 0.25f)
+        var reached = 0
+        for (k in 0 until count) if (stepsN[k] <= bars) reached = k
+        for (k in 1 until count) {
+            val done = k <= reached
+            g.line(px(k - 1), py(k - 1), px(k), py(k), if (done) 0.007f else 0.004f,
+                if (done) lit else Palette.TEXT_SECONDARY, if (done) 1f else 0.25f)
+        }
+        g.glow(px(reached), py(reached), 0.05f, lit, 0.6f)
+        g.disc(px(reached), py(reached), 0.014f, Palette.brighten(lit, 0.3f))
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -372,8 +471,10 @@ class CurvedSpaceSim : Sim {
     private var rays = 7
     private var elapsed = 0f
     private var payoffFrame = false
-    private val pathX = Array(16) { FloatArray(260) }
-    private val pathY = Array(16) { FloatArray(260) }
+    // Room for a ray to cross a wide screen: 260 steps of 0.012 ran out
+    // two thirds of the way across a landscape view, rays ending in mid-air.
+    private val pathX = Array(16) { FloatArray(PATH_STEPS) }
+    private val pathY = Array(16) { FloatArray(PATH_STEPS) }
     private val pathLen = IntArray(16)
 
     override fun setup(env: SimEnv) {
@@ -485,16 +586,27 @@ class CurvedSpaceSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val halfW = env.halfWidth * 0.98f
-        val gridColour = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f)
-        // The grid lies on the curved surface, so it dips into the well.
+        // The grid lies on the curved surface, so it dips into the well, and
+        // it brightens and tints with depth so the well reads as a well: at
+        // one even grey the dip was a faint kink in a uniform mesh.
         val top = GRID_REACH
+        val deep = Palette.lerp(Palette.TEXT_SECONDARY, Palette.WARNING, 0.55f)
+        val depthScale = max(1e-4f, zFar)
+        fun gridLine(x0: Float, y0: Float, x1: Float, y1: Float, h: Float) {
+            // Only the throat lights up: most of the screen sits a little
+            // way down the long, shallow outer slope.
+            val u = ((-h / depthScale - 0.45f) / 0.55f).coerceIn(0f, 1f)
+            val d = u * u
+            g.line(x0, y0, x1, y1, 0.0018f + 0.0012f * d, Palette.lerp(Palette.TEXT_SECONDARY, deep, d), 0.22f + 0.5f * d)
+        }
         for (i in 0..gridX) {
             val x = -halfW + i * 2f * halfW / gridX
             var prevY = screenY(-top, height(x, -top))
             for (j in 1..gridY * 2) {
                 val y = -top + j * top / gridY
-                val sy = screenY(y, height(x, y))
-                g.line(x, prevY, x, sy, 0.0016f, gridColour)
+                val h = height(x, y)
+                val sy = screenY(y, h)
+                gridLine(x, prevY, x, sy, h)
                 prevY = sy
             }
         }
@@ -504,17 +616,18 @@ class CurvedSpaceSim : Sim {
             var prevY = screenY(y, height(-halfW, y))
             for (i in 1..gridX * 2) {
                 val x = -halfW + i * halfW / gridX
-                val sy = screenY(y, height(x, y))
-                g.line(prevX, prevY, x, sy, 0.0016f, gridColour)
+                val h = height(x, y)
+                val sy = screenY(y, h)
+                gridLine(prevX, prevY, x, sy, h)
                 prevX = x
                 prevY = sy
             }
         }
         for (r in 0 until rays) {
-            val c = palette.at(r.toFloat() / max(1, rays - 1))
+            val c = Palette.brighten(palette.at(r.toFloat() / max(1, rays - 1)), 0.1f)
             for (n in 0 until pathLen[r] - 1) {
                 val x0 = pathX[r][n]; val y0 = pathY[r][n]; val x1 = pathX[r][n + 1]; val y1 = pathY[r][n + 1]
-                g.line(x0, screenY(y0, height(x0, y0)), x1, screenY(y1, height(x1, y1)), 0.0026f, c, 0.9f)
+                g.line(x0, screenY(y0, height(x0, y0)), x1, screenY(y1, height(x1, y1)), 0.0038f, c, 0.95f)
             }
         }
         // The mass at the bottom of its well; the horizon at its true size.
@@ -551,6 +664,7 @@ class CurvedSpaceSim : Sim {
         /** The grid reaches this far up and down the plane, filling the tilted screen. */
         const val GRID_REACH = 1.35f
         const val RAY_SPAN = 0.95f
+        const val PATH_STEPS = 640
 
         /** Nothing is the closest approach before this much of the run. */
         const val PAYOFF_EARLIEST = 6f

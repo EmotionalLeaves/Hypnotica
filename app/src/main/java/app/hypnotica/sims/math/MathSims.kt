@@ -35,7 +35,22 @@ class MandelbrotSim : Sim {
 
     private var cols = 0
     private var rows = 0
-    private var iterations = IntArray(0)
+    /**
+     * Smooth escape counts (the normalised iteration count), or -1 inside the
+     * set. Whole iteration counts coloured the outside in flat terraces with a
+     * hard seam wherever the palette wrapped: the banding.
+     */
+    private var iterations = FloatArray(0)
+    /**
+     * Each outside cell's distance to the set, in cells, from the distance
+     * estimate |z|·ln|z| / |dz/dc|. Cells within a couple of it are the
+     * boundary, drawn as one continuous lit filament; by escape count alone
+     * neighbouring boundary cells flickered between colours like confetti.
+     */
+    private var edgeDist = FloatArray(0)
+    /** The lowest and highest escape counts on screen, eased between images. */
+    private var lowMu = 0f
+    private var highMu = 1f
     private var maxIter = 220
     /** The iterations the picture on screen was computed with. */
     private var iterNow = 220
@@ -55,10 +70,13 @@ class MandelbrotSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        val quality = p.i("resolution", 190).coerceIn(40, 460)
+        val quality = p.i("resolution", 240).coerceIn(40, 460)
         rows = quality
         cols = max(8, (quality * env.aspect).toInt())
-        iterations = IntArray(cols * rows)
+        iterations = FloatArray(cols * rows)
+        edgeDist = FloatArray(cols * rows)
+        lowMu = -1f
+        highMu = 1f
         maxIter = p.i("detail", 220).coerceIn(40, 1200)
         iterNow = maxIter
         zoom = 0.6
@@ -71,7 +89,11 @@ class MandelbrotSim : Sim {
             // The antenna's period-3 mini-Mandelbrot, a whole copy of the set
             // out on the spike. The old point was on the edge of the main
             // bulb's neighbour, nowhere near the antenna.
-            2 -> { centreX = -1.7548776662466927; centreY = 0.0 }
+            // and then on into that copy's own seahorse valley. Aimed at the
+            // copy's centre the dive ended inside it, a screen of solid black.
+            // The copy is the whole set scaled by 0.01951 (its cusp is at
+            // exactly −7/4), so its valley sits that far along from its centre.
+            2 -> { centreX = -1.7548776662466927 + 0.0195107 * -0.743643887037151; centreY = 0.0195107 * 0.131825904205330 }
             3 -> { centreX = 0.360240443437614; centreY = 0.641313061064803 }
             else -> { centreX = -0.743643887037151; centreY = 0.131825904205330 }
         }
@@ -117,6 +139,7 @@ class MandelbrotSim : Sim {
         iterNow = mi
         val cx = centreX
         val cy = centreY
+        val cell = 2.0 * scale / (rs - 1)
 
         Parallel.forRange(rs) { from, to ->
             for (row in from until to) {
@@ -126,20 +149,64 @@ class MandelbrotSim : Sim {
                     val x0 = cx + (col.toDouble() / (cs - 1) * 2.0 - 1.0) * scale * halfW
                     var x = 0.0
                     var y = 0.0
+                    // dz/dc alongside z, for the distance estimate only.
+                    var dx = 0.0
+                    var dy = 0.0
                     var i = 0
                     while (x * x + y * y <= 4.0 && i < mi) {
+                        val dxt = 2.0 * (x * dx - y * dy) + 1.0
+                        dy = 2.0 * (x * dy + y * dx)
+                        dx = dxt
                         val xt = x * x - y * y + x0
                         y = 2.0 * x * y + y0
                         x = xt
                         i++
                     }
-                    iterations[base + col] = i
+                    if (i >= mi) {
+                        iterations[base + col] = -1f
+                        continue
+                    }
+                    // Membership is decided above, at radius 2, exactly as
+                    // before. Three more steps only carry the escaped orbit far
+                    // enough out (|z| in the hundreds) for the smooth count
+                    // n + 1 − log2(ln|z|) to be continuous across the bands.
+                    for (e in 0 until 3) {
+                        val dxt = 2.0 * (x * dx - y * dy) + 1.0
+                        dy = 2.0 * (x * dy + y * dx)
+                        dx = dxt
+                        val xt = x * x - y * y + x0
+                        y = 2.0 * x * y + y0
+                        x = xt
+                    }
+                    val lz = 0.5 * ln(x * x + y * y)
+                    val mu = i + 3 + 1 - ln(max(1e-9, lz)) / LN2
+                    iterations[base + col] = max(0.0, mu).toFloat()
+                    // A long orbit overflows dz to infinity; that point is as
+                    // near the set as can be, so distance 0, not NaN.
+                    val dd = kotlin.math.sqrt(dx * dx + dy * dy)
+                    val dist = if (dd.isFinite() && dd > 0.0) 2.0 * Math.exp(lz) * lz / dd / cell else 0.0
+                    edgeDist[base + col] = if (dist.isNaN()) 0f else dist.toFloat().coerceAtMost(1e6f)
                 }
+            }
+        }
+        // The range of escape counts in view sets how bright the outside is:
+        // far from the set dim, close to it bright, so the boundary glows
+        // rather than sitting in a flat field of colour. Eased between images
+        // so the brightness does not flicker as the zoom deepens.
+        var lo = Float.MAX_VALUE
+        var hi = 0f
+        for (v in iterations) if (v >= 0f) { if (v < lo) lo = v; if (v > hi) hi = v }
+        if (lo != Float.MAX_VALUE) {
+            val lLo = ln(1f + lo)
+            val lHi = max(lLo + 0.5f, ln(1f + hi))
+            if (lowMu < 0f) { lowMu = lLo; highMu = lHi } else {
+                lowMu += (lLo - lowMu) * 0.35f
+                highMu += (lHi - highMu) * 0.35f
             }
         }
 
         // The sound follows how deep the picture has become.
-        val centreIter = iterations[(rs / 2) * cs + cs / 2]
+        val centreIter = iterations[(rs / 2) * cs + cs / 2].let { if (it < 0f) mi else it.toInt() }
         if (abs(centreIter - lastSoundIter) > mi / 40) {
             lastSoundIter = centreIter
             env.emit(EventKind.STEP, (centreIter.toFloat() / mi).coerceIn(0f, 1f), 0f, 0.4f)
@@ -156,7 +223,7 @@ class MandelbrotSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        g.reservePoints(cols * rows)
+        g.reserveInstances(cols * rows)
         val halfW = env.halfWidth
         val dx = 2f * halfW / cols
         val dy = 2f / rows
@@ -167,15 +234,36 @@ class MandelbrotSim : Sim {
         // then jump 2.8%, eight times a second: a zoom that stuttered, on the
         // one sim whose whole subject is a smooth dive.
         val k = (zoom / computedZoom).toFloat().coerceIn(0.5f, 4f)
-        val size = max(dx, dy) * 1.05f * k
+        // Square cells that tile, a hair oversized so no seam shows between
+        // them. Round point sprites left a dark gap at every corner, which on
+        // a phone read as a grid of beads rather than a picture.
+        val hw = dx * 0.5f * k * 1.03f
+        val hh = dy * 0.5f * k * 1.03f
+        val span = max(0.5f, highMu - lowMu)
+        val edgeColour = brightestOf(palette)
         for (row in 0 until rows) {
             val y = (-1f + (row + 0.5f) * dy) * k
+            if (abs(y) - hh > 1f) continue
             val base = row * cols
             for (col in 0 until cols) {
-                val i = iterations[base + col]
-                if (i >= iterNow) continue
-                val t = (ln(1f + i.toFloat()) / ln(1f + iterNow.toFloat()))
-                g.point((-halfW + (col + 0.5f) * dx) * k, y, size, palette.at((t * 3f) % 1f))
+                val mu = iterations[base + col]
+                if (mu < 0f) continue
+                val x = (-halfW + (col + 0.5f) * dx) * k
+                if (abs(x) - hw > halfW) continue
+                val lm = ln(1f + mu)
+                // Hue cycles smoothly with the log of the escape count — a
+                // cosine, so the palette runs out and back with no seam — over
+                // most of the palette, leaving its far end to the edge.
+                val hue = HUE_SPAN * (0.5f - 0.5f * cos(lm * HUE_CYCLES * 2f * PI.toFloat()))
+                // Brightness rises towards the boundary, and the last stretch
+                // runs to a pale highlight: right at the edge neighbouring
+                // cells' counts differ wildly, and a hue for each was confetti.
+                val near = ((lm - lowMu) / span).coerceIn(0f, 1f)
+                val lit = 0.17f + 0.77f * near * kotlin.math.sqrt(near)
+                val c = Palette.lerp(Palette.BG, palette.at(hue), lit)
+                // Within about a cell of the set: the lit filament.
+                val edge = (1f - edgeDist[base + col] / EDGE_CELLS).coerceIn(0f, 1f)
+                g.rect(x, y, hw, hh, if (edge > 0f) Palette.lerp(c, edgeColour, 0.2f + 0.7f * edge * edge) else c)
             }
         }
     }
@@ -197,6 +285,24 @@ class MandelbrotSim : Sim {
 
     companion object {
         const val MAX_ITER_DEEP = 1500
+        private val LN2 = ln(2.0)
+        /** Colour cycles per e-fold of escape count: two or three bands across a view. */
+        private const val HUE_CYCLES = 0.6f
+        /** How many cells out from the set the lit edge reaches. */
+        private const val EDGE_CELLS = 1.2f
+        private const val HUE_SPAN = 0.78f
+
+        /** The palette's lightest colour, for the edge of the set: white on Mono, yellow on Viridis. */
+        fun brightestOf(p: Palette): Int {
+            var best = p.at(0f)
+            var bestL = -1
+            for (k in 0..8) {
+                val c = p.at(k / 8f)
+                val l = 2 * ((c ushr 16) and 255) + 5 * ((c ushr 8) and 255) + (c and 255)
+                if (l > bestL) { bestL = l; best = c }
+            }
+            return best
+        }
         /**
          * How much finer the detail has to get before the zoom has arrived.
          * A thousandfold is plainly deeper than where it started and is reached
@@ -223,7 +329,7 @@ class MandelbrotSim : Sim {
                     listOf("Seahorse valley", "Spiral", "Antenna", "Misiurewicz"), 0,
                     card = Card.DATA, input = ParamInput.CHIPS
                 ),
-                Param.int("resolution", "Resolution", 40, 460, 190, card = Card.LOOK),
+                Param.int("resolution", "Resolution", 40, 460, 240, card = Card.LOOK),
                 Param.int("detail", "Detail", 40, 1200, 220, card = Card.LOOK, logScale = true),
                 Param.float("zoom", "Zoom speed", 0.02f, 1.2f, 0.22f, card = Card.MOTION)
             ),
@@ -282,11 +388,21 @@ class ChaosGameSim : Sim {
         breath = 0f
         carry = 0f
         payoffFrame = false
+        var lowY = 0f
+        var highY = 0f
         for (i in 0 until corners) {
             val a = -PI.toFloat() / 2f + i * 2f * PI.toFloat() / corners
             cornerX[i] = cos(a) * 0.92f
             cornerY[i] = sin(a) * 0.92f
+            lowY = min(lowY, cornerY[i]); highY = max(highY, cornerY[i])
         }
+        // Centred on its own height: an odd polygon round the origin sat a
+        // quarter of its size low, the triangle hanging under an empty band.
+        val shift = -(lowY + highY) * 0.5f
+        for (i in 0 until corners) cornerY[i] += shift
+        var wide = 0f
+        for (i in 0 until corners) wide = max(wide, abs(cornerX[i]))
+        reach = max(wide, (highY - lowY) * 0.5f) + 0.03f
         px = 0f
         py = 0f
         formed = false
@@ -349,8 +465,14 @@ class ChaosGameSim : Sim {
         }
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.82f
+    /**
+     * Drawn at a fixed size; on a phone held upright the view pulls back to
+     * fit it. Measured from the corners: a fixed 0.82 suited the triangle and
+     * cut the sides off a pentagon, which reaches 0.875.
+     */
+    private var reach = 0.82f
+    override fun frameHalfWidth(env: SimEnv): Float = reach
+    override fun frameHalfHeight(env: SimEnv): Float = reach
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -515,17 +637,35 @@ class PrimeSpiralSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         g.reservePoints(min(drawn, limit))
-        val extent = if (sacks) sqrt(limit.toFloat()) else sqrt(limit.toFloat()) * 0.5f
-        val scale = 0.95f / max(1f, extent)
-        val size = max(0.0022f, scale * 0.9f)
+        // The finished spiral fills the screen's longer side and is cropped
+        // to the shorter: on an upright phone a square fitted to the width
+        // used under half the screen, a small grey patch in the middle of a
+        // tall black one. The diagonals the sim is about run on through the
+        // crop just the same.
+        val halfW = env.halfWidth
+        val halfH = 1f
+        val fill = max(halfW, halfH) * 0.98f
+        val finalExtent = max(1f, if (sacks) sqrt(limit.toFloat()) else sqrt(limit.toFloat()) * 0.5f)
+        val nowExtent = max(MIN_EXTENT, if (sacks) sqrt(drawn.toFloat()) else sqrt(drawn.toFloat()) * 0.5f)
+        // While it is small the view holds it across the narrow side, so the
+        // first numbers land as large dots and the camera pulls back as the
+        // spiral grows, until it settles at the finished scale.
+        val scale = max(fill / finalExtent, min(halfW, halfH) * 0.96f / nowExtent)
+        val cellSize = if (sacks) scale * 0.8f else scale
+        val size = min(MAX_DOT, max(0.0022f, cellSize * 0.82f))
+        val reachX = halfW + size
+        val reachY = halfH + size
         for (n in 2 until drawn) {
             if (!isPrime[n]) continue
-            g.point(xs[n] * scale, ys[n] * scale, size, palette.at((n.toFloat() / limit) % 1f))
+            val x = xs[n] * scale
+            val y = ys[n] * scale
+            if (abs(x) > reachX || abs(y) > reachY) continue
+            // Colour runs out from the centre over the first part of the
+            // palette: its far end is near-black on Mono glow, and the outer
+            // primes faded into the background.
+            g.point(x, y, size, palette.at(0.08f + 0.6f * n.toFloat() / limit))
         }
     }
-
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.97f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -537,6 +677,9 @@ class PrimeSpiralSim : Sim {
     )
 
     companion object {
+        /** The smallest spiral, in cells from the centre, the view closes in on. */
+        private const val MIN_EXTENT = 9f
+        private const val MAX_DOT = 0.045f
         fun def(): SimDef = SimDef(
             id = "math/prime-spiral",
             title = "Prime spiral",
@@ -662,14 +805,30 @@ class MonteCarloPiSim : Sim {
         val room = visibleHalf * 2f - 2f * r - GAP * 3f
         val traced = room > MIN_TRACE
         val cy = if (traced) visibleHalf - GAP - r else 0f
-        g.reservePoints(stored)
+        g.reservePoints(stored + FRESH)
+        // Hits in the palette's bright colour, misses a dim grey, both fine
+        // grains: the disc then reads as a lit coin in a dark square. Both at
+        // full strength and the same size, it was one even field of noise.
+        val inC = Palette.withAlpha(Palette.brighten(palette.at(HIT_T), 0.12f), 0.8f)
+        val outC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.4f)
         for (i in 0 until stored) {
-            val c = if (hit[i]) palette.at(0.75f) else Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
-            g.point(xs[i] * r, cy + ys[i] * r, 0.004f, c)
+            g.point(xs[i] * r, cy + ys[i] * r, 0.0032f, if (hit[i]) inC else outC)
         }
-        g.ring(0f, cy, r, 0.006f, Palette.ACCENT, alpha = 0.9f)
-        g.rect(0f, cy, r, 0.004f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
-        g.rect(0f, cy, 0.004f, r, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.3f))
+        // The newest darts, larger and bright, so the throwing is visible.
+        val fresh = min(FRESH.toLong(), total).toInt()
+        for (k in 0 until fresh) {
+            val slot = ((total - 1 - k) % capacity).toInt()
+            val fade = 1f - k.toFloat() / FRESH
+            val c = if (hit[slot]) Palette.brighten(palette.at(HIT_T), 0.35f) else Palette.DANGER
+            g.point(xs[slot] * r, cy + ys[slot] * r, 0.009f + 0.006f * fade, Palette.withAlpha(c, 0.35f + 0.65f * fade))
+        }
+        g.rect(0f, cy, r, 0.0025f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
+        g.rect(0f, cy, 0.0025f, r, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
+        // The square's outline, so the board the darts land on is drawn.
+        val edge = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f)
+        g.rect(0f, cy + r, r + 0.003f, 0.003f, edge); g.rect(0f, cy - r, r + 0.003f, 0.003f, edge)
+        g.rect(-r, cy, 0.003f, r, edge); g.rect(r, cy, 0.003f, r, edge)
+        g.ring(0f, cy, r, 0.008f, Palette.brighten(palette.at(HIT_T), 0.25f), alpha = 0.95f)
         if (traced) drawTrace(g, palette, -visibleHalf + GAP, cy - r - GAP, r)
     }
 
@@ -677,19 +836,48 @@ class MonteCarloPiSim : Sim {
     private fun drawTrace(g: G, palette: Palette, bottom: Float, top: Float, halfW: Float) {
         val mid = (bottom + top) * 0.5f
         val half = (top - bottom) * 0.5f
-        g.line(-halfW, mid, halfW, mid, 0.004f, Palette.ACCENT, 0.6f)
-        if (historyCount < 2) return
-        val lo = kotlin.math.ln(historyAt[0].toFloat())
+        val lineC = Palette.brighten(palette.at(HIT_T), 0.2f)
+        // The frame the trace lives in, faint.
+        val frame = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.18f)
+        g.rect(0f, top, halfW, 0.002f, frame); g.rect(0f, bottom, halfW, 0.002f, frame)
+        g.line(-halfW, mid, halfW, mid, 0.005f, Palette.WARNING, 0.75f)
+        // The first few darts swing the estimate between 0 and 4; drawn, they
+        // were spikes pinned to the frame's edges. The trace starts once the
+        // count is large enough for the estimate to mean something.
+        var first = 0
+        while (first < historyCount && historyAt[first] < TRACE_FROM) first++
+        val lo = kotlin.math.ln(TRACE_FROM.toFloat())
         val hi = max(lo + 1f, kotlin.math.ln(max(total, TRACE_MIN_SPAN).toFloat()))
+        // Two standard errors either side of pi, 2·4·sqrt(p(1−p)/n) with
+        // p = pi/4: the funnel an honest estimate stays inside 95% of the time.
+        val sigma1 = 4.0 * sqrt((PI / 4) * (1 - PI / 4))
+        var ex = 0f; var eu = 0f; var el = 0f
+        val steps = 48
+        for (j in 0..steps) {
+            val lnN = lo + (hi - lo) * j / steps
+            val band = (2.0 * sigma1 / Math.exp(lnN.toDouble()).let { sqrt(it) }).toFloat() / TRACE_RANGE
+            val x = -halfW + 2f * halfW * j / steps
+            val u = mid + band.coerceAtMost(1f) * half
+            val l = mid - band.coerceAtMost(1f) * half
+            // Only where the band fits inside the frame; clamped, it ran
+            // along the frame's edge as a flat line.
+            if (j > 0 && band < 1f) {
+                g.line(ex, eu, x, u, 0.003f, Palette.withAlpha(lineC, 0.35f))
+                g.line(ex, el, x, l, 0.003f, Palette.withAlpha(lineC, 0.35f))
+            }
+            ex = x; eu = u; el = l
+        }
+        if (historyCount - first < 2) return
         var px = 0f; var py = 0f
-        for (k in 0 until historyCount) {
+        for (k in first until historyCount) {
             val x = -halfW + 2f * halfW * (kotlin.math.ln(historyAt[k].toFloat()) - lo) / (hi - lo)
             val off = ((historyPi[k] - PI.toFloat()) / TRACE_RANGE).coerceIn(-1f, 1f)
             val y = mid + off * half
-            if (k > 0) g.line(px, py, x, y, 0.005f, palette.at(0.75f), 0.9f)
+            if (k > first) g.line(px, py, x, y, 0.007f, lineC, 0.95f)
             px = x; py = y
         }
-        g.disc(px, py, 0.014f, Palette.brighten(palette.at(0.75f), 0.3f))
+        g.glow(px, py, 0.06f, lineC, 0.5f)
+        g.disc(px, py, 0.016f, Palette.brighten(lineC, 0.3f))
     }
 
     /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
@@ -716,6 +904,12 @@ class MonteCarloPiSim : Sim {
         private const val TRACE_RANGE = 0.25f
         /** The trace's time axis runs to at least this many darts. */
         private const val TRACE_MIN_SPAN = 100_000L
+        /** The trace starts at this many darts, past the first wild swings. */
+        private const val TRACE_FROM = 60L
+        /** The newest darts drawn large. */
+        private const val FRESH = 40
+        /** Where on the palette the hits take their colour. */
+        private const val HIT_T = 0.4f
         fun def(): SimDef = SimDef(
             id = "math/monte-carlo-pi",
             title = "Finding pi with darts",
@@ -909,25 +1103,38 @@ class FourierSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
+        // Strokes keep their on-screen weight when a wide shape makes the
+        // view pull back; the square wave's curve was drawn half as thick.
+        val ws = max(1f, extent / 0.72f)
         var x = 0f
         var y = 0f
         for (k in 0 until terms) {
             val a = freqs[k] * theta + phases[k]
             val nx = x + amps[k] * cos(a)
             val ny = y + amps[k] * sin(a)
-            val c = Palette.withAlpha(palette.at(k.toFloat() / terms), 0.5f)
-            g.ring(x * 0.55f, y * 0.55f, abs(amps[k]) * 0.55f, 0.0022f, c, alpha = 0.65f)
-            g.line(x * 0.55f, y * 0.55f, nx * 0.55f, ny * 0.55f, 0.0022f, c, 0.8f)
+            // Circles faint and arms a little stronger, both thin and the same
+            // width at any size: the machinery, under the curve it draws.
+            val c = Palette.TEXT_SECONDARY
+            if (abs(amps[k]) * 0.55f > 0.004f) g.ring(x * 0.55f, y * 0.55f, abs(amps[k]) * 0.55f, 0.003f * ws, c, alpha = 0.22f)
+            g.line(x * 0.55f, y * 0.55f, nx * 0.55f, ny * 0.55f, 0.004f * ws, c, 0.55f)
             x = nx
             y = ny
         }
+        // The curve as joined strokes, newest brightest. Drawn as separate
+        // dots it was a dotted line wherever the pen moved fast.
+        var px = 0f
+        var py = 0f
         for (k in 0 until traceCount) {
             val idx = (head - 1 - k + traceX.size * 2) % traceX.size
             val age = k.toFloat() / traceCount
-            g.point(traceX[idx], traceY[idx], 0.006f * (1.1f - age * 0.5f),
-                Palette.withAlpha(palette.at(0.1f + 0.85f * (1f - age)), (1f - age) * 0.9f + 0.1f))
+            if (k > 0) {
+                g.line(px, py, traceX[idx], traceY[idx], (0.009f - 0.004f * age) * ws,
+                    palette.at(0.1f + 0.85f * (1f - age)), 0.25f + 0.75f * (1f - age))
+            }
+            px = traceX[idx]; py = traceY[idx]
         }
-        g.glow(x * 0.55f, y * 0.55f, 0.06f, Palette.SUCCESS, 0.8f)
+        g.glow(x * 0.55f, y * 0.55f, 0.045f * ws, Palette.brighten(palette.at(0.95f), 0.2f), 0.7f)
+        g.disc(x * 0.55f, y * 0.55f, 0.011f * ws, Palette.brighten(palette.at(0.95f), 0.4f))
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -978,6 +1185,10 @@ class CollatzSim : Sim {
     private var payoffFrame = false
     private var peak = 0L
     private var autoAdvance = true
+    private var ghost = LongArray(0)
+    private var ghostLength = 0
+    private var ghostLogPeak = 1f
+    private var ghostAge = 99f
 
     override fun setup(env: SimEnv) {
         start = env.params.i("start", 27).coerceIn(2, 2_000_000)
@@ -985,6 +1196,8 @@ class CollatzSim : Sim {
         buildSequence(start)
         shown = 0f
         payoffFrame = false
+        ghostLength = 0
+        ghostAge = 99f
     }
 
     /**
@@ -1029,10 +1242,19 @@ class CollatzSim : Sim {
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
         if (autoAdvance && shown > length + 12) {
+            // The finished run stays behind, fading, while the next one grows
+            // over it; it used to vanish in one frame, leaving three thin bars
+            // on an empty screen.
+            if (ghost.size < MAX_TRAJECTORY) ghost = LongArray(MAX_TRAJECTORY)
+            System.arraycopy(sequence, 0, ghost, 0, length)
+            ghostLength = length
+            ghostLogPeak = logPeak()
+            ghostAge = 0f
             start += 1
             buildSequence(start)
             shown = 0f
         }
+        ghostAge += abs(dt)
     }
 
     /** Never zero, so nothing divides by it. */
@@ -1040,20 +1262,40 @@ class CollatzSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val halfW = env.halfWidth * 0.94f
+        val halfW = env.halfWidth * 0.92f
+        val fade = (1f - ghostAge / GHOST_SECONDS).coerceIn(0f, 1f)
+        if (fade > 0f && ghostLength > 1) {
+            val gx = 2f * halfW / (ghostLength - 1)
+            for (i in 0 until ghostLength) {
+                val t = ln(1f + ghost[i].toFloat()) / ghostLogPeak
+                g.bar(-halfW + i * gx, BASE, max(gx * 0.32f, 0.0015f), t * TALL, palette.at(t * 0.85f), 0.28f * fade)
+            }
+        }
         val n = min(length, max(1, shown.toInt()))
         val stepX = 2f * halfW / max(1, length - 1)
         val logPeak = logPeak()
+        val halfBar = max(stepX * 0.32f, 0.0015f)
+        val cap = min(0.012f, max(0.004f, stepX * 0.5f))
         for (i in 0 until n) {
             val v = sequence[i]
             val t = ln(1f + v.toFloat()) / logPeak
             val x = -halfW + i * stepX
-            val h = t * 1.6f
+            val h = t * TALL
             val reached = i == length - 1
-            g.bar(x, -0.85f, max(stepX * 0.35f, 0.0015f), h, if (reached) Palette.SUCCESS else palette.at(t))
+            // The palette's first 85%: the far end is near-black on Ember,
+            // which put the darkest colour on the tallest bars.
+            val c = if (reached) Palette.SUCCESS else palette.at(t * 0.85f)
+            g.bar(x, BASE, halfBar, h, c, 0.75f)
+            // A bright cap on each bar, so the climb and fall read as one line.
+            g.rect(x, BASE + h, max(halfBar, cap * 0.5f), cap * 0.5f, Palette.brighten(c, 0.35f))
+            if (v == peak && !reached) g.glow(x, BASE + h, 0.05f, Palette.brighten(c, 0.3f), 0.6f)
         }
         if (n >= length) {
-            g.glow(halfW, -0.85f, 0.14f, Palette.SUCCESS, 0.8f)
+            // One, reached: a small ring on the last bar, not a blob over the bars.
+            val x = -halfW + (length - 1) * stepX
+            val h = ln(2f) / logPeak * TALL
+            g.glow(x, BASE + h, 0.045f, Palette.SUCCESS, 0.7f)
+            g.ring(x, BASE + h, 0.022f, 0.005f, Palette.SUCCESS)
         }
     }
 
@@ -1067,6 +1309,9 @@ class CollatzSim : Sim {
     )
 
     companion object {
+        private const val BASE = -0.82f
+        private const val TALL = 1.6f
+        private const val GHOST_SECONDS = 1.6f
         fun def(): SimDef = SimDef(
             id = "math/collatz",
             title = "Collatz: always back to one",

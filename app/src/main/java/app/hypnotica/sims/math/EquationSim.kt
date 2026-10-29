@@ -178,24 +178,48 @@ class EquationSim : Sim {
             g.ring(0f, 0f, 0.3f, 0.01f, Palette.DANGER, alpha = 0.8f)
             return
         }
-        g.reservePoints(filled)
+        // Axes first, under the curve, so the scale is readable.
+        val halfW = env.halfWidth
+        g.line(-halfW, 0f, halfW, 0f, 0.002f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f))
+        g.line(0f, -1f, 0f, 1f, 0.002f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f))
         val dot = env.params.f("dot", 0.004f)
-        for (k in 0 until filled) {
-            val idx = (head - 1 - k + trailX.size * 2) % trailX.size
-            val age = k.toFloat() / filled
-            g.point(
-                trailX[idx], trailY[idx], dot * (1.15f - age * 0.5f),
-                Palette.withAlpha(palette.at((1f - age) * 0.85f), (1f - age) * 0.85f + 0.15f)
-            )
+        if (mode == Mode.MAP) {
+            // A map's points are separate by nature: dots.
+            g.reservePoints(filled)
+            for (k in filled - 1 downTo 0) {
+                val idx = (head - 1 - k + trailX.size * 2) % trailX.size
+                val age = k.toFloat() / filled
+                g.point(
+                    trailX[idx], trailY[idx], dot * (1.15f - age * 0.5f),
+                    Palette.withAlpha(palette.at((1f - age) * 0.85f), (1f - age) * 0.85f + 0.15f)
+                )
+            }
+        } else {
+            // A curve or a flow is continuous, so it is drawn as one: joined
+            // strokes, oldest first so the newest lies on top. As dots it was
+            // a dotted line wherever the pen moved fast, and the old laps
+            // were drawn over the new.
+            g.reserveInstances(filled)
+            for (k in filled - 1 downTo 1) {
+                val a = (head - 1 - k + trailX.size * 2) % trailX.size
+                val b = (a + 1) % trailX.size
+                val dx = trailX[b] - trailX[a]
+                val dy = trailY[b] - trailY[a]
+                // A restart or a pole (tan, 1/x) is a jump, not a line.
+                if (dx * dx + dy * dy > JUMP * JUMP) continue
+                val age = k.toFloat() / filled
+                g.line(
+                    trailX[a], trailY[a], trailX[b], trailY[b], dot * (1.1f - age * 0.55f),
+                    palette.at((1f - age) * 0.85f), 0.12f + 0.88f * (1f - age)
+                )
+            }
         }
         if (filled > 0) {
             val last = (head - 1 + trailX.size) % trailX.size
-            g.glow(trailX[last], trailY[last], 0.06f, Palette.SUCCESS, 0.7f)
+            val pen = Palette.brighten(palette.at(0.85f), 0.3f)
+            g.glow(trailX[last], trailY[last], 0.04f, pen, 0.6f)
+            g.disc(trailX[last], trailY[last], max(0.008f, dot * 1.6f), pen)
         }
-        // Axes, so the scale is readable.
-        val halfW = env.halfWidth
-        g.line(-halfW, 0f, halfW, 0f, 0.0015f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
-        g.line(0f, -1f, 0f, 1f, 0.0015f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.25f))
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -210,6 +234,9 @@ class EquationSim : Sim {
     }
 
     companion object {
+        /** A step longer than this on screen is a jump, and is not joined. */
+        private const val JUMP = 0.25f
+
         /** The index of the curve mode in the "mode" choice, which ships first. */
         private const val MODE_CURVE = 0
 
