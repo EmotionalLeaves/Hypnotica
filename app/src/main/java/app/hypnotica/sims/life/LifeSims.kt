@@ -683,7 +683,9 @@ class LangtonsAntSim : Sim {
                 // On its highway, it walks off the world and keeps going.
                 if (highwayAt >= 0) {
                     gone = true
-                    env.emit(EventKind.STEP, 0.95f, 0f, 0.6f)
+                    // At the edge it walked off, in the framed view.
+                    val pan = (ax + 0.5f - panX) / ((maxX - minX + 1) * 0.5f + FOCUS_MARGIN)
+                    env.emit(EventKind.STEP, 0.95f, pan.coerceIn(-1f, 1f), 0.6f)
                     break
                 }
                 // Before: wrapping, not clamping. An ant pinned against a
@@ -839,6 +841,8 @@ class FallingSandSim : Sim {
     private var passId = 0
     private var pourDrift = 0f
     private var capacity = 0
+    /** Draw scratch: each grain's colour blended with its neighbours'. */
+    private var smooth = FloatArray(0)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -1037,11 +1041,32 @@ private var patterCarry = 0f
         // Square grains in banded shades, merged into runs: as round dots the
         // pile was a dot grid with black showing between every grain.
         val shades = IntArray(SAND_BANDS) { palette.at(it / (SAND_BANDS - 1f)) }
+        // Each grain shaded with its touching neighbours, weighted to itself:
+        // where an avalanche runs down a flank it interleaves grains from two
+        // strata one by one, and drawn raw that flank was a checkerboard of
+        // light and dark squares, a moiré of diagonal streaks beside the
+        // clean bands of the other side. The strata themselves are many
+        // grains thick and keep their edges.
+        if (smooth.size != w * h) smooth = FloatArray(w * h)
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                val i = row + x
+                if (grid[i].toInt() == 0) continue
+                var sum = colour[i] * 2f
+                var n = 2f
+                if (x > 0 && grid[i - 1].toInt() != 0) { sum += colour[i - 1]; n += 1f }
+                if (x < w - 1 && grid[i + 1].toInt() != 0) { sum += colour[i + 1]; n += 1f }
+                if (y > 0 && grid[i - w].toInt() != 0) { sum += colour[i - w]; n += 1f }
+                if (y < h - 1 && grid[i + w].toInt() != 0) { sum += colour[i + w]; n += 1f }
+                smooth[i] = sum / n
+            }
+        }
         for (y in 0 until h) {
             val row = y * w
             g.cellRow(originX, originY - (y + 0.5f) * size, size, w) { x ->
                 if (grid[row + x].toInt() == 0) 0
-                else shades[(colour[row + x] * (SAND_BANDS - 1) + 0.5f).toInt().coerceIn(0, SAND_BANDS - 1)]
+                else shades[(smooth[row + x] * (SAND_BANDS - 1) + 0.5f).toInt().coerceIn(0, SAND_BANDS - 1)]
             }
         }
     }

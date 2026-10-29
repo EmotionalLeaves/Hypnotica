@@ -147,7 +147,8 @@ class ShatterSim : Sim {
         broken = true
         brokenAt = elapsed
         payoffFrame = true
-        env.emit(EventKind.DONE, 0.95f, 0f, 1f)
+        // DONE comes from the engine on this payoff frame; a second, fixed
+        // pitch one here only doubled it.
         val n = rings * rays
         shardRing = IntArray(n); shardA0 = FloatArray(n); shardA1 = FloatArray(n)
         sx = FloatArray(n); sy = FloatArray(n); svx = FloatArray(n); svy = FloatArray(n)

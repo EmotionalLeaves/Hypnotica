@@ -138,14 +138,22 @@ class GlassBridgeSim : Sim {
         }
         if (current >= marbles || doneAt >= 0f && current >= marbles) return
         if (wait > 0f) { wait -= h * pace; return }
-        if (!hopping) {
-            if (row == rows - 1) {
+        if (!hopping && row == rows - 1) {
+            // Off the last pane: a sure hop onto the finish platform, to its
+            // place in the line. It used to vanish from the last row and
+            // reappear in the line in the same frame.
+            fromX = sideX(lastSide); fromY = rowY(row)
+            hop = 0f
+            hopping = true
+        }
+        if (hopping && row == rows - 1) {
+            hop += h * pace / SURE_HOP
+            if (hop >= 1f) {
+                hopping = false
                 // Across.
                 crossed[current] = true
-                // Heard where it is drawn: its place in the line on the finish platform.
-                val r = MARBLE * (if (across) 1.35f else 1f)
-                val queueStep = min(r * 2.6f, laneW * 1.2f / max(1, marbles))
-                env.emit(EventKind.STEP, 1f, pan(-laneW * 0.6f + current * queueStep, TOP + 0.04f), 0.8f)
+                // Heard where it lands: its place in the line on the finish platform.
+                env.emit(EventKind.STEP, 1f, pan(finishX(current), TOP + 0.04f), 0.8f)
                 if (firstAcross < 0) {
                     firstAcross = current
                     doneAt = elapsed
@@ -153,8 +161,10 @@ class GlassBridgeSim : Sim {
                     env.emit(EventKind.DONE, 1f, 0f, 1f)
                 }
                 nextMarble(env)
-                return
             }
+            return
+        }
+        if (!hopping) {
             // Choose the next pane: the known one if somebody found it, else a guess.
             val next = row + 1
             side = if (known[next]) safe[next] else {
@@ -194,6 +204,12 @@ class GlassBridgeSim : Sim {
     }
 
     private var lastSide = 0
+    private fun finishX(m: Int): Float {
+        val r = MARBLE * (if (across) 1.35f else 1f)
+        // Closer together when there are many, so the whole line fits the platform.
+        val queueStep = min(r * 2.6f, laneW * 1.2f / max(1, marbles))
+        return -laneW * 0.6f + m * queueStep
+    }
     private fun sideOf(r: Int) = if (r < 0) 0 else lastSide
 
     private fun shatter(env: SimEnv, x: Float, y: Float) {
@@ -290,7 +306,9 @@ class GlassBridgeSim : Sim {
                 }
                 m == current && row >= -1 && !fell[m] && !crossed[m] -> {
                     val (x, y) = if (hopping) {
-                        val tx = sideX(side); val ty = rowY(row + 1)
+                        val last = row == rows - 1
+                        val tx = if (last) finishX(m) else sideX(side)
+                        val ty = if (last) TOP + 0.04f else rowY(row + 1)
                         val p = hop.coerceIn(0f, 1f)
                         (fromX + (tx - fromX) * p) to (fromY + (ty - fromY) * p)
                     } else if (row < 0) 0f to START_Y else sideX(lastSide) to rowY(row)
@@ -300,7 +318,7 @@ class GlassBridgeSim : Sim {
                     discB(g, x, y, r * (1f + 0.35f * lift), c)
                 }
                 crossed[m] -> {
-                    discB(g, -laneW * 0.6f + m * queueStep, TOP + 0.04f, r, c)
+                    discB(g, finishX(m), TOP + 0.04f, r, c)
                 }
                 !fell[m] && m > current -> {
                     discB(g, -laneW * 0.6f + (m - current) * queueStep, BOTTOM - 0.04f, r, c)

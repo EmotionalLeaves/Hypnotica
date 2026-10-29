@@ -260,6 +260,15 @@ class TrafficSim : Sim {
             g.ring(bx, by, radius + lane * 0.5f, 0.003f, edge, pi, gapAt)
             g.ring(bx, by, radius - lane * 0.5f + 0.0015f, 0.003f, edge, pi, gapAt)
         }
+        // The start of the lap, across the lane: every car crossing it ticks,
+        // and the tick had nothing on screen to be the sound of.
+        run {
+            val (sx0, sy0) = place(0f)
+            val (sx1, sy1) = place(0.001f)
+            val hd = atan2(sy1 - sy0, sx1 - sx0)
+            val nx = -sin(hd) * lane * 0.5f; val ny = cos(hd) * lane * 0.5f
+            g.line(sx0 - nx, sy0 - ny, sx0 + nx, sy0 + ny, 0.005f, Palette.TEXT_SECONDARY, 0.55f)
+        }
         drawDiagram(g, palette, lane)
         for (i in 0 until n) {
             val t = (pos[i] / road).toFloat()

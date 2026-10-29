@@ -38,6 +38,8 @@ class LastOutSim : Sim {
     private var vy = FloatArray(0)
     private var out = BooleanArray(0)
     private var outAt = FloatArray(0)
+    /** Touching the wall already: rolling round it is one contact, not a knock per substep. */
+    private var onWall = BooleanArray(0)
     private var tint = FloatArray(0)
     private var inside = 0
     private var r = 0.04f
@@ -58,7 +60,7 @@ class LastOutSim : Sim {
         ringR = min(halfW, 1f) * 0.85f
         r = (ringR * 0.09f * sqrt(8f / n)).coerceIn(0.008f, 0.08f)
         x = FloatArray(n); y = FloatArray(n); vx = FloatArray(n); vy = FloatArray(n)
-        out = BooleanArray(n); outAt = FloatArray(n) { -1f }
+        out = BooleanArray(n); outAt = FloatArray(n) { -1f }; onWall = BooleanArray(n)
         tint = FloatArray(n) { (it + 0.5f) / n }
         for (i in 0 until n) {
             var tries = 0
@@ -98,6 +100,7 @@ class LastOutSim : Sim {
                 x[i] += vx[i] * dh; y[i] += vy[i] * dh
                 if (out[i]) continue
                 val d = sqrt(x[i] * x[i] + y[i] * y[i])
+                if (d + r <= ringR - r * 0.25f) onWall[i] = false
                 if (d + r <= ringR) continue
                 // At the wall: through the gap, or off it.
                 val a = atan2(y[i], x[i])
@@ -120,7 +123,11 @@ class LastOutSim : Sim {
                     // The spinning wall drags what it touches round with it.
                     vx[i] += -ny * spin * ringR * 0.15f
                     vy[i] += nx * spin * ringR * 0.15f
-                    if (vn > 0.3f) env.emit(EventKind.STEP, 0.4f + 0.5f * tint[i], (x[i] / max(0.1f, halfW)).coerceIn(-1f, 1f), (0.1f + 0.2f * vn).coerceAtMost(0.4f))
+                    // Only a knock that arrives: a ball riding round the
+                    // wall (the winner, once the gap closes) re-met it every
+                    // substep, a 90-a-second buzz with nothing visibly hitting.
+                    if (vn > 0.3f && !onWall[i]) env.emit(EventKind.STEP, 0.4f + 0.5f * tint[i], (x[i] / max(0.1f, halfW)).coerceIn(-1f, 1f), (0.1f + 0.2f * vn).coerceAtMost(0.4f))
+                    onWall[i] = true
                 }
             }
             for (i in 0 until n) {

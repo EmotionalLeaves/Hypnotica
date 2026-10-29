@@ -828,7 +828,7 @@ class LorenzSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        val len = p.i("trail", 9000).coerceIn(200, 60000)
+        val len = p.i("trail", 13000).coerceIn(200, 60000)
         trailX = FloatArray(len)
         trailY = FloatArray(len)
         head = 0
@@ -996,8 +996,11 @@ class LorenzSim : Sim {
             typicalSeconds = 28f,
             params = listOf(
                 // 9000: at 4000 only the last two or three loops were on screen,
-                // a sparse sketch rather than the full butterfly.
-                Param.int("trail", "Trail length", 200, 60000, 9000, card = Card.LOOK, logScale = true),
+                // a sparse sketch rather than the full butterfly. 13000: at
+                // 9000 (7.5 s of flight) the end card often showed one wing
+                // dense and the other faded to a single ghost loop, the
+                // trajectory having lingered on one side.
+                Param.int("trail", "Trail length", 200, 60000, 13000, card = Card.LOOK, logScale = true),
                 Param.float("dot", "Dot size", 0.002f, 0.02f, 0.006f, card = Card.LOOK),
                 Param.float("rate", "Speed", 100f, 8000f, 1200f, card = Card.MOTION, logScale = true),
                 Param.float("sigma", "Sigma", 1f, 20f, 10f, card = Card.MOTION, advancedOnly = true),

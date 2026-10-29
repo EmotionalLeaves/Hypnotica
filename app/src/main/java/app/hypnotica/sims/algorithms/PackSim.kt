@@ -170,10 +170,13 @@ class PackSim : Sim {
             val cx = ox + b.c * cell + w * 0.5f
             val cy = b.y + hh * 0.5f * (1f - sq * 0.5f)
             val lit = if (shine > 0f) (1f - abs(cx - sx) / (bw * 0.35f)).coerceIn(0f, 1f) else 0f
-            val c = Palette.brighten(palette.at(b.tint), 0.35f * lit)
+            val base = deepTone(palette.at(b.tint))
+            // The sweep lights the top edge more than the face: brightening the
+            // face by a third turned Candy's pale yellows pure white as it passed.
+            val c = Palette.brighten(base, 0.12f * lit)
             g.rect(cx, cy, w * 0.5f * (1f + sq * 0.15f) - gap, hh * 0.5f * (1f - sq * 0.5f) - gap, c)
             // A lighter top edge, so stacked blocks read as solid things.
-            g.rect(cx, cy + hh * 0.5f * (1f - sq * 0.5f) - gap - cell * 0.06f, w * 0.5f - gap * 2f, cell * 0.05f, Palette.brighten(c, 0.35f))
+            g.rect(cx, cy + hh * 0.5f * (1f - sq * 0.5f) - gap - cell * 0.06f, w * 0.5f - gap * 2f, cell * 0.05f, Palette.brighten(c, 0.22f + 0.2f * lit))
         }
     }
 
@@ -223,4 +226,29 @@ class PackSim : Sim {
             create = { PackSim() }
         )
     }
+}
+
+/**
+ * A block's (or disc's) colour held to a common depth: saturation at least a half and
+ * value 0.6–0.86. Candy's pastels are 30 % saturated at full value, so on
+ * black a box of them read as near-white slabs (the pale yellow was white),
+ * and Mono glow's darkest grey vanished into the background.
+ */
+internal fun deepTone(c: Int): Int {
+    val r = ((c ushr 16) and 0xFF) / 255f
+    val gr = ((c ushr 8) and 0xFF) / 255f
+    val b = (c and 0xFF) / 255f
+    val mx = max(r, max(gr, b)); val mn = min(r, min(gr, b))
+    val d = mx - mn
+    val s = if (mx > 0f) d / mx else 0f
+    var h = when {
+        d < 1e-5f -> 0f
+        mx == r -> 60f * (((gr - b) / d) % 6f)
+        mx == gr -> 60f * ((b - r) / d + 2f)
+        else -> 60f * ((r - gr) / d + 4f)
+    }
+    if (h < 0f) h += 360f
+    // Greys stay grey: a white block is lifted no colour it never had.
+    val s2 = if (s < 0.08f) s else max(s, 0.5f)
+    return Palette.hsv(h, s2, mx.coerceIn(0.6f, 0.86f))
 }

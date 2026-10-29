@@ -221,10 +221,14 @@ class WheelSim : Sim {
             val s = widths[k]
             val c = sliceColour(palette, k)
             val won = k == winner
-            val pulse = if (won) 0.5f + 0.5f * sin((elapsed - stoppedAt) * 10f) else 0f
+            val pulse = if (won) 0.5f + 0.5f * sin((elapsed - stoppedAt) * 4f) else 0f
             // Losers go dark but stay solid: translucent, the glow under them
-            // turned every slice to brown and olive mud.
-            val col = if (won) Palette.brighten(c, 0.2f + 0.25f * pulse) else if (winner >= 0) Palette.lerp(c, FACE, 0.68f) else c
+            // turned every slice to brown and olive mud. Dark enough to read
+            // as one quiet ring behind the winner; at two thirds the orange
+            // and yellow ones were still brown and olive slabs. The winner
+            // keeps its own full colour with a slow breath: brightened by
+            // half it washed out to a pastel paler than the losers' rim.
+            val col = if (won) Palette.brighten(c, 0.06f + 0.1f * pulse) else if (winner >= 0) Palette.lerp(c, FACE, 0.8f) else c
             // A wedge: a ring as thick as its radius with everything but this
             // segment's arc cut away.
             g.ring(0f, 0f, radius, radius, col, twoPi - s, a0 + s)

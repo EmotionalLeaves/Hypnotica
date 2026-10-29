@@ -318,8 +318,9 @@ class HarmonographSim : Sim {
         // Or long enough: barely damped and drawn slowly, it took minutes.
         if (!settled && (envelope < 0.3f || runFor > BACKSTOP_SECONDS)) {
             settled = true
+            // No DONE of its own: the engine sounds one on this very step, and
+            // a constant-pitch second chime here only stacked on it.
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.7f, 0f, 1f)
         }
     }
 
@@ -434,7 +435,10 @@ class CirclePackingSim : Sim {
         coverage = 0f
         packed = false
         spawnCarry = 0f
+        specks = 0
     }
+
+    private var specks = 0
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -450,7 +454,12 @@ class CirclePackingSim : Sim {
             if (next > maxRadius || touchesEdge(cx[i], cy[i], next, halfW) || touchesAny(i, next)) {
                 growing[i] = false
                 // Louder for a big circle closing a big gap than for a speck.
-                env.emit(EventKind.HIT, (cr[i] / maxRadius).coerceIn(0f, 1f), (cx[i] / halfW).coerceIn(-1f, 1f), 0.25f + 0.5f * (cr[i] / maxRadius).coerceIn(0f, 1f))
+                // Late in the packing hundreds of specks stop a second, which
+                // was ninety notes a second of one tick: only every third
+                // speck is heard, every circle big enough to see still is.
+                val big = cr[i] / maxRadius >= SPECK
+                if (!big) specks++
+                if (big || specks % 3 == 0) env.emit(EventKind.HIT, (cr[i] / maxRadius).coerceIn(0f, 1f), (cx[i] / halfW).coerceIn(-1f, 1f), 0.25f + 0.5f * (cr[i] / maxRadius).coerceIn(0f, 1f))
             } else {
                 cr[i] = next
                 stillGrowing++
@@ -484,8 +493,8 @@ class CirclePackingSim : Sim {
 
         if (!packed && (count >= target || coverage > 0.78f)) {
             packed = true
+            // The engine sounds the payoff on this step; one here doubled it.
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
     }
 
@@ -518,7 +527,10 @@ class CirclePackingSim : Sim {
         val palette = env.palette
         g.reserveInstances(count * 3)
         for (i in 0 until count) {
-            val c = palette.at(tint[i])
+            // Short of the ramp's far end: on Ocean that end is a navy whose
+            // rings all but vanished on the background, read as holes rather
+            // than circles.
+            val c = palette.at(TINT_REACH * tint[i])
             if (growing[i]) g.glow(cx[i], cy[i], cr[i] * 2.2f, c, 0.4f)
             // A faint wash of its colour inside, so each circle reads as a
             // solid thing and not a hole cut in the dark.
@@ -539,6 +551,9 @@ class CirclePackingSim : Sim {
     companion object {
         /** A new circle's size when it appears. */
         const val SEED_R = 0.004f
+        /** Below this share of the largest radius a finished circle is a speck. */
+        const val SPECK = 0.12f
+        const val TINT_REACH = 0.8f
         fun def(): SimDef = SimDef(
             id = "art/circle-packing",
             title = "Circle packing",
@@ -653,7 +668,10 @@ class SpirographSim : Sim {
         if (closedAt < 0f && theta >= closingTheta) {
             closedAt = abs(env.time)
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+            // Heard where the curve closes: the pen back on its first point,
+            // out at the right of the ring (theta = 0), not mid-field.
+            val closeX = bigR - smallR + penOffset
+            env.emit(EventKind.DONE, 0.8f, (closeX / max(env.halfWidth, frameHalfWidth(env))).coerceIn(-1f, 1f), 1f)
         }
         // Once it has closed, the drawing is the drawing: a few seconds to look
         // at it and the run is done.
@@ -672,12 +690,17 @@ class SpirographSim : Sim {
             g.point(trailX[i], trailY[i], size, palette.at(i / whole))
         }
         // The rolling wheel, so the mechanism is visible, not just the result.
+        // Once the curve has closed the machinery steps back over a second,
+        // leaving the finished rosette: the wheel and the pen's light sat on
+        // top of the figure for the whole closing hold, a construction line
+        // left on the drawing.
+        val tool = if (closedAt >= 0f) (1f - restAfterClose / TOOL_FADE).coerceIn(0f, 1f) else 1f
         val cxw = ((bigR - smallR) * cos(theta)).toFloat()
         val cyw = ((bigR - smallR) * sin(theta)).toFloat()
-        g.ring(0f, 0f, bigR, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.4f))
-        g.ring(cxw, cyw, smallR, 0.003f, Palette.withAlpha(Palette.ACCENT, 0.7f))
-        if (count > 0) {
-            g.glow(trailX[count - 1], trailY[count - 1], 0.055f, Palette.SUCCESS, 0.7f)
+        g.ring(0f, 0f, bigR, 0.003f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.4f - 0.15f * (1f - tool)))
+        if (tool > 0f) {
+            g.ring(cxw, cyw, smallR, 0.003f, Palette.withAlpha(Palette.ACCENT, 0.7f * tool))
+            if (count > 0) g.glow(trailX[count - 1], trailY[count - 1], 0.055f, Palette.SUCCESS, 0.7f * tool)
         }
     }
 
@@ -700,6 +723,8 @@ class SpirographSim : Sim {
     companion object {
         const val STEP = 0.004
         const val MAX_TURNS = 12
+        /** Seconds the wheel takes to fade once the curve has closed. */
+        const val TOOL_FADE = 1.2f
         fun def(): SimDef = SimDef(
             id = "art/spirograph",
             title = "Spirograph",

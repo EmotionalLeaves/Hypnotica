@@ -257,7 +257,9 @@ class BallSortSim : Sim {
             val x = tubeX(t)
             val bottom = base(t)
             val top = topY(t)
-            if (ring[t] > 0f && height[t] > 0) g.glow(x, (bottom + top) * 0.5f, tubeW * 4f, palette.at((state[t][0] + 0.5f) / colors), 0.6f * ring[t])
+            // Kept to the tube's own width: at four tube-widths and 0.6 the
+            // flash smeared a green fog across the neighbouring tubes.
+            if (ring[t] > 0f && height[t] > 0) g.glow(x, (bottom + top) * 0.5f, tubeW * 2.4f, palette.at((state[t][0] + 0.5f) / colors), 0.4f * ring[t])
             // A test tube: straight sides into a round bottom centred on the
             // lowest ball, so the ball sits in it. The bottom used to be a
             // whole circle centred below the ball, which drew a ring hanging

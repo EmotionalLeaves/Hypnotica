@@ -189,7 +189,7 @@ class HanoiSim : Sim {
                 val top = level == pegs[i].size - 1
                 // The disc in flight is drawn on its way, below.
                 if (flying && top && i == toPeg && disc == lifting) continue
-                pill(g, x, baseY + level * discH + discH * 0.5f, discWidth(disc, pegGap), discH, palette.at(disc.toFloat() / discs))
+                pill(g, x, baseY + level * discH + discH * 0.5f, discWidth(disc, pegGap), discH, deepTone(palette.at(disc.toFloat() / discs)))
             }
         }
         if (flying) {
@@ -208,9 +208,11 @@ class HanoiSim : Sim {
                 p < 0.7f -> { x = x0 + (x1 - x0) * ease((p - 0.3f) / 0.4f); y = lift }
                 else -> { x = x1; y = lift + (y1 - lift) * ease((p - 0.7f) / 0.3f) }
             }
-            val c = palette.at(lifting.toFloat() / discs)
-            g.glow(x, y, discWidth(lifting, pegGap) * 1.3f, c, 0.35f)
-            pill(g, x, y, discWidth(lifting, pegGap), discH, Palette.brighten(c, 0.15f))
+            // Toned like the pegs' discs (see deepTone): Candy's pastel
+            // yellow, brightened in flight, was a white disc crossing over.
+            val c = deepTone(palette.at(lifting.toFloat() / discs))
+            g.glow(x, y, discWidth(lifting, pegGap) * 1.3f, c, 0.3f)
+            pill(g, x, y, discWidth(lifting, pegGap), discH, Palette.brighten(c, 0.1f))
         }
         if (counter) drawCount(g, palette, halfW, baseY + lampRel, countR, baseY + barRel)
     }
@@ -228,7 +230,7 @@ class HanoiSim : Sim {
             val bit = d - 1
             val x = halfW - (bit + 0.5f) * slot
             val lit = (played shr bit) and 1 == 1
-            val c = palette.at(d.toFloat() / discs)
+            val c = deepTone(palette.at(d.toFloat() / discs))
             if (lit && d == lifting && liftProgress < 1f) g.glow(x, y, r * 2.6f, c, 0.45f)
             g.disc(x, y, r, if (lit) c else dim)
             if (!lit) g.ring(x, y, r, r * 0.12f, Palette.withAlpha(c, 0.5f))
@@ -489,8 +491,12 @@ class NQueensSim : Sim {
             if (c < 0) continue
             val x = originX + (c + 0.5f) * size
             val y = originY + (r + 0.5f) * size
-            val col = palette.at(0.72f * r / max(1, n - 1))
-            g.glow(x, y, size * (if (solved) 1.0f else 0.75f), col, if (solved) 0.6f else 0.4f)
+            // One colour for every queen, the newest lit: graded by row, the
+            // top rows came out red on Ember — the colour the board uses for
+            // an attacked square — so the solved board looked half in conflict.
+            val newest = !solved && r == row - 1
+            val col = if (newest) Palette.brighten(palette.at(QUEEN_T), 0.18f) else palette.at(QUEEN_T)
+            g.glow(x, y, size * (if (solved) 1.0f else 0.75f), col, if (solved) 0.6f else if (newest) 0.5f else 0.3f)
             g.disc(x, y, size * 0.36f, col)
             g.ring(x, y, size * 0.36f, size * 0.06f, Palette.brighten(col, 0.4f))
             g.disc(x, y, size * 0.12f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.85f))
@@ -540,6 +546,8 @@ class NQueensSim : Sim {
 
     companion object {
         private const val DEPTH_LOG = 256
+        /** Where on the palette the queens sit: Ember's gold, Aurora's teal. */
+        private const val QUEEN_T = 0.08f
         private const val DARK_SQUARE = 0xFF141821.toInt()
         private const val LIGHT_SQUARE = 0xFF252B39.toInt()
 
@@ -1758,8 +1766,9 @@ class GraphLayoutSim : Sim {
         val fullW = (sortX[n - 1] - sortX[0]) * 0.5f + 0.02f
         val fullH = (sortY[n - 1] - sortY[0]) * 0.5f + 0.02f
         val bulk = min(env.halfWidth * FILL / bulkW, FILL / bulkH)
-        // The whole graph may run to the edge of the screen, not off it.
-        val whole = min(env.halfWidth / fullW, 1f / fullH)
+        // The whole graph may run to the edge of the screen, not off it
+        // (a node's radius short of it).
+        val whole = min(env.halfWidth * 0.96f / fullW, 0.96f / fullH)
         val target = min(bulk, whole).coerceIn(0.6f, MAX_FIT)
         // Slow, so the frame breathes with the graph rather than snapping to it.
         val k = min(1f, abs(dt) * 1.2f)
@@ -1813,8 +1822,12 @@ class GraphLayoutSim : Sim {
     )
 
     companion object {
-        /** Share of the screen the graph is framed to fill. */
-        private const val FILL = 0.8f
+        /**
+         * Share of the screen the graph's bulk is framed to fill. At 0.8 a
+         * phone showed an empty band an eighth of the screen tall above and
+         * below the settled graph; the outliers still stop at the edge.
+         */
+        private const val FILL = 0.9f
         /** Near neighbours each node may take an extra edge to. */
         private const val NEAR = 5
         /**

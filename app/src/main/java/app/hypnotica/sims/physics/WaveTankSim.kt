@@ -131,8 +131,8 @@ class WaveTankSim : Sim {
         // landing on the screen for a few periods.
         if (!formed && arrivedAt >= 0 && updates - arrivedAt > (FORMING_PERIODS * 2f * lambda).toLong()) {
             formed = true
+            // DONE comes from the engine on this payoff frame.
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
     }
 

@@ -221,6 +221,21 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
     /** A dot's radius on a round view, by how much track each dot has. */
     private fun roundDot(s: Float): Float = max(2.2f * s / n, 0.0045f).coerceAtMost(0.02f)
 
+    /**
+     * An element's colour. A wheel palette (Spectrum) comes back round to its
+     * start at 1, so the shortest and the tallest bar of the sorted ramp were
+     * the same red; on a wheel the ramp stops a sixth short of the full turn.
+     */
+    private fun col(palette: Palette, v: Float): Int {
+        if (palette !== lastPalette) {
+            lastPalette = palette
+            span = if (palette.at(0f) == palette.at(1f)) 0.84f else 1f
+        }
+        return palette.at(v * span)
+    }
+    private var lastPalette: Palette? = null
+    private var span = 1f
+
     private fun highlight(index: Int): Boolean = index == array.lastA || index == array.lastB
 
     private fun drawBars(g: G, palette: Palette, halfW: Float, sweepIndex: Int, usePoints: Boolean) {
@@ -232,7 +247,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             for (i in 0 until n) {
                 val v = values[i]
                 val x = -halfW + (i + 0.5f) * barW
-                val c = shade(i, palette.at(v), sweepIndex)
+                val c = shade(i, col(palette, v), sweepIndex)
                 g.point(x, baseY + v * 1.78f * 0.5f, size * 2f, c)
             }
             return
@@ -243,7 +258,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val v = values[i]
             val x = -halfW + (i + 0.5f) * barW
             val h = v * 1.78f
-            var c = shade(i, palette.at(v), sweepIndex)
+            var c = shade(i, col(palette, v), sweepIndex)
             if (highlight(i)) c = Palette.brighten(c, 0.55f)
             g.bar(x, baseY, hw, h, c)
         }
@@ -251,7 +266,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             if (array.lastA in 0 until n) g.glow(
                 -halfW + (array.lastA + 0.5f) * barW,
                 baseY + values[array.lastA] * 1.78f,
-                barW * 4f, palette.at(values[array.lastA]), 0.7f
+                barW * 4f, col(palette, values[array.lastA]), 0.7f
             )
         }
         // The verify sweep's leading edge is lit by shade(). It used to be a
@@ -267,7 +282,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             g.reservePoints(n)
             for (i in 0 until n) {
                 val v = values[i]
-                val c = shade(i, palette.at(v), sweepIndex)
+                val c = shade(i, col(palette, v), sweepIndex)
                 g.point(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r * 2.2f, c)
             }
             return
@@ -275,7 +290,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
         g.reserveInstances(n)
         for (i in 0 until n) {
             val v = values[i]
-            var c = shade(i, palette.at(v), sweepIndex)
+            var c = shade(i, col(palette, v), sweepIndex)
             if (highlight(i)) c = Palette.brighten(c, 0.6f)
             g.disc(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r, c)
         }
@@ -306,7 +321,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = (0.12f + 0.78f * sqrt(t) * (0.55f + 0.45f * v)) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = shade(i, palette.at(v), sweepIndex)
+            var c = shade(i, col(palette, v), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }
@@ -323,7 +338,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = (0.9f - err * 0.78f) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
-            var c = shade(i, palette.at(v), sweepIndex)
+            var c = shade(i, col(palette, v), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }

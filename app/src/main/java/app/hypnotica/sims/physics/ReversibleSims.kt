@@ -98,7 +98,7 @@ class TowerSim : Sim {
             placed = now
         }
 
-        if (!completedOnce && progress >= 0.999f) {
+        if (!completedOnce && progress >= 1f) {
             completedOnce = true
             // The engine sounds DONE on the payoff frame.
             payoffFrame = true
@@ -120,7 +120,12 @@ class TowerSim : Sim {
         var phase = time % cycle
         if (phase < 0f) phase += cycle
         val up = phase / buildSeconds
-        return if (up <= 1f) up else 2f - up
+        val raw = if (up <= 1f) up else 2f - up
+        // A short flat top, so the tower actually stands complete: a step
+        // seldom lands on the fold itself, so the count peaked a brick short,
+        // the last brick never touched down and the payoff fired over it
+        // still in mid-air. Still a pure function of the clock.
+        return min(1f, raw * (1f + TOP_HOLD))
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -151,8 +156,8 @@ class TowerSim : Sim {
             val left = -env.halfWidth * 0.85f + slot(env.halfWidth) * 0.04f
             val right = env.halfWidth * 0.85f - slot(env.halfWidth) * 0.04f
             for (row in 0 until fullRows) {
-                var c = palette.at(((row.toFloat() / max(1, rows)) * RAMP + 0.1f).coerceIn(0f, 1f))
-                if (row == topRow && topLit > 0f) c = Palette.brighten(c, 0.45f * topLit)
+                var c = palette.at((rampAt(palette, row.toFloat() / max(1, rows)) + 0.06f).coerceIn(0f, 1f))
+                if (row == topRow && topLit > 0f) c = Palette.brighten(c, TOP_LIGHT * topLit)
                 g.rect((left + right) * 0.5f, floorY + row * brickH, (right - left) * 0.5f, brickH * 0.45f, c)
             }
         }
@@ -161,7 +166,7 @@ class TowerSim : Sim {
             val row = rowOf(i)
             val col = colOf(i)
             var c = brickColour(palette, i, rows)
-            if (row == topRow && topLit > 0f) c = Palette.brighten(c, 0.45f * topLit)
+            if (row == topRow && topLit > 0f) c = Palette.brighten(c, TOP_LIGHT * topLit)
             g.rect(spanX(row, col, env.halfWidth), floorY + row * brickH, spanHalf(row, col, env.halfWidth), brickH * 0.42f, c)
             i++
         }
@@ -189,7 +194,10 @@ class TowerSim : Sim {
             val y = restY + DROP_HEIGHT * (0.6f + 0.5f * abs(jitter[k])) * (1f - t * t)
             // The colour it will have in the wall, so it does not change hue
             // the moment it lands.
-            val c = Palette.brighten(brickColour(palette, k, rows), 0.25f * (1f - t))
+            var c = Palette.brighten(brickColour(palette, k, rows), 0.25f * (1f - t))
+            // The last bricks of the top course light up with the rest of it:
+            // unlit, the final one dropped in as a dark square over the lit row.
+            if (row == topRow && topLit > 0f) c = Palette.brighten(c, TOP_LIGHT * topLit)
             // Faded in over the first part of the drop and tipped a little,
             // settling square as it lands: appearing whole at a fixed height
             // they drew a hard diagonal line of bricks across the sky.
@@ -203,7 +211,22 @@ class TowerSim : Sim {
     // that all but vanished on black, so the top of a finished tower - the
     // newest bricks, where the eye goes - was the dimmest part of it.
     private fun brickColour(palette: Palette, i: Int, rows: Int): Int =
-        palette.at(((rowOf(i).toFloat() / max(1, rows)) * RAMP + 0.04f + tint[i] * 0.12f).coerceIn(0f, 1f))
+        palette.at((rampAt(palette, rowOf(i).toFloat() / max(1, rows)) + tint[i] * 0.12f).coerceIn(0f, 1f))
+
+    /**
+     * Where a course [frac] of the way up sits on the palette: always rising
+     * towards its lighter end, so the newest bricks at the top are the
+     * brightest and the base the deepest. Ocean runs light to dark, and read
+     * straight up the tower went from pale cyan at the foot to navy at the
+     * top, a wall that looked heavier the higher it went.
+     */
+    private fun rampAt(palette: Palette, frac: Float): Float {
+        val lightFirst = lum(palette.at(0f)) > lum(palette.at(1f))
+        val up = if (lightFirst) 1f - frac else frac
+        return up * RAMP + 0.04f
+    }
+
+    private fun lum(c: Int): Float = ((c shr 16) and 255) * 0.3f + ((c shr 8) and 255) * 0.59f + (c and 255) * 0.11f
 
     // Laid in running bond, the way a real wall is: every other course is
     // shifted half a brick, with a half brick at each end. Stacked straight,
@@ -251,7 +274,7 @@ class TowerSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "bricks" to "$placed/$bricks",
-        "time" to if (progress >= 0.999f) "complete" else String.format(java.util.Locale.US, "%.0f%%", progress * 100f)
+        "time" to if (progress >= 1f) "complete" else String.format(java.util.Locale.US, "%.0f%%", progress * 100f)
     )
 
     companion object {
@@ -272,6 +295,10 @@ class TowerSim : Sim {
         const val MAX_IN_FLIGHT = 60
         /** How far along the palette the tower climbs, bottom to top. */
         const val RAMP = 0.62f
+        /** How much past full the clock's fold is stretched: the share of the cycle it stands complete. */
+        const val TOP_HOLD = 0.04f
+        /** How much the finished top course brightens: at 0.45 the pale top of the ramp burned to plain white. */
+        const val TOP_LIGHT = 0.22f
 
         fun def(): SimDef = SimDef(
             id = "physics/tower",

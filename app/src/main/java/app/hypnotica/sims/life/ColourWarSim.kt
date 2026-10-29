@@ -62,6 +62,7 @@ class ColourWarSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         teams = p.i("colours", 4).coerceIn(2, 4)
+        lostAtX.fill(0f)
         cols = p.i("squares", 28).coerceIn(12, 160)
         halfW = env.halfWidth
         cell = 2f * halfW / cols
@@ -185,6 +186,7 @@ class ColourWarSim : Sim {
             // of the game, and if it was its colour's last, so is the colour.
             if (ownerAt(bx[i], by[i]) != t) {
                 alive[i] = false
+                lostAtX[t] = bx[i]
                 return@repeat
             }
             // Across, then down, each axis checked on its own so a corner
@@ -220,7 +222,8 @@ class ColourWarSim : Sim {
         for (t in 0 until teams) {
             if (!out[t] && (counts[t] == 0 || bx.indices.none { alive[it] && bteam[it] == t })) {
                 out[t] = true
-                env.emit(EventKind.DEATH, t / max(1f, teams - 1f), 0f, 0.9f)
+                // Heard where its last ball was swallowed.
+                env.emit(EventKind.DEATH, t / max(1f, teams - 1f), (lostAtX[t] / halfW).coerceIn(-1f, 1f), 0.9f)
                 // A colour with ground but no balls left keeps its ground: it
                 // just cannot win any more. The payoff is the first one out.
             }
@@ -264,6 +267,7 @@ class ColourWarSim : Sim {
 
     private var tickCarry = 0f
     private var takeCarry = 0f
+    private val lostAtX = FloatArray(8)
 
     private fun ownerAt(x: Float, y: Float): Int {
         val c = ((x + halfW) / cell).toInt().coerceIn(0, cols - 1)

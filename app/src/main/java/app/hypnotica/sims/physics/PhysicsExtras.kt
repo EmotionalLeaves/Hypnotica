@@ -794,8 +794,15 @@ class ClothSim : Sim {
                 i += maxOf(1, n / 64)
             }
             if (sampled > 0) {
-                val amount = (motion / sampled * 60f).coerceIn(0f, 1f)
-                if (amount > 0.04f) env.emit(EventKind.STEP, amount, 0f, 0.2f + amount * 0.5f)
+                // A speed, per second: "* 60" assumed a step of 1/60 s, and
+                // since the cloth went to fixed 1/120 s steps the pulse came
+                // out at half its level.
+                val amount = (motion / sampled / abs(dt)).coerceIn(0f, 1f)
+                // Heard where the hem has swung to, which is what is seen moving.
+                var hem = 0f; var hemN = 0
+                for (c in 0 until cols) { val k = (rows - 1) * cols + c; if (!cut[k]) { hem += x[k]; hemN++ } }
+                val pan = if (hemN == 0) 0f else (hem / hemN / max(0.1f, env.halfWidth) * 2f).coerceIn(-1f, 1f)
+                if (amount > 0.04f) env.emit(EventKind.STEP, amount, pan, 0.2f + amount * 0.5f)
             }
         }
 
@@ -1093,6 +1100,8 @@ class OpticsSim : Sim {
     private var tightenedFor = 0f
     /** What the beam measured before the sweep went looking, for comparison. */
     private var startMeasure = Float.MAX_VALUE
+    private var lastDeviation = Float.NaN
+    private var deviationFalling = false
     private var sourceY = 0.35f
     private var angle = -0.35f
     /** The beam's direction as traced: the angle, or for the prism, about its best one. */
@@ -1103,6 +1112,11 @@ class OpticsSim : Sim {
     private var pT = PRISM_TOP
     private var pB = PRISM_BOTTOM
     private var pH = PRISM_HALF
+    // The lens, scaled: on an upright phone it is turned so the light runs
+    // down the long axis and its focus lands on screen.
+    private var lr = LENS_R
+    private var lo = LENS_OFFSET
+    private var lensTurned = false
 
     // Where the glass sits on screen. Rays are traced in the glass's own
     // frame and turned and moved into the world to be drawn. Upright in the
@@ -1149,6 +1163,19 @@ class OpticsSim : Sim {
             pT = PRISM_TOP; pB = PRISM_BOTTOM; pH = PRISM_HALF
             rotC = 1f; rotS = 0f; offX = 0f; offY = 0f
         }
+        lensTurned = shape == 1 && upright
+        if (lensTurned) {
+            // Side-on across a phone, a lens wide enough to see focused about
+            // 0.85 past its middle, off the right edge of a 0.46-wide screen,
+            // and the beam came in high, off its axis, so its edge rays
+            // reflected inside the glass and left out of the bottom. Turned a
+            // quarter, the light falls down the screen onto the lens's axis
+            // and comes to a point in the lower half.
+            lr = LENS_R * LENS_UPRIGHT_SCALE; lo = LENS_OFFSET * LENS_UPRIGHT_SCALE
+            rotC = 0f; rotS = -1f; offX = 0f; offY = LENS_UPRIGHT_Y
+        } else {
+            lr = LENS_R; lo = LENS_OFFSET
+        }
         val count = p.i("rays", 9).coerceIn(1, 60)
         for (i in 0 until count) {
             val t = if (count == 1) 0.5f else i.toFloat() / (count - 1)
@@ -1165,8 +1192,10 @@ class OpticsSim : Sim {
         // frames and the moment the focus is found, so the drawer dimmed a
         // control that still did something — which is its own kind of lie.
         angle = if (p.b("sweep", true)) -0.35f else p.f("angle", -0.35f)
-        aim = if (shape == 0) angle * PRISM_SWEEP + PRISM_AIM else angle
+        aim = prismAim(p.b("sweep", true), 0f)
         elapsed = 0f
+        lastDeviation = Float.NaN
+        deviationFalling = false
         payoffFrame = false
         focused = false
         heardAngle = Int.MIN_VALUE
@@ -1205,15 +1234,20 @@ class OpticsSim : Sim {
         if (env.params.b("sweep", true)) {
             angle = -0.35f + sin(elapsed * 0.4f) * 0.55f
         }
-        // The prism is aimed about its angle of least deviation: up into
-        // the left face at 24°, where light crosses parallel to the base.
-        aim = if (shape == 0) angle * PRISM_SWEEP + PRISM_AIM else angle
+        aim = prismAim(env.params.b("sweep", true), elapsed)
         trace(env)
         // A tick each time the beam has swung a notch: one every step was a
         // 120-a-second buzz, even with the sweep off and nothing moving.
         val notch = kotlin.math.floor(angle * ANGLE_NOTCHES).toInt()
         if (notch != heardAngle) {
-            if (heardAngle != Int.MIN_VALUE) env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), 0f, 0.25f)
+            if (heardAngle != Int.MIN_VALUE) {
+                // Heard where the prism's light lands on the wall: the end of
+                // the middle ray. A lens's or slab's rays all run off the right.
+                val mid = rays.getOrNull(rays.size / 2)
+                val pan = if (shape != 0 || mid == null || mid.count == 0) 0f
+                    else (wx(mid.xs[mid.count - 1], mid.ys[mid.count - 1]) / max(0.1f, env.halfWidth)).coerceIn(-1f, 1f)
+                env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), pan, 0.25f)
+            }
             heardAngle = notch
         }
         // The focus: the moment the rays are at their tightest on the far side
@@ -1225,6 +1259,36 @@ class OpticsSim : Sim {
         // 0.12 and the sim never paid off at all — no slow motion, no sweep,
         // and TickTock throwing away every seed. How much tighter the beam got
         // than it started is a question that has an answer at every setting.
+        if (shape == 0) {
+            // A prism has no focus: its moment is least deviation, the
+            // classic picture, where the beam crosses the glass parallel to
+            // its base and the fan lands squarest on the wall. Spread "focus"
+            // fired at the sweep's far end instead, with half the colours
+            // reflected inside the glass and leaving off the left edge.
+            val dev = prismDeviation()
+            val rising = dev.isFinite() && lastDeviation.isFinite() && dev > lastDeviation + 1e-5f
+            if (dev.isFinite() && lastDeviation.isFinite() && dev < lastDeviation - 1e-5f) deviationFalling = true
+            if (!focused && elapsed > EARLIEST_FOCUS && ((deviationFalling && rising) || elapsed > FOCUS_BACKSTOP)) {
+                focused = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+            }
+            if (rising) deviationFalling = false
+            lastDeviation = dev
+            return
+        }
+        if (lensTurned && env.params.b("sweep", true)) {
+            // Its moment is the beam crossing the axis: every ray brought to
+            // one sharp point straight down the middle.
+            val crossed = lastDeviation.isFinite() && (aim >= 0f) != (lastDeviation >= 0f)
+            lastDeviation = aim
+            if (!focused && elapsed > EARLIEST_FOCUS && (crossed || elapsed > FOCUS_BACKSTOP)) {
+                focused = true
+                payoffFrame = true
+                env.emit(EventKind.DONE, 0.8f, 0f, 1f)
+            }
+            return
+        }
         val measure = focusMeasure()
         if (measure.isFinite() && !startMeasure.isFinite()) startMeasure = measure
         if (measure < tightest) {
@@ -1242,6 +1306,36 @@ class OpticsSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
+    }
+
+    /**
+     * Where the beam points. The prism is aimed about its angle of least
+     * deviation, and its sweep stays between angles where every colour gets
+     * out through the far face: below about 14° up into the left face violet
+     * meets that face past its critical angle and reflects inside, so the
+     * old sweep (down to 8°) ended its swing with a broken fan leaving off
+     * the left of a phone screen.
+     */
+    private fun prismAim(sweep: Boolean, t: Float): Float = when {
+        // About the axis, a quarter of the sweep's swing: the turned lens is
+        // narrower, and tilted by the whole swing the beam missed it.
+        lensTurned -> (angle + 0.35f) * 0.5f
+        shape != 0 -> angle
+        sweep -> PRISM_SWEEP_MID + sin(t * 0.4f) * PRISM_SWEEP_HALF
+        else -> angle * PRISM_SWEEP + PRISM_AIM
+    }
+
+    /** How far the middle colour is turned from the white beam, in radians; NaN until it is out. */
+    private fun prismDeviation(): Float {
+        val ray = rays.getOrNull(rays.size / 2) ?: return Float.NaN
+        val n = ray.count
+        if (ray.firstHit < 0 || n < 4) return Float.NaN
+        val outX = ray.xs[n - 1] - ray.xs[n - 2]
+        val outY = ray.ys[n - 1] - ray.ys[n - 2]
+        val len = hypot(outX, outY)
+        if (len < 1e-6f) return Float.NaN
+        val c = ((cos(aim) * outX + sin(aim) * outY) / len).coerceIn(-1f, 1f)
+        return kotlin.math.acos(c)
     }
 
     /**
@@ -1315,7 +1409,8 @@ class OpticsSim : Sim {
             // A lens is shown a parallel beam, to focus; a prism or a slab one
             // narrow white beam, to split into its colours.
             var y = when (shape) {
-                1 -> sourceY - (index - (count - 1) * 0.5f) * 0.035f
+                1 -> if (lensTurned) (sourceY - 0.35f) * 0.4f - (index - (count - 1) * 0.5f) * min(0.035f, 0.26f / max(1, count - 1))
+                    else sourceY - (index - (count - 1) * 0.5f) * 0.035f
                 0 -> prismStartY(x, aim)
                 else -> sourceY
             }
@@ -1330,6 +1425,12 @@ class OpticsSim : Sim {
                 val along = faceAlong()
                 x = -pH * 0.5f - faceDirX / fl * along - dx * 0.02f
                 y = (pT + pB) * 0.5f - faceDirY / fl * along - dy * 0.02f
+                var back = 0
+                while (back++ < 400 && inView(x - dx * 0.01f, y - dy * 0.01f)) { x -= dx * 0.01f; y -= dy * 0.01f }
+            } else if (lensTurned) {
+                // Aimed through its point just in front of the lens, then
+                // walked back to the top of the screen.
+                x = -(lr - lo) - 0.04f
                 var back = 0
                 while (back++ < 400 && inView(x - dx * 0.01f, y - dy * 0.01f)) { x -= dx * 0.01f; y -= dy * 0.01f }
             }
@@ -1396,7 +1497,7 @@ class OpticsSim : Sim {
                 abs(x) < t * pH
             }
         }
-        1 -> hypot(x + LENS_OFFSET, y) < LENS_R && hypot(x - LENS_OFFSET, y) < LENS_R
+        1 -> hypot(x + lo, y) < lr && hypot(x - lo, y) < lr
         else -> abs(x) < SLAB_W && abs(y) < SLAB_H
     }
 
@@ -1418,9 +1519,9 @@ class OpticsSim : Sim {
         }
         1 -> {
             // On the arc of whichever circle it sits on: away from that centre.
-            val dA = hypot(x + LENS_OFFSET, y); val dB = hypot(x - LENS_OFFSET, y)
-            if (abs(dA - LENS_R) <= abs(dB - LENS_R)) floatArrayOf((x + LENS_OFFSET) / dA, y / dA)
-            else floatArrayOf((x - LENS_OFFSET) / dB, y / dB)
+            val dA = hypot(x + lo, y); val dB = hypot(x - lo, y)
+            if (abs(dA - lr) <= abs(dB - lr)) floatArrayOf((x + lo) / dA, y / dA)
+            else floatArrayOf((x - lo) / dB, y / dB)
         }
         else -> if (SLAB_W - abs(x) < SLAB_H - abs(y)) floatArrayOf(if (x > 0f) 1f else -1f, 0f)
         else floatArrayOf(0f, if (y > 0f) 1f else -1f)
@@ -1456,24 +1557,26 @@ class OpticsSim : Sim {
             }
             1 -> {
                 // The two arcs that bound the lens, as short chords.
-                val half = kotlin.math.acos((LENS_OFFSET / LENS_R).coerceIn(-1f, 1f))
+                val half = kotlin.math.acos((lo / lr).coerceIn(-1f, 1f))
                 val pieces = 40
                 for (side in 0..1) {
-                    val ccx = if (side == 0) -LENS_OFFSET else LENS_OFFSET
+                    val ccx = if (side == 0) -lo else lo
                     val mid = if (side == 0) 0f else PI.toFloat()
                     for (k in 0 until pieces) {
                         val a0 = mid - half + 2f * half * k / pieces
                         val a1 = mid - half + 2f * half * (k + 1) / pieces
-                        g.line(ccx + cos(a0) * LENS_R, sin(a0) * LENS_R, ccx + cos(a1) * LENS_R, sin(a1) * LENS_R, 0.006f, edge, 0.6f)
+                        val x0 = ccx + cos(a0) * lr; val y0 = sin(a0) * lr
+                        val x1 = ccx + cos(a1) * lr; val y1 = sin(a1) * lr
+                        g.line(wx(x0, y0), wy(x0, y0), wx(x1, y1), wy(x1, y1), 0.006f, edge, 0.6f)
                     }
                 }
-                val tall = sqrt(LENS_R * LENS_R - LENS_OFFSET * LENS_OFFSET)
+                val tall = sqrt(lr * lr - lo * lo)
                 val bands = 48
                 val h = 2f * tall / bands
                 for (k in 0 until bands) {
                     val yMid = -tall + (k + 0.5f) * h
-                    val halfW = sqrt((LENS_R * LENS_R - yMid * yMid).coerceAtLeast(0f)) - LENS_OFFSET
-                    if (halfW > 0f) g.rect(0f, yMid, halfW, h * 0.5f, GLASS_FILL, 0f, 1f)
+                    val halfW = sqrt((lr * lr - yMid * yMid).coerceAtLeast(0f)) - lo
+                    if (halfW > 0f) g.rect(wx(0f, yMid), wy(0f, yMid), halfW, h * 0.5f, GLASS_FILL, atan2(rotS, rotC), 1f)
                 }
             }
             else -> {
@@ -1621,6 +1724,9 @@ class OpticsSim : Sim {
         /** Least deviation for a 60° prism at n ≈ 1.65: in at about 55° to the face. */
         const val PRISM_AIM = 0.42f + 0.35f * 0.5f
         const val PRISM_SWEEP = 0.5f
+        /** The prism's sweep: 16° to 40° up into the left face, about least deviation (~26°). */
+        const val PRISM_SWEEP_MID = 0.49f
+        const val PRISM_SWEEP_HALF = 0.21f
         /** The prism's turn on screen, clockwise, upright phone and wide. */
         const val PRISM_TURN_UPRIGHT = -1.12f
         /** The wall the prism's spectrum is cast on, near the foot of the screen. */
@@ -1635,6 +1741,9 @@ class OpticsSim : Sim {
         const val PRISM_HALF = (PRISM_TOP - PRISM_BOTTOM) * 0.57735f
         const val LENS_R = 0.75f
         const val LENS_OFFSET = 0.45f
+        const val LENS_UPRIGHT_SCALE = 0.62f
+        /** The turned lens's middle, above the screen's: the focus falls below. */
+        const val LENS_UPRIGHT_Y = 0.42f
         const val SLAB_W = 0.35f
         const val SLAB_H = 0.55f
 
@@ -1741,6 +1850,16 @@ class ChargesSim : Sim {
             } while (near && ++tries < 30)
             charges[i] = if (i % 2 == 0) 1f else -1f
             charges[i] *= env.rng.range(0.6f, 1.4f)
+        }
+        // Centred as a group: placed at random, the four default charges
+        // often sat bunched to one side, the field's whole structure in one
+        // half of the phone and only far-field drift in the other.
+        if (count > 1) {
+            val mx = cx.average().toFloat(); val my = cy.average().toFloat()
+            for (i in 0 until count) {
+                cx[i] = (cx[i] - mx).coerceIn(-env.halfWidth * 0.75f, env.halfWidth * 0.75f)
+                cy[i] = (cy[i] - my).coerceIn(-0.75f, 0.75f)
+            }
         }
         // The slider counts tracers for an upright phone's screen; a wider one
         // gets as many more as it has area, up to four times, so the field

@@ -495,7 +495,6 @@ class RadixLsdSort : SortAlgorithm {
         const val SNAPSHOT = 0
         const val COUNT = 1
         const val PREFIX = 2
-        const val PLACE = 3
         const val WRITE_BACK = 4
     }
 
@@ -541,10 +540,20 @@ class RadixLsdSort : SortAlgorithm {
                     if (value < minValue) minValue = value
                 }
                 val shift = if (minValue < 0f) -minValue else 0f
+                var minKey = Int.MAX_VALUE
                 for (p in 0 until n) {
                     val key = java.lang.Float.floatToIntBits(originals[p] + shift) and 0x7FFFFFFF
                     keys[p] = key
-                    if (key > maxValue) maxValue = key
+                    if (key < minKey) minKey = key
+                }
+                // Measured from the smallest key, which keeps the order: every
+                // float in 0.001..1 has a bit pattern near 1.0e9, so the top
+                // digit or two were the same for all of them and the last
+                // passes rewrote an already sorted array — a fifth of the run
+                // spent on a finished picture before the payoff.
+                for (p in 0 until n) {
+                    keys[p] -= minKey
+                    if (keys[p] > maxValue) maxValue = keys[p]
                 }
                 if (maxValue == 0) return false
                 state = COUNT
@@ -562,24 +571,22 @@ class RadixLsdSort : SortAlgorithm {
             }
             PREFIX -> {
                 if (idx >= 10) {
-                    state = PLACE
-                    idx = n - 1
-                    return true
-                }
-                counts[idx] += counts[idx - 1]
-                idx++
-            }
-            PLACE -> {
-                if (idx < 0) {
+                    // Placing into the scratch buffer touches nothing on
+                    // screen, so it is done at once: as n steps of its own it
+                    // was a third of every pass with the bars frozen and no
+                    // sound, the whole array waiting on work you cannot see.
+                    for (p in n - 1 downTo 0) {
+                        val d = (keys[p] / exp) % 10
+                        counts[d]--
+                        output[counts[d]] = keys[p]
+                        outputValues[counts[d]] = originals[p]
+                    }
                     state = WRITE_BACK
                     idx = 0
                     return true
                 }
-                val d = (keys[idx] / exp) % 10
-                counts[d]--
-                output[counts[d]] = keys[idx]
-                outputValues[counts[d]] = originals[idx]
-                idx--
+                counts[idx] += counts[idx - 1]
+                idx++
             }
             WRITE_BACK -> {
                 if (idx >= n) {
@@ -599,7 +606,11 @@ class RadixLsdSort : SortAlgorithm {
         return true
     }
 
-    override fun estimatedOps(n: Int): Long = n.toLong() * 34L
+    /**
+     * A read and a write per element per pass: eight passes for random floats
+     * in 0..1, ten when the data includes zero (reversed, sawtooth).
+     */
+    override fun estimatedOps(n: Int): Long = n.toLong() * 20L
 }
 
 object Algorithms {

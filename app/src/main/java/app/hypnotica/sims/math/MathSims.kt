@@ -1125,8 +1125,10 @@ class ChaosGameSim : Sim {
         for (i in 0 until shown) {
             g.point(points[i * 2], points[i * 2 + 1], size, palette.at(tints[i]))
         }
+        // Each corner glows in the colour of the copy it seeds: in the one
+        // accent violet for all, the tips were purple smudges off the palette.
         for (i in 0 until corners) {
-            g.glow(cornerX[i], cornerY[i], 0.07f, Palette.ACCENT, 0.4f)
+            g.glow(cornerX[i], cornerY[i], 0.06f, palette.at(i.toFloat() / corners), 0.35f)
         }
     }
 

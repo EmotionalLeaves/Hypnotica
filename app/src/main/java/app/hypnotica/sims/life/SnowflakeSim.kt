@@ -57,6 +57,7 @@ class SnowflakeSim : Sim {
         folds = FOLDS[env.params.choiceIndex("shape").coerceIn(0, FOLDS.size - 1)]
         val c = size / 2
         frozen = 1
+        tickCarry = 0f
         radius = 1f
         freeze(c, c)
         // A nucleus with one short spoke per fold, along the axes. Grown from
@@ -97,6 +98,7 @@ class SnowflakeSim : Sim {
         val h = abs(dt)
         elapsed += h
         if (doneAt >= 0f) return
+        tickCarry = min(1.5f, tickCarry + h * TICKS_PER_SECOND)
         val c = size / 2
         // Steps of wandering this frame, more as the crystal grows: the walk
         // in from the launch circle gets longer.
@@ -227,8 +229,16 @@ class SnowflakeSim : Sim {
                 }
             }
         }
-        if (frozen % 40 == 0) env.emit(EventKind.HIT, (radius / maxRadius).coerceIn(0f, 1f), (dx / max(1f, maxRadius)).coerceIn(-1f, 1f), 0.25f)
+        // Paced by time, not by count: every fortieth grain was four notes a
+        // second early on and near silence for the last few seconds of
+        // growth, when the outer arms take many more grains per step of radius.
+        if (tickCarry >= 1f) {
+            tickCarry -= 1f
+            env.emit(EventKind.HIT, (radius / maxRadius).coerceIn(0f, 1f), (dx / max(1f, maxRadius)).coerceIn(-1f, 1f), 0.25f)
+        }
     }
+
+    private var tickCarry = 0f
 
     /** Every square on the way from one to the other, side to side, so they touch. */
     private fun joinFreeze(x0: Int, y0: Int, x1: Int, y1: Int) {
@@ -250,16 +260,27 @@ class SnowflakeSim : Sim {
         val scale = min(env.halfWidth, 1f) * 0.95f / (size * 0.5f)
         val c = size / 2
         g.reservePoints(listCount)
+        // The finale: a glint of light running out from the heart to the
+        // tips, once, as the finished crystal catches it — the flake used to
+        // stop growing and simply sit there behind a faint glow.
+        val since = if (doneAt >= 0f) elapsed - doneAt else -1f
+        val front = if (since >= 0f && since < GLINT_SECONDS) since / GLINT_SECONDS * (radius + GLINT_BAND) else -1f
         for (i in 0 until listCount) {
             val k = cellsList[i]
-            val x = (k % size - c) * scale
-            val y = (k / size - c) * scale
+            val gx = k % size - c; val gy = k / size - c
+            val x = gx * scale
+            val y = gy * scale
             // Coloured by when it froze: the heart one colour, the newest tips another.
             val t = order[k].toFloat() / max(1, frozen)
             // Short of the far end of the ramp: on Ocean that end is a navy that
             // all but vanished against the background, and it is where the
             // newest tips are.
-            g.point(x, y, scale * 1.6f, palette.at(0.05f + 0.7f * t))
+            var col = palette.at(0.05f + 0.7f * t)
+            if (front >= 0f) {
+                val d = abs(sqrt((gx * gx + gy * gy).toFloat()) - front)
+                if (d < GLINT_BAND) col = Palette.brighten(col, 0.55f * (1f - d / GLINT_BAND))
+            }
+            g.point(x, y, scale * 1.6f, col)
         }
         if (doneAt >= 0f) {
             val k = (1f - (elapsed - doneAt)).coerceIn(0f, 1f)
@@ -277,6 +298,10 @@ class SnowflakeSim : Sim {
     )
 
     companion object {
+        const val TICKS_PER_SECOND = 3.5f
+        /** The finale's glint: how long it takes to reach the tips, and its width in squares. */
+        const val GLINT_SECONDS = 1.1f
+        const val GLINT_BAND = 9f
         const val MAX_SIZE = 501
         /** Squares either side of an arm's axis that always stick. */
         const val AXIS_WIDTH = 1.2f

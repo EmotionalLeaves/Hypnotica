@@ -110,7 +110,15 @@ class RpsBattleSim : Sim {
         winner = -1
         quiet = 0f
         frenzy = 0f
+        hitCarry = 1f; heldCatches = 0; heldX = 0f; heldSide = 0
+        lostAtX.fill(0f)
     }
+
+    private var hitCarry = 1f
+    private var heldCatches = 0
+    private var heldX = 0f
+    private var heldSide = 0
+    private val lostAtX = FloatArray(MAX_TEAMS)
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -150,7 +158,12 @@ class RpsBattleSim : Sim {
                 // the screen's: pulled to y = 0 the crowd sat high, pressed
                 // against the top wall into a lopsided wedge.
                 val cy = y[i] - FIELD_MID
-                sx += -x[i] * GATHER - cy * TURN
+                // Pulled in less across than up and down on a wide field, so
+                // the crowd opens into an oval the shape of the field: a
+                // round pull packed the wide screen's bigger army into a
+                // disc too tall for it, a flat dome squashed on the floor.
+                val acrossK = (FIELD_HALF / halfW).coerceIn(WIDE_GATHER_MIN, 1f)
+                sx += -x[i] * GATHER * acrossK - cy * TURN
                 sy += -cy * GATHER + x[i] * TURN
                 // Spacing pushes hard enough that the final crowd opens out
                 // within a second or two instead of sitting as one blob.
@@ -243,6 +256,7 @@ class RpsBattleSim : Sim {
                     val dx = x[j] - x[i]; val dy = y[j] - y[i]
                     if (dx * dx + dy * dy < reach * reach) {
                         side[j] = s
+                        lostAtX[prey] = x[j]
                         count[prey]--; count[s]++
                         flashT[j] = 1f
                         converted++
@@ -271,17 +285,28 @@ class RpsBattleSim : Sim {
             frenzySide = if (living.isEmpty()) 0 else living[env.rng.int(0, living.size)]
         }
         frenzy = max(0f, frenzy - h)
+        // Each side has its own note; a burst is louder, not more notes.
+        // Panned to where the catches were. At most about twenty a second:
+        // one note per step that caught anything was up to a hundred and
+        // twenty a second in the late melee, one smeared wash. A catch that
+        // finds the meter empty is held and heard with the next one, a frame
+        // or two later, never dropped.
+        hitCarry = min(1.5f, hitCarry + h * HITS_PER_SECOND)
         if (converted > 0) {
-            // Each side has its own note; a burst is louder, not more notes.
-            // Panned to where the catches were.
-            env.emit(EventKind.HIT, note(convertedSide), (catchX / converted / halfW).coerceIn(-1f, 1f), min(1f, 0.3f + 0.12f * converted))
+            heldCatches += converted; heldX += catchX; heldSide = convertedSide
+        }
+        if (heldCatches > 0 && hitCarry >= 1f) {
+            hitCarry -= 1f
+            env.emit(EventKind.HIT, note(heldSide), (heldX / heldCatches / halfW).coerceIn(-1f, 1f), min(1f, 0.3f + 0.12f * heldCatches))
+            heldCatches = 0; heldX = 0f
         }
         val alive = (0 until teams).count { count[it] > 0 }
         // A side wiped out is a beat of its own — except the last to go,
         // whose moment is the payoff, sounded by the engine on this step.
         for (s in 0 until teams) if (!out[s] && count[s] == 0) {
             out[s] = true
-            if (alive > 1) env.emit(EventKind.STEP, note(s), 0f, 0.8f)
+            // Where its last piece was caught.
+            if (alive > 1) env.emit(EventKind.STEP, note(s), (lostAtX[s] / halfW).coerceIn(-1f, 1f), 0.8f)
         }
         if (alive == 1) {
             winner = (0 until teams).first { count[it] > 0 }
@@ -414,6 +439,7 @@ class RpsBattleSim : Sim {
         const val QUIET_SECONDS = 3f
         const val FRENZY_SECONDS = 2.5f
         const val FRENZY_SPEED = 1.7f
+        const val HITS_PER_SECOND = 20f
         const val MAX_TEAMS = 5
         const val GOLDEN_ANGLE = 2.3999632f
         /** Squads each side starts in, round the ring. */
@@ -423,6 +449,10 @@ class RpsBattleSim : Sim {
         const val GATHER = 0.6f
         /** The middle of the field: between the floor (-1) and the bar's wall (0.86). */
         const val FIELD_MID = -0.07f
+        /** Half the field's height, floor to the bar's wall. */
+        const val FIELD_HALF = 0.93f
+        /** The weakest across-pull, on the widest screens. */
+        const val WIDE_GATHER_MIN = 0.3f
         // 0.45, from 1.1: the strong swirl threw the spreading crowd round
         // in a lopsided wedge, and the run ended before it evened out.
         const val TURN = 0.45f

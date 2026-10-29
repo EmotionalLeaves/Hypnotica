@@ -88,6 +88,8 @@ class SnakeSim : Sim {
         apples = IntArray(n) { -1 }
         golden = BooleanArray(n)
         eaten = 0
+        lastDir = 0
+        rateNow = MIN_RATE
         for (i in 0 until n) placeApple(env, i)
         carry = 0f
         elapsed = 0f
@@ -145,6 +147,7 @@ class SnakeSim : Sim {
         // a small board is done in seconds and the biggest in half a minute.
         val pace = env.params.f("pace", 1f)
         val rate = min(MAX_RATE, MIN_RATE * Math.exp((elapsed * pace / DOUBLING).toDouble()).toFloat())
+        rateNow = rate
         carry += h * rate
         var moves = 0
         notedThisStep = false
@@ -189,6 +192,17 @@ class SnakeSim : Sim {
         }
         if (grow > 0) grow-- else popTail()
         push(best)
+        // A soft tick as the head turns, while the snake is slow enough to
+        // follow: the opening seconds, before the first apple, were silent
+        // with the head visibly winding across the board. Past a few moves a
+        // second the turns blur and the apples carry the sound.
+        val dir = best - hd
+        if (dir != lastDir && lastDir != 0 && rateNow < TICK_UNTIL_RATE && !notedThisStep) {
+            notedThisStep = true
+            env.emit(EventKind.STEP, 0.25f + 0.5f * (best / cols).toFloat() / max(1, rows - 1),
+                ((best % cols) / max(1f, cols - 1f)) * 2f - 1f, 0.18f)
+        }
+        lastDir = dir
         val ate = apples.indexOf(best)
         if (ate >= 0) {
             val gold = golden[ate]
@@ -217,6 +231,8 @@ class SnakeSim : Sim {
     }
 
     private var notedThisStep = false
+    private var lastDir = 0
+    private var rateNow = MIN_RATE
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
@@ -295,6 +311,8 @@ class SnakeSim : Sim {
         const val SLACK = 3
         const val CUT_UNTIL = 0.55f
         const val MIN_RATE = 9f
+        /** Moves a second above which turning no longer ticks. */
+        const val TICK_UNTIL_RATE = 24f
         /** Seconds for the speed to grow e-fold. */
         const val DOUBLING = 3.2f
         const val MAX_RATE = 1_000_000f

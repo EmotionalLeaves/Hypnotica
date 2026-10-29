@@ -1658,6 +1658,7 @@ class NdBounceSim : Sim {
         val wall = WALL
         var hitsThisStep = 0
         var hitAxis = 0
+        var hitBall = 0
         for (i in 0 until count) {
             val base = i * dims
             // Gravity acts along the second axis, the one that reads as "down".
@@ -1668,11 +1669,11 @@ class NdBounceSim : Sim {
                 if (pos[base + d] > wd) {
                     pos[base + d] = wd; vel[base + d] = -vel[base + d] * e; hitsThisStep++
                     visited[i] = visited[i] or (1 shl d)
-                    hitAxis = d
+                    hitAxis = d; hitBall = i
                 } else if (pos[base + d] < -wd) {
                     pos[base + d] = -wd; vel[base + d] = -vel[base + d] * e; hitsThisStep++
                     visited[i] = visited[i] or (1 shl d)
-                    hitAxis = d
+                    hitAxis = d; hitBall = i
                 }
             }
         }
@@ -1681,10 +1682,13 @@ class NdBounceSim : Sim {
             // Each pair of walls its own pitch, so a wall in the fifth
             // dimension sounds unlike one in the first. Pitched by the share
             // of balls hitting, nearly every bounce was the same low note.
+            // Panned to where that ball is seen on screen: always centre, a
+            // bounce at the box's left edge was heard dead ahead.
+            viewOf(pos, hitBall * dims, spin)
             env.emit(
                 EventKind.HIT,
                 (hitAxis + 0.5f) / dims,
-                0f,
+                (proj[0] * drawScale / BOX_SCREEN).coerceIn(-1f, 1f),
                 min(1f, 0.3f + hitsThisStep * 0.04f)
             )
         }
@@ -1931,7 +1935,11 @@ class BallVolumeSim : Sim {
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         val before = shown.toInt()
-        shown = min(upTo.toFloat(), shown + env.params.f("rate", 0.7f) * abs(dt))
+        // Past the milestone the bars quicken: the story after it is the
+        // tail falling away to nothing, and at the opening pace the chart was
+        // still half empty slots when the run was cut, its end never seen.
+        val tail = if (shown > milestone + 1f) TAIL_PACE else 1f
+        shown = min(upTo.toFloat(), shown + env.params.f("rate", 0.7f) * tail * abs(dt))
         val after = shown.toInt()
         if (after > before) {
             val t = (value(after) / top).toFloat().coerceIn(0f, 1f)
@@ -2015,6 +2023,7 @@ class BallVolumeSim : Sim {
     companion object {
         val MEASURES = listOf("Volume", "Surface", "Share of the cube", "Share in the peel")
         const val MAX_UP_TO = 40
+        const val TAIL_PACE = 2.2f
         const val BASE = -0.85f
         /** The tallest bar's height: up to 0.8, where it stopped at 0.65 with the top fifth empty. */
         const val HEIGHT = 1.65f

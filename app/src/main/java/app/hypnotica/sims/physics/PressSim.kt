@@ -39,6 +39,13 @@ class PressSim : Sim {
     private var rest = FloatArray(0)
     private var alive = BooleanArray(0)
     private var axial = BooleanArray(0)
+    private var sepR = 0.02f
+    private var gridW = 1
+    private var gridH = 1
+    private var gHead = IntArray(0)
+    private var gNext = IntArray(0)
+    /** Along a row (else down a column), as built. */
+    private var rowLink = BooleanArray(0)
     private var lastDh = 0f
     private var springs = 0
     private var broken = 0
@@ -110,6 +117,13 @@ class PressSim : Sim {
         }
         alive = BooleanArray(springs) { true }
         axial = BooleanArray(springs) { rest[it] < step * 1.2f }
+        rowLink = BooleanArray(springs) { abs(y[sa[it]] - y[sb[it]]) < step * 0.5f }
+        sepR = step * SEP_SHARE
+        gridW = ((2f * halfW + 2f * sepR) / sepR).toInt() + 2
+        // Nothing rises above the plate, which starts a gap over the block.
+        gridH = ((size + GAP + 0.1f + 2f * sepR) / sepR).toInt() + 2
+        gHead = IntArray(gridW * gridH)
+        gNext = IntArray(n)
         lastDh = 0f
         broken = 0
         var top = floor
@@ -186,6 +200,11 @@ class PressSim : Sim {
                     x[b] -= dx * k; y[b] -= dy * k
                 }
             }
+            // Matter can't pass through itself. With only the springs, a
+            // crushed block's rows slid in over and under each other and the
+            // pancake ended as rows criss-crossing rows; now what is squeezed
+            // goes out at the sides, as it does under a real press.
+            separate()
             // The plate above, the floor below, the screen's sides.
             for (i in 0 until n) {
                 if (y[i] > plate - PARTICLE) {
@@ -241,6 +260,45 @@ class PressSim : Sim {
         }
     }
 
+    /** Push apart any two masses closer than [sepR], linked or not, through a grid. */
+    private fun separate() {
+        val r = sepR
+        val cell = r
+        val x0 = -halfW - cell
+        val y0 = FLOOR - cell
+        val gw = gridW; val gh = gridH
+        java.util.Arrays.fill(gHead, -1)
+        for (i in 0 until n) {
+            val cx = ((x[i] - x0) / cell).toInt().coerceIn(0, gw - 1)
+            val cy = ((y[i] - y0) / cell).toInt().coerceIn(0, gh - 1)
+            val c = cy * gw + cx
+            gNext[i] = gHead[c]; gHead[c] = i
+        }
+        val r2 = r * r
+        for (i in 0 until n) {
+            val cx = ((x[i] - x0) / cell).toInt().coerceIn(0, gw - 1)
+            val cy = ((y[i] - y0) / cell).toInt().coerceIn(0, gh - 1)
+            for (oy in -1..1) for (ox in -1..1) {
+                val gx = cx + ox; val gy = cy + oy
+                if (gx < 0 || gy < 0 || gx >= gw || gy >= gh) continue
+                var j = gHead[gy * gw + gx]
+                while (j >= 0) {
+                    if (j > i) {
+                        val dx = x[j] - x[i]; val dy = y[j] - y[i]
+                        val d2 = dx * dx + dy * dy
+                        if (d2 < r2 && d2 > 1e-12f) {
+                            val d = sqrt(d2)
+                            val k = (r - d) * 0.5f * SEP_STIFF / d
+                            x[i] -= dx * k; y[i] -= dy * k
+                            x[j] += dx * k; y[j] += dy * k
+                        }
+                    }
+                    j = gNext[j]
+                }
+            }
+        }
+    }
+
     private fun inShape(shape: Int, c: Int, r: Int): Boolean {
         val m = (side - 1) * 0.5f
         return when (shape) {
@@ -276,9 +334,22 @@ class PressSim : Sim {
             if (!alive[s] || !axial[s]) continue
             val a = sa[s]; val b = sb[s]
             val dx = x[b] - x[a]; val dy = y[b] - y[a]
-            val st = (abs(sqrt(dx * dx + dy * dy) - rest[s]) / rest[s] / limit).coerceIn(0f, 1f)
+            val len = sqrt(dx * dx + dy * dy)
+            // A link squeezed to half its length or less has folded: the
+            // block has crumpled there, and the folded rows drawn on top of
+            // each other were the tangle of lines the crushed block ended as.
+            // They fade out as they fold, leaving the joints as the rubble.
+            // And a link turned far from its own direction (a row standing up,
+            // a column lying down) has been folded over its neighbours: drawn
+            // full, the crushed block was rows criss-crossing rows. Faded,
+            // the pancake reads as layers squeezed flat, with the joints as grit.
+            val off = if (rowLink[s]) abs(dy) / len.coerceAtLeast(1e-6f) else abs(dx) / len.coerceAtLeast(1e-6f)
+            val turned = ((TURN_GONE - off) / (TURN_GONE - TURN_FULL)).coerceIn(0f, 1f)
+            val fold = ((len / rest[s] - FOLD_GONE) / (FOLD_FULL - FOLD_GONE)).coerceIn(0f, 1f) * turned
+            if (fold <= 0.02f) continue
+            val st = (abs(len - rest[s]) / rest[s] / limit).coerceIn(0f, 1f)
             val c = if (st > 0.75f) Palette.brighten(palette.at(0.2f + 0.75f * st), (st - 0.75f) * 2f) else palette.at(0.2f + 0.75f * st)
-            g.line(x[a], y[a], x[b], y[b], size / side * 0.42f, c)
+            g.line(x[a], y[a], x[b], y[b], size / side * (0.22f + 0.2f * fold), c, fold)
         }
         g.reservePoints(n)
         // Joints a touch narrower than they were, and dimmer: points draw
@@ -340,6 +411,15 @@ class PressSim : Sim {
         const val CREAK_STEP = 0.08f
         const val GIVE_SHARE = 0.1f
         const val MIN_FACTOR = 0.2f
+        /** A drawn link fades out between these shares of its rest length, as it folds. */
+        const val FOLD_GONE = 0.5f
+        const val FOLD_FULL = 0.8f
+        /** ...and between these sines of the angle it has turned from its own direction. */
+        const val TURN_FULL = 0.5f
+        const val TURN_GONE = 0.8f
+        /** How close two masses may come, as a share of the lattice spacing, and how hard they're parted. */
+        const val SEP_SHARE = 0.55f
+        const val SEP_STIFF = 0.5f
         val MATERIAL_LIMIT = floatArrayOf(0.2f, 0.35f, 0.75f)
         val MATERIAL_STIFF = floatArrayOf(1f, 0.6f, 0.25f)
         val MATERIAL_BITE = floatArrayOf(0.2f, 0.7f, 1f)

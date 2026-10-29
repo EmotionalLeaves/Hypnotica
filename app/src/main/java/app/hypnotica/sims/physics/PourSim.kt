@@ -58,6 +58,8 @@ class PourSim : Sim {
     private var tapTop = 0.985f
     private var share = 0f
     private val level = IntArray(80)
+    /** The surface height in columns across a glass, for [level]. */
+    private val surf = FloatArray(48)
 
     // The glasses: open boxes, walls and a floor, in world units, filled in
     // turn from left to right by a tap that glides between them.
@@ -310,6 +312,7 @@ class PourSim : Sim {
             if (w > 0f) { dvx[i] = sx / w * thick; dvy[i] = sy / w * thick } else { dvx[i] = 0f; dvy[i] = 0f }
         }
         for (i in 0 until n) { vx[i] += dvx[i]; vy[i] += dvy[i] }
+        level(g, h)
         // Panned to where the drops stopped, not to a random place.
         if (landed > 0) env.emit(EventKind.HIT, 0.6f + 0.3f * env.rng.nextFloat(), (landedX / landed / halfW).coerceIn(-1f, 1f), min(1f, 0.2f + landed * 0.05f))
 
@@ -336,6 +339,41 @@ class PourSim : Sim {
                     // One down: a chord, and on to the next.
                     env.emit(EventKind.HIT, 0.8f, glassPan, 0.8f)
                 }
+            }
+        }
+    }
+
+    /**
+     * Water finds its level: the surface layer of each glass is pushed from
+     * where it stands high towards where it stands low, by gravity times the
+     * slope (the pressure gradient of shallow water). Hard push-apart drops
+     * pack like marbles and lock at a slope, so without it the full glass
+     * kept the stream's V-shaped crater in its surface for ever, like sand.
+     */
+    private fun level(g: Float, h: Float) {
+        for (k in 0 until glasses) {
+            val w = gR[k] - gL[k]
+            val bins = (w / (2f * D)).toInt().coerceIn(3, surf.size)
+            val bw = w / bins
+            java.util.Arrays.fill(surf, 0, bins, glassBottom)
+            val settled = SETTLED * max(1f, gNow / REF_FALL)
+            for (i in 0 until n) {
+                if (side[i] != k || y[i] > gTop[k] + D) continue
+                // The stream and the splash aren't the surface.
+                if (vy[i] < -STREAM_CUT * settled) continue
+                val b = ((x[i] - gL[k]) / bw).toInt().coerceIn(0, bins - 1)
+                if (y[i] > surf[b]) surf[b] = y[i]
+            }
+            for (i in 0 until n) {
+                if (side[i] != k) continue
+                val b = ((x[i] - gL[k]) / bw).toInt().coerceIn(0, bins - 1)
+                // Only the top few drops of a column flow: the depths are
+                // packed solid and pushing them only shook the whole glass.
+                if (y[i] < surf[b] - LEVEL_DEPTH || vy[i] < -STREAM_CUT * settled) continue
+                val lo = surf[max(0, b - 1)]; val hi = surf[min(bins - 1, b + 1)]
+                val span = (min(bins - 1, b + 1) - max(0, b - 1)) * bw
+                val slope = (hi - lo) / span
+                vx[i] -= (g * slope * LEVEL_PUSH * h).coerceIn(-LEVEL_MAX, LEVEL_MAX)
             }
         }
     }
@@ -572,6 +610,10 @@ class PourSim : Sim {
         /** Moving faster than this many, any way: splash, not the pool. */
         const val CHURN = 4f
         const val FLOOR_GAP = 0.01f
+        /** How far below a column's surface the levelling flow reaches, how hard it pushes, and its cap per step. */
+        const val LEVEL_DEPTH = D * 3f
+        const val LEVEL_PUSH = 4f
+        const val LEVEL_MAX = 0.05f
         /** The area one drop takes up once settled, measured. */
         const val DROP_AREA = D * D * 0.95f
 
