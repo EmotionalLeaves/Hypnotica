@@ -118,7 +118,7 @@ class TruchetSim : Sim {
     /**
      * The designs, as which way each tile lies. Alternating by the parity of
      * i + j closes every arc into a small circle round a grid corner; adding
-     * the ring number (Chebyshev distance from the middle) flips the parity
+     * the ring number (how many tiles in from the border) flips the parity
      * across each ring boundary, which turns the circles into rings nested
      * round the centre; adding the row number instead gives waves.
      */
@@ -126,11 +126,15 @@ class TruchetSim : Sim {
         val ci = (cols - 1) * 0.5f; val cj = (rows - 1) * 0.5f
         return when (p) {
             0 -> {
-                val ring = max(abs(i - ci), abs(j - cj)).toInt()
+                // Rings counted in from the border, so the nest fills a field
+                // of any shape; counted out from the middle, a tall field's
+                // rings ran into its sides and the ends were open waves.
+                val ring = min(min(i, cols - 1 - i), min(j, rows - 1 - j))
                 (i + j + ring + 1) and 1
             }
             1 -> (i + j) and 1
-            else -> (i + (j / 2)) and 1
+            3 -> ((i / 2) + (j / 2)) and 1
+            else -> ((i + j) / 2) and 1
         }
     }
 
@@ -271,7 +275,9 @@ class TruchetSim : Sim {
                 val c = cos(turn); val sn = sin(turn)
                 val px = cx + ox * c - oy * sn
                 val py = cy + ox * sn + oy * c
-                g.ring(px, py, r + th * 0.5f, th, col, gap = 1.5f * PI.toFloat(), gapAngle = a0 + turn + PI.toFloat() / 2f)
+                // A hair over a quarter, so neighbouring arcs overlap where they meet
+                // instead of leaving an antialiased seam across every join.
+                g.ring(px, py, r + th * 0.5f, th, col, gap = 1.5f * PI.toFloat() - 2f * SEAM, gapAngle = a0 + turn + PI.toFloat() / 2f + SEAM)
             }
         }
     }
@@ -292,6 +298,7 @@ class TruchetSim : Sim {
         const val EDGE = 0.03f
         const val FIELD_H = 1.72f
         const val STROKE = 0.16f
+        const val SEAM = 0.03f
         const val HOLD = 1.5f
         const val SWEEP = 9f
         const val JITTER = 1.2f
@@ -309,7 +316,7 @@ class TruchetSim : Sim {
             defaultPalette = "Aurora",
             typicalSeconds = 16f,
             params = listOf(
-                Param.choice("pattern", "Design", listOf("Rings", "Circles", "Waves"), 0, card = Card.DATA, input = ParamInput.TILES),
+                Param.choice("pattern", "Design", listOf("Rings", "Circles", "Waves", "Weave"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("tiles", "Tiles across", 4, 30, 9, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 3f, 1f, card = Card.DATA)
             ),
