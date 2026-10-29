@@ -332,7 +332,7 @@ class KaleidoscopeSim : Sim {
             formats = listOf(TrapFormat.REVEAL, TrapFormat.SNAP),
             heroLabel = "Shake it up",
             defaultPalette = "Aurora",
-            typicalSeconds = 14f,
+            typicalSeconds = 15f,
             params = listOf(
                 Param.int("mirrors", "Mirror angle (π/n)", 3, 12, 6, card = Card.DATA),
                 Param.int("pieces", "Pieces", 4, 40, 12, card = Card.DATA),

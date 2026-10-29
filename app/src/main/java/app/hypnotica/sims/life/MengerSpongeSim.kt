@@ -276,13 +276,13 @@ class MengerSpongeSim : Sim {
         const val HOLD = 1.6f
         /** Share of a cut over which the sweep starts, corner to corner. */
         const val SWEEP = 0.55f
-        const val AMBIENT = 0.32f
-        const val LX = -0.45f
-        const val LY = 0.62f
-        const val LZ = 0.64f
-        const val STRIP = 0.0045f
+        const val AMBIENT = 0.22f
+        const val LX = -0.62f
+        const val LY = 0.66f
+        const val LZ = 0.42f
+        const val STRIP = 0.0055f
         const val MAX_STRIPS = 160
-        const val OVERLAP = 0.0006f
+        const val OVERLAP = 0.0016f
         const val NOTES_PER_SECOND = 7f
 
         fun def(): SimDef = SimDef(
