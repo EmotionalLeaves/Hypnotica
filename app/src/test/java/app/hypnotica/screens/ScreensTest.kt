@@ -94,6 +94,37 @@ class ScreensTest {
     @Test fun settings() = shot("08-settings", setup = { it.screen = Screen.SETTINGS }) { s, _ -> SettingsScreen(s, "0.1.test") }
     @Test fun studio() = shot("09-studio", setup = { it.screen = Screen.STUDIO }) { s, v -> StudioScreen(s, v) }
     @Test fun recipes() = shot("10-recipes", setup = { it.screen = Screen.RECIPES }) { s, _ -> RecipeScreen(s) }
+    @Test fun playerSound() = shot("11-player-sound", setup = { it.screen = Screen.PLAYER; it.controlsOpen = true; it.card = app.hypnotica.core.recipe.Card.SOUND }) { s, v -> PlayerScreen(s, v) }
+    @Test fun playerLook() = shot("12-player-look", setup = { it.screen = Screen.PLAYER; it.controlsOpen = true; it.card = app.hypnotica.core.recipe.Card.LOOK }) { s, v -> PlayerScreen(s, v) }
+    @Test fun playerMotion() = shot("13-player-motion", setup = { it.screen = Screen.PLAYER; it.controlsOpen = true; it.card = app.hypnotica.core.recipe.Card.MOTION }) { s, v -> PlayerScreen(s, v) }
+}
+
+/** The long screens, whole: a phone as tall as the page. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [34], qualifiers = "w393dp-h2000dp-xxhdpi")
+class TallScreensTest {
+    @get:Rule
+    val compose = createComposeRule()
+
+    private fun shot(name: String, content: @Composable (AppState) -> Unit) {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val state = AppState(SimEngine(SimRegistry.defaultSim()))
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            HypnoticaTheme {
+                androidx.compose.runtime.CompositionLocalProvider(app.hypnotica.ui.LocalChipEdge provides Tokens.Bg) {
+                    Box(Modifier.fillMaxSize().background(Tokens.Bg)) { content(state) }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(3000)
+        compose.onRoot().captureRoboImage("build/screens/$name.png")
+        context.hashCode()
+    }
+
+    @Test fun settingsWhole() = shot("20-settings-whole") { SettingsScreen(it, "0.1.test") }
+    @Test fun libraryWhole() = shot("21-library-whole") { LibraryScreen(it) }
 }
 
 /** The sim, simulated on the CPU to its payoff and painted from its draw list. */
