@@ -98,7 +98,7 @@ class KMeansSim : Sim {
         // (with equal shares the second half of a run was nearly still).
         val passes = countPasses()
         var wsum = 0f
-        val wt = FloatArray(max(1, passes)) { 0.35f + sqrt(passMove[it] / max(1e-4f, passMove[0])) }
+        val wt = FloatArray(max(1, passes)) { 0.1f + sqrt(passMove[it] / max(1e-4f, passMove[0])) }
         for (v in wt) wsum += v
         passDur = FloatArray(wt.size) { (RUN_SECONDS * wt[it] / wsum).coerceIn(MIN_ITER_SECONDS, MAX_ITER_SECONDS) }
         iterSeconds = passDur[0]
@@ -414,7 +414,7 @@ class KMeansSim : Sim {
         private const val MAX_ITER = 40
         private const val RUN_SECONDS = 9.5f
         private const val INTRO_SECONDS = 0.9f
-        private const val MIN_ITER_SECONDS = 0.45f
+        private const val MIN_ITER_SECONDS = 0.4f
         private const val MAX_ITER_SECONDS = 2.4f
         private const val ASSIGN_SHARE = 0.42f
         private const val TILE_ROWS = 140
@@ -426,7 +426,7 @@ class KMeansSim : Sim {
             id = "algorithms/k-means",
             title = "k-means",
             shelf = Shelf.ALGORITHMS,
-            family = "Clustering & search",
+            family = "Machine learning & optimization",
             blurb = "Join the nearest centre, move to the middle, repeat until nobody switches.",
             formats = listOf(TrapFormat.COLOR_BATTLE, TrapFormat.SNAP, TrapFormat.GUESS),
             heroLabel = "New points",

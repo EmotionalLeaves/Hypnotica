@@ -340,7 +340,7 @@ class HilbertCurveSim : Sim {
             id = "math/hilbert-curve",
             title = "Space-filling curve",
             shelf = Shelf.MATH,
-            family = "Geometry & topology",
+            family = "Fractals & iteration",
             blurb = "One line, folded finer and finer, until it passes through every point of the square.",
             formats = listOf(TrapFormat.FILL, TrapFormat.GROW),
             heroLabel = "Draw again",

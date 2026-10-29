@@ -6,6 +6,8 @@ import app.hypnotica.core.sim.SimDef
 object PhysicsMore {
     fun defs(): List<SimDef> = listOf(
         SlinkyDropSim.def(),
-        BrachistochroneSim.def()
+        BrachistochroneSim.def(),
+        MagnetPendulumSim.def(),
+        MetronomeSyncSim.def()
     )
 }

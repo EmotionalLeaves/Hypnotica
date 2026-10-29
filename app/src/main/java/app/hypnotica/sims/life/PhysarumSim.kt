@@ -93,7 +93,7 @@ class PhysarumSim : Sim {
         // destination; the first is the one the finale's light runs out from.
         foods = env.params.i("food", 7).coerceIn(3, MAX_FOOD)
         val minGap = sqrt(gw.toFloat() * gh / foods) * 0.62f
-        val edge = 10f
+        val edge = 18f
         var placed = 0
         var tries = 0
         while (placed < foods && tries < 4000) {
@@ -110,7 +110,7 @@ class PhysarumSim : Sim {
             placed++
         }
         foods = placed
-        for (i in 0 until foods) { group[i] = i; linkedAt[i] = -10f }
+        for (i in 0 until foods) { group[i] = i; linkedAt[i] = -1f }
         groups = foods
 
         // A blob of mould on every flake. As many agents as the dish's area
@@ -175,10 +175,15 @@ class PhysarumSim : Sim {
             }
             var nx = x + FastMath.cos(hd)
             var ny = y + FastMath.sin(hd)
-            // The dish wall: turned back in a new direction rather than piling up.
+            // An agent that reaches the dish wall has found nothing there: it
+            // is taken back into the mould at a flake. Turned round on the
+            // spot instead, the agents a wall caught came back along their
+            // own trail and wore dead-end tubes into the corners of the dish.
             if (nx < 1f || nx > w - 2f || ny < 1f || ny > hh - 2f) {
-                nx = nx.coerceIn(1f, w - 2f); ny = ny.coerceIn(1f, hh - 2f)
-                hd = env.rng.range(0f, TAU)
+                val f = env.rng.int(0, foods)
+                val a = env.rng.range(0f, TAU)
+                nx = fx[f] + FastMath.cos(a) * 2f; ny = fy[f] + FastMath.sin(a) * 2f
+                hd = a
             }
             ax[i] = nx; ay[i] = ny; ah[i] = hd
             val k = ny.toInt() * w + nx.toInt()
@@ -224,7 +229,7 @@ class PhysarumSim : Sim {
         // agents a wall turned back slid along it and wore a tube round the
         // edge of the dish that led to no food.
         val edge = min(min(ix, gw - 1 - ix), min(iy, gh - 1 - iy))
-        if (edge < WALL_ZONE) return t[iy * gw + ix] - mean * WALL_PUSH * (1f - edge / WALL_ZONE.toFloat())
+        if (edge < WALL_ZONE) return t[iy * gw + ix] * (edge / WALL_ZONE.toFloat()) - mean * WALL_PUSH * (1f - edge / WALL_ZONE.toFloat())
         return t[iy * gw + ix]
     }
 
@@ -256,7 +261,8 @@ class PhysarumSim : Sim {
             if (ra == rb) continue
             group[max(ra, rb)] = min(ra, rb)
             groups--
-            linkedAt[a] = elapsed; linkedAt[b] = elapsed
+            if (linkedAt[a] < 0f) linkedAt[a] = elapsed
+            if (linkedAt[b] < 0f) linkedAt[b] = elapsed
             val mx = (fx[a] + fx[b]) * 0.5f * cell + x0
             env.emit(
                 EventKind.HIT, 0.25f + 0.6f * (foods - groups) / max(1, foods - 1),
@@ -313,38 +319,38 @@ class PhysarumSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val since = if (doneAt >= 0f) elapsed - doneAt else -1f
-        // The finale: a pulse of light running out along the finished network
-        // from the first flake, once.
-        val front = if (since in 0f..GLINT_SECONDS) since / GLINT_SECONDS * (maxDist + GLINT_BAND) else -1f
+        // The finale: light runs out along the finished network from the
+        // first flake and stays — every vein it reaches is lit for good, and
+        // once it has reached the far end the whole mould is.
+        val front = if (since >= 0f) since / GLINT_SECONDS * maxDist else -1f
+        val allLit = since >= 0f && front >= maxDist
         val levels = IntArray(LEVELS + 1) { lv ->
             if (lv == 0) 0 else {
                 val u = lv / LEVELS.toFloat()
-                // Faint chemical a dim, cool shade; thick veins bright.
+                // Faint chemical a dim, deep shade; thick veins bright.
                 Palette.lerp(Palette.BG, palette.at(0.72f - 0.67f * u), 0.2f + 0.8f * u)
             }
         }
-        val glint = IntArray(LEVELS + 1) { lv -> if (lv == 0) 0 else Palette.brighten(levels[lv], 0.45f) }
+        val lit = IntArray(LEVELS + 1) { lv -> if (lv == 0) 0 else Palette.brighten(levels[lv], 0.08f + 0.22f * lv / LEVELS) }
         for (y in 0 until gh) {
             val row = y * gw
             val yc = y0 + (y + 0.5f) * cell
             g.cellRow(x0, yc, cell, gw) { x ->
-                val v = trail[row + x]
-                val lv = level(v)
+                val lv = level(trail[row + x])
                 if (lv == 0) 0
-                else if (front >= 0f && dist[row + x] >= 0 && abs(dist[row + x] - front) < GLINT_BAND) glint[lv]
+                else if (allLit || (front >= 0f && dist[row + x] in 0..front.toInt())) lit[lv]
                 else levels[lv]
             }
         }
-        // The food: an oat flake, ringed once its network has reached another.
+        // The food: an oat flake, its ring turning white once its network
+        // has reached another — eased in, then steady.
         val accent = palette.at(0.05f)
         for (f in 0 until foods) {
             val x = x0 + fx[f] * cell; val y = y0 + fy[f] * cell
-            val linked = find(f).let { r -> (0 until foods).any { it != f && find(it) == r } }
-            val flash = (1f - (elapsed - linkedAt[f]) / 0.8f).coerceIn(0f, 1f)
-            val done = if (since >= 0f) (1f - since / 2.5f).coerceIn(0f, 1f) else 0f
-            g.glow(x, y, FOOD_R * (2.6f + 2f * flash + 2f * done), accent, 0.35f + 0.4f * flash + 0.4f * done)
+            val on = if (linkedAt[f] >= 0f) ((elapsed - linkedAt[f]) / 0.5f).coerceIn(0f, 1f) else 0f
+            g.glow(x, y, FOOD_R * (2.6f + 1.4f * on), accent, 0.3f + 0.25f * on)
             g.disc(x, y, FOOD_R, Palette.TEXT_PRIMARY)
-            g.ring(x, y, FOOD_R * 1.75f, FOOD_R * 0.28f, if (linked) Palette.TEXT_PRIMARY else accent, alpha = if (linked) 0.9f else 0.45f)
+            g.ring(x, y, FOOD_R * 1.75f, FOOD_R * 0.28f, Palette.lerp(accent, Palette.TEXT_PRIMARY, on), alpha = 0.45f + 0.5f * on)
         }
     }
 
@@ -354,12 +360,19 @@ class PhysarumSim : Sim {
         return (u * LEVELS).roundToInt().coerceIn(1, LEVELS)
     }
 
+    /** Flakes in the biggest network so far. */
+    private fun largest(): Int {
+        var best = 1
+        for (f in 0 until foods) { val r = find(f); var c = 0; for (j in 0 until foods) if (find(j) == r) c++; if (c > best) best = c }
+        return best
+    }
+
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 5f
+    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 10f
 
     override fun counters(): List<Pair<String, String>> = listOf(
-        "food linked" to "${foods - groups + 1}/$foods",
+        "food linked" to "${largest()}/$foods",
         "networks" to groups.toString(),
         "agents" to "%,d".format(java.util.Locale.US, n)
     )
@@ -371,12 +384,12 @@ class PhysarumSim : Sim {
         const val FIELD_TOP = 0.86f
         const val FIELD_BOTTOM = -0.96f
         const val MARGIN = 0.02f
-        const val TICKS_PER_SECOND = 14f
+        const val TICKS_PER_SECOND = 10f
         const val SENSE = 7f
         const val DEPOSIT = 5f
         const val FOOD_SMELL = 3f
-        const val WALL_ZONE = 8
-        const val WALL_PUSH = 1.5f
+        const val WALL_ZONE = 14
+        const val WALL_PUSH = 3f
         const val DECAY = 0.1f
         const val BLOB = 9f
         const val CHECK_EVERY = 8
@@ -387,7 +400,6 @@ class PhysarumSim : Sim {
         const val LEVELS = 14
         const val FOOD_R = 0.016f
         const val GLINT_SECONDS = 1.6f
-        const val GLINT_BAND = 6f
 
         fun def(): SimDef = SimDef(
             id = "life/physarum",
@@ -398,7 +410,7 @@ class PhysarumSim : Sim {
             formats = listOf(TrapFormat.GROW, TrapFormat.CHAIN),
             heroLabel = "New dish",
             defaultPalette = "Ember",
-            typicalSeconds = 22f,
+            typicalSeconds = 12f,
             params = listOf(
                 Param.int("food", "Food", 3, MAX_FOOD, 7, card = Card.DATA),
                 Param.float("density", "Mould", 0.1f, 1f, 0.32f, card = Card.DATA),

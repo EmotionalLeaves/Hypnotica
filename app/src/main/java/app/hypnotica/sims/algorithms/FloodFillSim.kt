@@ -72,31 +72,54 @@ class FloodFillSim : Sim {
         val rng = env.rng
         val nRooms = mw * mh
         fills = min(fills, nRooms)
-        // Rooms grown from random seeds, one frontier room at a time, picked at
-        // random: ragged, organic shapes that are always in one piece.
+        // Rooms grown from spread-out seeds, each room taking one neighbouring
+        // cell in turn from a random point of its own frontier: ragged,
+        // organic shapes, always in one piece, of roughly even size. (Growing
+        // from one shared frontier let a room be walled in at a single cell.)
         val owner = IntArray(nRooms) { -1 }
-        val frontier = IntArray(nRooms * 4)
-        var fn = 0
-        val seeds = IntArray(nRooms) { it }
-        rng.shuffle(seeds)
-        for (r in 0 until fills) { owner[seeds[r]] = r; frontier[fn++] = seeds[r] }
-        while (fn > 0) {
-            val k = rng.int(0, fn)
-            val room = frontier[k]
-            val x = room % mw; val y = room / mw
-            var grew = false
-            val dirs = intArrayOf(0, 1, 2, 3); rng.shuffle(dirs)
-            for (d in dirs) {
-                val nx = x + DX[d]; val ny = y + DY[d]
-                if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue
-                val q = ny * mw + nx
+        val front = Array(fills) { ArrayList<Int>() }
+        for (r in 0 until fills) {
+            var best = -1; var bestD = -1
+            for (t in 0 until 12) {
+                val q = rng.int(0, nRooms)
                 if (owner[q] >= 0) continue
-                owner[q] = owner[room]
-                frontier[fn++] = q
-                grew = true
-                break
+                var d = Int.MAX_VALUE
+                for (o in 0 until r) {
+                    val s0 = front[o][0]
+                    d = min(d, abs(q % mw - s0 % mw) + abs(q / mw - s0 / mw))
+                }
+                if (d > bestD) { bestD = d; best = q }
             }
-            if (!grew) frontier[k] = frontier[--fn]
+            if (best < 0) { best = 0; while (owner[best] >= 0) best++ }
+            owner[best] = r
+            front[r].add(best)
+        }
+        val dirs = intArrayOf(0, 1, 2, 3)
+        var live = true
+        while (live) {
+            live = false
+            for (r in 0 until fills) {
+                val fr = front[r]
+                var grew = false
+                while (!grew && fr.isNotEmpty()) {
+                    val k = rng.int(0, fr.size)
+                    val room = fr[k]
+                    val x = room % mw; val y = room / mw
+                    rng.shuffle(dirs)
+                    for (d in dirs) {
+                        val nx = x + DX[d]; val ny = y + DY[d]
+                        if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue
+                        val q = ny * mw + nx
+                        if (owner[q] >= 0) continue
+                        owner[q] = r
+                        fr.add(q)
+                        grew = true
+                        break
+                    }
+                    if (!grew) { fr[k] = fr[fr.size - 1]; fr.removeAt(fr.size - 1) }
+                }
+                if (grew) live = true
+            }
         }
         // A maze inside each room (randomised depth-first), never through a
         // room's own border, so each room is one connected corridor system.
@@ -304,7 +327,7 @@ class FloodFillSim : Sim {
             id = "algorithms/flood-fill",
             title = "Flood fill",
             shelf = Shelf.ALGORITHMS,
-            family = "Clustering & search",
+            family = "Pathfinding & search",
             blurb = "The paint bucket, breadth first: every corridor it can reach, and not one more.",
             formats = listOf(TrapFormat.FILL, TrapFormat.REVEAL),
             heroLabel = "New picture",

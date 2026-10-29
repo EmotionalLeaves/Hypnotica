@@ -68,7 +68,7 @@ class SlinkyDropSim : Sim {
 
     override fun setup(env: SimEnv) {
         val p = env.params
-        n = p.i("coils", 50).coerceIn(MIN_COILS, MAX_COILS)
+        n = p.i("coils", 70).coerceIn(MIN_COILS, MAX_COILS)
         slow = p.f("slow", 6f).coerceIn(1f, 10f)
         ball = p.b("ball", true)
         grav = max(0.0, env.laws.gravity.toDouble())
@@ -138,7 +138,7 @@ class SlinkyDropSim : Sim {
             if (ballY <= floorY + BALL_R) {
                 ballY = floorY + BALL_R
                 ballLanded = true
-                env.emit(EventKind.HIT, 0.35f, panOf(env, BALL_X * env.halfWidth), 0.55f)
+                env.emit(EventKind.HIT, 0.35f, panOf(env, min(BALL_X * env.halfWidth, 0.32f)), 0.55f)
             }
         }
 
@@ -248,16 +248,20 @@ class SlinkyDropSim : Sim {
             g.rect(dx + 0.012f, mark, 0.012f, 0.0018f, Palette.TEXT_SECONDARY, alpha = markA)
             dx += 0.04f
         }
-        // The hand: two fingertips pinching the top coil, opening on release.
-        val top = y[0].toFloat()
-        val open = if (released) min(1f, (real / 0.02).toFloat()) else 0f
+        // A clamp on a rod from the ceiling: two jaws gripping the top coil,
+        // swinging apart the instant it lets go.
+        val open = if (released) min(1f, (real / 0.03).toFloat()) else 0f
+        val ty = topY.toFloat()
         g.rect(0f, 0.97f, hw * 1.2f, 0.03f, FLOOR)
-        g.rect(0f, 0.905f, 0.02f, 0.06f, HAND)
-        g.disc(-r - 0.012f - open * 0.05f, topY.toFloat() + 0.012f, 0.022f, HAND)
-        g.disc(r + 0.012f + open * 0.05f, topY.toFloat() + 0.012f, 0.022f, HAND)
-        g.rect(-r * 0.5f - open * 0.05f, topY.toFloat() + 0.05f, r * 0.55f, 0.012f, HAND)
-        g.rect(r * 0.5f + open * 0.05f, topY.toFloat() + 0.05f, r * 0.55f, 0.012f, HAND)
-
+        g.rect(0f, (0.94f + ty + 0.07f) * 0.5f, 0.007f, (0.94f - ty - 0.07f) * 0.5f, HAND)
+        g.rect(0f, ty + 0.07f, r + 0.03f, 0.008f, HAND)
+        for (side in intArrayOf(-1, 1)) {
+            val jx = side * (r + 0.018f)
+            val tilt = side * open * 0.5f
+            val cx = jx + side * open * 0.012f
+            g.rect(cx, ty + 0.035f, 0.007f, 0.035f, HAND, tilt)
+            g.rect(cx - side * 0.006f, ty + 0.004f, 0.006f, 0.004f, HAND_LIT, tilt)
+        }
         // The coils as a helix seen side-on: the back half of each turn dim,
         // drawn first, the front half bright over it.
         for (pass in 0..1) {
@@ -282,13 +286,14 @@ class SlinkyDropSim : Sim {
         g.line(-r, by, r, by - d0.toFloat() * 0.5f, lw * 1.6f, Palette.brighten(bc, 0.25f))
         // The ball let go beside it at the same instant.
         if (ball) {
-            val bx = BALL_X * hw
+            val bx = min(BALL_X * hw, 0.32f)
             g.disc(bx, ballY.toFloat(), BALL_R, BALL)
             g.disc(bx - BALL_R * 0.3f, ballY.toFloat() + BALL_R * 0.3f, BALL_R * 0.35f, BALL_LIT)
         }
         if (moved) {
             // A brief ring where the bottom finally let go.
-            val t = ((real - hangTime) / slow * 4.0).toFloat()
+            // Viewed seconds since it let go: the ring lasts 0.6 s on screen.
+            val t = ((real - hangTime) * slow / 0.6).toFloat()
             if (t < 1f) g.ring(0f, mark, r * (1.2f + 1.5f * t), 0.006f, Palette.TEXT_PRIMARY, alpha = 0.8f * (1f - t))
         }
     }
@@ -325,7 +330,8 @@ class SlinkyDropSim : Sim {
         const val BALL_X = 0.62f
         const val FLOOR = 0xFF1A1D25.toInt()
         const val FLOOR_LIT = 0xFF3A404D.toInt()
-        const val HAND = 0xFF8A7A6E.toInt()
+        const val HAND = 0xFF5C626E.toInt()
+        const val HAND_LIT = 0xFF8A919E.toInt()
         const val BALL = 0xFFB9BEC7.toInt()
         const val BALL_LIT = 0xFFF2F4F8.toInt()
 
@@ -343,7 +349,7 @@ class SlinkyDropSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 4.5f,
             params = listOf(
-                Param.int("coils", "Coils", MIN_COILS, MAX_COILS, 50, card = Card.DATA),
+                Param.int("coils", "Coils", MIN_COILS, MAX_COILS, 70, card = Card.DATA),
                 Param.float("stretch", "Hanging length", 0.6f, 1.45f, 1.2f, card = Card.DATA, unit = "m"),
                 Param.float("slow", "Slow motion", 1f, 10f, 6f, card = Card.MOTION, unit = "×"),
                 Param.bool("ball", "Drop a ball beside it", true, card = Card.LOOK)

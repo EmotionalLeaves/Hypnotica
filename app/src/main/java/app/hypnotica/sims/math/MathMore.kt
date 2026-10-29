@@ -8,6 +8,8 @@ object MathMore {
         PhyllotaxisSim.def(),
         TimesTableSim.def(),
         HilbertCurveSim.def(),
-        DragonCurveSim.def()
+        DragonCurveSim.def(),
+        BirthdayParadoxSim.def(),
+        PenroseTilingSim.def()
     )
 }

@@ -289,7 +289,7 @@ class TspSim : Sim {
             id = "algorithms/tsp-2opt",
             title = "Travelling salesman",
             shelf = Shelf.ALGORITHMS,
-            family = "Clustering & search",
+            family = "Machine learning & optimization",
             blurb = "Two roads cross? Swap them. Until no road crosses another.",
             formats = listOf(TrapFormat.NUMBER_UP, TrapFormat.SNAP, TrapFormat.PERFECT_FIT),
             heroLabel = "New cities",

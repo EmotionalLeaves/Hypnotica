@@ -110,9 +110,9 @@ class BrachistochroneSim : Sim {
             dy = min(dx / HALF_PI, 0.56f)
             dx = dy * HALF_PI
             ax = -dx / 2f
-            ay = 0.66f
-            boardTop = -0.2f
-            boardGap = 0.16f
+            ay = 0.64f
+            boardTop = -0.12f
+            boardGap = 0.17f
             boardX0 = -hw * 0.86f
             boardX1 = hw * 0.86f
         } else {

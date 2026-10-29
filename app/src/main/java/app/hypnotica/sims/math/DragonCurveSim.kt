@@ -119,8 +119,18 @@ class DragonCurveSim : Sim {
         }
     }
 
-    /** Copy c's progress: staggered, so they land one after another. */
-    private fun copyEase(c: Int): Float = ((swing - c * 0.18f) / 0.64f).coerceIn(0f, 1f)
+    /**
+     * Copy c's progress. One at a time, each a quarter turn on from the one
+     * before: swung all at once from the first dragon, they passed through
+     * each other in a tangle on the way.
+     */
+    private fun copyEase(c: Int): Float =
+        // At the very end exactly 1: (1 − 2/3)·3 comes out a hair under in
+        // floats, and the last dragon never counted as landed.
+        if (swing >= 1f) 1f else ((swing - c / 3f) * 3f).coerceIn(0f, 1f)
+
+    /** Copy c's angle about the shared start. */
+    private fun copyAngle(c: Int): Float = (c + smooth(copyEase(c))) * PI.toFloat() * 0.5f
 
     /**
      * Where the crease just opened sits across the screen, -1..1: the view
@@ -177,7 +187,7 @@ class DragonCurveSim : Sim {
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         for (c in 0 until copies) {
-            val ang = if (c == 0) 0f else sw[c - 1] * c * PI.toFloat() * 0.5f
+            val ang = if (c == 0) 0f else copyAngle(c - 1)
             val ca = cos(ang); val sa = sin(ang)
             for (i in 0..m) {
                 val wx = dx[i] * ca - dy[i] * sa
@@ -193,13 +203,16 @@ class DragonCurveSim : Sim {
         val scale = min(availW / max(1e-3f, maxX - minX), availH / max(1e-3f, maxY - minY)).coerceAtMost(0.5f)
         val cx = (minX + maxX) * 0.5f
         val cy = (minY + maxY) * 0.5f
-        val width = (scale * 0.34f).coerceIn(0.0018f, 0.03f)
+        // Under a quarter of a side: where the curve touches itself the two cut
+        // corners pass 0.35 of a side apart, and a fatter line left them a
+        // hairline slit apart, a black slash at every touch point.
+        val width = (scale * 0.22f).coerceIn(0.0018f, 0.022f)
         g.reserveInstances(copies * m * 2 + 16)
 
         val tint = if (unfolded && four) smooth(sw[0] * 1.6f) else 0f
         for (c in copies - 1 downTo 0) {
-            val ang = if (c == 0) 0f else sw[c - 1] * c * PI.toFloat() * 0.5f
-            val show = if (c == 0) 1f else smooth(copyEase(c - 1) * 4f)
+            val ang = if (c == 0) 0f else copyAngle(c - 1)
+            val show = if (c == 0) 1f else smooth(copyEase(c - 1) * 5f)
             if (show <= 0f) continue
             val ca = cos(ang); val sa = sin(ang)
             val k0 = ca * cr - sa * sr
@@ -212,7 +225,7 @@ class DragonCurveSim : Sim {
             for (i in 0 until m) {
                 val t = i.toFloat() / m
                 val grad = pal.at(0.04f + 0.74f * t)
-                val solid = Palette.lerp(Palette.BG, pal.at(hue), 0.5f + 0.5f * t)
+                val solid = Palette.lerp(Palette.BG, pal.at(hue), 0.62f + 0.38f * t)
                 val col = if (c == 0) Palette.lerp(grad, solid, tint) else solid
                 // Corners cut at a quarter of each side: the strip's path can
                 // be followed through the places where the curve touches itself.
@@ -233,7 +246,7 @@ class DragonCurveSim : Sim {
             val ey = ((dx[n] * sr + dy[n] * cr) - cy) * scale
             // A steady marker, not a pulse: the user finds throbbing highlights
             // disorienting.
-            g.disc(ex, ey, max(0.008f, width * 0.9f), Palette.TEXT_PRIMARY, 0.75f)
+            g.disc(ex, ey, 0.009f, Palette.TEXT_PRIMARY, 0.75f)
         }
         if (unfolded && four) {
             val ox = (-cx) * scale; val oy = (-cy) * scale
@@ -263,18 +276,20 @@ class DragonCurveSim : Sim {
         private const val LEAD_IN = 0.5f
         private const val UNFOLD_SECONDS = 0.78f
         private const val PAUSE = 0.14f
-        private const val SWING_SECONDS = 2.0f
+        private const val SWING_SECONDS = 2.4f
         private const val HOLD_SECONDS = 3.5f
 
         fun def(): SimDef = SimDef(
             id = "math/dragon-curve",
             title = "Paper-fold dragon",
             shelf = Shelf.MATH,
-            family = "Geometry & topology",
+            family = "Fractals & iteration",
             blurb = "Fold a strip in half twelve times, open every crease to a right angle: a dragon.",
             formats = listOf(TrapFormat.GROW, TrapFormat.PERFECT_FIT),
             heroLabel = "Unfold again",
-            defaultPalette = "Ember",
+            // Spectrum: the four finished dragons need four hues that can be told
+            // apart, and Ember's are all one warm family.
+            defaultPalette = "Spectrum",
             typicalSeconds = 19f,
             params = listOf(
                 Param.int("folds", "Folds", 4, 16, 12, card = Card.DATA),
