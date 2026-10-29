@@ -123,6 +123,28 @@ class FloodFillSim : Sim {
                 if (grew) live = true
             }
         }
+        // Which rooms touch, and a palette slot for each so that touching
+        // rooms sit far apart on the palette (index order put neighbours on
+        // neighbouring slots, and on a narrow palette like Ember they matched).
+        adj = Array(fills) { BooleanArray(fills) }
+        for (y in 0 until mh) for (x in 0 until mw) {
+            val a = owner[y * mw + x]
+            if (x + 1 < mw) { val b = owner[y * mw + x + 1]; if (a != b) { adj[a][b] = true; adj[b][a] = true } }
+            if (y + 1 < mh) { val b = owner[(y + 1) * mw + x]; if (a != b) { adj[a][b] = true; adj[b][a] = true } }
+        }
+        slot = IntArray(fills) { -1 }
+        val taken = BooleanArray(fills)
+        for (r in 0 until fills) {
+            var bestS = 0; var bestScore = -1
+            for (c in 0 until fills) {
+                if (taken[c]) continue
+                var score = fills
+                for (q in 0 until fills) if (adj[r][q] && slot[q] >= 0) score = min(score, abs(slot[q] - c))
+                if (score > bestScore) { bestScore = score; bestS = c }
+            }
+            slot[r] = bestS; taken[bestS] = true
+        }
+        colourFor = null
         // A maze inside each room (randomised depth-first), never through a
         // room's own border, so each room is one connected corridor system.
         wall = BooleanArray(gw * gh) { true }
@@ -212,6 +234,44 @@ class FloodFillSim : Sim {
 
     private fun open(x: Int, y: Int) { wall[(2 * y + 1) * gw + 2 * x + 1] = false }
 
+    private var adj = Array(0) { BooleanArray(0) }
+    private var slot = IntArray(0)
+    private var colourFor: Palette? = null
+    private var roomColours = IntArray(0)
+
+    /**
+     * Each room's paint: its palette slot, and where that still sits too close
+     * to a touching room's colour (a narrow palette), a lighter or darker
+     * shade of it, whichever stands furthest from its neighbours.
+     */
+    private fun colours(palette: Palette): IntArray {
+        if (colourFor === palette && roomColours.size == fills) return roomColours
+        val out = IntArray(fills)
+        for (r in 0 until fills) {
+            val base = deepTone(palette.at((slot[r] + 0.5f) / fills * 0.92f))
+            val options = intArrayOf(base, Palette.lerp(base, 0xFFFFFFFF.toInt(), 0.38f), Palette.lerp(base, Palette.BG, 0.42f))
+            var best = base; var bestD = -1f
+            for ((o, c) in options.withIndex()) {
+                var d = Float.MAX_VALUE
+                for (q in 0 until r) if (adj[r][q]) d = min(d, colourDistance(c, out[q]))
+                // The plain slot colour wins unless it is genuinely too close.
+                val score = if (o == 0 && d >= SAME_COLOUR) Float.MAX_VALUE else d
+                if (score > bestD) { bestD = score; best = c }
+            }
+            out[r] = best
+        }
+        roomColours = out
+        colourFor = palette
+        return out
+    }
+
+    private fun colourDistance(a: Int, b: Int): Float {
+        val dr = ((a ushr 16) and 0xFF) - ((b ushr 16) and 0xFF)
+        val dg = ((a ushr 8) and 0xFF) - ((b ushr 8) and 0xFF)
+        val db = (a and 0xFF) - (b and 0xFF)
+        return kotlin.math.sqrt((dr * dr + dg * dg + db * db).toFloat())
+    }
+
     private fun front(r: Int): Float = (vclock - startAt[r]) * layersPerSecond
 
     override fun step(env: SimEnv, dt: Float) {
@@ -274,7 +334,7 @@ class FloodFillSim : Sim {
         // stand on their own: eased in once and held.
         val wallC = Palette.lerp(WALL, Palette.BG, 0.55f * finale)
         g.rect(0f, 0f, gw * cell * 0.5f + cell * 0.15f, gh * cell * 0.5f + cell * 0.15f, wallC)
-        val colours = IntArray(fills) { deepTone(palette.at((it + 0.5f) / fills * 0.92f)) }
+        val colours = colours(palette)
         val fronts = FloatArray(fills) { front(it) }
         val hw = cell * 0.5f
         for (y in 0 until gh) {
@@ -290,7 +350,9 @@ class FloodFillSim : Sim {
                     // The wavefront: the newest three layers burn bright and
                     // cool to the room's colour behind.
                     val behind = f - d
-                    val hot = (1f - behind / 3f).coerceIn(0f, 1f)
+                    // (The run stops at the payoff, so the last room's front
+                    // stayed white-hot for good; it cools with the finale.)
+                    val hot = (1f - behind / 3f).coerceIn(0f, 1f) * (1f - finale)
                     Palette.lerp(colours[r], Palette.brighten(colours[r], 0.45f), hot * hot)
                 }
                 // Overlapping a hair, so neighbouring pixels of one colour join.
@@ -301,7 +363,7 @@ class FloodFillSim : Sim {
         for (r in 0 until fills) {
             val f = fronts[r]
             if (f < 0f) continue
-            val a = (1f - f / (layersPerSecond * 0.8f)).coerceIn(0f, 1f)
+            val a = (1f - f / (layersPerSecond * 0.8f)).coerceIn(0f, 1f) * (1f - finale)
             if (a <= 0f) continue
             val s = seedCell[r]
             g.rect(ox + (s % gw + 0.5f) * cell, oy - (s / gw + 0.5f) * cell, hw, hw, Palette.TEXT_PRIMARY, alpha = a)
@@ -331,6 +393,8 @@ class FloodFillSim : Sim {
         private const val INTRO_SECONDS = 0.8f
         private const val CLICK_SPREAD = 4.5f
         private const val FILL_END = 9.5f
+        /** Two paints closer than this (RGB distance) read as one room. */
+        private const val SAME_COLOUR = 110f
         private const val WALL = 0xFF262D3D.toInt()
         private const val FLOOR = 0xFF0C0F16.toInt()
 

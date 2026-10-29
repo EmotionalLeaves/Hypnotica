@@ -285,9 +285,12 @@ class SudokuSim : Sim {
         var soundCell = -1
         var soundDigit = 0
         var budget = MAX_PER_STEP
+        val filledBefore = solver.filled
+        var acted = 0
         while (done < target && budget-- > 0 && !solver.solved) {
             solver.act()
             done++
+            acted++
             val c = solver.lastCell
             when (solver.lastKind) {
                 Solver.PLACE -> {
@@ -321,9 +324,26 @@ class SudokuSim : Sim {
             logDepth(empties)
             return
         }
-        // At full pace thousands of tries go by a second; one note per
-        // fortieth of a second, the most telling of the batch, keeps it a
-        // ticking search rather than a wash. A retreat outranks a placement.
+        // At full pace thousands of tries go by a frame and some retreat is
+        // always among them, so picking "the most telling" event made the last
+        // four seconds one low note forty times a second while the board
+        // visibly filled. Past a handful of actions a frame the note follows
+        // the board instead: its pitch is how many cells are filled (the trace
+        // under the board, heard), a placement voice while the frame gained
+        // ground and a retreat voice while it lost it.
+        if (acted > BLUR_ACTS) {
+            if (sinceSound >= BLUR_GAP) {
+                sinceSound = 0f
+                val depth = (solver.filled - (81 - empties)).toFloat() / empties.coerceAtLeast(1)
+                val cc = currentCell()
+                val pan = if (cc >= 0) ((cc % 9) - 4) / 4.5f else 0f
+                if (solver.filled >= filledBefore) env.emit(EventKind.WRITE, 0.15f + 0.75f * depth, pan, 0.32f)
+                else env.emit(EventKind.DEATH, 0.15f + 0.75f * depth, pan, 0.38f)
+            }
+            return
+        }
+        // One note per fortieth of a second, the most telling of the batch,
+        // keeps a slow search a ticking one. A retreat outranks a placement.
         if (soundKind != Solver.NONE && sinceSound >= SOUND_GAP) {
             sinceSound = 0f
             val pan = ((soundCell % 9) - 4) / 4.5f
@@ -356,20 +376,25 @@ class SudokuSim : Sim {
         var trace = false
         var tl = 0f; var tr = 0f; var tt = 0f; var tb = 0f
         if (portrait) {
+            // The board is the hero: a slim strip of trace under it, the pair
+            // centred a touch high. (The trace used to take the whole lower
+            // half of a phone, a big noisy chart louder than the puzzle.)
             side = min(2f * halfW * 0.94f, 1.3f)
-            val spare = 2f - side
-            trace = spare > 0.55f
-            by = if (trace) 1f - side * 0.5f - spare * 0.16f else 0f
+            val th = min(0.17f, side * 0.18f)
+            val gap = side * 0.07f
+            trace = 2f - side > th + gap + 0.2f
+            val groupH = side + if (trace) gap + th else 0f
+            by = groupH * 0.5f - side * 0.5f + 0.05f
             bx = 0f
-            if (trace) { tl = -side * 0.5f; tr = side * 0.5f; tt = by - side * 0.5f - 0.13f; tb = -0.88f }
+            if (trace) { tl = -side * 0.5f; tr = side * 0.5f; tt = by - side * 0.5f - gap; tb = tt - th }
         } else {
             side = min(1.72f, 2f * halfW * 0.6f)
-            val traceW = min(side, 2f * halfW * 0.9f - side - 0.16f)
+            val traceW = min(side * 0.8f, 2f * halfW * 0.9f - side - 0.16f)
             trace = traceW > 0.4f
             val total = side + if (trace) 0.16f + traceW else 0f
             bx = -total * 0.5f + side * 0.5f
             by = 0f
-            if (trace) { tl = bx + side * 0.5f + 0.16f; tr = tl + traceW; tt = side * 0.32f; tb = -side * 0.32f }
+            if (trace) { tl = bx + side * 0.5f + 0.16f; tr = tl + traceW; tt = side * 0.16f; tb = -side * 0.16f }
         }
         val cell = side / 9f
         val ox = bx - side * 0.5f
@@ -451,12 +476,13 @@ class SudokuSim : Sim {
     /** Cells filled against time: the advance and retreat, under the board. */
     private fun drawTrace(g: G, palette: Palette, left: Float, right: Float, top: Float, bottom: Float, solvedMix: Float) {
         val h = top - bottom
-        if (h < 0.15f) return
-        val frame = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f)
+        if (h < 0.08f) return
+        val frame = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.18f)
         val mid = (left + right) * 0.5f
         val hw = (right - left) * 0.5f
-        g.rect(mid, bottom, hw, 0.002f, frame)
-        g.rect(mid, top, hw, 0.003f, Palette.lerp(frame, Palette.SUCCESS, solvedMix))
+        g.rect(mid, bottom, hw, 0.0016f, frame)
+        // The ceiling is "every cell filled"; it turns green when reached.
+        g.rect(mid, top, hw, 0.0016f, Palette.lerp(frame, Palette.SUCCESS, solvedMix), alpha = 0.6f + 0.4f * solvedMix)
         val cnt = depthCount
         if (cnt < 2) return
         val colW = (right - left) / DEPTH_LOG
@@ -466,11 +492,11 @@ class SudokuSim : Sim {
             val d = depthLog[i].toInt()
             val x = left + (i + 0.5f) * colW
             val y = bottom + h * d / empties.coerceAtLeast(1)
-            if (d > 0) g.rect(x, (bottom + y) * 0.5f, colW * 0.5f, (y - bottom) * 0.5f, lineC, alpha = 0.14f)
-            if (i > 0) g.line(px, py, x, y, 0.0045f, lineC, 0.9f)
+            if (d > 0) g.rect(x, (bottom + y) * 0.5f, colW * 0.5f, (y - bottom) * 0.5f, lineC, alpha = 0.08f)
+            if (i > 0) g.line(px, py, x, y, 0.0028f, lineC, 0.6f)
             px = x; py = y
         }
-        g.disc(px, py, 0.012f, Palette.brighten(lineC, 0.3f))
+        g.disc(px, py, 0.008f, Palette.brighten(lineC, 0.3f))
     }
 
     /** 0 → 1 once, smoothly, then held. */
@@ -496,6 +522,9 @@ class SudokuSim : Sim {
         /** A frame's work, whatever the pace asks: about 1.5 ms of solving. */
         private const val MAX_PER_STEP = 30_000
         private const val SOUND_GAP = 1f / 40f
+        /** More actions than this in a frame is a blur: sound the board, not the act. */
+        private const val BLUR_ACTS = 6
+        private const val BLUR_GAP = 1f / 20f
         private const val REJECT_SECONDS = 0.35f
         private const val CLEAR_SECONDS = 0.45f
         private const val GIVEN_BG = 0xFF1A2030.toInt()

@@ -115,6 +115,7 @@ class TspSim : Sim {
         applied = 0
         clock = 0f; vclock = 0f; doneAt = -1f; payoffFrame = false; sinceSound = 1f
         oa = -1; moveAt = -9f
+        cum = FloatArray(1); passed = 0
         findCrossings()
     }
 
@@ -189,7 +190,22 @@ class TspSim : Sim {
         val h = abs(dt)
         clock += h
         sinceSound += h
-        if (doneAt >= 0f) return
+        if (doneAt >= 0f) {
+            // The salesman sets off on the finished tour; each city ticks as
+            // the light reaches it, rising as the round trip completes.
+            val d = travelled()
+            var k = passed
+            while (k < n && cum[k + 1] <= d) k++
+            if (k > passed) {
+                passed = k
+                if (sinceSound >= 1f / 20f) {
+                    sinceSound = 0f
+                    val c = tour[k % n]
+                    env.emit(EventKind.STEP, 0.3f + 0.6f * k / n, (cx[c] / ex).coerceIn(-1f, 1f), 0.22f)
+                }
+            }
+            return
+        }
         vclock += h * env.params.f("speed", 1f).coerceIn(0.1f, 8f)
         var any = false
         while (applied < swaps && swapAt[applied] <= vclock) {
@@ -219,23 +235,42 @@ class TspSim : Sim {
         if (applied >= swaps && vclock >= finalAt + (if (swaps > 0) moveDur else 0f)) {
             doneAt = clock
             payoffFrame = true
+            cum = FloatArray(n + 1)
+            for (k in 0 until n) cum[k + 1] = cum[k] + dist(tour[k], tour[(k + 1) % n]).toFloat()
+            passed = 0
         }
+    }
+
+    private var cum = FloatArray(1)
+    private var passed = 0
+
+    /** How far along the finished tour the light has run. */
+    private fun travelled(): Float {
+        if (doneAt < 0f) return 0f
+        val u = ((clock - doneAt - TRAVEL_DELAY) / TRAVEL_SECONDS).coerceIn(0f, 1f)
+        return u * u * (3f - 2f * u) * cum[n]
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val since = if (doneAt >= 0f) clock - doneAt else -1f
-        val finale = if (since >= 0f) (since / 0.6f).coerceIn(0f, 1f) else 0f
         val road = palette.at(ROAD_T)
-        val roadC = Palette.lerp(road, palette.bright(ROAD_T, 0.15f), finale)
-        g.reserveInstances(n * 4 + min(crossings, MAX_CROSS) * 2 + 32)
+        val roadC = road
+        g.reserveInstances(n * 5 + min(crossings, MAX_CROSS) * 2 + 32)
         val mu = ((vclock - moveAt) / moveDur).coerceIn(0f, 1f)
         val showing = doneAt < 0f && oa >= 0 && mu < 1f
+        val run = travelled()
+        val lit = palette.bright(ROAD_T, 0.22f)
         for (s in 0 until n) {
             val a = tour[s]; val b = tour[(s + 1) % n]
             val fresh = showing && ((a == oa && b == oc) || (a == oc && b == oa) || (a == ob && b == od) || (a == od && b == ob))
             if (fresh) continue
-            g.line(cx[a], cy[a], cx[b], cy[b], ROAD_W * (1f + 0.3f * finale), roadC, 0.92f)
+            g.line(cx[a], cy[a], cx[b], cy[b], ROAD_W, roadC, 0.92f)
+            // The finished tour lights up behind the travelling salesman and
+            // stays lit.
+            if (doneAt >= 0f && cum.size == n + 1 && run > cum[s]) {
+                val f = ((run - cum[s]) / max(1e-5f, cum[s + 1] - cum[s])).coerceIn(0f, 1f)
+                g.line(cx[a], cy[a], cx[a] + (cx[b] - cx[a]) * f, cy[a] + (cy[b] - cy[a]) * f, ROAD_W * 1.5f, lit)
+            }
         }
         if (showing) {
             // The two roads out, red and fading; the two in, drawn bright from
@@ -250,16 +285,29 @@ class TspSim : Sim {
         }
         // Crossings still to undo.
         val shown = min(crossings, MAX_CROSS)
+        // A knot of a hundred crossings drew rings on rings; they shrink as
+        // they crowd, back to full size once only a few are left.
+        val ringR = 0.017f * sqrt(24f / max(24, shown).toFloat()).coerceAtLeast(0.6f)
         for (k in 0 until shown) {
-            g.ring(crossX[k], crossY[k], 0.017f, 0.0042f, Palette.DANGER, alpha = 0.85f)
+            g.ring(crossX[k], crossY[k], ringR, 0.0042f * (0.4f + 0.6f * ringR / 0.017f), Palette.DANGER, alpha = 0.85f)
         }
-        val cityC = Palette.lerp(CITY_C, Palette.TEXT_PRIMARY, finale)
         for (s in 0 until n) {
             val a = tour[s]
-            // The finished tour's cities take a steady halo, eased in once.
-            if (finale > 0f) g.glow(cx[a], cy[a], 0.045f, road, 0.3f * finale)
+            // A city the salesman has reached takes a steady halo and stays lit.
+            val reached = doneAt >= 0f && cum.size == n + 1 && (run >= cum[s] && (s > 0 || run > 0f))
+            if (reached) g.glow(cx[a], cy[a], 0.045f, road, 0.3f)
             g.disc(cx[a], cy[a], CITY_R + 0.004f, Palette.BG)
-            g.disc(cx[a], cy[a], CITY_R, cityC)
+            g.disc(cx[a], cy[a], CITY_R, if (reached) Palette.TEXT_PRIMARY else CITY_C)
+        }
+        // The salesman: a bright point running the tour once.
+        if (doneAt >= 0f && cum.size == n + 1 && run > 0f && run < cum[n]) {
+            var s = 0
+            while (s < n - 1 && cum[s + 1] < run) s++
+            val a = tour[s]; val b = tour[(s + 1) % n]
+            val f = ((run - cum[s]) / max(1e-5f, cum[s + 1] - cum[s])).coerceIn(0f, 1f)
+            val x = cx[a] + (cx[b] - cx[a]) * f; val y = cy[a] + (cy[b] - cy[a]) * f
+            g.glow(x, y, 0.06f, lit, 0.5f)
+            g.disc(x, y, CITY_R * 1.2f, Palette.TEXT_PRIMARY)
         }
     }
 
@@ -280,6 +328,8 @@ class TspSim : Sim {
         private const val MAX_CROSS = 600
         private const val RUN_SECONDS = 8.5f
         private const val INTRO_SECONDS = 1.0f
+        private const val TRAVEL_DELAY = 0.25f
+        private const val TRAVEL_SECONDS = 2.3f
         private const val ROAD_T = 0.55f
         private const val ROAD_W = 0.005f
         private const val CITY_R = 0.011f

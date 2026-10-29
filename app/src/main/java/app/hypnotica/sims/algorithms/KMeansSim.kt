@@ -98,7 +98,10 @@ class KMeansSim : Sim {
         // (with equal shares the second half of a run was nearly still).
         val passes = countPasses()
         var wsum = 0f
-        val wt = FloatArray(max(1, passes)) { 0.1f + sqrt(passMove[it] / max(1e-4f, passMove[0])) }
+        // The floor on a pass's weight is small: the last few passes move a
+        // centroid by a hair and used to hold the screen nearly still for two
+        // seconds before the payoff.
+        val wt = FloatArray(max(1, passes)) { 0.04f + sqrt(passMove[it] / max(1e-4f, passMove[0])) }
         for (v in wt) wsum += v
         passDur = FloatArray(wt.size) { (RUN_SECONDS * wt[it] / wsum).coerceIn(MIN_ITER_SECONDS, MAX_ITER_SECONDS) }
         iterSeconds = passDur[0]
@@ -279,10 +282,17 @@ class KMeansSim : Sim {
         drawTerritory(env, g, palette, finale)
         // How far through the recolour ripple of the current pass.
         val ripple = if (!assigning) ((vclock - (phaseStart - ASSIGN_SHARE * iterSeconds)) / (ASSIGN_SHARE * iterSeconds * 0.9f)) else 2f
-        g.reserveInstances(n * 2 + k * (MAX_ITER + 8))
+        g.reserveInstances(n * 3 + k * (MAX_ITER + 10))
         // Spokes: each point's line to the centroid it just joined, fading as
         // the ripple passes. They say what the assignment step is.
-        if (!assigning && ripple < 1.6f) {
+        if (finale > 0f) {
+            // The fixed point: every point joined to its centre for good, a
+            // star per cluster, eased in once and held.
+            for (i in 0 until n) {
+                val j = owner[i]
+                if (j >= 0) g.line(px[i], py[i], cx[j], cy[j], 0.0018f, colour(palette, j), 0.2f * finale)
+            }
+        } else if (!assigning && ripple < 1.6f) {
             for (i in 0 until n) {
                 val j = owner[i]
                 val a = (1f - abs(ripple - delay[i]) * 2.2f).coerceIn(0f, 1f)
@@ -300,10 +310,17 @@ class KMeansSim : Sim {
             var c = if (t >= 1f) now else Palette.lerp(before, now, t)
             if (finale > 0f) c = Palette.brighten(c, 0.12f * finale)
             g.disc(px[i], py[i], r, c)
+            // A point that changed sides this pass is ringed once the ripple
+            // reaches it: late in a run these few are the whole story.
+            if (!assigning && pj >= 0 && pj != j && t > 0f && finale <= 0f) {
+                g.ring(px[i], py[i], r * 2.3f, 0.0028f, Palette.brighten(now, 0.2f), alpha = 0.9f * t)
+            }
         }
         // Each centroid's road: every place it has stood, faint.
         for (j in 0 until k) {
             val col = colour(palette, j)
+            // Where it was dropped: a small hollow ring, the road's origin.
+            g.ring(trailX[j][0], trailY[j][0], 0.011f, 0.0025f, col, alpha = 0.55f)
             for (s in 1 until trailN) {
                 g.line(trailX[j][s - 1], trailY[j][s - 1], trailX[j][s], trailY[j][s], 0.004f, col, 0.45f)
                 g.disc(trailX[j][s - 1], trailY[j][s - 1], 0.006f, col, 0.6f)
@@ -414,7 +431,7 @@ class KMeansSim : Sim {
         private const val MAX_ITER = 40
         private const val RUN_SECONDS = 9.5f
         private const val INTRO_SECONDS = 0.9f
-        private const val MIN_ITER_SECONDS = 0.4f
+        private const val MIN_ITER_SECONDS = 0.28f
         private const val MAX_ITER_SECONDS = 2.4f
         private const val ASSIGN_SHARE = 0.42f
         private const val TILE_ROWS = 140

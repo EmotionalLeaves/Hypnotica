@@ -87,8 +87,15 @@ class ConvexHullSim : Sim {
                 }
                 2 -> { px[i] = env.rng.range(-ex, ex); py[i] = env.rng.range(-ey, ey) }
                 else -> {
-                    px[i] = (env.rng.normal() * ex * 0.42f).coerceIn(-ex, ex)
-                    py[i] = (env.rng.normal() * ey * 0.42f).coerceIn(-ey, ey)
+                    // Redrawn, not clamped, when a tail falls outside: clamping
+                    // stacked the strays in rows along the frame's edge, and a
+                    // big cloud's hull ran down a ruler-straight line of them.
+                    var x: Float; var y: Float; var tries = 0
+                    do {
+                        x = env.rng.normal() * ex * 0.42f
+                        y = env.rng.normal() * ey * 0.42f
+                    } while ((abs(x) > ex || abs(y) > ey) && ++tries < 12)
+                    px[i] = x.coerceIn(-ex, ex); py[i] = y.coerceIn(-ey, ey)
                 }
             }
         }
@@ -262,7 +269,7 @@ class ConvexHullSim : Sim {
         val since = if (doneAt >= 0f) clock - doneAt else -1f
         val finale = if (since >= 0f) (since / 0.7f).coerceIn(0f, 1f) else 0f
         val str = palette.bright(STRING_T, 0.12f)
-        g.reserveInstances(n * 3 + 64)
+        g.reserveInstances(n * 3 + 320)
         if (finale > 0f) drawFill(g, palette, finale)
         // Graham's sort: a ray swept once round the pivot in angle order
         // before the scan, the order the scan will visit the points in.
@@ -310,34 +317,30 @@ class ConvexHullSim : Sim {
         if (pivot >= 0) g.ring(px[pivot], py[pivot], POINT_R * 2.6f, 0.004f, Palette.TEXT_PRIMARY, alpha = 0.75f * intro)
     }
 
-    /** The finished hull's inside, tinted tile by tile (a convex test per tile). */
+    /**
+     * The finished hull's inside, tinted: one thin span per row, its ends
+     * where the row meets the hull's edges exactly (a convex shape is one span
+     * wide), so the tint meets the string without a staircase.
+     */
     private fun drawFill(g: G, palette: Palette, finale: Float) {
         if (hullN < 3) return
-        var minX = 9f; var maxX = -9f; var minY = 9f; var maxY = -9f
-        for (s in 0 until hullN) { val v = hull[s]; minX = min(minX, px[v]); maxX = max(maxX, px[v]); minY = min(minY, py[v]); maxY = max(maxY, py[v]) }
-        val step = 0.02f
+        var minY = 9f; var maxY = -9f
+        for (s in 0 until hullN) { val v = hull[s]; minY = min(minY, py[v]); maxY = max(maxY, py[v]) }
+        val step = FILL_ROW
         val tint = Palette.lerp(Palette.BG, palette.at(STRING_T), 0.13f)
         var y = minY + step * 0.5f
         while (y < maxY) {
-            var x = minX + step * 0.5f
-            // One run of tiles per row: a convex shape is one span wide.
-            var x0 = Float.NaN; var x1 = Float.NaN
-            while (x < maxX) {
-                if (inside(x, y)) { if (x0.isNaN()) x0 = x; x1 = x }
-                x += step
+            var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE
+            for (s in 0 until hullN) {
+                val a = hull[s]; val b = hull[(s + 1) % hullN]
+                val ya = py[a]; val yb = py[b]
+                if ((ya <= y) == (yb <= y)) continue
+                val x = px[a] + (px[b] - px[a]) * (y - ya) / (yb - ya)
+                x0 = min(x0, x); x1 = max(x1, x)
             }
-            if (!x0.isNaN()) g.rect((x0 + x1) * 0.5f, y, (x1 - x0) * 0.5f + step * 0.5f, step * 0.55f, tint, alpha = finale)
+            if (x1 > x0) g.rect((x0 + x1) * 0.5f, y, (x1 - x0) * 0.5f, step * 0.56f, tint, alpha = finale)
             y += step
         }
-    }
-
-    private fun inside(x: Float, y: Float): Boolean {
-        for (s in 0 until hullN) {
-            val a = hull[s]; val b = hull[(s + 1) % hullN]
-            val c = (px[b] - px[a]) * (y - py[a]) - (py[b] - py[a]) * (x - px[a])
-            if (c < 0f) return false
-        }
-        return true
     }
 
     override fun frameHalfWidth(env: SimEnv): Float = ex + 0.03f
@@ -363,6 +366,7 @@ class ConvexHullSim : Sim {
         private const val INTRO_SECONDS = 0.8f
         private const val SORT_SECONDS = 0.9f
         private const val STRING_T = 0.1f
+        private const val FILL_ROW = 0.008f
         private const val STRING_W = 0.0065f
         private const val POINT_R = 0.0085f
         private const val POINT_C = 0xFF8A93A6.toInt()

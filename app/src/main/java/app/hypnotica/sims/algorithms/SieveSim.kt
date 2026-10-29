@@ -183,6 +183,9 @@ class SieveSim : Sim {
         val digits = cell >= MIN_DIGIT_CELL
         g.reserveInstances((n + 1) * (if (digits) 2 + k * 7 else 3) + 16)
         val pc = PRIME_C
+        // Once the sieve is done the struck numbers sink further back, so the
+        // survivors are the only bright things on the grid.
+        val sink = if (since >= 0f) ease(since / 0.8f) else 0f
         val inset = cell * 0.06f
         val hw = cell * 0.5f - inset
         for (m in 1..n) {
@@ -202,17 +205,20 @@ class SieveSim : Sim {
                 val fresh = ((clock - strikeAt[m]) / 0.25f).coerceIn(0f, 1f)
                 // Struck numbers recede: a dark wash of the prime's colour and a
                 // dim figure, so what is left standing reads at a glance.
-                bg = Palette.lerp(Palette.lerp(EMPTY, col, 0.5f), Palette.lerp(EMPTY, col, 0.16f), fresh)
-                ink = col; inkA = 0.38f
+                // (A bright strike on a bright wash made a struck grid as loud
+                // as the survivors; the fresh strike is the only loud moment.)
+                bg = Palette.lerp(Palette.lerp(EMPTY, col, 0.45f), Palette.lerp(EMPTY, col, 0.11f - 0.05f * sink), fresh)
+                ink = col; inkA = 0.3f - 0.12f * sink
             } else if (shown) {
-                // A prime that sieved wears its own colour; the rest light up
-                // white once the sieve is done, in reading order, and stay lit.
+                // A prime is a solid tile with dark figures: a siever in its
+                // own colour, the rest in warm white, lit once the sieve is
+                // done in reading order, and staying lit.
                 val si = sieverIndex(m)
                 val lit = if (si >= 0) 1f else ease((since - 0.6f * m / n) / 0.5f)
-                val tone = if (si >= 0) Palette.brighten(colour(palette, si), 0.1f) else pc
-                bg = Palette.lerp(EMPTY, Palette.lerp(EMPTY, tone, if (si >= 0) 0.62f else 0.4f), lit)
-                ink = Palette.lerp(IDLE_INK, Palette.TEXT_PRIMARY, lit)
-                if (since >= 0f && lit > 0.02f) g.glow(x, y, cell * 0.85f, tone, 0.22f * lit)
+                val tone = if (si >= 0) Palette.brighten(colour(palette, si), 0.12f) else pc
+                bg = Palette.lerp(EMPTY, tone, (if (si >= 0) 0.85f else 0.9f) * lit)
+                ink = Palette.lerp(IDLE_INK, PRIME_INK, lit)
+                if (since >= 0f && lit > 0.02f) g.glow(x, y, cell * 0.8f, tone, 0.16f * lit)
             } else {
                 bg = EMPTY
                 ink = IDLE_INK
@@ -221,19 +227,30 @@ class SieveSim : Sim {
             if (isCur) {
                 val col = if (m == finalNext && played >= acts) Palette.TEXT_PRIMARY else colour(palette, sieverIndex(m))
                 val a = ((clock - currentAt) / 0.2f).coerceIn(0f, 1f)
-                bg = Palette.lerp(bg, col, 0.55f * a)
-                ink = Palette.TEXT_PRIMARY; inkA = 1f
+                bg = Palette.lerp(bg, col, 0.85f * a)
+                ink = Palette.lerp(ink, PRIME_INK, a); inkA = 1f
             }
             g.rect(x, y, hw, hw, bg)
+            // The prime at work wears a ring in its colour, so the eye can
+            // find whose multiples are falling.
+            if (isCur) {
+                val col = if (m == finalNext && played >= acts) Palette.TEXT_PRIMARY else colour(palette, sieverIndex(m))
+                g.ring(x, y, cell * 0.58f, max(0.003f, cell * 0.05f), Palette.brighten(col, 0.15f),
+                    alpha = ((clock - currentAt) / 0.2f).coerceIn(0f, 1f))
+            }
             // A strike already struck: the later prime passes over it faintly.
             val fl = clock - flickAt[m]
             if (fl in 0f..0.25f) g.rect(x, y, hw, hw, colour(palette, flickBy[m]), alpha = 0.3f * (1f - fl / 0.25f))
             if (digits) SegDigits.number(g, x, y, dh, m, ink, inkA)
             if (s >= 0) {
                 // Struck through, corner to corner, in the striking prime's colour.
-                val grow = ((clock - strikeAt[m]) / 0.12f).coerceIn(0f, 1f)
-                val e = hw * 0.78f
-                g.line(x - e, y - e, x - e + 2f * e * grow, y - e + 2f * e * grow, max(0.0025f, cell * 0.05f), Palette.brighten(colour(palette, s), 0.15f))
+                // Drawn bright as it falls, then settling to a quiet mark.
+                val age = clock - strikeAt[m]
+                val grow = (age / 0.12f).coerceIn(0f, 1f)
+                val settle = ease((age - 0.15f) / 0.45f)
+                val e = hw * 0.72f
+                g.line(x - e, y - e, x - e + 2f * e * grow, y - e + 2f * e * grow, max(0.0022f, cell * 0.04f),
+                    Palette.brighten(colour(palette, s), 0.15f * (1f - settle)), 1f - 0.5f * settle - 0.2f * sink)
             }
         }
     }
@@ -269,7 +286,8 @@ class SieveSim : Sim {
         private const val INTRO_SECONDS = 0.8f
         private const val ANNOUNCE_SECONDS = 0.5f
         private const val SWEEP_SECONDS = 8.6f
-        private const val PRIME_C = 0xFFE9ECF2.toInt()
+        private const val PRIME_C = 0xFFF4EEDC.toInt()
+        private const val PRIME_INK = 0xFF0B0E15.toInt()
         private const val MIN_DIGIT_CELL = 0.05f
         private const val EMPTY = 0xFF141924.toInt()
         private const val IDLE_INK = 0xFF8C94A5.toInt()
