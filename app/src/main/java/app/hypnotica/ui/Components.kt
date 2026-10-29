@@ -372,6 +372,7 @@ fun ChipRow(
  * A labelled slider that says what the value means in words, not units.
  * Log scaling keeps counts that span decades usable with one thumb.
  */
+@kotlin.OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ValueSlider(
     label: String,
@@ -454,7 +455,32 @@ fun ValueSlider(
                 thumbColor = Tokens.Accent,
                 activeTrackColor = Tokens.Accent,
                 inactiveTrackColor = Color.White.copy(alpha = 0.12f)
-            )
+            ),
+            // A round thumb on a slim rounded track. Material's default here is
+            // a tall bar with a gap cut either side and a stop dot at the end,
+            // which next to the app's round chips and buttons read as a
+            // different design system.
+            thumb = {
+                Box(
+                    Modifier
+                        .size(20.dp)
+                        .background(if (enabled) Color.White else Tokens.TextSecondary, CircleShape)
+                        .border(4.dp, if (enabled) Tokens.Accent else Tokens.SurfaceStrong, CircleShape)
+                )
+            },
+            track = { slider ->
+                val range = slider.valueRange
+                val share = ((slider.value - range.start) / (range.endInclusive - range.start).coerceAtLeast(1e-6f)).coerceIn(0f, 1f)
+                androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                    val r = androidx.compose.ui.geometry.CornerRadius(size.height / 2f)
+                    drawRoundRect(Color.White.copy(alpha = 0.12f), cornerRadius = r)
+                    drawRoundRect(
+                        if (enabled) Tokens.Accent else Tokens.TextSecondary.copy(alpha = 0.5f),
+                        size = androidx.compose.ui.geometry.Size(size.width * share, size.height),
+                        cornerRadius = r
+                    )
+                }
+            }
         )
     }
 }
