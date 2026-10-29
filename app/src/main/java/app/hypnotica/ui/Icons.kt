@@ -130,8 +130,20 @@ fun DrawScope.drawGlyphIcon(glyph: String, color: Color) {
                 drawCircle(color, radius = 2.4f * u, center = p(knob, y))
             }
         }
-        "↻", "↶" -> {
-            val back = glyph == "↶"
+        "↶" -> {
+            // Undo: back to the left, and down round a bend.
+            drawPath(path(8.5f to 5.5f, 4f to 10f, 8.5f to 14.5f), color, style = line)
+            val bend = Path().apply {
+                val a = p(4f, 10f); moveTo(a.x, a.y)
+                val b = p(14f, 10f); lineTo(b.x, b.y)
+                val c1 = p(17.3f, 10f); val c2 = p(20f, 12.7f); val d = p(20f, 16f)
+                cubicTo(c1.x, c1.y, c2.x, c2.y, d.x, d.y)
+                val e = p(20f, 18.5f); lineTo(e.x, e.y)
+            }
+            drawPath(bend, color, style = line)
+        }
+        "↻" -> {
+            val back = false
             val arc = Path()
             val start = if (back) 200.0 else -20.0
             val sweep = if (back) -250.0 else 250.0
