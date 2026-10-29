@@ -217,7 +217,8 @@ private fun ExactParamRow(state: AppState, p: Param) {
                 max = p.max,
                 logScale = p.logScale,
                 valueText = muted
-                    ?: (formatValue(value) + (if (p.unit.isNotEmpty()) " " + p.unit else "")),
+                    ?: ((if (p.type == ParamType.INT) String.format(java.util.Locale.US, "%,d", Math.round(value))
+                    else formatValue(value)) + (if (p.unit.isNotEmpty()) " " + p.unit else "")),
                 enabled = muted == null,
                 onCommit = { state.commitParam(p) }
             ) { state.setParam(p, it) }

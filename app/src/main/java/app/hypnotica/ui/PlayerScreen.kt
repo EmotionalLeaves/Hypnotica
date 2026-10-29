@@ -630,8 +630,11 @@ private fun ParamControl(state: AppState, p: Param) {
 
 /** Plain words in Simple mode, exact numbers in Advanced. */
 private fun describe(p: Param, v: Float): String {
-    if (p.unit.isNotEmpty()) return formatValue(v) + " " + p.unit
-    return formatValue(v)
+    // A count is a whole number: "Pendulums 15.0" read as though half a
+    // pendulum were possible, and the sim rounds it anyway.
+    val text = if (p.type == ParamType.INT) String.format(java.util.Locale.US, "%,d", Math.round(v))
+    else formatValue(v)
+    return if (p.unit.isNotEmpty()) "$text ${p.unit}" else text
 }
 
 @Composable
