@@ -147,6 +147,7 @@ class SnakeSim : Sim {
         val rate = min(MAX_RATE, MIN_RATE * Math.exp((elapsed * pace / DOUBLING).toDouble()).toFloat())
         carry += h * rate
         var moves = 0
+        notedThisStep = false
         while (carry >= 1f && doneAt < 0f && moves < MAX_MOVES_PER_STEP) {
             carry -= 1f
             moves++
@@ -199,17 +200,23 @@ class SnakeSim : Sim {
             eatFlash = if (gold) 2f else 1f
             eaten++
             val pan = ((best % cols) / max(1f, cols - 1f)) * 2f - 1f
-            // Each apple the next note up the scale; gold, a chord.
-            env.emit(EventKind.HIT, (eaten % 15) / 15f, pan, 0.55f)
-            if (gold) for (k in 1..3) env.emit(EventKind.HIT, ((eaten + 2 * k) % 15) / 15f, pan, 0.45f)
+            // Each apple the next note up the scale; gold, a chord. One apple
+            // a step sounds: at the end the snake eats a dozen within a frame,
+            // and a note for each was a smear of identical clicks.
+            if (!notedThisStep) {
+                notedThisStep = true
+                env.emit(EventKind.HIT, (eaten % 15) / 15f, pan, 0.55f)
+                if (gold) for (k in 1..3) env.emit(EventKind.HIT, ((eaten + 2 * k) % 15) / 15f, pan, 0.45f)
+            }
             placeApple(env, ate)
         }
         if (len >= cells) {
             doneAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
+
+    private var notedThisStep = false
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette

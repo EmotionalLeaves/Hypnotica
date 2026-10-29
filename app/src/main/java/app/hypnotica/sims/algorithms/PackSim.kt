@@ -145,7 +145,6 @@ class PackSim : Sim {
             doneAt = elapsed
             payoffFrame = true
             shine = 1f
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 

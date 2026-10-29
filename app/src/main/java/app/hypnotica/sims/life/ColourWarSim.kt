@@ -163,6 +163,8 @@ class ColourWarSim : Sim {
         payoffFrame = false
         elapsed += abs(dt)
         val base = abs(dt) * env.params.f("pace", 1.8f)
+        tickCarry = min(1.5f, tickCarry + abs(dt) * 6f)
+        takeCarry = min(2f, takeCarry + abs(dt) * 30f)
         for (i in bx.indices) {
             if (!alive[i]) continue
             val t = bteam[i]
@@ -249,7 +251,7 @@ class ColourWarSim : Sim {
         bvx = bvx + cos(a) * SPEED; bvy = bvy + sin(a) * SPEED
         bteam = bteam + t
         alive = alive + true
-        env.emit(EventKind.BIRTH, (t + 0.5f) / teams, 0f, 0.6f)
+        env.emit(EventKind.BIRTH, (t + 0.5f) / teams, (bx[src] / halfW).coerceIn(-1f, 1f), 0.6f)
     }
 
     private fun decide(env: SimEnv) {
@@ -258,8 +260,10 @@ class ColourWarSim : Sim {
         winnerTeam = (0 until teams).maxByOrNull { counts[it] } ?: -1
         decidedAt = elapsed
         payoffFrame = true
-        env.emit(EventKind.DONE, 0.9f, 0f, 1f)
     }
+
+    private var tickCarry = 0f
+    private var takeCarry = 0f
 
     private fun ownerAt(x: Float, y: Float): Int {
         val c = ((x + halfW) / cell).toInt().coerceIn(0, cols - 1)
@@ -270,7 +274,17 @@ class ColourWarSim : Sim {
     private fun take(env: SimEnv, x: Float, y: Float, t: Int) {
         // Once it's called, the borders hold: squares kept changing hands
         // after the verdict, and the colour named could end up behind.
-        if (decided) return
+        if (decided) {
+            // The balls go on bouncing off the frozen borders, and that is
+            // heard, softly and sparsely: silent, the twelve seconds after the
+            // verdict were a moving picture with no sound at all.
+            if (tickCarry >= 1f) {
+                tickCarry -= 1f
+                val t0 = (t + 0.5f) / teams
+                env.emit(EventKind.HIT, t0, (x / halfW).coerceIn(-1f, 1f), 0.15f)
+            }
+            return
+        }
         val c = ((x + halfW) / cell).toInt().coerceIn(0, cols - 1)
         val r = ((1f - y) / cell).toInt().coerceIn(0, rows - 1)
         val i = r * cols + c
@@ -286,9 +300,15 @@ class ColourWarSim : Sim {
         takenBy[t]++
         if (takenBy[t] % REINFORCE_EVERY == 0) pendingSpawn[t]++
         // Each colour has its own register, so the battle sounds like voices.
-        val register = (t + 0.5f) / teams
-        env.emit(EventKind.WRITE, (register * 0.7f + 0.3f * (c.toFloat() / cols)).coerceIn(0f, 1f),
-            (c.toFloat() / (cols - 1)) * 1.6f - 0.8f, 0.4f)
+        // Paced to about thirty a second: in the opening scramble squares
+        // change hands three hundred times a second, one merged wash. Panned
+        // to the square's column across the board.
+        if (takeCarry >= 1f) {
+            takeCarry -= 1f
+            val register = (t + 0.5f) / teams
+            env.emit(EventKind.WRITE, (register * 0.7f + 0.3f * (c.toFloat() / cols)).coerceIn(0f, 1f),
+                ((c + 0.5f) / cols) * 2f - 1f, 0.4f)
+        }
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {

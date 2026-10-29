@@ -243,17 +243,27 @@ class BoidsSim : Sim {
         // How aligned the flock is, which is what "it worked" looks like.
         var sx = 0f
         var sy = 0f
+        var cx = 0f
         val sample = min(n, 600)
         for (i in 0 until sample) {
             val s = sqrt(vx[i] * vx[i] + vy[i] * vy[i]) + 1e-6f
             sx += vx[i] / s
             sy += vy[i] / s
+            cx += px[i]
         }
         val order0 = sqrt(sx * sx + sy * sy) / sample
         flockiness = flockiness * 0.95f + order0 * 0.05f
         // From almost the start: two silent seconds opened every run.
+        // A wingbeat pitched by how aligned the flock is, quickening as it
+        // organises (six a second milling, twelve streaming), panned to where
+        // the birds are. It was a note on every step — a hundred and twenty a
+        // second, a flat drone that nothing on screen beat time to.
         if (elapsed > 0.4f) {
-            env.emit(EventKind.STEP, flockiness.coerceIn(0f, 1f), 0f, 0.25f)
+            beatCarry = min(1.5f, beatCarry + abs(dt) * (6f + 6f * flockiness.coerceIn(0f, 1f)))
+            if (beatCarry >= 1f) {
+                beatCarry -= 1f
+                env.emit(EventKind.STEP, flockiness.coerceIn(0f, 1f), (cx / sample / halfW).coerceIn(-1f, 1f), 0.25f)
+            }
         }
         // The payoff is the flock having finished organising: the order it is
         // heading towards, reached.
@@ -280,9 +290,10 @@ class BoidsSim : Sim {
         ) {
             flocked = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
     }
+
+    private var beatCarry = 0f
 
     private fun flock(from: Int, to: Int, dt: Float, halfW: Float, wrap: Boolean) {
         val r2 = perception * perception
@@ -687,13 +698,15 @@ class LangtonsAntSim : Sim {
             if (ax < minX) minX = ax else if (ax > maxX) maxX = ax
             if (ay < minY) minY = ay else if (ay > maxY) maxY = ay
             if (steps % 97L == 0L) {
-                env.emit(EventKind.STEP, (blackCount.toFloat() / (w * h)).coerceIn(0f, 1f), 0f, 0.3f)
+                // Panned to the ant's place in the view, which is framed on
+                // the box it has drawn (see focus).
+                val pan = (ax + 0.5f - panX) / ((maxX - minX + 1) * 0.5f + FOCUS_MARGIN)
+                env.emit(EventKind.STEP, (blackCount.toFloat() / (w * h)).coerceIn(0f, 1f), pan.coerceIn(-1f, 1f), 0.3f)
             }
             // The highway is a 104-step repeating pattern; spotting it is the payoff.
             if (highwayAt < 0 && steps > 9000 && steps % 104L == 0L && isHighway()) {
                 highwayAt = steps
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.9f, 0f, 1f)
             }
         }
     }
@@ -955,13 +968,23 @@ class FallingSandSim : Sim {
             // "nothing moved" too, and called the pile settled mid-fall.
             if (moved == before) quietPasses++ else quietPasses = 0
         }
+        // The patter of grains landing: about fourteen a second while the
+        // spout pours, thinning with the slumping once it stops, rising in
+        // pitch as the tank fills, at the spout's side. It was a STEP on every
+        // step anything moved — a hundred and fifteen a second, one buzz.
         if (moved > 0) {
-            env.emit(EventKind.STEP, (moved.toFloat() / max(1, filled)).coerceIn(0f, 1f), 0f, 0.3f)
+            val pouring = filled < capacity
+            val busy = if (pouring) 1f else min(1f, moved / 200f)
+            patterCarry = min(1.5f, patterCarry + abs(dt) * 14f * busy)
+            if (patterCarry >= 1f) {
+                patterCarry -= 1f
+                val pan = if (pouring) (pourX + 0.5f) / w * 2f - 1f else 0f
+                env.emit(EventKind.STEP, (filled.toFloat() / max(1, capacity)).coerceIn(0f, 1f), pan, 0.15f + 0.2f * busy)
+            }
         }
         if (!settled && filled >= capacity && quietPasses >= QUIET_PASSES) {
             settled = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
         if (settled) settledFor += abs(dt)
     }
@@ -973,7 +996,8 @@ class FallingSandSim : Sim {
      * it was done, so nothing restarted it: a still, silent screen that read
      * as the app having stopped.
      */
-    private val HOLD_SECONDS = 1.5f
+private var patterCarry = 0f
+        private val HOLD_SECONDS = 1.5f
 
     override fun finished(): Boolean = settled && settledFor > HOLD_SECONDS
 
@@ -1178,10 +1202,7 @@ class PredatorPreySim : Sim {
             lastRising = rising
             if (rising) {
                 cycles++
-                if (cycles == 2) {
-                    payoffFrame = true
-                    env.emit(EventKind.DONE, 0.8f, 0f, 1f)
-                }
+                if (cycles == 2) payoffFrame = true
             }
             env.emit(EventKind.CROSS, (prey / 4.0).toFloat().coerceIn(0f, 1f), if (rising) -0.5f else 0.5f, 0.7f)
         }
@@ -1390,13 +1411,25 @@ class ReactionDiffusionSim : Sim {
         var total = 0f
         var i = 0
         while (i < w * h) { total += b[i]; i += 37 }
-        env.emit(EventKind.STEP, (total / (w * h / 37f)).coerceIn(0f, 1f), 0f, 0.25f)
+        // A pulse that quickens while the pattern is spreading and slows to
+        // three a second once it only shifts. It was a STEP on every step, a
+        // hundred and twenty a second of one pitch: a drone, not the growth.
+        val mean = total / (w * h / 37f)
+        val growth = if (abs(dt) > 0f) (abs(mean - lastMean) / abs(dt) * 40f).coerceIn(0f, 1f) else 0f
+        lastMean = mean
+        pulseCarry = min(1.5f, pulseCarry + abs(dt) * (3f + 9f * growth))
+        if (pulseCarry >= 1f) {
+            pulseCarry -= 1f
+            env.emit(EventKind.STEP, mean.coerceIn(0f, 1f), 0f, 0.15f + 0.25f * growth)
+        }
         if (!aged && generations > 900) {
             aged = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
     }
+
+    private var lastMean = 0f
+    private var pulseCarry = 0f
 
     private fun react(fromRow: Int, toRow: Int, dA: Float, dB: Float) {
         for (y in fromRow until toRow) {

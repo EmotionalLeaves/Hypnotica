@@ -81,8 +81,18 @@ class VoronoiSim : Sim {
         for (i in 0 until seeds) {
             sx[i] += svx[i] * dt
             sy[i] += svy[i] * dt
-            if (sx[i] < -halfW || sx[i] > halfW) svx[i] = -svx[i]
-            if (sy[i] < -1f || sy[i] > 1f) svy[i] = -svy[i]
+            // A seed turning back off an edge is the one visible event in the
+            // drift, so that is what sounds, in the seed's own pitch and at its
+            // side. (It was a STEP on every refresh, sixty a second, pitched
+            // by the clock: a sawtooth glissando nothing on screen did.)
+            var bounced = false
+            // (Only when heading outward, by the motion dt actually gave —
+            // time can run backwards — so a seed just outside is turned once.)
+            val mx = svx[i] * dt
+            val my = svy[i] * dt
+            if ((sx[i] < -halfW && mx < 0f) || (sx[i] > halfW && mx > 0f)) { svx[i] = -svx[i]; bounced = true }
+            if ((sy[i] < -1f && my < 0f) || (sy[i] > 1f && my > 0f)) { svy[i] = -svy[i]; bounced = true }
+            if (bounced) env.emit(EventKind.HIT, i.toFloat() / max(1, seeds - 1), (sx[i] / halfW).coerceIn(-1f, 1f), 0.4f)
         }
 
         // The pinch: two seeds at their closest, where the border between them
@@ -108,7 +118,6 @@ class VoronoiSim : Sim {
             if (pinchHeld > PINCH_HELD) {
                 settled = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.75f, 0f, 1f)
             }
         }
 
@@ -137,7 +146,6 @@ class VoronoiSim : Sim {
                 }
             }
         }
-        env.emit(EventKind.STEP, (elapsed * 0.1f) % 1f, 0f, 0.25f)
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -388,9 +396,12 @@ class RiemannSim : Sim {
             carry -= 1f
             bars = nextBars(bars)
             recompute()
+            // Higher as the bars get finer. Pitched by estimate / exact it
+            // sat within a few per cent of 1 (and was clamped there whenever
+            // the sum over-shot), so every refinement played the same note.
             env.emit(
                 EventKind.WRITE,
-                (estimate / max(0.0001, exactArea())).toFloat().coerceIn(0f, 1f),
+                (ln(bars.toFloat()) / ln(max(2, maxBars).toFloat())).coerceIn(0f, 1f),
                 0f, 0.55f
             )
         }
@@ -398,7 +409,6 @@ class RiemannSim : Sim {
             converged = true
             payoffFrame = true
             restSeconds = 1.5f
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 
@@ -548,6 +558,9 @@ class CurvedSpaceSim : Sim {
         elapsed = 0f
         payoffFrame = false
         traceRays(env)
+        lastMassX = 0f
+        lastMassY = 0f
+        pulseCarry = 0f
         bentMost = false
         closest = Float.MAX_VALUE
         closingFor = 0f
@@ -571,6 +584,10 @@ class CurvedSpaceSim : Sim {
 
     /** Plane to screen: the surface seen from above at an angle, so its dip shows. */
     private fun screenY(y: Float, h: Float): Float = y * COS_TILT + h * SIN_TILT
+
+    private var lastMassX = 0f
+    private var lastMassY = 0f
+    private var pulseCarry = 0f
 
     private fun traceRays(env: SimEnv) {
         val halfW = env.halfWidth
@@ -620,8 +637,27 @@ class CurvedSpaceSim : Sim {
             massX = cos(elapsed * 0.35f) * env.halfWidth * 0.35f
             massY = sin(elapsed * 0.5f) * 0.3f
         }
+        val wasCaptured = captured
+        val fromX = lastMassX
+        val fromY = lastMassY
         traceRays(env)
-        env.emit(EventKind.STEP, ((massY + 1f) * 0.5f).coerceIn(0f, 1f), massX.coerceIn(-1f, 1f), 0.25f)
+        lastMassX = massX
+        lastMassY = massY
+        val pan = (massX / env.halfWidth).coerceIn(-1f, 1f)
+        // A ray swallowed by (or let go from) the photon sphere is the event
+        // to hear, in the mass's place. Beneath it, a soft pulse as the mass
+        // moves, at most six a second and none while it sits still: this was
+        // a STEP on every step, a hundred and twenty a second, even with the
+        // mass parked and nothing on screen changing.
+        if (captured != wasCaptured && elapsed > 0.1f) {
+            env.emit(EventKind.CROSS, (captured.toFloat() / max(1, rays) * 4f).coerceIn(0f, 1f), pan, if (captured > wasCaptured) 0.55f else 0.35f)
+        }
+        val moved = hypot(massX - fromX, massY - fromY) / max(1e-6f, abs(dt))
+        pulseCarry = min(1.5f, pulseCarry + abs(dt) * min(6f, moved * 30f))
+        if (pulseCarry >= 1f) {
+            pulseCarry -= 1f
+            env.emit(EventKind.STEP, ((massY + 1f) * 0.5f).coerceIn(0f, 1f), pan, 0.25f)
+        }
         // The mass at its closest approach, where the grid is pulled hardest
         // and the rays bend most: the running minimum stops falling, and that
         // turning point is the picture this sim exists to show. A clock at
@@ -637,7 +673,6 @@ class CurvedSpaceSim : Sim {
             if (!bentMost && closingFor > CLOSEST_HELD) {
                 bentMost = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.75f, 0f, 1f)
             }
         }
     }

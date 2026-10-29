@@ -229,7 +229,6 @@ class BallSortSim : Sim {
             if (moveIndex * 2 >= moves.size) {
                 doneAt = elapsed
                 payoffFrame = true
-                env.emit(EventKind.DONE, 1f, 0f, 1f)
                 for (t in 0 until tubes) ring[t] = 1f
                 return
             }
@@ -244,7 +243,7 @@ class BallSortSim : Sim {
             if (!done[toT] && isDone(state[toT], height[toT]) && height[toT] == cap) {
                 done[toT] = true
                 ring[toT] = 1f
-                env.emit(EventKind.STEP, (moving + 0.5f) / colors, 0f, 0.9f)
+                env.emit(EventKind.STEP, (moving + 0.5f) / colors, (tubeX(toT) / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.9f)
             }
             moving = -1
             moveIndex++

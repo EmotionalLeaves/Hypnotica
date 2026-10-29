@@ -44,6 +44,9 @@ class SortRaceSim : Sim {
     private var payoffFrame = false
     private var allDoneAt = -1f
     private var firstAt = 0f
+    private lateinit var laneEnv: SimEnv
+    private val laneVoice = FloatArray(LANES)
+    private val laneWrites = LongArray(LANES)
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -54,13 +57,19 @@ class SortRaceSim : Sim {
         shape(start, data, env)
 
         // Four different algorithms, drawn fresh each race.
+        // The lanes report into a queue of their own, and step() voices a
+        // paced sample of them (see voiceLanes). Straight into the sim's
+        // queue, four sorts made five hundred events a second, over two
+        // thousand once the stragglers were hurried home: one merged wash.
+        laneEnv = SimEnv(env.rng, env.laws, env.params, EventQueue(8))
+        laneVoice.fill(0f)
         val pool = Algorithms.all().toMutableList()
         lanes.clear(); algos.clear()
         repeat(LANES) {
             val a = pool.removeAt(env.rng.int(0, pool.size))
             a.reset(n)
             algos.add(a)
-            lanes.add(SortArray(start.copyOf(), env))
+            lanes.add(SortArray(start.copyOf(), laneEnv))
         }
         running = BooleanArray(LANES) { true }
         finishedAt = FloatArray(LANES) { -1f }
@@ -127,6 +136,7 @@ class SortRaceSim : Sim {
             val lane = lanes[k]
             // Reads count too: radix sort compares nothing and reads every
             // digit, and with reads free it won every race it was drawn in.
+            laneWrites[k] = lane.writes
             val goal = lane.operations + ops - debt[k]
             var calls = 0
             while (lane.operations < goal && calls++ < ops * 4 + 16) {
@@ -136,20 +146,41 @@ class SortRaceSim : Sim {
                     lanes[k].clearHighlight()
                     place[k] = ++placed
                     // Each finisher is a note, the winner the loudest.
-                    env.emit(EventKind.HIT, 1f - (placed - 1) / LANES.toFloat(), (k / (LANES - 1f)) * 1.6f - 0.8f,
-                        if (placed == 1) 1f else 0.6f)
+                    // (Centred: the lanes are rows across the whole width, so
+                    // panning by lane put a full-width lane at one side.)
+                    // The winner's is the payoff, which the engine sounds.
+                    if (placed > 1) env.emit(EventKind.HIT, 1f - (placed - 1) / LANES.toFloat(), 0f, 0.6f)
                     if (placed == 1) {
                         firstAt = elapsed
                         payoffFrame = true
-                        env.emit(EventKind.DONE, 0.9f, 0f, 1f)
                     }
                     break
                 }
             }
             // Overshoot is owed from the next frame's share.
             debt[k] = max(0L, lane.operations - goal)
+            voiceLane(env, k, abs(dt))
         }
+        laneEnv.events.clear()
         if (placed == LANES && allDoneAt < 0f) allDoneAt = elapsed
+    }
+
+    /**
+     * Up to LANE_NOTES a second from a running lane, each the operation its
+     * lane is drawn highlighting (lastA/lastB): a write or swap if the lane
+     * wrote this step, else a comparison, at that bar's pitch and position.
+     */
+    private fun voiceLane(env: SimEnv, k: Int, h: Float) {
+        if (!running[k]) return
+        laneVoice[k] = min(1.5f, laneVoice[k] + h * LANE_NOTES)
+        if (laneVoice[k] < 1f) return
+        val lane = lanes[k]
+        val i = if (lane.lastA >= 0) lane.lastA else lane.lastB
+        if (i < 0) return
+        laneVoice[k] -= 1f
+        val wrote = lane.writes > laneWrites[k]
+        val pan = ((i + 0.5f) / n * 2f - 1f) * 0.9f
+        env.emit(if (wrote) EventKind.WRITE else EventKind.COMPARE, lane.get(i), pan, if (wrote) 0.45f else 0.3f)
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -225,6 +256,7 @@ class SortRaceSim : Sim {
 
     companion object {
         const val LANES = 4
+        const val LANE_NOTES = 22f
         const val WINNER_SECONDS = 9f
         const val MAX_SECONDS = 30f
         const val OPS_CAP = 400_000L

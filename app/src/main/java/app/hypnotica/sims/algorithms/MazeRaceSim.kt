@@ -36,6 +36,7 @@ class MazeRaceSim : Sim {
     private val parent = Array(SOLVERS) { IntArray(0) }
     private val length = IntArray(SOLVERS)
     private val bestDist = IntArray(SOLVERS)
+    private val lastNote = FloatArray(SOLVERS)
     private var rate = 10f
     private var shown = 0f
     private var elapsed = 0f
@@ -80,6 +81,7 @@ class MazeRaceSim : Sim {
         rate = length[winner] / RACE_SECONDS
         shown = 0f
         bestDist.fill(Int.MAX_VALUE)
+        lastNote.fill(0f)
         elapsed = 0f
         doneAt = -1f
         payoffFrame = false
@@ -222,19 +224,32 @@ class MazeRaceSim : Sim {
         // the sound of each one homing in, in its own register.
         for (s in 0 until SOLVERS) {
             val upto = min(now, length[s])
+            // Panned to the solver's own maze on screen: four across on a wide
+            // screen, two by two on a phone (a fixed ±0.6 put the wide layout's
+            // inner mazes out at the edges).
+            val pan = (((s % layoutCols) + 0.5f) / layoutCols * 2f - 1f) * 0.85f
             for (i in before until upto) {
                 val d = dist(order[s][i])
                 if (d < bestDist[s]) {
                     bestDist[s] = d
+                    lastNote[s] = elapsed
                     val closeness = 1f - d.toFloat() / (cols + rows)
-                    env.emit(EventKind.STEP, (0.1f + 0.2f * s + 0.25f * closeness).coerceIn(0f, 1f), PAN[s], 0.25f)
+                    env.emit(EventKind.STEP, (0.1f + 0.2f * s + 0.25f * closeness).coerceIn(0f, 1f), pan, 0.25f)
                 }
+            }
+            // A soft footstep for a solver still searching, if it has gone
+            // half a second without getting closer: with notes only for new
+            // records the race went quiet for three and a half seconds while
+            // all four mazes were visibly filling.
+            if (upto in 1 until length[s] && elapsed - lastNote[s] > 0.5f) {
+                lastNote[s] = elapsed
+                val closeness = 1f - dist(order[s][upto - 1]).toFloat() / (cols + rows)
+                env.emit(EventKind.STEP, (0.1f + 0.2f * s + 0.25f * closeness).coerceIn(0f, 1f), pan, 0.1f)
             }
         }
         if (now >= length[winner]) {
             doneAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, PAN[winner], 1f)
         }
     }
 
@@ -338,7 +353,6 @@ class MazeRaceSim : Sim {
         const val MAX_SIZE = 40
         const val RACE_SECONDS = 10f
         val NAMES = arrayOf("breadth-first", "depth-first", "greedy", "wall follower")
-        val PAN = floatArrayOf(-0.6f, 0.6f, -0.6f, 0.6f)
 
         fun def(): SimDef = SimDef(
             id = "algorithms/maze-race",

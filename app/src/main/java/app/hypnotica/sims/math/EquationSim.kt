@@ -102,6 +102,7 @@ class EquationSim : Sim {
         carry -= budget
         val h = env.params.f("step", 0.004f)
 
+        crossCarry = min(2f, crossCarry + abs(dt) * MAX_CROSS_NOTES)
         while (budget-- > 0) {
             varT = t
             varX = x
@@ -140,7 +141,12 @@ class EquationSim : Sim {
                 y = env.rng.range(-0.4f, 0.4f)
                 t = 0f
                 resets++
-                env.emit(EventKind.DEATH, 0.3f, 0f, 0.5f)
+                // Paced like the crossings: a formula that diverges in a few
+                // steps resets hundreds of times a second.
+                if (crossCarry >= 1f) {
+                    crossCarry -= 1f
+                    env.emit(EventKind.DEATH, 0.3f, 0f, 0.5f)
+                }
                 continue
             }
 
@@ -153,20 +159,29 @@ class EquationSim : Sim {
             if (q != lastQuadrant) {
                 lastQuadrant = q
                 if (q == 1) laps++
-                env.emit(
-                    EventKind.CROSS,
-                    ((y * scale + 1f) * 0.5f).coerceIn(0f, 1f),
-                    (x * scale).coerceIn(-1f, 1f),
-                    0.55f
-                )
+                // Paced: a map can change quadrant on every iteration, nine
+                // hundred a second, which was one long merged note. Panned by
+                // the point's place on screen (x * scale is world units; the
+                // screen's edge is halfWidth).
+                if (crossCarry >= 1f) {
+                    crossCarry -= 1f
+                    env.emit(
+                        EventKind.CROSS,
+                        ((y * scale + 1f) * 0.5f).coerceIn(0f, 1f),
+                        (x * scale / env.halfWidth).coerceIn(-1f, 1f),
+                        0.55f
+                    )
+                }
             }
         }
         if (!drawnEnough && filled >= trailX.size * 7 / 10) {
             drawnEnough = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
     }
+
+    private var crossCarry = 0f
+    private val MAX_CROSS_NOTES = 20f
 
     private fun quadrant(px: Float, py: Float): Int =
         if (px >= 0f) (if (py >= 0f) 1 else 2) else (if (py >= 0f) 4 else 3)

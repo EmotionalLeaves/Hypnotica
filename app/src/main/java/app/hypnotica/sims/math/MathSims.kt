@@ -109,6 +109,7 @@ class MandelbrotSim : Sim {
         elapsed = 0f
         payoffFrame = false
         lastSoundIter = 0
+        pendingNote = -1f
         sinceRecompute = 999f
         reached = false
     }
@@ -265,13 +266,16 @@ class MandelbrotSim : Sim {
                     iterNow = jMi
                     hasImage = true
                     phase = IDLE
+                    if (pendingNote >= 0f) {
+                        env.emit(EventKind.STEP, pendingNote, 0f, 0.4f)
+                        pendingNote = -1f
+                    }
                     // Deep enough that the detail on screen is a thousand times finer than
                     // where it started. That is the zoom arriving, which is what the sim
                     // promises, rather than eighteen seconds having gone by.
                     if (!reached && jZoom >= 0.6 * TARGET_DEPTH) {
                         reached = true
                         payoffFrame = true
-                        env.emit(EventKind.DONE, 0.8f, 0f, 1f)
                     }
                 }
             }
@@ -317,11 +321,17 @@ class MandelbrotSim : Sim {
         }
         // The sound follows how deep the picture has become.
         val centreIter = iterations[(rs / 2) * cs + cs / 2].let { if (it < 0f) mi else it.toInt() }
+        // Held until the image is swapped in (end of BUILD): sounded here it
+        // came the BUILD slices' worth of steps before the picture it
+        // describes was on screen.
         if (abs(centreIter - lastSoundIter) > mi / 40) {
             lastSoundIter = centreIter
-            env.emit(EventKind.STEP, (centreIter.toFloat() / mi).coerceIn(0f, 1f), 0f, 0.4f)
+            pendingNote = (centreIter.toFloat() / mi).coerceIn(0f, 1f)
         }
     }
+
+    /** The centre note of the image being built, or -1; sounded as it goes on screen. */
+    private var pendingNote = -1f
 
     /**
      * One escape-time sample: the smooth count into [mu] (or -1 inside the
@@ -1084,14 +1094,14 @@ class ChaosGameSim : Sim {
         if (count / NOTE_EVERY != before / NOTE_EVERY) {
             val level = if (formed) 0.5f + 0.5f * sin(breath)
             else (count.toFloat() / capacity).coerceIn(0f, 1f)
-            env.emit(EventKind.WRITE, level, 0f, 0.35f)
+            // Panned to where the newest dot landed.
+            env.emit(EventKind.WRITE, level, (px / reach).coerceIn(-1f, 1f), 0.35f)
         }
         // The payoff is the moment the shape is unmistakable.
         val formAt = capacity * 6L / 10L
         if (!formed && count >= formAt && count - formAt < 2000) {
             formed = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
     }
 
@@ -1269,7 +1279,10 @@ class PrimeSpiralSim : Sim {
         }
         spiralled = false
         restSeconds = -1f
+        noteCarry = 0f
     }
+
+    private var noteCarry = 0f
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -1282,9 +1295,10 @@ class PrimeSpiralSim : Sim {
         carry -= budget
         val before = drawn
         drawn = min(limit, drawn + budget)
+        var newest = -1
         for (n in before until drawn) {
             val prime = isPrime[n]
-            if (prime) primeCount++
+            if (prime) { primeCount++; newest = n }
             if (!sacks && n >= 1) {
                 val x = xs[n].toInt(); val y = ys[n].toInt()
                 val dS = x + y + diagOffset
@@ -1293,8 +1307,14 @@ class PrimeSpiralSim : Sim {
                 if (prime) { primesSum[dS]++; primesDiff[dD]++ }
             }
         }
-        if (drawn > before && primeCount > 0) {
-            env.emit(EventKind.WRITE, (drawn.toFloat() / limit).coerceIn(0f, 1f), 0f, 0.3f)
+        // A note as primes light, paced: it was a WRITE on every step, a
+        // hundred and twenty a second of the same rising buzz. Panned to the
+        // newest prime's side of the spiral.
+        noteCarry = min(1.5f, noteCarry + abs(dt) * PRIME_NOTES)
+        if (newest >= 2 && noteCarry >= 1f) {
+            noteCarry -= 1f
+            val extent = max(MIN_EXTENT, if (sacks) sqrt(drawn.toFloat()) else sqrt(drawn.toFloat()) * 0.5f)
+            env.emit(EventKind.WRITE, (drawn.toFloat() / limit).coerceIn(0f, 1f), (xs[newest] / extent).coerceIn(-1f, 1f), 0.3f)
         }
         if (!spiralled && drawn >= limit) {
             spiralled = true
@@ -1302,7 +1322,6 @@ class PrimeSpiralSim : Sim {
             // The finished spiral is the thing worth looking at, so the run
             // holds on it instead of ending on the same step as its payoff.
             restSeconds = 1.5f
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
 
@@ -1367,6 +1386,7 @@ class PrimeSpiralSim : Sim {
     )
 
     companion object {
+        private const val PRIME_NOTES = 14f
         /** The smallest spiral, in cells from the centre, the view closes in on. */
         private const val MIN_EXTENT = 9f
         private const val MAX_DOT = 0.045f
@@ -1476,7 +1496,13 @@ class MonteCarloPiSim : Sim {
         // A note each time another block of darts lands; the old test caught
         // a narrow window only when a frame's batch straddled it.
         if (total / NOTE_EVERY != before / NOTE_EVERY) {
-            env.emit(EventKind.STEP, (estimate() / 4f).coerceIn(0f, 1f), 0f, 0.3f)
+            // Pitched by how far the estimate is from pi, so the notes wander
+            // early and settle on one pitch as it converges (estimate / 4 sat
+            // at 0.785 from the first second: one note, over and over). Panned
+            // to the newest dart.
+            val last = ((total - 1) % capacity).toInt()
+            env.emit(EventKind.STEP, (0.5f + (estimate() - PI.toFloat()) * 4f).coerceIn(0f, 1f),
+                (xs[last] * 0.85f).coerceIn(-1f, 1f), 0.3f)
         }
         // The estimate is only ever as good as the sample is large — the error
         // falls off as 1/sqrt(n) — so the tolerance follows the count instead
@@ -1488,7 +1514,6 @@ class MonteCarloPiSim : Sim {
         ) {
             converged = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
 
@@ -1808,10 +1833,7 @@ class FourierSim : Sim {
             loops++
             // The payoff is the second time round: the shape traced once and
             // then confirmed, closing on itself again.
-            if (loops == 2) {
-                payoffFrame = true
-                env.emit(EventKind.DONE, 0.8f, 0f, 1f)
-            }
+            if (loops == 2) payoffFrame = true
         }
         var x = 0f
         var y = 0f
@@ -1824,8 +1846,17 @@ class FourierSim : Sim {
         traceY[head] = y * 0.55f
         head = (head + 1) % traceX.size
         if (traceCount < traceX.size) traceCount++
-        env.emit(EventKind.STEP, ((y + 1.3f) / 2.6f).coerceIn(0f, 1f), 0f, 0.3f)
+        // The pen sings its height as it draws, a dozen notes a second. It was
+        // a note on every step, a hundred and twenty a second: past the synth's
+        // overlap that is not a melody but a buzz. Panned to the pen.
+        penCarry = min(1.5f, penCarry + abs(dt) * PEN_NOTES)
+        if (penCarry >= 1f) {
+            penCarry -= 1f
+            env.emit(EventKind.STEP, ((y + 1.3f) / 2.6f).coerceIn(0f, 1f), (x * 0.55f / extent).coerceIn(-1f, 1f), 0.3f)
+        }
     }
+
+    private var penCarry = 0f
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
@@ -1904,6 +1935,7 @@ class FourierSim : Sim {
     )
 
     companion object {
+        private const val PEN_NOTES = 12f
         /** The first of the shapes that are pictures rather than waves. */
         const val FIRST_PICTURE = 4
         const val PICTURE_SAMPLES = 256
@@ -1957,6 +1989,7 @@ class CollatzSim : Sim {
         buildSequence(start)
         shown = 0f
         payoffFrame = false
+        runsLanded = 0
         ghostLength = 0
         ghostAge = 99f
     }
@@ -2000,7 +2033,10 @@ class CollatzSim : Sim {
         }
         if (after >= length && before < length) {
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
+            // The first run reaching 1 is the payoff, which the engine sounds;
+            // a DONE of its own here played it twice. Later runs land with a
+            // strong low note on the last bar instead of the ending again.
+            if (runsLanded++ > 0) env.emit(EventKind.HIT, 0f, 0.9f, 0.9f)
         }
         if (autoAdvance && shown > length + 12) {
             // The finished run stays behind, fading, while the next one grows
@@ -2017,6 +2053,8 @@ class CollatzSim : Sim {
         }
         ghostAge += abs(dt)
     }
+
+    private var runsLanded = 0
 
     /** Never zero, so nothing divides by it. */
     private fun logPeak(): Float = max(1e-3f, ln(1f + peak.toFloat()))

@@ -105,7 +105,6 @@ class MazeSim : Sim {
                 if (!solveStep(env)) {
                     solved = true
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 1f, 0f, 1f)
                     tracePath()
                 }
             } else {
@@ -202,7 +201,11 @@ class MazeSim : Sim {
         System.arraycopy(nextFrontier, 0, tmp, 0, nextSize)
         frontierSize = nextSize
         if (frontierSize > 0) {
-            env.emit(EventKind.COMPARE, (dist[frontier[0]].toFloat() / (w + h)).coerceIn(0f, 1f), 0f, 0.4f)
+            // Panned to where the flood's edge is on screen.
+            var sx = 0f
+            for (i in 0 until frontierSize) sx += frontier[i] % w
+            val pan = ((sx / frontierSize + 0.5f) / w) * 2f - 1f
+            env.emit(EventKind.COMPARE, (dist[frontier[0]].toFloat() / (w + h)).coerceIn(0f, 1f), pan, 0.4f)
         }
         return frontierSize > 0
     }
@@ -448,7 +451,6 @@ class PathfindingSim : Sim {
                 if (!expand(env)) {
                     found = true
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 1f, 0f, 1f)
                     trace()
                 }
             } else {

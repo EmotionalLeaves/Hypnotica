@@ -190,13 +190,16 @@ class ParticleFieldSim : Sim {
         // At this scale individual events would be static, so the sound follows
         // the texture: one voice whose pitch tracks how much of the field is
         // racing round the vortex cores.
+        // While almost nothing is racing — the field turning over after the
+        // flip, mostly — it slows to a soft pulse every 0.4 s rather than
+        // stopping: it went silent for six seconds there while the whole
+        // field was visibly reversing.
         soundTimer += abs(dt)
-        if (soundTimer > 0.08f) {
+        val density = (movedFast.toFloat() / max(1, n / 50)).coerceIn(0f, 1f)
+        val every = if (density > 0.02f) 0.08f else 0.4f
+        if (soundTimer > every) {
             soundTimer = 0f
-            val density = (movedFast.toFloat() / max(1, n / 50)).coerceIn(0f, 1f)
-            if (density > 0.02f) {
-                env.emit(EventKind.STEP, density, 0f, (0.2f + density * 0.5f).coerceAtMost(0.8f))
-            }
+            env.emit(EventKind.STEP, density, 0f, (0.12f + density * 0.58f).coerceAtMost(0.8f))
         }
 
         // The payoff lands about three quarters of the way through a typical run:
@@ -205,7 +208,6 @@ class ParticleFieldSim : Sim {
             flipped = true
             payoffFrame = true
             for (a in 0 until 4) attractorK[a] = -attractorK[a]
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
     }
 
@@ -640,6 +642,8 @@ class GameOfLifeSim : Sim {
             generation++
             var b = 0
             var d = 0
+            var bSum = 0L
+            var dSum = 0L
             for (y in 0 until h) {
                 val yUp = if (y == 0) h - 1 else y - 1
                 val yDn = if (y == h - 1) 0 else y + 1
@@ -656,8 +660,8 @@ class GameOfLifeSim : Sim {
                     val nowAlive = if (wasAlive) (surviveRule shr count) and 1 == 1
                     else (birthRule shr count) and 1 == 1
                     next[rowC + x] = if (nowAlive) 1 else 0
-                    if (nowAlive && !wasAlive) b++
-                    if (!nowAlive && wasAlive) d++
+                    if (nowAlive && !wasAlive) { b++; bSum += x }
+                    if (!nowAlive && wasAlive) { d++; dSum += x }
                 }
             }
             val t = cells; cells = next; next = t
@@ -665,8 +669,10 @@ class GameOfLifeSim : Sim {
             deaths = d
             countAlive()
             val activity = ((b + d).toFloat() / max(1, w * h / 40)).coerceIn(0f, 1f)
-            if (b > 0) env.emit(EventKind.BIRTH, activity, -0.3f, (0.2f + activity * 0.5f).coerceAtMost(0.8f))
-            if (d > 0) env.emit(EventKind.DEATH, 1f - activity, 0.3f, (0.15f + activity * 0.4f).coerceAtMost(0.7f))
+            // Panned to where on the board the births and the deaths were (a
+            // fixed -0.3 / +0.3 said nothing about the picture).
+            if (b > 0) env.emit(EventKind.BIRTH, activity, ((bSum.toFloat() / b + 0.5f) / w * 2f - 1f), (0.2f + activity * 0.5f).coerceAtMost(0.8f))
+            if (d > 0) env.emit(EventKind.DEATH, 1f - activity, ((dSum.toFloat() / d + 0.5f) / w * 2f - 1f), (0.15f + activity * 0.4f).coerceAtMost(0.7f))
 
             // The payoff is the moment the soup stops boiling: the population
             // stops falling and what is left is structure, not noise. Waiting for
@@ -694,7 +700,6 @@ class GameOfLifeSim : Sim {
             if (!settled && quietGenerations >= 6 && generation > 40) {
                 settled = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.75f, 0f, 1f)
             }
         }
     }
@@ -894,7 +899,6 @@ class LorenzSim : Sim {
                 // fully drawn, which takes a good few crossings.
                 if (lobeSwaps == PAYOFF_SWAPS && !settled) {
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 0.8f, 0f, 1f)
                 }
                 env.emit(EventKind.CROSS, ((z - 5.0) / 40.0).toFloat().coerceIn(0f, 1f), lobe * 0.6f, 0.7f)
             }
@@ -910,14 +914,12 @@ class LorenzSim : Sim {
         if (!settled && lobeSwaps < PAYOFF_SWAPS && runFor > BACKSTOP_SECONDS) {
             settled = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.8f, 0f, 1f)
         }
         if (!settled && settleClock > SETTLE_AFTER) {
             val speedNow = kotlin.math.abs(x - lastX) + kotlin.math.abs(z - lastZ)
             if (speedNow < SETTLE_SPEED) {
                 settled = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 0.4f, 0f, 0.9f)
             }
             lastX = x
             lastZ = z

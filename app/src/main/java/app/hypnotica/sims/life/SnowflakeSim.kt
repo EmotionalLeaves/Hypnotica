@@ -169,12 +169,12 @@ class SnowflakeSim : Sim {
         val ring = (radius / maxRadius * 16f).toInt()
         if (ring > lastRing) {
             lastRing = ring
-            env.emit(EventKind.STEP, (ring / 16f).coerceIn(0f, 1f), 0f, 0.4f)
+            // The last ring is the finished flake: the payoff's own note.
+            if (radius < maxRadius) env.emit(EventKind.STEP, (ring / 16f).coerceIn(0f, 1f), 0f, 0.4f)
         }
         if (radius >= maxRadius && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
 

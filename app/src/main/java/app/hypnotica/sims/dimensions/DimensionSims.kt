@@ -34,12 +34,21 @@ class HypercubeSim : Sim {
     private var dims = 4
     private var shape = 0
     private var nv = 16
+    /** The shape at rest. Every frame is worked out from this and the angles. */
+    private var rest = FloatArray(0)
+    /** Turned through its own planes, before the camera: what the notes listen to. */
     private var verts = FloatArray(0)
+    private var ghost = FloatArray(0)
     private var edges = IntArray(0)
-    private val proj = FloatArray(3)
     private var screenX = FloatArray(0)
     private var screenY = FloatArray(0)
-    private var screenD = FloatArray(0)
+    /** 3D perspective factor: near the eye is larger. */
+    private var depth3 = FloatArray(0)
+    /** Where along the extra axes, 0 far (the inner cube) to 1 near (the outer). */
+    private var hue = FloatArray(0)
+    private var near = FloatArray(0)
+    private var ghostX = FloatArray(0)
+    private var ghostY = FloatArray(0)
     private var elapsed = 0f
     private var payoffFrame = false
     private var turns = 0L
@@ -47,6 +56,30 @@ class HypercubeSim : Sim {
     private var planeA = 0
     private var planeB = 3
     private var manualSpin = 0f
+
+    // The motion is kept as angles and every frame rebuilt from the rest pose.
+    // It used to be turned a little in place every step, through two planes
+    // that share an axis, which compounds rounding and made the default one
+    // single tilted turn — the 3D view never really turned, and the picture
+    // came back only approximately.
+    private var spinAngle = 0f
+    private var yawAngle = 0f
+    private var extraA = 0f
+    private var extraB = 0f
+    private var turnAngle = 0f
+
+    /** Largest coordinate at rest: the unit the eye distances are measured in. */
+    private var unit = 0.5f
+    private var fittedViewer = Float.NaN
+    private var fittedReach = Float.NaN
+    private var fittedHalf = Float.NaN
+    private val eyeHigh = FloatArray(Nd.MAX_DIMS)
+    private var eye3 = 3f
+    private var lowU = 0f
+    private var highU = 1f
+    private var low3 = 1f
+    private var high3 = 1f
+    private var scale = 1f
 
     /** Which corners are currently on the far side of the extra axis. */
     private var behind = BooleanArray(0)
@@ -60,16 +93,24 @@ class HypercubeSim : Sim {
         // between them compares like with like.
         val radius = 0.5f * sqrt(dims.toFloat())
         when (shape) {
-            1 -> { verts = Nd.crossVertices(dims, radius); edges = Nd.crossEdges(dims) }
-            2 -> { verts = Nd.simplexVertices(dims, radius); edges = Nd.simplexEdges(dims) }
-            3 -> { verts = Nd.cell24Vertices(radius); edges = Nd.edgesAtDistance(verts, 4, radius) }
-            else -> { verts = Nd.hypercubeVertices(dims); edges = Nd.hypercubeEdges(dims) }
+            1 -> { rest = Nd.crossVertices(dims, radius); edges = Nd.crossEdges(dims) }
+            2 -> { rest = Nd.simplexVertices(dims, radius); edges = Nd.simplexEdges(dims) }
+            3 -> { rest = Nd.cell24Vertices(radius); edges = Nd.edgesAtDistance(rest, 4, radius) }
+            else -> { rest = Nd.hypercubeVertices(dims); edges = Nd.hypercubeEdges(dims) }
         }
-        nv = verts.size / dims
+        nv = rest.size / dims
         val n = nv
+        verts = rest.copyOf()
+        ghost = FloatArray(rest.size)
         screenX = FloatArray(n)
         screenY = FloatArray(n)
-        screenD = FloatArray(n)
+        depth3 = FloatArray(n)
+        hue = FloatArray(n)
+        near = FloatArray(n)
+        ghostX = FloatArray(n)
+        ghostY = FloatArray(n)
+        unit = 1e-3f
+        for (v in rest) unit = max(unit, abs(v))
         // Both sliders offer 0..MAX_DIMS-1 while only 0..dims-1 axes exist. The
         // first wraps, so every position names a real axis.
         planeA = Math.floorMod(p.i("planeA", 0), dims)
@@ -87,30 +128,48 @@ class HypercubeSim : Sim {
         val wanted = min(p.i("planeB", 3).coerceAtLeast(0), dims - 1)
         planeB = if (wanted == planeA) (planeA + 1) % dims else wanted
         // After planeB, which it is measured against.
-        behind = BooleanArray(n) { verts[it * dims + planeB] < 0f }
+        behind = BooleanArray(n) { rest[it * dims + planeB] < 0f }
         elapsed = 0f
         payoffFrame = false
         turns = 0L
+        paidTurn = false
         manualSpin = 0f
+        spinAngle = 0f
+        yawAngle = 0f
+        extraA = 0f
+        extraB = 0f
+        turnAngle = 0f
+        fittedViewer = Float.NaN
+    }
+
+    /** The shape turned through its own planes by these angles, into [out]. */
+    private fun pose(spin: Float, a: Float, b: Float, out: FloatArray) {
+        System.arraycopy(rest, 0, out, 0, rest.size)
+        Nd.rotatePlane(out, nv, dims, planeA, planeB, spin)
+        // Without these the fifth and sixth axes never moved, so choosing six
+        // dimensions added thirty-two corners and no new motion at all.
+        if (dims >= 5) Nd.rotatePlane(out, nv, dims, 2, 4, a)
+        if (dims >= 6) Nd.rotatePlane(out, nv, dims, 3, 5, b)
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
         val n = nv
-        val speed = env.params.f("spin", 0.55f)
-        val tilt = env.params.f("tilt", 0.22f)
+        val speed = env.params.f("spin", DEFAULT_SPIN)
+        val turn3 = env.params.f("tilt", DEFAULT_TURN)
 
-        Nd.rotatePlane(verts, n, dims, planeA, planeB, (speed + manualSpin) * dt)
-        if (dims >= 3) Nd.rotatePlane(verts, n, dims, 0, 1, tilt * dt)
-        if (dims >= 5) Nd.rotatePlane(verts, n, dims, 2, 4, tilt * 0.6f * dt)
-        // Without this the sixth axis never moved, so choosing six dimensions
-        // added thirty-two corners and no new motion at all.
-        if (dims >= 6) Nd.rotatePlane(verts, n, dims, 3, 5, tilt * 0.45f * dt)
+        spinAngle = wrap(spinAngle + (speed + manualSpin) * dt)
+        yawAngle = wrap(yawAngle + turn3 * dt)
+        extraA = wrap(extraA + turn3 * 0.6f * dt)
+        extraB = wrap(extraB + turn3 * 0.45f * dt)
         manualSpin *= (1f - 2f * dt).coerceIn(0f, 1f)
+        pose(spinAngle, extraA, extraB, verts)
 
         // Every corner that crosses the far side of the extra axis is a note, so
         // the sound follows the shape rather than waiting for a whole turn.
+        // These are the moments a corner of the inner cube passes over into
+        // the outer one, so what is heard is the turning inside out.
         if (dims >= 3) {
             // The axis the spin passes through, so every turn is heard. It was
             // always the last axis, which from five dimensions up the spin
@@ -137,9 +196,11 @@ class HypercubeSim : Sim {
             }
         }
 
-        // One full turn through the chosen plane is the beat of this sim.
-        val period = if (speed > 0.001f) (2f * PI.toFloat() / speed) else 1e9f
-        val completed = (elapsed / period).toLong()
+        // One full turn through the chosen plane is the beat of this sim,
+        // counted on the angle itself so a spin changed mid-turn still lands
+        // the beat when the shape is really back.
+        turnAngle += speed * abs(dt)
+        val completed = (turnAngle / (2f * PI.toFloat())).toLong()
         if (completed > turns) {
             turns = completed
             env.emit(EventKind.CROSS, 0.6f, 0f, 0.8f)
@@ -155,60 +216,228 @@ class HypercubeSim : Sim {
         }
     }
 
+    /**
+     * Eye distances and the screen scale for this viewer distance.
+     *
+     * The old eye stood at Nd.viewerFor — six units from a tesseract whose
+     * corners reach half a unit along w — so the inner cube was drawn only a
+     * fifth smaller than the outer one and the classic cube-within-a-cube
+     * never appeared: just two nearly equal cubes in a tangle. Here the 4D eye
+     * stands three of the shape's own half-widths away, so at rest the far
+     * cube is exactly half the size of the near one, the textbook picture.
+     * The 3D eye stands well back of everything that 4D step can produce, so
+     * the cube keeps a gentle 3D perspective without a corner ever reaching
+     * it. The scale is fixed per setting from the worst case over the whole
+     * turn, so the figure never breathes.
+     */
+    private fun fit(viewer: Float, reach: Float, halfWidth: Float) {
+        if (viewer == fittedViewer && reach == fittedReach && halfWidth == fittedHalf) return
+        fittedHalf = halfWidth
+        fittedViewer = viewer
+        fittedReach = reach
+        val n = nv
+        // Each axis above the fourth compounds the one before; standing a
+        // little further back for each keeps a six-cube on the screen.
+        val stretch = 1f + 0.55f * max(0, dims - 4)
+        for (d in 0 until Nd.MAX_DIMS) eyeHigh[d] = unit * viewer * stretch
+        var lo = Float.MAX_VALUE
+        var hi = -Float.MAX_VALUE
+        var reach3 = 1e-4f
+        // Every pose the motion can reach: the spin's whole circle, and for
+        // five and six dimensions the extra planes' circles too.
+        val spins = if (dims >= 5) 36 else 360
+        val extras = if (dims >= 5) 12 else 1
+        val extras2 = if (dims >= 6) 12 else 1
+        val step = 2f * PI.toFloat()
+        for (s in 0 until spins) for (a in 0 until extras) for (b in 0 until extras2) {
+            pose(step * s / spins, step * a / extras, step * b / extras2, ghost)
+            for (i in 0 until n) {
+                val o = i * dims
+                val k = lift(ghost, o)
+                val u = 1f - 1f / k
+                if (u < lo) lo = u
+                if (u > hi) hi = u
+                var r2 = 0f
+                for (d in 0 until min(dims, 3)) { val c = ghost[o + d] * k; r2 += c * c }
+                reach3 = max(reach3, sqrt(r2))
+            }
+        }
+        lowU = lo
+        highU = max(hi, lo + 1e-4f)
+        eye3 = reach3 * EYE3_MARGIN * viewer / DEFAULT_VIEWER
+        if (dims >= 3) {
+            low3 = eye3 / (eye3 + reach3)
+            high3 = eye3 / (eye3 - reach3)
+        } else {
+            low3 = 1f; high3 = 1f
+        }
+        // The widest the picture really gets, over the same poses and the
+        // camera's whole circle. A bound from the 3D reach alone assumed the
+        // worst angle every time and left the tesseract a third of the screen
+        // smaller than it ever needed to be.
+        scale = 1f
+        var wide = 1e-4f
+        var tall = 1e-4f
+        val yaws = if (dims >= 3) (if (dims >= 5) 8 else 36) else 1
+        val spins2 = if (dims >= 5) 24 else 120
+        val ex = if (dims >= 5) 8 else 1
+        val ex2 = if (dims >= 6) 8 else 1
+        for (s in 0 until spins2) for (a in 0 until ex) for (b in 0 until ex2) {
+            pose(step * s / spins2, step * a / ex, step * b / ex2, ghost)
+            for (y in 0 until yaws) {
+                project(ghost, step * y / yaws, ghostX, ghostY, false)
+                for (i in 0 until n) {
+                    wide = max(wide, abs(ghostX[i]))
+                    tall = max(tall, abs(ghostY[i]))
+                }
+            }
+        }
+        // Width and height each against their own room: an upright phone has
+        // height to spare once the view has pulled back for the width, a wide
+        // screen the other way round. Sampled, so a little room for the poses
+        // between the samples.
+        val tallRoom = max(1f, (reach + 0.04f) / halfWidth.coerceAtLeast(0.1f)) - 0.04f
+        scale = min(reach / wide, tallRoom / tall) / 1.03f
+    }
+
+    /** The perspective of every axis above the third, nested: 6D to 5D to 4D to 3D. */
+    private fun lift(p: FloatArray, o: Int): Float {
+        var product = 1f
+        var d = dims - 1
+        while (d >= 3) {
+            val w = p[o + d] * product
+            val eye = eyeHigh[d]
+            val denom = eye - w
+            product *= if (denom > 0.05f * eye) eye / denom else 20f
+            d--
+        }
+        return product
+    }
+
+    /** Project every corner of [pose] onto the screen through the turning camera. */
+    private fun project(pose: FloatArray, yaw: Float, xs: FloatArray, ys: FloatArray, keepDepth: Boolean) {
+        val cy = cos(yaw)
+        val sy = sin(yaw)
+        val ct = cos(CAMERA_TILT)
+        val st = sin(CAMERA_TILT)
+        for (i in 0 until nv) {
+            val o = i * dims
+            val k = lift(pose, o)
+            var x = pose[o] * k
+            var y = (if (dims > 1) pose[o + 1] else 0f) * k
+            var k3 = 1f
+            if (dims >= 3) {
+                val z0 = pose[o + 2] * k
+                // The camera circles the 3D shadow: a slow turn about the
+                // vertical, seen from a little above so a cube never sits
+                // face-on as a flat square within a square.
+                val x1 = x * cy - z0 * sy
+                val z1 = x * sy + z0 * cy
+                val y1 = y * ct - z1 * st
+                val z2 = y * st + z1 * ct
+                x = x1
+                y = y1
+                val denom = eye3 - z2
+                k3 = if (denom > 0.05f * eye3) eye3 / denom else 20f
+            }
+            xs[i] = x * k3 * scale
+            ys[i] = y * k3 * scale
+            if (keepDepth) {
+                depth3[i] = k3
+                val n3 = if (dims >= 3) ((k3 - low3) / (high3 - low3)).coerceIn(0f, 1f) else 1f
+                val n4 = ((1f - 1f / k - lowU) / (highU - lowU)).coerceIn(0f, 1f)
+                // Colour follows the extra axis when there is one, so the inner
+                // and outer cubes are two hues that trade places as they swap.
+                hue[i] = if (dims >= 4) n4 else n3
+                near[i] = if (dims >= 4) 0.55f * n3 + 0.45f * n4 else n3
+            }
+        }
+    }
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val n = nv
-        // The slider is how far back the viewer sits, in units of the
-        // distance that keeps this many nested perspectives tame: a raw
-        // distance of 3 was fine for a tesseract and threw a 6-cube's
-        // corners off the screen, and to infinity at the slider's end.
-        val radius = 0.5f * sqrt(dims.toFloat())
-        val viewer = Nd.viewerFor(radius, dims) * env.params.f("viewer", 3f) / 3f
-        val scale = reach(env) / radius
-        for (i in 0 until n) {
-            Nd.project(verts, i * dims, dims, viewer, proj)
-            screenX[i] = proj[0] * scale
-            screenY[i] = proj[1] * scale
-            screenD[i] = proj[2]
+        val viewer = env.params.f("viewer", DEFAULT_VIEWER)
+        fit(viewer, reach(env), env.halfWidth)
+        project(verts, yawAngle, screenX, screenY, true)
+        val bg = g.background
+
+        // An afterimage of the last fraction of a second, so the direction of
+        // the turn reads in a still frame and the swap looks like motion
+        // through the outer cube rather than a jump.
+        val speed = env.params.f("spin", DEFAULT_SPIN) + manualSpin
+        val turn3 = env.params.f("tilt", DEFAULT_TURN)
+        val ne = edges.size / 2
+        val thin = sqrt(32f / max(32, ne).toFloat())
+        for (k in GHOSTS downTo 1) {
+            val back = k * GHOST_SECONDS
+            pose(spinAngle - speed * back, extraA - turn3 * 0.6f * back, extraB - turn3 * 0.45f * back, ghost)
+            project(ghost, yawAngle - turn3 * back, ghostX, ghostY, false)
+            val fade = 0.16f * (1f - (k - 1f) / GHOSTS) * thin
+            for (e in 0 until ne) {
+                val a = edges[2 * e]
+                val b = edges[2 * e + 1]
+                val c = palette.at(HUE_FAR + (hue[a] + hue[b]) * 0.5f * (HUE_NEAR - HUE_FAR))
+                g.line(ghostX[a], ghostY[a], ghostX[b], ghostY[b], 0.004f * thin, c, fade)
+            }
         }
-        // Nearness, spread over the range this frame actually spans. The raw
-        // factor only varies by a fifth either side of one, so used directly it
-        // gave every corner nearly the same colour; stretched, near and far are
-        // plainly different at two dimensions and at six.
-        var lowest = Float.MAX_VALUE
-        var highest = -Float.MAX_VALUE
-        for (i in 0 until n) {
-            if (screenD[i] < lowest) lowest = screenD[i]
-            if (screenD[i] > highest) highest = screenD[i]
-        }
-        val span = (highest - lowest).coerceAtLeast(1e-4f)
-        fun nearness(v: Float): Float = ((v - lowest) / span).coerceIn(0f, 1f)
 
         // Far edges first, so a near edge always crosses over a far one
         // rather than whichever the edge list happened to name last.
-        val ne = edges.size / 2
         if (order.size != ne) { order = IntArray(ne) { it }; depthKey = FloatArray(ne) }
-        for (k in 0 until ne) depthKey[k] = screenD[edges[2 * k]] + screenD[edges[2 * k + 1]]
+        for (k in 0 until ne) depthKey[k] = depth3[edges[2 * k]] + depth3[edges[2 * k + 1]] +
+            0.25f * (near[edges[2 * k]] + near[edges[2 * k + 1]])
         sortByKey(order, depthKey)
-        // A six-cube has 64 corners: at a tesseract's glow each they ran
-        // together into one haze, so the glow thins as the corners multiply.
-        val glowShare = sqrt(16f / max(16, n).toFloat())
         for (k in 0 until ne) {
             val e = order[k] * 2
             val a = edges[e]
             val b = edges[e + 1]
-            val near = (nearness(screenD[a]) + nearness(screenD[b])) * 0.5f
-            val c = palette.at(0.15f + near * 0.75f)
+            val na = near[a]
+            val nb = near[b]
+            val nm = (na + nb) * 0.5f
+            val hm = (hue[a] + hue[b]) * 0.5f
+            val width = (0.0035f + 0.0085f * nm) * thin
+            // A soft halo under each edge: neon tubes, not hairlines.
             g.line(
                 screenX[a], screenY[a], screenX[b], screenY[b],
-                0.0045f + near * 0.0065f, c, 0.4f + near * 0.6f
+                width * 3.4f, palette.at(HUE_FAR + hm * (HUE_NEAR - HUE_FAR)), 0.07f + 0.1f * nm
             )
+            // An edge that runs from the inner cube to the outer is shaded
+            // along its length, so the eight joining edges show the hue
+            // passing from one cube into the other.
+            val segs = if (abs(hue[a] - hue[b]) > 0.12f) 4 else 1
+            for (s in 0 until segs) {
+                val t0 = s.toFloat() / segs
+                val t1 = (s + 1f) / segs
+                val tm = (t0 + t1) * 0.5f
+                val h = hue[a] + (hue[b] - hue[a]) * tm
+                val nn = na + (nb - na) * tm
+                // Depth by brightness, drawn opaque so a near edge cleanly
+                // covers a far one where they cross.
+                val c = Palette.lerp(bg, palette.at(HUE_FAR + h * (HUE_NEAR - HUE_FAR)), 0.42f + 0.58f * nn)
+                val w = (0.0035f + 0.0085f * nn) * thin
+                // Pieces overlap by half a width so no seam shows between them.
+                val pad = if (segs > 1) 0.5f * w / max(1e-5f, kotlin.math.hypot(screenX[b] - screenX[a], screenY[b] - screenY[a])) else 0f
+                val u0 = if (s == 0) t0 else t0 - pad
+                val u1 = if (s == segs - 1) t1 else t1 + pad
+                g.line(
+                    screenX[a] + (screenX[b] - screenX[a]) * u0, screenY[a] + (screenY[b] - screenY[a]) * u0,
+                    screenX[a] + (screenX[b] - screenX[a]) * u1, screenY[a] + (screenY[b] - screenY[a]) * u1,
+                    w, c, 1f
+                )
+            }
         }
+        // A six-cube has 64 corners: at a tesseract's glow each they ran
+        // together into one haze, so the glow thins as the corners multiply.
+        val glowShare = sqrt(16f / max(16, n).toFloat())
         for (i in 0 until n) {
-            val near = nearness(screenD[i])
-            val c = palette.at(0.15f + near * 0.75f)
-            g.glow(screenX[i], screenY[i], 0.035f + 0.04f * near, c, (0.2f + 0.3f * near) * glowShare)
-            g.disc(screenX[i], screenY[i], 0.009f + 0.012f * near, Palette.brighten(c, 0.2f))
+            val nn = near[i]
+            val c = palette.at(HUE_FAR + hue[i] * (HUE_NEAR - HUE_FAR))
+            g.glow(screenX[i], screenY[i], 0.03f + 0.04f * nn, c, (0.16f + 0.34f * nn) * glowShare)
+            g.disc(
+                screenX[i], screenY[i], (0.006f + 0.011f * nn) * sqrt(thin),
+                Palette.lerp(bg, Palette.brighten(c, 0.25f), 0.5f + 0.5f * nn)
+            )
         }
     }
 
@@ -256,6 +485,29 @@ class HypercubeSim : Sim {
         const val SCREEN_REACH = 0.52f
         const val WIDE_REACH = 0.84f
 
+        /**
+         * A quarter turn through XW is one complete inside-out swap; at 0.5
+         * that takes π s, about the pace of the classic animation. The 3D turn
+         * is exactly half as fast, so spin and view come back together after
+         * two spins and one view turn: 4π / 0.5 s, the declared loop.
+         */
+        const val DEFAULT_SPIN = 0.5f
+        const val DEFAULT_TURN = 0.25f
+        const val DEFAULT_VIEWER = 3f
+        /** The camera looks down on the shadow from this far above, in radians. */
+        const val CAMERA_TILT = 0.42f
+        /** The 3D eye stands this many times the 3D shadow's reach away. */
+        const val EYE3_MARGIN = 2.8f
+        const val HUE_FAR = 0.05f
+        const val HUE_NEAR = 0.82f
+        const val GHOSTS = 3
+        const val GHOST_SECONDS = 0.07f
+
+        private fun wrap(a: Float): Float {
+            val tau = 2f * PI.toFloat()
+            return a - tau * kotlin.math.floor(a / tau)
+        }
+
         fun def(): SimDef = SimDef(
             id = "dimensions/hypercube",
             title = "Rotating hypercube",
@@ -266,7 +518,9 @@ class HypercubeSim : Sim {
             heroLabel = "New angle",
             defaultPalette = "Aurora",
             typicalSeconds = 26f,
-            loopSeconds = 10.61f,
+            // Two full spins and one full turn of the view at the shipped
+            // 0.5 and 0.25 (4π / 0.5): every angle is exactly back.
+            loopSeconds = 25.13f,
             params = listOf(
                 Param.choice("shape", "Shape", SHAPES, 0, card = Card.DATA, input = ParamInput.TILES),
                 // The 24-cell has four dimensions or none: the slider says so.
@@ -279,9 +533,9 @@ class HypercubeSim : Sim {
                 // Evolve could not reach them either.
                 Param.int("planeA", "Spin plane, first axis", 0, Nd.MAX_DIMS - 1, 0, card = Card.MOTION),
                 Param.int("planeB", "Spin plane, second axis", 0, Nd.MAX_DIMS - 1, 3, card = Card.MOTION),
-                Param.float("spin", "Spin", 0.05f, 2f, 0.55f, card = Card.MOTION),
-                Param.float("tilt", "Tilt", 0f, 1.5f, 0.22f, card = Card.MOTION),
-                Param.float("viewer", "Viewer distance", 2.4f, 8f, 3f, card = Card.LOOK)
+                Param.float("spin", "Spin", 0.05f, 2f, DEFAULT_SPIN, card = Card.MOTION),
+                Param.float("tilt", "3D turn", 0f, 1.5f, DEFAULT_TURN, card = Card.MOTION),
+                Param.float("viewer", "Viewer distance", 2.4f, 8f, DEFAULT_VIEWER, card = Card.LOOK)
             ),
             create = { HypercubeSim() }
         )
@@ -322,6 +576,7 @@ class SlicingSim : Sim {
     private var payoffFrame = false
     private var passes = 0L
     private var peaked = false
+    private var peaks = 0
     private var elapsed = 0f
     private var viewAngle = 0f
     private var verts = FloatArray(0)
@@ -405,6 +660,7 @@ class SlicingSim : Sim {
         payoffFrame = false
         passes = 0
         peaked = false
+        peaks = 0
         elapsed = 0f
         viewAngle = 0f
         lastCorners = -1
@@ -506,7 +762,10 @@ class SlicingSim : Sim {
         if (!peaked && cutPos == mid) {
             peaked = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            // The first pass through the middle is the payoff, which the
+            // engine sounds; a DONE here as well played it twice, and again on
+            // every pass after. Later passes get a strong note of their own.
+            if (peaks++ > 0) env.emit(EventKind.CROSS, 0.9f, 0f, 0.8f)
         }
         if (abs(position - mid) > extent * 0.6f) peaked = false
     }
@@ -973,7 +1232,10 @@ class RandomWalkSim : Sim {
                 if (distance < stepSize * 0.75f) {
                     home[w] = true
                     returned++
-                    env.emit(EventKind.CROSS, 0.35f + 0.5f * (returned.toFloat() / walkers), 0f, 0.7f)
+                    // At home's place on screen (the view centres on the
+                    // cloud, not on home, so home drifts off the middle).
+                    val hx = if (dims == 1 && walkers > 1) -viewCx * viewScale else screenX(0f, 0f)
+                    env.emit(EventKind.CROSS, 0.35f + 0.5f * (returned.toFloat() / walkers), (hx / env.halfWidth).coerceIn(-1f, 1f), 0.7f)
                 }
             }
             // The swarm spreading is itself the sound, so the run is never
@@ -1028,7 +1290,6 @@ class RandomWalkSim : Sim {
         if (!paid && elapsed > EARLIEST_PAYOFF && settledFor > SETTLED_SECONDS) {
             paid = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 
@@ -1391,6 +1652,7 @@ class NdBounceSim : Sim {
         val e = if (laws.sticky) 0f else laws.bounce
         val wall = WALL
         var hitsThisStep = 0
+        var hitAxis = 0
         for (i in 0 until count) {
             val base = i * dims
             // Gravity acts along the second axis, the one that reads as "down".
@@ -1401,17 +1663,22 @@ class NdBounceSim : Sim {
                 if (pos[base + d] > wd) {
                     pos[base + d] = wd; vel[base + d] = -vel[base + d] * e; hitsThisStep++
                     visited[i] = visited[i] or (1 shl d)
+                    hitAxis = d
                 } else if (pos[base + d] < -wd) {
                     pos[base + d] = -wd; vel[base + d] = -vel[base + d] * e; hitsThisStep++
                     visited[i] = visited[i] or (1 shl d)
+                    hitAxis = d
                 }
             }
         }
         if (hitsThisStep > 0) {
             hits += hitsThisStep
+            // Each pair of walls its own pitch, so a wall in the fifth
+            // dimension sounds unlike one in the first. Pitched by the share
+            // of balls hitting, nearly every bounce was the same low note.
             env.emit(
                 EventKind.HIT,
-                (hitsThisStep.toFloat() / max(1, count)).coerceIn(0f, 1f),
+                (hitAxis + 0.5f) / dims,
                 0f,
                 min(1f, 0.3f + hitsThisStep * 0.04f)
             )
@@ -1461,7 +1728,6 @@ class NdBounceSim : Sim {
                     if (thinned || thickened || elapsed > BUILD_SECONDS + BACKSTOP_SECONDS) {
                         paidOff = true
                         payoffFrame = true
-                        env.emit(EventKind.DONE, 0.8f, 0f, 1f)
                     }
                 }
             }
@@ -1649,11 +1915,11 @@ class BallVolumeSim : Sim {
         val after = shown.toInt()
         if (after > before) {
             val t = (value(after) / top).toFloat().coerceIn(0f, 1f)
-            env.emit(EventKind.WRITE, t, 0f, 0.6f)
+            // At the bar's own place along the chart.
+            env.emit(EventKind.WRITE, t, (((after - 0.5f) / upTo) * 2f - 1f) * 0.92f, 0.6f)
             if (!peakAnnounced && after >= min(milestone, upTo)) {
                 peakAnnounced = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 1f, 0f, 1f)
             }
         }
     }
@@ -1851,7 +2117,6 @@ class ConcentrationSim : Sim {
                     paid = true
                     paidAt = elapsed
                     payoffFrame = true
-                    env.emit(EventKind.DONE, 1f, 0f, 1f)
                 }
                 if (dims >= maxDims) doneAt = elapsed
             }

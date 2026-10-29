@@ -62,6 +62,8 @@ class HanoiSim : Sim {
         restSeconds = -1f
         lifting = -1
         liftProgress = 1f
+        pendingNote = false
+        restStarted = false
     }
 
     private fun plan(n: Int, from: Int, to: Int, via: Int) {
@@ -101,6 +103,9 @@ class HanoiSim : Sim {
             val disc = pegs[fromPeg].removeAt(pegs[fromPeg].size - 1)
             liftFrom = pegs[fromPeg].size
             pegs[toPeg].add(disc)
+            // A disc still in the air when the next move starts lands this
+            // instant (the drawing snaps it home), so its note is due now.
+            landNote(env)
             lifting = disc
             liftProgress = 0f
             played++
@@ -108,22 +113,34 @@ class HanoiSim : Sim {
             // Only a sample of them becomes a note; the rest are the texture of
             // the tower moving.
             if (played % voiceEvery == 0) {
-                env.emit(
-                    EventKind.SWAP,
-                    1f - (disc.toFloat() / discs),
-                    (toPeg - 1).toFloat() * 0.7f,
-                    0.6f
-                )
+                pendingNote = true
+                pendingValue = 1f - (disc.toFloat() / discs)
+                pendingPan = (toPeg - 1).toFloat() * 0.7f
             }
         }
         // A move takes the time until the next one, but never longer than
         // a third of a second.
         liftProgress = min(1f, liftProgress + abs(dt) * max(3f, rate * 1.15f))
-        if (played >= moves.size && restSeconds < 0f) {
+        // The note is the disc landing on its peg, not leaving the old one:
+        // since the move became a flight it sounded up to a third of a second
+        // before the disc arrived.
+        if (liftProgress >= 1f) landNote(env)
+        // Finished when the last disc is down, not when it takes off.
+        if (played >= moves.size && liftProgress >= 1f && restSeconds < 0f) {
             payoffFrame = true
             restSeconds = 1.5f
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
+            restStarted = true
         }
+    }
+
+    private var pendingNote = false
+    private var pendingValue = 0f
+    private var pendingPan = 0f
+
+    private fun landNote(env: SimEnv) {
+        if (!pendingNote) return
+        pendingNote = false
+        env.emit(EventKind.SWAP, pendingValue, pendingPan, 0.6f)
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -234,7 +251,11 @@ class HanoiSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = played >= moves.size && restSeconds in -1000f..0f
+    // restSeconds starts at -1, so "in -1000..0" alone ended the run the step
+    // the last disc took off, before it landed.
+    override fun finished(): Boolean = restStarted && restSeconds <= 0f
+
+    private var restStarted = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "moves" to String.format(java.util.Locale.US, "%,d / %,d", played, moves.size),
@@ -376,7 +397,6 @@ class NQueensSim : Sim {
                 solved = true
                 payoffFrame = true
                 restSeconds = 1.5f
-                env.emit(EventKind.DONE, 1f, 0f, 1f)
                 break
             }
             var c = cols[row] + 1
@@ -638,7 +658,6 @@ class BinaryTreeSim : Sim {
         if (size >= target && restSeconds < 0f) {
             payoffFrame = true
             restSeconds = 1.5f
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 
@@ -670,7 +689,12 @@ class BinaryTreeSim : Sim {
         if (d > maxDepth) maxDepth = d
         size++
         layoutDirty = true
-        env.emit(EventKind.WRITE, key, key * 2f - 1f, 0.45f)
+        // Pan from where the node lands on screen. On a tall phone the tree
+        // lies on its side, so across the screen is depth, not key: panning by
+        // key put every node of a sideways tree in the middle on average.
+        val sideways = isSideways(env.halfWidth * 0.95f, max(1, maxDepth), max(1f, totalUnits))
+        val pan = if (sideways) (d.toFloat() / max(1, maxDepth)) * 2f - 1f else key * 2f - 1f
+        env.emit(EventKind.WRITE, key, pan, 0.45f)
     }
 
     /**
@@ -728,6 +752,11 @@ class BinaryTreeSim : Sim {
         shownU[n - 1] = rankU[n - 1]
     }
 
+    private fun isSideways(halfW: Float, levels: Int, units: Float): Boolean {
+        fun dotFor(len: Float, row: Float) = min(len / units * 0.36f, row * 0.28f)
+        return dotFor(1.84f, (2f * halfW - 0.04f) / levels) > 1.25f * dotFor(2f * halfW, 1.75f / (levels + 1))
+    }
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         if (size == 0) return
@@ -743,7 +772,7 @@ class BinaryTreeSim : Sim {
         val sideLen = 1.84f
         val sideRow = (2f * halfW - 0.04f) / levels
         fun dotFor(len: Float, row: Float) = min(len / units * 0.36f, row * 0.28f)
-        val sideways = dotFor(sideLen, sideRow) > 1.25f * dotFor(upLen, upRow)
+        val sideways = isSideways(halfW, levels, units)
         val dotSize = (if (sideways) dotFor(sideLen, sideRow) else dotFor(upLen, upRow)).coerceIn(0.0028f, 0.016f)
         val edgeW = (dotSize * 0.4f).coerceIn(0.0012f, 0.003f)
         for (i in 0 until size) {
@@ -864,6 +893,8 @@ class LogicGatesSim : Sim {
         tick = 0f
         counting = 0
         payoffFrame = false
+        rolloverPending = false
+        rollovers = 0
         historyHead = 0
         historyCount = 0
         history[historyHead] = a
@@ -895,6 +926,9 @@ class LogicGatesSim : Sim {
         tick += abs(dt) * env.params.f("rate", 4.5f)
         while (tick >= 1f) {
             tick -= 1f
+            // A rollover still rippling when the next tick starts has, on
+            // screen, just reached the top lamp (the new tick redraws it whole).
+            rollover(env)
             a = (a + b) and ((1 shl bits) - 1)
             history[historyHead] = a
             historyHead = (historyHead + 1) % TAPE
@@ -915,11 +949,25 @@ class LogicGatesSim : Sim {
             // low bits may never carry at all (an even step never carries out
             // of bit 0), so waiting for a full-length ripple would wait
             // forever. Said as what it is.
-            if (carryBits[bits]) {
-                payoffFrame = true
-                env.emit(EventKind.DONE, 0.9f, 0f, 1f)
-            }
+            if (carryBits[bits]) rolloverPending = true
         }
+        // The carry out lights when the ripple reaches it, one gate delay per
+        // bit into the tick (see draw's stage); it used to sound and pay off at
+        // the start of the tick, a ripple's length before the lamp came on.
+        if (rolloverPending && tick * (bits + 1) >= bits) rollover(env)
+    }
+
+    private var rolloverPending = false
+    private var rollovers = 0
+
+    private fun rollover(env: SimEnv) {
+        if (!rolloverPending) return
+        rolloverPending = false
+        payoffFrame = true
+        rollovers++
+        // The first is the payoff, which the engine sounds itself; a second
+        // DONE on the same step played the ending twice.
+        if (rollovers > 1) env.emit(EventKind.DONE, 0.9f, -0.8f, 1f)
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
@@ -1072,6 +1120,7 @@ class GradientDescentSim : Sim {
     private var vx = FloatArray(0)
     private var vy = FloatArray(0)
     private var best = Float.MAX_VALUE
+    private var voicedBest = Float.MAX_VALUE
     private var payoffFrame = false
     private var elapsed = 0f
     private var converged = false
@@ -1128,6 +1177,7 @@ class GradientDescentSim : Sim {
         findMinimum(halfW)
         contourHalfW = -1f
         best = Float.MAX_VALUE
+        voicedBest = Float.MAX_VALUE
         payoffFrame = false
         elapsed = 0f
         converged = false
@@ -1183,6 +1233,7 @@ class GradientDescentSim : Sim {
         momentum = env.params.f("momentum", 0.86f)
         rate = env.params.f("rate", 0.008f)
         var lowest = Float.MAX_VALUE
+        var lowestX = 0f
         for (i in 0 until walkers) {
             vx[i] = vx[i] * momentum - gradX(wx[i], wy[i]) * rate
             vy[i] = vy[i] * momentum - gradY(wx[i], wy[i]) * rate
@@ -1193,7 +1244,7 @@ class GradientDescentSim : Sim {
             wy[i] = (wy[i] + vy[i] * dt * 6f).coerceIn(-1f + EDGE_INSET, 1f - EDGE_INSET)
             pushTrail(i)
             val l = loss(wx[i], wy[i])
-            if (l < lowest) lowest = l
+            if (l < lowest) { lowest = l; lowestX = wx[i] }
             // Each walker lands with its own note, pitched by how deep its dip
             // is. The sim used to sound only when the overall best improved,
             // which stops within three seconds, and then held six seconds of
@@ -1220,14 +1271,20 @@ class GradientDescentSim : Sim {
         }
         if (lowest < best) {
             best = lowest
-            env.emit(EventKind.STEP, (1f - (best + 0.3f) / 1.6f).coerceIn(0f, 1f), 0f, 0.35f)
+        }
+        // A note each time the best has gone a step deeper, not each step it
+        // improved at all: a walker sliding down a slope bettered it on every
+        // step, seventy notes a second of one unchanging descent.
+        if (best < voicedBest - 0.03f) {
+            voicedBest = best
+            env.emit(EventKind.STEP, (1f - (best + 0.3f) / 1.6f).coerceIn(0f, 1f),
+                (lowestX / env.halfWidth).coerceIn(-1f, 1f), 0.35f)
         }
         // Done when every walker has come to rest, wherever it rests: the
         // question the sim asks is which ones find the bottom.
         if (!converged && elapsed > MIN_SECONDS && (settledCount == walkers || elapsed > BACKSTOP_SECONDS)) {
             converged = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
         if (converged) convergedFor += abs(dt)
     }
@@ -1542,7 +1599,10 @@ class GraphLayoutSim : Sim {
         payoffFrame = false
         settled = false
         elapsed = 0f
+        tickCarry = 0f
     }
+
+    private var tickCarry = 0f
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -1596,14 +1656,27 @@ class GraphLayoutSim : Sim {
             vx[b] -= ux; vy[b] -= uy
         }
         var moved = 0f
+        var fastest = 0f
+        var fastX = 0f
         for (i in 0 until n) {
             px[i] = (px[i] + vx[i] * dt).coerceIn(-env.halfWidth, env.halfWidth)
             py[i] = (py[i] + vy[i] * dt).coerceIn(-1f, 1f)
-            moved += abs(vx[i]) + abs(vy[i])
+            val sp = abs(vx[i]) + abs(vy[i])
+            moved += sp
+            if (sp > fastest) { fastest = sp; fastX = px[i] }
         }
         energy = energy * 0.9f + (moved / n) * 0.1f
         frame(env, dt)
-        env.emit(EventKind.STEP, energy.coerceIn(0f, 1f), 0f, 0.25f)
+        // Ticks as fast as the graph is moving, up to sixteen a second while it
+        // flies apart, thinning as it relaxes and gone once it is still. It
+        // was a STEP on every step — a hundred and twenty a second, a flat buzz
+        // that went on just the same over the settled, motionless graph.
+        val motion = if (peakEnergy > 0f) (energy / peakEnergy).coerceIn(0f, 1f) else 1f
+        if (motion > 0.04f) tickCarry += abs(dt) * 16f * kotlin.math.sqrt(motion)
+        if (tickCarry >= 1f) {
+            tickCarry -= 1f
+            env.emit(EventKind.STEP, energy.coerceIn(0f, 1f), (fastX / env.halfWidth).coerceIn(-1f, 1f), 0.15f + 0.25f * motion)
+        }
         // Settled: still against what it started with, or no longer getting
         // any stiller, or simply long enough. A fixed 0.012 was never
         // reached by a big graph pushed hard apart.
@@ -1614,7 +1687,6 @@ class GraphLayoutSim : Sim {
             settled = true
             settledAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.85f, 0f, 1f)
         }
     }
 

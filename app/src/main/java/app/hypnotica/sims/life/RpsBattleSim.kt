@@ -165,6 +165,7 @@ class RpsBattleSim : Sim {
         val fearNow = if (frenzy > 0f) 0f else FEAR / (1f + late)
         var converted = 0
         var convertedSide = 0
+        var catchX = 0f
         for (i in 0 until n) {
             val s = side[i]
             var bestPrey = Float.MAX_VALUE; var px = 0f; var py = 0f
@@ -233,6 +234,7 @@ class RpsBattleSim : Sim {
                         flashT[j] = 1f
                         converted++
                         convertedSide = s
+                        catchX += x[j]
                         break
                     }
                 }
@@ -258,19 +260,20 @@ class RpsBattleSim : Sim {
         frenzy = max(0f, frenzy - h)
         if (converted > 0) {
             // Each side has its own note; a burst is louder, not more notes.
-            env.emit(EventKind.HIT, note(convertedSide), 0f, min(1f, 0.3f + 0.12f * converted))
-        }
-        // A side wiped out is a beat of its own.
-        for (s in 0 until teams) if (!out[s] && count[s] == 0) {
-            out[s] = true
-            env.emit(EventKind.STEP, note(s), 0f, 0.8f)
+            // Panned to where the catches were.
+            env.emit(EventKind.HIT, note(convertedSide), (catchX / converted / halfW).coerceIn(-1f, 1f), min(1f, 0.3f + 0.12f * converted))
         }
         val alive = (0 until teams).count { count[it] > 0 }
+        // A side wiped out is a beat of its own — except the last to go,
+        // whose moment is the payoff, sounded by the engine on this step.
+        for (s in 0 until teams) if (!out[s] && count[s] == 0) {
+            out[s] = true
+            if (alive > 1) env.emit(EventKind.STEP, note(s), 0f, 0.8f)
+        }
         if (alive == 1) {
             winner = (0 until teams).first { count[it] > 0 }
             doneAt = elapsed
             payoffFrame = true
-            env.emit(EventKind.DONE, note(winner), 0f, 1f)
         }
     }
 

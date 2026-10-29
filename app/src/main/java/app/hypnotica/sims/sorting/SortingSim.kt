@@ -162,7 +162,11 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             array.sweep = after
             if (sweepPos >= n) {
                 restSeconds = 1.4f
-                env.emit(EventKind.DONE, 1f, 0f, 1f)
+                // No DONE here: the payoff already sounded as the sort finished
+                // and the sweep set off, and a second ending a second later, as
+                // the sweep reached the top, played the payoff twice. The
+                // sweep's own rising run is the cadence; its top note, louder.
+                env.emit(EventKind.WRITE, 1f, 0.8f, 0.9f)
             }
         }
     }

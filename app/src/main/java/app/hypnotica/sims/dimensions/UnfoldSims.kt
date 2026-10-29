@@ -79,14 +79,15 @@ class TesseractUnfoldSim : Sim {
         schedule(clock)
         for (c in 1 until CELLS) {
             val flat = progress[c] >= 1f
-            if (flat && !landed[c]) env.emit(EventKind.HIT, 0.35f + 0.08f * c, 0f, 0.6f)
-            if (!flat && landed[c] && progress[c] <= 0f) env.emit(EventKind.HIT, 0.25f + 0.05f * c, 0f, 0.35f)
+            // The far cell's first landing is the payoff, which the engine
+            // sounds on this step; its own HIT and a DONE here made three.
+            if (flat && !landed[c] && !(c == LAST && !paid)) env.emit(EventKind.HIT, 0.35f + 0.08f * c, cellPan(env, c), 0.6f)
+            if (!flat && landed[c] && progress[c] <= 0f) env.emit(EventKind.HIT, 0.25f + 0.05f * c, cellPan(env, c), 0.35f)
             if (flat) landed[c] = true else if (progress[c] <= 0f) landed[c] = false
         }
         if (!paid && progress[LAST] >= 1f) {
             paid = true
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 
@@ -130,6 +131,19 @@ class TesseractUnfoldSim : Sim {
         val ra = p[a] - ca; val rb = p[b] - cb
         p[a] = ca + ra * c - rb * s
         p[b] = cb + ra * s + rb * c
+    }
+
+    /**
+     * Where cell [c] is across the screen, -1 to 1, for the pan of its
+     * landing: the cells land at the ends of arms that point every way.
+     * (Projects into the draw scratch, which draw() fills afresh anyway.)
+     */
+    private fun cellPan(env: SimEnv, c: Int): Float {
+        projectAll(viewAngle)
+        var x = 0f
+        val k = sideways(env)
+        for (v in 0 until 8) x += if (k > 0f) sy[c * 8 + v] * k else sx[c * 8 + v]
+        return (x / 8f / frameHalfWidth(env)).coerceIn(-1f, 1f)
     }
 
     /** Every corner of every cell to the screen, at the current hinges and [angle]. */
@@ -358,13 +372,15 @@ class GrayWalkSim : Sim {
             if (e >= 0) visitedEdge[e] = true
             lit[to] = true
             stepIndex++
-            // The corner's own number, as a pitch.
-            env.emit(EventKind.STEP, 0.15f + 0.8f * to / (n - 1f), 0f, 0.5f)
+            // The corner's own number, as a pitch, at the corner's place on
+            // screen (projected into the draw scratch, which draw refills).
+            projectAll(viewAngle)
+            val pan = (sx[to] * zoom(env) / env.halfWidth).coerceIn(-1f, 1f)
+            env.emit(EventKind.STEP, 0.15f + 0.8f * to / (n - 1f), pan, 0.5f)
             if (!paid && stepIndex == n - 1) {
-                // Every corner once.
+                // Every corner once: the payoff, which the engine sounds.
                 paid = true
                 payoffFrame = true
-                env.emit(EventKind.DONE, 1f, 0f, 1f)
             }
             if (stepIndex == n) doneAt = elapsed
         }
