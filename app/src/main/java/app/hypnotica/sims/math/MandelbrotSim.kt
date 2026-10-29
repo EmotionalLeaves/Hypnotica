@@ -459,7 +459,8 @@ class MandelbrotSim : Sim {
         r.ensure(jMi + 8)
         jZr = r.zr
         jZi = r.zi
-        val rad = 1.05 * sqrt((abs(jOffX) + jScale * jHalfW).let { it * it } + (abs(jOffY) + jScale).let { it * it })
+        // hypot, not sqrt(x² + y²): past 1e154 the squares underflow to 0.
+        val rad = 1.05 * Math.hypot(abs(jOffX) + jScale * jHalfW, abs(jOffY) + jScale)
         jInvR = 1.0 / rad
         // Scaled by the radius (a = A·R, b = B·R², …): unscaled, B and C
         // overflow long before 1e300, where A·δc is still an ordinary number.
@@ -487,10 +488,12 @@ class MandelbrotSim : Sim {
             // The first term left out, |d|·|u|⁴, against the answer, ~|a|·|u|,
             // for the farthest pixel (|u| = 1): a part in a million is far
             // below a pixel. The orbit's own size bounds it too, or a pixel
-            // could start already past the escape radius.
-            val a2 = ax * ax + ay * ay
-            val d2 = dx * dx + dy * dy
-            if (!(d2 <= SA_TOL2 * a2) || a2 > 1e-4) break
+            // could start already past the escape radius. Compared as |x|+|y|,
+            // not squared: past 1e154, |a|² underflows to 0, 0 ≤ 0 held for
+            // ever and every pixel "skipped" to the budget — a black frame.
+            val an = abs(ax) + abs(ay)
+            val dn = abs(dx) + abs(dy)
+            if (!(dn <= SA_TOL * an) || an > 1e-2) break
             jSkip = n
             jAx = ax; jAy = ay; jBx = bx; jBy = by; jC3x = cx; jC3y = cy
         }
@@ -1807,8 +1810,8 @@ class MandelbrotSim : Sim {
          * subnormal (and lose digits) below 1e-308, so this leaves room.
          */
         const val HANDOFF_ZOOM = 1e260
-        /** The series' error bound, squared (see prepareReference). */
-        private const val SA_TOL2 = 1e-12
+        /** The series' error bound (see prepareReference). */
+        private const val SA_TOL = 1e-6
         private const val FADE_SECONDS = 2.2f
         private const val GLIDE_SECONDS = 1.2f
         /** How far from the tap (in view half-heights) a found point may be. */

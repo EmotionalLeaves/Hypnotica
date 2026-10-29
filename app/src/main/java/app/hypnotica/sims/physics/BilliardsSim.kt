@@ -74,6 +74,7 @@ class BilliardsSim : Sim {
     private var phase = AIM
     private var phaseAt = 0f
     private var shots = 0
+    private var called = 0
     private var aimX = 0f
     private var aimY = 1f
     private var shotSpeed = 0f
@@ -148,6 +149,7 @@ class BilliardsSim : Sim {
         phase = AIM
         phaseAt = 0f
         shots = 0
+        called = 0
         breakDone = false
         payoffFrame = false
         paidAt = -1f
@@ -216,6 +218,7 @@ class BilliardsSim : Sim {
                 val sdt = h / subs
                 repeat(subs) { physics(env, sdt) }
                 if (allStill() && elapsed - phaseAt > 0.3f && !anySinking()) {
+                    if (DEBUG && aimPocket >= 0 && shots > 1) println(String.format("DBG shot %d ball %d pocket %d potted=%b endDist=%.3f pos=(%.3f,%.3f) took %.1fs speed %.2f", shots, aimBall, aimPocket, !inPlay[aimBall], hypot(px[aimBall]-pocketX[aimPocket], py[aimBall]-pocketY[aimPocket]) / r, px[aimBall], py[aimBall], elapsed - phaseAt, shotSpeed))
                     if (remaining() > 0) {
                         if (!inPlay[0]) respotCue()
                         plan(env)
@@ -270,20 +273,44 @@ class BilliardsSim : Sim {
                 val dx = px[b] - px[a]; val dy = py[b] - py[a]
                 val d2 = dx * dx + dy * dy
                 if (d2 >= d2min || d2 == 0f) continue
-                val d = sqrt(d2)
-                val nx = dx / d; val ny = dy / d
-                // Pushed apart along the line of centres, half each.
-                val over = (2f * r - d) * 0.5f
+                // Rewind both to the instant they touched, so the line of
+                // centres is the true one: resolving at the overlap bends a
+                // thin cut by degrees, enough to miss a pocket.
+                val rvx = vx[b] - vx[a]; val rvy = vy[b] - vy[a]
+                val rv2 = rvx * rvx + rvy * rvy
+                var back = 0f
+                if (rv2 > 1e-12f) {
+                    // |d − rv·τ| = 2r for the τ ≥ 0 that undoes the overlap.
+                    val bq = dx * rvx + dy * rvy
+                    val cq = d2 - d2min
+                    val disc = bq * bq - rv2 * cq
+                    if (disc >= 0f) back = ((bq + sqrt(disc)) / rv2).coerceIn(0f, dt)
+                }
+                px[a] -= vx[a] * back; py[a] -= vy[a] * back
+                px[b] -= vx[b] * back; py[b] -= vy[b] * back
+                var cx = px[b] - px[a]; var cy = py[b] - py[a]
+                var d = sqrt(cx * cx + cy * cy)
+                if (d < 1e-7f) { cx = dx; cy = dy; d = sqrt(d2) }
+                val nx = cx / d; val ny = cy / d
+                // Whatever overlap is left (resting contacts), pushed apart half each.
+                val over = max(0f, 2f * r - d) * 0.5f
                 px[a] -= nx * over; py[a] -= ny * over
                 px[b] += nx * over; py[b] += ny * over
                 val rel = (vx[a] - vx[b]) * nx + (vy[a] - vy[b]) * ny
-                if (rel <= 0f) continue
+                if (rel <= 0f) {
+                    px[a] += vx[a] * back; py[a] += vy[a] * back
+                    px[b] += vx[b] * back; py[b] += vy[b] * back
+                    continue
+                }
                 val j = rel * (1f + BALL_E) * 0.5f
                 vx[a] -= j * nx; vy[a] -= j * ny
                 vx[b] += j * nx; vy[b] += j * ny
                 // Each leaves sliding without spin from the new direction.
                 roll[a] = hypot(vx[a], vy[a]) * ROLL_SHARE
                 roll[b] = hypot(vx[b], vy[b]) * ROLL_SHARE
+                // Then on to the end of the substep with the new velocities.
+                px[a] += vx[a] * back; py[a] += vy[a] * back
+                px[b] += vx[b] * back; py[b] += vy[b] * back
                 val impact = rel / wpm
                 if (impact > CLICK_MIN && elapsed - lastClick > 0.012f) {
                     lastClick = elapsed
@@ -352,6 +379,7 @@ class BilliardsSim : Sim {
         px[b] = pocketX[k]; py[b] = pocketY[k]
         vx[b] = 0f; vy[b] = 0f
         if (b == 0) { scratches++; cueOut = true }
+        if (b == aimBall && aimPocket == k && shots > 1) called++
         env.emit(EventKind.DEATH, if (b == 0) 0.2f else 0.35f + 0.04f * numbers[b], pan(pocketX[k]), 0.8f)
     }
 
@@ -550,11 +578,12 @@ class BilliardsSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "on the table" to remaining().toString(),
-        "shots" to max(0, shots - 1).toString() + " after the break",
+        "pots called" to "$called of ${max(0, shots - 1)}",
         "scratches" to scratches.toString()
     )
 
     companion object {
+        @JvmField var DEBUG = false
         const val AIM = 0
         const val ROLL = 1
         const val DONE = 2

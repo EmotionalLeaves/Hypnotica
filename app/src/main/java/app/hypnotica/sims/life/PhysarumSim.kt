@@ -95,7 +95,7 @@ class PhysarumSim : Sim {
         // destination; the first is the one the finale's light runs out from.
         foods = env.params.i("food", 7).coerceIn(3, MAX_FOOD)
         val minGap = sqrt(gw.toFloat() * gh / foods) * 0.62f
-        val edge = 18f
+        val edge = 24f
         var placed = 0
         var tries = 0
         while (placed < foods && tries < 4000) {
@@ -183,15 +183,12 @@ class PhysarumSim : Sim {
             }
             var nx = x + FastMath.cos(hd)
             var ny = y + FastMath.sin(hd)
-            // An agent that reaches the dish wall has found nothing there: it
-            // is taken back into the mould at a flake. Turned round on the
-            // spot instead, the agents a wall caught came back along their
-            // own trail and wore dead-end tubes into the corners of the dish.
+            // The dish wall turns an agent back the way it came. With the
+            // nutrient below, what returns from the wall lays little chemical,
+            // so a tube that only leads to the wall starves away.
             if (nx < 1f || nx > w - 2f || ny < 1f || ny > hh - 2f) {
-                val f = env.rng.int(0, foods)
-                val a = env.rng.range(0f, TAU)
-                nx = fx[f] + FastMath.cos(a) * 2f; ny = fy[f] + FastMath.sin(a) * 2f
-                hd = a
+                nx = x; ny = y
+                hd += PI.toFloat() + env.rng.range(-0.4f, 0.4f)
             }
             ax[i] = nx; ay[i] = ny; ah[i] = hd
             val k = ny.toInt() * w + nx.toInt()
