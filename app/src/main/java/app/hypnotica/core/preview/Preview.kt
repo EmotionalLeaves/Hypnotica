@@ -207,8 +207,12 @@ object Previews {
 
     /** Preview-only ceilings for the parameters that set a sim's size. */
     private fun previewCap(key: String): Float? = when (key) {
-        "n", "count", "beads", "trail", "walkers", "particles" -> 1200f
-        "dots", "points", "limit", "ink", "samples" -> 1200f
+        // Painted once into a picture now, so these only bound the time a
+        // card takes to simulate, not the cost of drawing it. A trail cut to
+        // 1,200 points left the harmonograph a tiny last loop.
+        "n", "count", "beads", "walkers", "particles" -> 4000f
+        "trail" -> 40000f
+        "dots", "points", "limit", "ink", "samples" -> 20000f
         "bodies" -> 150f
         "grid", "size" -> 96f
         "depth", "rings" -> 6f
@@ -222,9 +226,13 @@ object Previews {
     /** The furthest a card will run looking for its sim's best moment. */
     private const val MAX_SECONDS = 24f
 
-    /** How long after the payoff the picture is taken: the moment has landed. */
-    private const val AFTER_PAYOFF_SECONDS = 0.5f
+    /**
+     * How long after the payoff the picture is taken: the moment itself.
+     * Half a second later the escaping ball had gone and the card showed an
+     * empty ring.
+     */
+    private const val AFTER_PAYOFF_SECONDS = 0.1f
 
     /** Wall-clock time one card may spend getting there. */
-    private const val WALL_BUDGET_MS = 300L
+    private const val WALL_BUDGET_MS = 450L
 }
