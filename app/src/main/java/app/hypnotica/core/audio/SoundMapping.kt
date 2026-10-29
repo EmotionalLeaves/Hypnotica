@@ -157,7 +157,15 @@ class SoundMapping(private val synth: Synth) {
         budget = min(rate, budget + frameSeconds * rate)
 
         var seen = 0
+        // One payoff chord a frame. A sim sounds its own payoff (often
+        // pitched for the outcome) and the core adds a plain one the moment
+        // payoff() turns true, so every payoff played two stacked chords.
+        var doneThisFrame = false
         queue.drain(512) { kind, value, pan, strength ->
+            if (kind == EventKind.DONE) {
+                if (doneThisFrame) return@drain
+                doneThisFrame = true
+            }
             seen++
             if (enabled.get(kind.ordinal) != 0) {
                 // The payoff always sounds on its own frame, as itself. Out of

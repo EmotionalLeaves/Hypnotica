@@ -180,7 +180,11 @@ class BalloonSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
-        repeat(POP_NOTES) { env.emit(EventKind.HIT, env.rng.range(0.4f, 1f), env.rng.range(-0.9f, 0.9f), env.rng.range(0.4f, 0.9f)) }
+        // The bang is heard where the balloon was, spread a little by its size;
+        // a random pan across the whole field put a lone balloon's pop everywhere.
+        val at = cxs[k] / max(0.1f, halfW)
+        val spread = radius[k] / max(0.1f, halfW)
+        repeat(POP_NOTES) { env.emit(EventKind.HIT, env.rng.range(0.4f, 1f), (at + env.rng.range(-spread, spread)).coerceIn(-1f, 1f), env.rng.range(0.4f, 0.9f)) }
         // Out from where each piece was inside the balloon.
         for (i in cx.indices) {
             if (cowner[i] != k) continue

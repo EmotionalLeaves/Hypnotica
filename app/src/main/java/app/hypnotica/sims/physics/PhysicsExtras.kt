@@ -53,6 +53,8 @@ class NBodySim : Sim {
     private var payoffFrame = false
     private var centralMass = 0f
     private var collapsed = false
+    /** The infall level last sounded, in [LEVELS] steps. */
+    private var heardLevel = -1
 
     /** How far round the centre each body has gone, for the arms payoff. */
     private var lastAngle = FloatArray(0)
@@ -158,6 +160,7 @@ class NBodySim : Sim {
         elapsed = 0f
         payoffFrame = false
         collapsed = false
+        heardLevel = -1
         reach = 0f
         sinceReach = REACH_EVERY
     }
@@ -278,7 +281,13 @@ class NBodySim : Sim {
             lastAngle[i] = a
             if (swept[i] > WOUND_ANGLE) wound++
         }
-        env.emit(EventKind.STEP, (inner.toFloat() / n).coerceIn(0f, 1f), 0f, 0.3f)
+        // A note each time the core's share moves a notch, up or down: one
+        // every step was 120 identical ticks a second whatever the picture did.
+        val level = (inner.toFloat() / n * LEVELS).toInt()
+        if (level != heardLevel) {
+            if (heardLevel >= 0) env.emit(EventKind.STEP, (inner.toFloat() / n).coerceIn(0f, 1f), 0f, 0.3f)
+            heardLevel = level
+        }
         // Two endings: a cloud that falls together, or a disc whose bodies
         // have mostly gone one and a half times round, by which time the
         // shear has wound its clumps into arms. Measured, not timed, so a
@@ -319,6 +328,8 @@ class NBodySim : Sim {
     )
 
     companion object {
+        /** Notches of the core's share of bodies, each a note. */
+        const val LEVELS = 40
         const val SOFTENING = 0.01f
         /** The disc's mass as a share of the centre's. */
         private const val DISC_SHARE = 0.35f
@@ -455,7 +466,7 @@ class GearsSim : Sim {
         elapsed = 0f
         payoffFrame = false
         clicks = 0
-        lastTooth = 0
+        lastTooth = Int.MIN_VALUE
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -472,11 +483,19 @@ class GearsSim : Sim {
             // other way, from where each started.
             gear.angle = gear.base - (prev.angle - prev.base) * prev.teeth / gear.teeth
         }
-        val tooth = (first.angle / (2f * PI.toFloat()) * first.teeth).toInt()
+        // A click each time one of the first wheel's teeth is square on the
+        // line to its neighbour, which is where the mesh is drawn: counted
+        // from angle zero instead, the tick fell anywhere in the tooth's pass
+        // and was heard at the middle of the screen whatever the layout.
+        val second = gears.getOrNull(1)
+        val contact = if (second != null) kotlin.math.atan2(second.y - first.y, second.x - first.x) else 0f
+        val tooth = kotlin.math.floor((first.angle - contact) / (2f * PI.toFloat()) * first.teeth).toInt()
+        if (lastTooth == Int.MIN_VALUE) lastTooth = tooth
         if (tooth != lastTooth) {
             lastTooth = tooth
             clicks++
-            env.emit(EventKind.HIT, (gears.size - 1).toFloat() / max(1, gears.size), 0f, 0.4f)
+            val mx = first.x + cos(contact) * first.radius
+            env.emit(EventKind.HIT, (gears.size - 1).toFloat() / max(1, gears.size), (mx / env.halfWidth).coerceIn(-1f, 1f), 0.4f)
         }
         // One full revolution of the slowest gear in the train: the last
         // wheel's every tooth back where it started (the whole train repeats
@@ -687,7 +706,8 @@ class ClothSim : Sim {
         if (tears > lastTears) {
             val fresh = (tears - lastTears).coerceAtMost(12)
             lastTears = tears
-            env.emit(EventKind.DEATH, 0.25f + 0.5f * (tears % 7) / 7f, 0f, min(1f, 0.4f + fresh * 0.08f))
+            // Heard from where the last thread went.
+            env.emit(EventKind.DEATH, 0.25f + 0.5f * (tears % 7) / 7f, (tearX / env.halfWidth).coerceIn(-1f, 1f), min(1f, 0.4f + fresh * 0.08f))
         }
         swayClock += abs(dt)
         if (swayClock > 0.22f) {
@@ -748,6 +768,8 @@ class ClothSim : Sim {
         }
     }
 
+    private var tearX = 0f
+
     private fun relax(a: Int, b: Int, rest: Float) {
         if (cut[a] || cut[b]) return
         val dx = x[b] - x[a]
@@ -757,6 +779,7 @@ class ClothSim : Sim {
         if (tearing && d > rest * 4.5f) {
             cut[b] = true
             tears++
+            tearX = (x[a] + x[b]) * 0.5f
             return
         }
         val diff = (d - rest) / d * 0.5f
@@ -969,6 +992,7 @@ class OpticsSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var focused = false
+    private var heardAngle = Int.MIN_VALUE
     private var tightest = Float.MAX_VALUE
     private var tightenedFor = 0f
     /** What the beam measured before the sweep went looking, for comparison. */
@@ -1039,6 +1063,7 @@ class OpticsSim : Sim {
         elapsed = 0f
         payoffFrame = false
         focused = false
+        heardAngle = Int.MIN_VALUE
         tightest = Float.MAX_VALUE
         tightenedFor = 0f
         trace(env)
@@ -1065,7 +1090,13 @@ class OpticsSim : Sim {
         // the left face at 24°, where light crosses parallel to the base.
         aim = if (shape == 0) angle * PRISM_SWEEP + PRISM_AIM else angle
         trace(env)
-        env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), 0f, 0.25f)
+        // A tick each time the beam has swung a notch: one every step was a
+        // 120-a-second buzz, even with the sweep off and nothing moving.
+        val notch = kotlin.math.floor(angle * ANGLE_NOTCHES).toInt()
+        if (notch != heardAngle) {
+            if (heardAngle != Int.MIN_VALUE) env.emit(EventKind.STEP, ((angle + 1f) * 0.5f).coerceIn(0f, 1f), 0f, 0.25f)
+            heardAngle = notch
+        }
         // The focus: the moment the rays are at their tightest on the far side
         // of the glass, which is what a lens does and what the sweep is hunting
         // for. A clock at twelve seconds fired wherever the sweep happened to
@@ -1439,6 +1470,8 @@ class OpticsSim : Sim {
     )
 
     companion object {
+        /** Beam-angle notches per radian of sweep, each a tick. */
+        const val ANGLE_NOTCHES = 30f
         /** How close the rays have to come together to count as a focus. */
         /**
          * How much tighter than its start the beam has to get to count as
@@ -1541,10 +1574,18 @@ class ChargesSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var resolved = false
+    private var heardTrips = -1
+    private var swallowed = 0
+    private var swallowedX = 0f
+    private var sinceSwallow = 0f
 
     override fun setup(env: SimEnv) {
         val p = env.params
         resolved = false
+        heardTrips = -1
+        swallowed = 0
+        swallowedX = 0f
+        sinceSwallow = 0f
         elapsed = 0f
         count = p.i("charges", 4).coerceIn(1, 12)
         charges = FloatArray(count)
@@ -1648,13 +1689,27 @@ class ChargesSim : Sim {
             if (fresh[i] && travelled[i] >= tripLength) { fresh[i] = false; firstTrips++ }
             if (alive[i]) continue
             captured++
+            // Swallowed by a charge (it dies within 0.035 of one) rather than
+            // run off the edge of the screen, where nobody sees it go.
+            for (k in 0 until count) if (hypot(px[i] - cx[k], py[i] - cy[k]) < 0.05f) { swallowed++; swallowedX += cx[k]; break }
             if (fresh[i]) { fresh[i] = false; firstTrips++ }
             px[i] = env.rng.range(-env.halfWidth, env.halfWidth)
             py[i] = env.rng.range(-1f, 1f)
             alive[i] = true
         }
-        if (captured > 0) env.emit(EventKind.BIRTH, 0.5f, 0f, min(0.6f, 0.1f + captured * 0.002f))
-        env.emit(EventKind.STEP, 1f - (firstTrips.toFloat() / particles), 0f, 0.25f)
+        // The tracers a charge swallows, gathered into a soft tick every
+        // SWALLOW_GAP and heard from the charges that took them. Both notes
+        // used to go out every step — 240 a second of the same two sounds.
+        sinceSwallow += abs(dt)
+        if (swallowed > 0 && sinceSwallow >= SWALLOW_GAP) {
+            env.emit(EventKind.BIRTH, 0.5f, (swallowedX / swallowed / env.halfWidth).coerceIn(-1f, 1f), min(0.6f, 0.1f + swallowed * 0.002f))
+            swallowed = 0; swallowedX = 0f; sinceSwallow = 0f
+        }
+        val tripLevel = (firstTrips.toFloat() / particles * LEVELS).toInt()
+        if (tripLevel != heardTrips) {
+            if (heardTrips >= 0) env.emit(EventKind.STEP, 1f - (firstTrips.toFloat() / particles), 0f, 0.25f)
+            heardTrips = tripLevel
+        }
         // The moment the picture resolves: most of the tracers have finished
         // their first trip along a field line. This used to be a stopwatch at
         // ten seconds, which fires whether or not anything has happened.
@@ -1715,6 +1770,9 @@ class ChargesSim : Sim {
     )
 
     companion object {
+        /** Notches of first-trip progress that each get a note, and the swallow tick's spacing. */
+        const val LEVELS = 40
+        const val SWALLOW_GAP = 0.12f
         fun def(): SimDef = SimDef(
             id = "physics/charges",
             title = "Electric field",

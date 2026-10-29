@@ -82,12 +82,17 @@ class TowerSim : Sim {
         if (now != placed) {
             val moved = abs(now - placed)
             val rising = now > placed
+            // Panned to the slot of the brick that just landed (or lifted):
+            // brick k touches down exactly when the count reaches k + 1 in
+            // draw(), so this step is the visible contact frame.
+            val k = (if (rising) now - 1 else now).coerceIn(0, bricks - 1)
+            val pan = (slotX(k % perRow, env.halfWidth) / env.halfWidth).coerceIn(-1f, 1f)
             // One note for the move, not one per brick: a thousand bricks
             // arriving in a step is a click, not a thousand clicks.
             env.emit(
                 if (rising) EventKind.HIT else EventKind.STEP,
                 (now.toFloat() / bricks).coerceIn(0f, 1f),
-                0f,
+                pan,
                 min(1f, 0.25f + moved * 0.02f)
             )
             placed = now

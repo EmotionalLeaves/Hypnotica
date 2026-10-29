@@ -120,8 +120,11 @@ class ShatterSim : Sim {
                 val rm = (ringR[r] + (if (r == 0) 0f else ringR[r - 1])) * 0.5f
                 val py = sin((shardA0[i] + shardA1[i]) * 0.5f) * rm
                 if (was + py >= -radius && sy[i] + py < -radius) {
+                    // Panned by the piece's own place too, as py is: by its
+                    // drift alone a piece from the pane's edge sounded mid-screen.
+                    val px = cos((shardA0[i] + shardA1[i]) * 0.5f) * rm
                     env.emit(EventKind.HIT, 0.55f + 0.45f * ((i * 37) % 11) / 10f,
-                        (sx[i] / radius).coerceIn(-1f, 1f) * 0.8f, 0.35f)
+                        ((sx[i] + px) / (radius + 0.04f)).coerceIn(-1f, 1f), 0.35f)
                 }
             }
         }

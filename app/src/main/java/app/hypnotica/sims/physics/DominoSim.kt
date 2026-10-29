@@ -166,13 +166,18 @@ class DominoSim : Sim {
             if (i + 1 < n && !started[i + 1] && sin(tilt[i]) * length >= gapTo(i)) {
                 started[i + 1] = true
                 spin[i + 1] = spin[i] * HANDOFF
+                // The click is this contact, top on the next one's face: it
+                // used to sound when the domino settled to its lean, a beat
+                // after the next one had visibly started to go.
+                env.emit(EventKind.HIT, (i.toFloat() / n * SCALE_SPAN) % 1f, (px[i + 1] / max(0.1f, env.halfWidth)).coerceIn(-1f, 1f), 0.45f)
             }
             if (tilt[i] >= rest[i]) {
                 tilt[i] = rest[i]
                 down[i] = true
                 fallen++
-                // Each one landing is the next note up: the chain plays a run.
-                env.emit(EventKind.HIT, (i.toFloat() / n * SCALE_SPAN) % 1f, (px[i] / max(0.1f, env.halfWidth)).coerceIn(-1f, 1f), 0.45f)
+                // Each contact is the next note up: the chain plays a run. The
+                // last has no next one to strike, so it sounds as it hits the floor.
+                if (i + 1 >= n) env.emit(EventKind.HIT, (i.toFloat() / n * SCALE_SPAN) % 1f, (px[i] / max(0.1f, env.halfWidth)).coerceIn(-1f, 1f), 0.55f)
                 if (fallen == n) {
                     doneAt = elapsed
                     payoffFrame = true

@@ -63,6 +63,7 @@ class PowerWashSim : Sim {
     private var halfW = 0.46f
 
     override fun setup(env: SimEnv) {
+        pendingClean = 0; pendingTone = 0; sinceNote = 0f
         halfW = env.halfWidth
         gx = env.params.i("detail", 56).coerceIn(10, MAX_DETAIL)
         val w = 2f * halfW * 0.92f
@@ -257,13 +258,24 @@ class PowerWashSim : Sim {
                 tone = k
             }
         }
-        if (cleaned > 0) {
-            // Each clean patch is a note, pitched by the colour it shows.
-            val c = mural[tone]
+        if (cleaned > 0) { pendingClean += cleaned; pendingTone = tone }
+        sinceNote += h
+        // Each clean patch is a note, pitched by the colour it shows — gathered
+        // over NOTE_GAP: one a step was up to 120 near-identical hits a second,
+        // a hiss rather than patches coming clean.
+        if (pendingClean > 0 && sinceNote >= NOTE_GAP) {
+            val cleaned = pendingClean
+            pendingClean = 0
+            sinceNote = 0f
+            val c = mural[pendingTone]
             val lum = (((c shr 16) and 255) + ((c shr 8) and 255) + (c and 255)) / 765f
             env.emit(EventKind.HIT, (0.2f + 0.7f * lum).coerceIn(0f, 1f), ((nx / max(0.1f, halfW))).coerceIn(-1f, 1f), (0.15f + 0.03f * cleaned).coerceAtMost(0.5f))
         }
     }
+
+    private var pendingClean = 0
+    private var pendingTone = 0
+    private var sinceNote = 0f
 
     private fun spray(env: SimEnv, x: Float, y: Float, color: Int) {
         val i = sNext; sNext = (sNext + 1) % SPRAY
@@ -338,6 +350,8 @@ class PowerWashSim : Sim {
     )
 
     companion object {
+        /** Shortest time between clean-patch notes. */
+        const val NOTE_GAP = 0.05f
         val MURALS = listOf("Surprise", "Rings", "Spiral", "Diamonds", "Waves", "Tiles", "Sunburst")
         const val MAX_DETAIL = 120
         const val SWEEP_SECONDS = 12f

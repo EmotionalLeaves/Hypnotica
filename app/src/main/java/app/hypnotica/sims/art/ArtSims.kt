@@ -72,7 +72,11 @@ class PolyrhythmSim : Sim {
                 hits++
                 hitFlash[i] = 1f
                 val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
-                env.emit(EventKind.CROSS, 1f - t, (t * 2f - 1f) * 0.85f, 0.75f)
+                // Every wheel strikes its line in one place — the top of the
+                // rings, or the right-hand end of the lanes — so that is where
+                // it is heard; a spread by wheel index put the strikes all
+                // across a stereo field the picture never shows.
+                env.emit(EventKind.CROSS, 1f - t, if (arcMode) 0f else 0.7f, 0.75f)
             }
             lastPhase[i] = wrapped
             hitFlash[i] = max(0f, hitFlash[i] - abs(dt) * 3.4f)
@@ -215,9 +219,14 @@ class HarmonographSim : Sim {
     private val decay = FloatArray(4)
     private var runFor = 0f
     private var settled = false
+    private var lastPenX = 0f
+    private var lastPenY = 0f
+    private var lastDx = 0f
+    private var lastDy = 0f
 
     override fun setup(env: SimEnv) {
         runFor = 0f
+        lastPenX = 0f; lastPenY = 0f; lastDx = 0f; lastDy = 0f
         val params = env.params
         val len = params.i("trail", 36000).coerceIn(500, 120000)
         trailX = FloatArray(len)
@@ -274,9 +283,20 @@ class HarmonographSim : Sim {
         var budget = min(carry.toInt(), 20000)
         carry -= budget
         val h = 0.0016
+        var turnX = Float.NaN
+        var turnY = Float.NaN
         while (budget-- > 0) {
             t += h
             pen(t.toFloat())
+            // Where the pen turns back, left-right or up-down: the corners of
+            // the figure the eye follows, each a note heard where it is drawn.
+            val dx = penX - lastPenX
+            val dy = penY - lastPenY
+            if (dx * lastDx < 0f) { turnX = penX; turnY = penY }
+            if (dy * lastDy < 0f) { turnX = penX; turnY = penY }
+            if (dx != 0f) lastDx = dx
+            if (dy != 0f) lastDy = dy
+            lastPenX = penX; lastPenY = penY
             trailX[head] = penX
             trailY[head] = penY
             head = (head + 1) % trailX.size
@@ -284,7 +304,16 @@ class HarmonographSim : Sim {
         }
         // The swing that dies slowest is the one that decides it.
         val envelope = exp(-min(min(decay[0], decay[1]), min(decay[2], decay[3])) * t.toFloat())
-        env.emit(EventKind.STEP, envelope.coerceIn(0f, 1f), 0f, 0.25f)
+        // One note a turn rather than one every step: the per-step note was a
+        // 120-a-second drone that did nothing the drawing did.
+        if (!turnX.isNaN()) {
+            env.emit(
+                EventKind.STEP,
+                ((turnY / max(0.05f, reachY) + 1f) * 0.5f).coerceIn(0f, 1f),
+                (turnX / (reachX + MARGIN)).coerceIn(-1f, 1f),
+                0.12f + 0.25f * envelope.coerceIn(0f, 1f)
+            )
+        }
         runFor += abs(dt)
         // Or long enough: barely damped and drawn slowly, it took minutes.
         if (!settled && (envelope < 0.3f || runFor > BACKSTOP_SECONDS)) {
@@ -416,7 +445,8 @@ class CirclePackingSim : Sim {
             val next = cr[i] + growth
             if (next > maxRadius || touchesEdge(cx[i], cy[i], next, halfW) || touchesAny(i, next)) {
                 growing[i] = false
-                env.emit(EventKind.HIT, (cr[i] / maxRadius).coerceIn(0f, 1f), (cx[i] / halfW).coerceIn(-1f, 1f), 0.5f)
+                // Louder for a big circle closing a big gap than for a speck.
+                env.emit(EventKind.HIT, (cr[i] / maxRadius).coerceIn(0f, 1f), (cx[i] / halfW).coerceIn(-1f, 1f), 0.25f + 0.5f * (cr[i] / maxRadius).coerceIn(0f, 1f))
             } else {
                 cr[i] = next
                 stillGrowing++
@@ -610,7 +640,7 @@ class SpirographSim : Sim {
             trailY[count] = y
             count++
             if (count % 160 == 0) {
-                env.emit(EventKind.STEP, ((y + 1f) * 0.5f).coerceIn(0f, 1f), (x).coerceIn(-1f, 1f) * 0.7f, 0.3f)
+                env.emit(EventKind.STEP, ((y + 1f) * 0.5f).coerceIn(0f, 1f), (x / max(env.halfWidth, frameHalfWidth(env))).coerceIn(-1f, 1f), 0.3f)
             }
         }
         // The curve closes when the pen returns to where it started, which

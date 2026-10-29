@@ -352,8 +352,12 @@ class BallEscapeSim : Sim {
                             shardVx[i] = cos(a) * sp; shardVy[i] = sin(a) * sp
                         }
                     }
+                    // The payoff chord is the first escape only; later balls
+                    // (added by tap or "multiply") leaving get a crossing note,
+                    // or every one replayed the ending.
+                    if (escaped == 0) env.emit(EventKind.DONE, b.colorT, (b.x).coerceIn(-1f, 1f), 1f)
+                    else env.emit(EventKind.CROSS, b.colorT, (b.x / ringRadius).coerceIn(-1f, 1f), 0.7f)
                     escaped++
-                    env.emit(EventKind.DONE, b.colorT, (b.x).coerceIn(-1f, 1f), 1f)
                     payoffFrame = true
                     restSeconds = 1.5f
                     break
@@ -799,7 +803,10 @@ class PendulumWaveSim : Sim {
             if (crossedThisStep[voice]) {
                 crossedThisStep[voice] = false
                 val t = if (count <= 1) 0.5f else voice.toFloat() / (count - 1)
-                env.emit(EventKind.CROSS, t, (t * 2f - 1f) * 0.85f, 0.75f)
+                // Seen from above the rows run top to bottom and every bob
+                // crosses at the centre line, so the row index is not a
+                // left/right place: the pan leans the way the bob is heading.
+                env.emit(EventKind.CROSS, t, if (omegas[voice] >= 0f) 0.35f else -0.35f, 0.75f)
             }
             voice += voiceEvery
         }
@@ -973,6 +980,9 @@ class PendulumWaveSim : Sim {
 /** Newton's cradle: equal masses in a row, momentum passing straight through. */
 /** When the cradle pays off whether or not its clicks have kept a round count. */
 private const val CRADLE_LATE = 13f
+/** Slowest closing speed (rad/s) that is heard as a click, and the shortest time between clicks. */
+private const val CLICK_MIN = 0.12f
+private const val CLICK_GAP = 0.09f
 
 class NewtonsCradleSim : Sim {
 
@@ -987,11 +997,15 @@ class NewtonsCradleSim : Sim {
     private var elapsed = 0f
     private var payoffDone = false
     private var stillSeconds = 0f
+    private var clickCooldown = 0f
+    private var strikes = 0
 
     override fun setup(env: SimEnv) {
+        strikes = 0
         elapsed = 0f
         payoffDone = false
         stillSeconds = 0f
+        clickCooldown = 0f
         n = env.params.i("count", 5).coerceIn(3, 9)
         radius = (0.62f / n).coerceIn(0.03f, 0.1f)
         val lift = env.params.i("lift", 1).coerceIn(1, n - 1)
@@ -1031,6 +1045,9 @@ class NewtonsCradleSim : Sim {
         }
         // Collisions along the row: equal masses exchange velocities.
         val spacing = radius * 2f
+        clickCooldown -= abs(dt)
+        var hardest = 0f
+        var hardestAt = -1
         for (i in 0 until n - 1) {
             val xi = pos[i] * l
             val xj = pos[i + 1] * l
@@ -1061,13 +1078,30 @@ class NewtonsCradleSim : Sim {
                 }
                 clicks++
                 spark[i] = min(1f, spark[i] + abs(vi - vj) * 1.5f)
-                env.emit(EventKind.HIT, i.toFloat() / max(1, n - 1), 0f, 0.8f)
-                // A handful of clean transfers first, so the payoff is the rhythm
-                // being established rather than the very first click.
-                if (!payoffDone && elapsed > 9f && clicks % (n.toLong() * 2L) == 0L) {
-                    payoffDone = true
-                    payoffFrame = true
-                }
+                if (abs(vi - vj) > hardest) { hardest = abs(vi - vj); hardestAt = i }
+            }
+        }
+        // One click per strike, at the contact that took the blow. A note per
+        // pair per step played the momentum passing down the row as a four-note
+        // flam over three frames, and the resting balls nudging each other at
+        // a hair's speed ticked ~200 times a run with nothing visible; those
+        // are below CLICK_MIN and the strike's echo is inside CLICK_GAP.
+        if (hardestAt >= 0 && hardest > CLICK_MIN && clickCooldown <= 0f) {
+            clickCooldown = CLICK_GAP
+            val cx = -(n - 1) * spacing * 0.5f + hardestAt * spacing + radius + sin(pos[hardestAt]) * STRING
+            env.emit(
+                EventKind.HIT, hardestAt.toFloat() / max(1, n - 1),
+                (cx / frameHalfWidth(env)).coerceIn(-1f, 1f),
+                (0.3f + hardest * 0.3f).coerceAtMost(1f)
+            )
+            strikes++
+            // A handful of clean transfers first, so the payoff is the rhythm
+            // being established rather than the very first click — and on a
+            // heard strike: counted over every contact it landed on the balls'
+            // resting nudges, half a second away from any click.
+            if (!payoffDone && elapsed > 9f && strikes % 2 == 0) {
+                payoffDone = true
+                payoffFrame = true
             }
         }
         // A sticky cradle clumps and its clicks die away before the count
@@ -1398,11 +1432,17 @@ class GaltonBoardSim : Sim {
                 if (rowNow < rows) {
                     val c = Integer.bitCount(b.turns and ((1 shl rowNow) - 1))
                     pegFlash[rowNow * (rowNow + 1) / 2 + c] = 1f
-                    if (pegVoice++ % pegVoiceEvery == 0) {
+                    // A knock is sounded on the step the bead sits on the peg
+                    // (fallRows reaches the row exactly at contact), sampled so
+                    // the knocks stay near KNOCKS_PER_SECOND: thirty beads a
+                    // second over ten rows was 300 identical ticks a second, a
+                    // hiss under the bin landings.
+                    val every = max(pegVoiceEvery, (env.params.f("rate", 30f) * rows / KNOCKS_PER_SECOND).toInt())
+                    if (pegVoice++ % every == 0) {
                         env.emit(
                             EventKind.STEP,
                             (rowNow.toFloat() / rows).coerceIn(0f, 1f),
-                            b.x.coerceIn(-1f, 1f),
+                            (b.x / env.halfWidth).coerceIn(-1f, 1f),
                             0.22f
                         )
                     }
@@ -1425,7 +1465,7 @@ class GaltonBoardSim : Sim {
                     if (bins[b.bin] > peak) peak = bins[b.bin]
                     landed = true
                     b.row = Int.MAX_VALUE
-                    env.emit(EventKind.HIT, b.bin.toFloat() / rows, b.x.coerceIn(-1f, 1f), 0.5f)
+                    env.emit(EventKind.HIT, b.bin.toFloat() / rows, (b.x / env.halfWidth).coerceIn(-1f, 1f), 0.5f)
                 }
             }
         }
@@ -1520,6 +1560,8 @@ class GaltonBoardSim : Sim {
     companion object {
         /** How long a still board is allowed to last before the run gives up. */
         const val STILL_SECONDS = 2.5f
+        /** Roughly how many peg knocks a second are voiced. */
+        const val KNOCKS_PER_SECOND = 60f
         /** The first row of pegs. */
         const val PEG_TOP = 0.80f
         /** Where the last peg row hands each bead to its bin. */

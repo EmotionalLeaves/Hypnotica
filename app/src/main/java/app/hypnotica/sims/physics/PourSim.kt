@@ -256,13 +256,14 @@ class PourSim : Sim {
         // Speed is how far each drop actually went; and neighbours drag on
         // each other a little, so the surface settles instead of fizzing.
         var landed = 0
+        var landedX = 0f
         val inv = if (h > 1e-6f) 1f / h else 0f
         for (i in 0 until n) {
             val before = vy[i]
             vx[i] = (x[i] - px[i]) * inv
             vy[i] = (y[i] - py[i]) * inv
             // A drop stopped hard is a splash.
-            if (before < -0.8f && vy[i] > -0.2f) landed++
+            if (before < -0.8f && vy[i] > -0.2f) { landed++; landedX += x[i] }
         }
         java.util.Arrays.fill(head, -1)
         for (i in 0 until n) {
@@ -301,16 +302,18 @@ class PourSim : Sim {
             if (w > 0f) { dvx[i] = sx / w * thick; dvy[i] = sy / w * thick } else { dvx[i] = 0f; dvy[i] = 0f }
         }
         for (i in 0 until n) { vx[i] += dvx[i]; vy[i] += dvy[i] }
-        if (landed > 0) env.emit(EventKind.HIT, 0.6f + 0.3f * env.rng.nextFloat(), env.rng.range(-0.4f, 0.4f), min(1f, 0.2f + landed * 0.05f))
+        // Panned to where the drops stopped, not to a random place.
+        if (landed > 0) env.emit(EventKind.HIT, 0.6f + 0.3f * env.rng.nextFloat(), (landedX / landed / halfW).coerceIn(-1f, 1f), min(1f, 0.2f + landed * 0.05f))
 
         // How full, the way an eye judges it: where the water line is. Rows
         // up each glass, and the highest one that's at least half water.
         for (k in 0 until glasses) gShare[k] = levelOf(k)
         if (current < glasses) {
             share = gShare[current]
+            val glassPan = ((gL[current] + gR[current]) * 0.5f / halfW).coerceIn(-1f, 1f)
             while (tenths < 10 && share >= (tenths + 1) / 10f) {
                 tenths++
-                env.emit(EventKind.STEP, (current * 10 + tenths) / (glasses * 10f), 0f, 0.5f)
+                env.emit(EventKind.STEP, (current * 10 + tenths) / (glasses * 10f), glassPan, 0.5f)
             }
             if (share >= FULL_SHARE) {
                 gFull[current] = true
@@ -323,7 +326,7 @@ class PourSim : Sim {
                     env.emit(EventKind.DONE, 0.9f, 0f, 1f)
                 } else {
                     // One down: a chord, and on to the next.
-                    env.emit(EventKind.HIT, 0.8f, 0f, 0.8f)
+                    env.emit(EventKind.HIT, 0.8f, glassPan, 0.8f)
                 }
             }
         }

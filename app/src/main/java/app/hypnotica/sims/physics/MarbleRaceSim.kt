@@ -28,6 +28,9 @@ import kotlin.math.sqrt
  * on the left and high on the right — so the race plays itself as it falls,
  * and the leader's run down the board is a melody.
  */
+/** How far below the view's centre the leader may get before the camera is pulled down with it. */
+private const val CAM_KEEP = 0.85f
+
 class MarbleRaceSim : Sim {
 
     private var count = 8
@@ -54,6 +57,8 @@ class MarbleRaceSim : Sim {
     private var payoffFrame = false
     private var lastHitStep = IntArray(0)
     private var stillFor = FloatArray(0)
+    /** The step each marble last knocked a ramp or paddle on, so a roll is not a buzz. */
+    private var knockStep = IntArray(0)
     private var steps = 0
     private var course = 0
     private var rampDrop = 0.1f
@@ -123,6 +128,7 @@ class MarbleRaceSim : Sim {
         payoffFrame = false
         lastHitStep = IntArray(pegX.size)
         stillFor = FloatArray(count)
+        knockStep = IntArray(count) { -100 }
         steps = 0
     }
 
@@ -166,8 +172,8 @@ class MarbleRaceSim : Sim {
             if (x[i] < -halfW + R) { x[i] = -halfW + R; vx[i] = abs(vx[i]) * bounce + 0.08f; vy[i] *= WALL_DRAG }
             if (x[i] > halfW - R) { x[i] = halfW - R; vx[i] = -abs(vx[i]) * bounce - 0.08f; vy[i] *= WALL_DRAG }
             pegs(env, i, bounce)
-            ramps(i, ox, oy)
-            paddles(i, bounce)
+            ramps(env, i, ox, oy)
+            paddles(env, i, bounce)
             // A marble wedged between two pegs is nudged free, as a real one
             // would be by the board's vibration.
             if (vx[i] * vx[i] + vy[i] * vy[i] < STUCK_SPEED * STUCK_SPEED) stillFor[i] += h else stillFor[i] = 0f
@@ -216,6 +222,9 @@ class MarbleRaceSim : Sim {
         // the picture too: centred on the leader, the race was one marble.
         val target = (if (winnerAt >= 0f) finishY + 0.6f else max(lead + 0.5f, finishY + 0.6f)).coerceAtMost(-0.4f)
         camY += (target - camY) * min(1f, h * 3f)
+        // The easing let a fast leader drop out of the bottom of the frame for
+        // a second and more; the view never lets it go.
+        if (winnerAt < 0f && lead != finishY) camY = camY.coerceAtMost(lead + CAM_KEEP)
     }
 
     private fun pegs(env: SimEnv, i: Int, bounce: Float) {
@@ -235,7 +244,10 @@ class MarbleRaceSim : Sim {
                     vy[i] -= (1f + bounce) * vn * ny
                     // A little sideways kick, so no two marbles take the same line.
                     vx[i] += (env.rng.nextFloat() - 0.5f) * 0.12f
-                    if (steps - lastHitStep[k] > 6 && -vn > 0.25f) {
+                    // Only pegs in the camera's view are heard: the pack far
+                    // up the course (and the stragglers once the camera parks
+                    // at the finish) rattled pegs nobody could see.
+                    if (steps - lastHitStep[k] > 6 && -vn > 0.25f && abs(pegY[k] - camY) < 1.05f) {
                         lastHitStep[k] = steps
                         val across = ((pegX[k] + halfW) / (2f * halfW)).coerceIn(0f, 1f)
                         env.emit(EventKind.HIT, across, across * 1.6f - 0.8f, min(1f, 0.25f - vn * 0.25f))
@@ -301,7 +313,18 @@ class MarbleRaceSim : Sim {
         return if (ex >= 0f) s else -s
     }
 
-    private fun ramps(i: Int, ox: Float, oy: Float) {
+    /**
+     * A marble landing hard on a ramp or batted by a paddle, heard if it is in
+     * view. They were silent, so a pack running the ramps on camera made no
+     * sound at all for a second and a half.
+     */
+    private fun knock(env: SimEnv, i: Int, vn: Float) {
+        if (-vn < 0.35f || steps - knockStep[i] < 10 || abs(y[i] - camY) > 1.05f) return
+        knockStep[i] = steps
+        env.emit(EventKind.HIT, 0.3f + 0.4f * ((x[i] + halfW) / (2f * halfW)).coerceIn(0f, 1f), (x[i] / halfW).coerceIn(-1f, 1f), min(0.8f, 0.2f - vn * 0.2f))
+    }
+
+    private fun ramps(env: SimEnv, i: Int, ox: Float, oy: Float) {
         for (k in rampX1.indices) {
             val d = segDist(x[i], y[i], k)
             val reach = R + RAMP_THICK
@@ -322,7 +345,7 @@ class MarbleRaceSim : Sim {
                 if (!wasAbove) { nx = -nx; ny = -ny }
                 x[i] = cx + nx * reach; y[i] = cy + ny * reach
                 val vn = vx[i] * nx + vy[i] * ny
-                if (vn < 0f) { vx[i] -= 1.2f * vn * nx; vy[i] -= 1.2f * vn * ny }
+                if (vn < 0f) { knock(env, i, vn); vx[i] -= 1.2f * vn * nx; vy[i] -= 1.2f * vn * ny }
                 continue
             }
             if (d >= reach || d < 1e-6f) continue
@@ -331,11 +354,11 @@ class MarbleRaceSim : Sim {
             val vn = vx[i] * nx + vy[i] * ny
             // Rolls along it rather than bouncing off: a small bounce, and
             // almost all the speed along the ramp kept.
-            if (vn < 0f) { vx[i] -= 1.2f * vn * nx; vy[i] -= 1.2f * vn * ny }
+            if (vn < 0f) { knock(env, i, vn); vx[i] -= 1.2f * vn * nx; vy[i] -= 1.2f * vn * ny }
         }
     }
 
-    private fun paddles(i: Int, bounce: Float) {
+    private fun paddles(env: SimEnv, i: Int, bounce: Float) {
         for (k in paddleY.indices) {
             if (abs(y[i] - paddleY[k]) > PADDLE_LEN + R) continue
             val a = paddleSpin[k] * elapsed
@@ -354,6 +377,7 @@ class MarbleRaceSim : Sim {
             val sy = paddleSpin[k] * along * ux
             val vn = (vx[i] - sx) * nx + (vy[i] - sy) * ny
             if (vn < 0f) {
+                knock(env, i, vn)
                 vx[i] -= (1f + bounce) * vn * nx
                 vy[i] -= (1f + bounce) * vn * ny
             }

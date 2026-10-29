@@ -123,7 +123,7 @@ class TrafficSim : Sim {
             // how fast it is going: the flow is heard before any jam, and a
             // jam is heard as the ticks slowing and sagging.
             if (pos[i] < before) {
-                env.emit(EventKind.STEP, (speed[i] / (2.0 * max(cruise, 0.5))).toFloat().coerceIn(0f, 1f), 0.6f, 0.3f)
+                env.emit(EventKind.STEP, (speed[i] / (2.0 * max(cruise, 0.5))).toFloat().coerceIn(0f, 1f), panAt(0f), 0.3f)
             }
             val nowJammed = speed[i] < jamSpeed
             if (nowJammed != jammed[i]) {
@@ -183,7 +183,7 @@ class TrafficSim : Sim {
     /** Stamp on the brakes, as if something ran out in front: this car and the two behind it. */
     private fun brake(i: Int, env: SimEnv) {
         for (k in 0 until 3) speed[(i - k + n) % n] = 0.0
-        env.emit(EventKind.HIT, 0.2f, 0f, 0.9f)
+        env.emit(EventKind.HIT, 0.2f, panAt((pos[i] / road).toFloat()), 0.9f)
     }
 
     override fun hero(env: SimEnv) {

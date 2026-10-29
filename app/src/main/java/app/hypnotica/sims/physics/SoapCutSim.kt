@@ -210,12 +210,12 @@ class SoapCutSim : Sim {
                     crumbCarry -= 1f
                     crumb(env, cutX(cut), floorY + blockH * (1f - depth))
                 }
-                if (env.rng.nextFloat() < h * 30f * amount) env.emit(EventKind.HIT, env.rng.range(0.7f, 1f), 0.2f, 0.12f)
+                if (env.rng.nextFloat() < h * 30f * amount) env.emit(EventKind.HIT, env.rng.range(0.7f, 1f), (cutX(cut) / halfW).coerceIn(-1f, 1f), 0.12f)
             }
             if (before < DOWN && phase >= DOWN) {
                 // Through: the slice is free and starts to tip.
                 spin[cut] = 0.5f
-                env.emit(EventKind.STEP, 0.3f + 0.6f * cut / slices, 0.3f, 0.5f)
+                env.emit(EventKind.STEP, 0.3f + 0.6f * cut / slices, (cutX(cut) / halfW).coerceIn(-1f, 1f), 0.5f)
             }
             if (phase >= DOWN + UP) {
                 phase = 0f
@@ -232,9 +232,10 @@ class SoapCutSim : Sim {
             if (tilt[k] >= rest[k]) {
                 tilt[k] = rest[k]
                 landed[k] = true
-                env.emit(EventKind.HIT, 0.15f + 0.1f * env.rng.nextFloat(), 0.4f, 0.7f)
-                // A puff of crumbs where its top knocks against what it lands on.
+                // A puff of crumbs where its top knocks against what it lands
+                // on, and the knock heard from there (it was pinned at 0.4).
                 corners(k, tilt[k], qa)
+                env.emit(EventKind.HIT, 0.15f + 0.1f * env.rng.nextFloat(), (qa[4] / halfW).coerceIn(-1f, 1f), 0.7f)
                 repeat(12) { crumb(env, qa[4], qa[5]) }
                 if (k == slices - 1) {
                     doneAt = elapsed

@@ -45,6 +45,7 @@ class SandpileSim : Sim {
     private var elapsed = 0f
 
     override fun setup(env: SimEnv) {
+        pendingSize = -1f; sinceNote = 0f; avalanche = 0
         n = (env.params.i("size", 161) or 1).coerceIn(51, MAX_SIZE)
         cells = ByteArray(n * n)
         stack = IntArray(n * n * 2)
@@ -82,6 +83,16 @@ class SandpileSim : Sim {
             }
         }
 
+        // The avalanches that ended, the biggest of them heard, at most one
+        // every NOTE_GAP: one a finished avalanche was over 200 hits a second
+        // at the default rate, a hiss under a pattern that ripples gently.
+        sinceNote += abs(dt)
+        if (pendingSize >= 0f && sinceNote >= NOTE_GAP) {
+            env.emit(EventKind.HIT, pendingSize, 0f, (0.3f + 0.6f * pendingSize).coerceAtMost(0.9f))
+            pendingSize = -1f
+            sinceNote = 0f
+        }
+
         // The payoff: the pattern has grown out to most of the grid.
         if (!grown && reach >= (n / 2) * PAYOFF_REACH) {
             grown = true
@@ -100,6 +111,8 @@ class SandpileSim : Sim {
      * avalanche's size is counted across steps and sounded when it ends.
      */
     private var avalanche = 0
+    private var pendingSize = -1f
+    private var sinceNote = 0f
     private fun relax(env: SimEnv, budget: Int): Int {
         var done = 0
         val half = n / 2
@@ -125,7 +138,7 @@ class SandpileSim : Sim {
             if (avalanche >= SOUNDED_AVALANCHE) {
                 if (avalanche > biggest) biggest = avalanche
                 val size = (ln(avalanche.toFloat()) / ln(max(biggest, 8).toFloat())).coerceIn(0f, 1f)
-                env.emit(EventKind.HIT, size, 0f, (0.3f + 0.6f * size).coerceAtMost(0.9f))
+                pendingSize = max(pendingSize, size)
             }
             avalanche = 0
         }
@@ -251,6 +264,8 @@ class SandpileSim : Sim {
     )
 
     companion object {
+        /** Shortest time between avalanche notes. */
+        const val NOTE_GAP = 0.06f
         /** Past this grid size cells are a pixel or less: drawn as points. */
         const val RUN_LIMIT = 401
         const val MAX_SIZE = 801

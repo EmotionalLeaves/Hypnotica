@@ -148,6 +148,8 @@ class PressSim : Sim {
         val g = env.laws.gravity * GRAVITY_SCALE
         var strainSum = 0f
         var snapped = 0
+        var snappedX = 0f
+        val wasTouched = touched
         // Verlet keeps a velocity as the last step's move; when the step
         // changes size (the payoff's slow motion) that move is rescaled to
         // the new step, or the block ran on at full speed while the press
@@ -176,6 +178,7 @@ class PressSim : Sim {
                         alive[s] = false
                         broken++
                         snapped++
+                        snappedX += (x[a] + x[b]) * 0.5f
                         continue
                     }
                     val k = stiff * 0.5f * (d - rest[s]) / d
@@ -218,8 +221,12 @@ class PressSim : Sim {
             creak = level
             env.emit(EventKind.STEP, 0.15f + 0.8f * level, 0f, 0.2f + 0.35f * level)
         } else if (level < creak - CREAK_STEP * 2f) creak = level
+        // The plate meeting the block: it came down for seconds in silence and
+        // bit without a sound.
+        if (touched && !wasTouched) env.emit(EventKind.HIT, 0.2f, 0f, 0.6f)
         if (snapped > 0) {
-            env.emit(EventKind.HIT, env.rng.range(0.6f, 1f), env.rng.range(-0.5f, 0.5f), min(1f, 0.3f + snapped * 0.04f))
+            // Heard where the links broke, not at a random place.
+            env.emit(EventKind.HIT, env.rng.range(0.6f, 1f), (snappedX / snapped / halfW).coerceIn(-1f, 1f), min(1f, 0.3f + snapped * 0.04f))
         }
         // It gave: a tenth of the springs gone, or the press bottomed out on
         // a block too tough to break.

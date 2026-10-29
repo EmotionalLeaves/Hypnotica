@@ -91,6 +91,9 @@ class DoublePendulumSim : Sim {
     /** Which full turn the lower arm is on; a change is a flip over the top. */
     private fun turnOf(a: Double): Int = floor((a + Math.PI) / (2.0 * Math.PI)).toInt()
 
+    /** Pendulum [k]'s lower bob across the screen. */
+    private fun bobX(k: Int): Float = (sin(a1[k]) * ARM + sin(a2[k]) * ARM).toFloat()
+
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
@@ -116,16 +119,26 @@ class DoublePendulumSim : Sim {
 
         val voiceEvery = max(1, count / VOICES)
         var i = 0
+        var voiced = 0
+        var sumT = 0f
+        var sumX = 0f
         while (i < count) {
             if (flipped[i]) {
                 flips++
                 if (i % voiceEvery == 0) {
-                    val t = if (count <= 1) 0.5f else i.toFloat() / (count - 1)
-                    env.emit(EventKind.HIT, t, (t * 2f - 1f) * 0.8f, 0.6f)
+                    voiced++
+                    sumT += if (count <= 1) 0.5f else i.toFloat() / (count - 1)
+                    sumX += bobX(i)
                 }
                 flipped[i] = false
             }
             i++
+        }
+        // The flips of one step are one note, heard where the bobs went over:
+        // while the fan still swings as one, every pendulum flips on the same
+        // frame and that was forty notes at once for one visible flip.
+        if (voiced > 0) {
+            env.emit(EventKind.HIT, sumT / voiced, (sumX / voiced / REACH).coerceIn(-1f, 1f), min(1f, 0.5f + 0.04f * voiced))
         }
 
         // The leader's upper arm passing the bottom: a steady beat under the
@@ -135,7 +148,7 @@ class DoublePendulumSim : Sim {
         // two silent seconds.
         val height = (-cos(a1[0]) - cos(a2[0])).toFloat()
         if (height < lastHeight && rising) {
-            env.emit(EventKind.STEP, ((height + 2f) / 4f).coerceIn(0f, 1f), 0f, 0.3f)
+            env.emit(EventKind.STEP, ((height + 2f) / 4f).coerceIn(0f, 1f), (bobX(0) / REACH).coerceIn(-1f, 1f), 0.3f)
         }
         rising = height > lastHeight
         lastHeight = height
@@ -143,7 +156,7 @@ class DoublePendulumSim : Sim {
         if (side != leaderSide) {
             leaderSide = side
             val height = (1.0 - cos(a2[0])).toFloat() / 2f
-            env.emit(EventKind.STEP, height.coerceIn(0f, 1f), if (side) 0.3f else -0.3f, 0.35f)
+            env.emit(EventKind.STEP, height.coerceIn(0f, 1f), (bobX(0) / REACH).coerceIn(-1f, 1f), 0.35f)
         }
 
         // The payoff is the split: the moment the lower bobs stop agreeing,
@@ -344,6 +357,8 @@ class DoublePendulumSim : Sim {
     companion object {
         /** Each arm's length on screen. */
         const val ARM = 0.42f
+        /** The view's half-width: both arms out, as [frameHalfWidth] gives. */
+        const val REACH = ARM * 2f + 0.05f
 
         /** Gravity in the sim's units: a swing of about two seconds. */
         const val GRAVITY_SCALE = 0.16f

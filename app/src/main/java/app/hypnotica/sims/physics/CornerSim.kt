@@ -211,7 +211,8 @@ class CornerSim : Sim {
         lastCellY[k] = cellOf(y0[k] + vy[k] * (cornerAt[k] + 1e-3f), wy, vy[k])
         payoffFrame = true
         flash = 1f
-        env.emit(EventKind.DONE, 1f, 0f, 1f)
+        // Heard from the side of the corner it struck.
+        env.emit(EventKind.DONE, 1f, if (x[k] > 0f) 0.85f else -0.85f, 1f)
         // Sparks from the exact corner it touched.
         val sx = if (x[k] > 0f) halfW else -halfW
         val sy = if (y[k] > 0f) 1f else -1f

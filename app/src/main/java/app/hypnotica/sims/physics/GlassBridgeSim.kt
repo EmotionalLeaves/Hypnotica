@@ -139,7 +139,10 @@ class GlassBridgeSim : Sim {
             if (row == rows - 1) {
                 // Across.
                 crossed[current] = true
-                env.emit(EventKind.STEP, 1f, 0f, 0.8f)
+                // Heard where it is drawn: its place in the line on the finish platform.
+                val r = MARBLE * (if (across) 1.35f else 1f)
+                val queueStep = min(r * 2.6f, laneW * 1.2f / max(1, marbles))
+                env.emit(EventKind.STEP, 1f, pan(-laneW * 0.6f + current * queueStep, TOP + 0.04f), 0.8f)
                 if (firstAcross < 0) {
                     firstAcross = current
                     doneAt = elapsed

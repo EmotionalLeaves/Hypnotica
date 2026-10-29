@@ -122,7 +122,7 @@ class WaveTankSim : Sim {
                     env.emit(EventKind.STEP, 0.3f, 0f, 0.25f)
                 } else {
                     val peak = brightestColumn()
-                    env.emit(EventKind.CROSS, peak.toFloat() / (w - 1), (peak.toFloat() / (w - 1)) * 1.6f - 0.8f, 0.55f)
+                    env.emit(EventKind.CROSS, peak.toFloat() / (w - 1), (peak.toFloat() / (w - 1)) * 2f - 1f, 0.55f)
                 }
             }
         }
