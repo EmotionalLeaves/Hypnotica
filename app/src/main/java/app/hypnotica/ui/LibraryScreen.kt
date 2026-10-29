@@ -318,7 +318,20 @@ private fun EmptyState(glyph: String, message: String) {
  * thing the Library showed of eighty-nine sims.
  */
 private fun mixed(all: List<SimDef>): List<SimDef> {
-    val byShelf = all.groupBy { it.shelf }.values.map { it.toMutableList() }
+    // Each shelf is itself dealt out by family first. The Algorithms shelf is
+    // the Sorting lab followed by thirteen sorts, so a plain round-robin put
+    // the lab and Quicksort, whose thumbnails are the same bar chart, two rows
+    // apart on the first screen; spreading families keeps the opening varied.
+    val byShelf = all.groupBy { it.shelf }.values.map { shelf ->
+        val families = shelf.groupBy { it.family }.values.map { it.toMutableList() }
+        val dealt = ArrayList<SimDef>(shelf.size)
+        var k = 0
+        while (dealt.size < shelf.size) {
+            for (f in families) if (k < f.size) dealt.add(f[k])
+            k++
+        }
+        dealt
+    }
     val out = ArrayList<SimDef>(all.size)
     var round = 0
     while (out.size < all.size) {
