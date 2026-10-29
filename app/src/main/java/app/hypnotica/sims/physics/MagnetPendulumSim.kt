@@ -214,13 +214,10 @@ class MagnetPendulumSim : Sim {
             if (end >= 0) {
                 // Quicker settles are brighter, so the calm regions glow and
                 // the tangled ones sink back.
-                // Three broad bands: finer ones flickered between neighbours
-                // and speckled the calm regions like film grain.
-                val shade = when {
-                    bsteps < FAST_STEPS -> 2
-                    bsteps < SLOW_STEPS -> 1
-                    else -> 0
-                }
+                // Two tones only: the starts that fall straight in are lit,
+                // the rest flat. Finer bands of settling time flickered
+                // between neighbours and speckled the calm regions like grain.
+                val shade = if (bsteps < FAST_STEPS) 1 else 0
                 fill(bCell, (end * SHADES + shade).toByte())
                 computed++
                 bCell = -1
@@ -313,7 +310,7 @@ class MagnetPendulumSim : Sim {
         // The map: runs of equal colour along each row, one bar per run.
         val shadeCols = IntArray(magnets * SHADES)
         for (m in 0 until magnets) for (s in 0 until SHADES) {
-            shadeCols[m * SHADES + s] = Palette.lerp(Palette.BG, magnetColour(env, m), 0.14f + 0.22f * s / (SHADES - 1))
+            shadeCols[m * SHADES + s] = Palette.lerp(Palette.BG, magnetColour(env, m), 0.2f + 0.14f * s / (SHADES - 1))
         }
         val half = cell * 0.5f
         for (j in 0 until rows) {
@@ -385,9 +382,8 @@ class MagnetPendulumSim : Sim {
         const val FIRST_STRIDE = 16
         const val EVALS = 11000
         const val MAX_STEPS = 3000
-        const val SHADES = 3
-        const val FAST_STEPS = 450
-        const val SLOW_STEPS = 1100
+        const val SHADES = 2
+        const val FAST_STEPS = 330
         const val SETTLE_V2 = 0.0004f
         const val SETTLE_R2 = 0.25f
         const val NEAR_R2 = 0.12f

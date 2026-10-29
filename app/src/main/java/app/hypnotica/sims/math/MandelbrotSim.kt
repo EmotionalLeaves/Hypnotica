@@ -409,6 +409,18 @@ class MandelbrotSim : Sim {
     private var jPert = false
     private var jZr = DoubleArray(0)
     private var jZi = DoubleArray(0)
+    /**
+     * Steps the sampling of this image is spread over. An image that cost
+     * more than [WORK_PER_IMAGE] iterations is followed by ones spread over
+     * proportionally more steps (fewer images a second, each still scaled
+     * smoothly between): deep, where the boundary fills the frame and every
+     * pixel near it runs a thousand iterations, a fixed spread put two or
+     * three times the frame budget into each step.
+     */
+    private var jCoarseSlices = COARSE_SLICES
+    private var jRefineSlices = REFINE_SLICES
+    /** Iterations the last image cost, summed from its escape counts. */
+    private var lastWork = 0.0
     /** Iterations every pixel skips, by the series below. */
     private var jSkip = 0
     private var jInvR = 1.0
@@ -441,6 +453,9 @@ class MandelbrotSim : Sim {
         jCy = r.cyD + offY
         jCell = 2.0 * jScale / (rows - 1)
         jFade = handoffWait || fading
+        val spread = (lastWork / WORK_PER_IMAGE).coerceIn(1.0, MAX_SPREAD.toDouble())
+        jCoarseSlices = (COARSE_SLICES * spread).toInt()
+        jRefineSlices = (REFINE_SLICES * spread).toInt()
         if (jPert) prepareReference(r)
         if (rawDist.size != cols * rows) rawDist = FloatArray(cols * rows)
         phase = COARSE
@@ -508,8 +523,8 @@ class MandelbrotSim : Sim {
             COARSE -> {
                 // Strided like the refinement (slice j takes rows j, j + 4…), so
                 // a slice is never all slow rows across a minibrot's edge.
-                val perR = (rs + COARSE_SLICES - 1) / COARSE_SLICES
-                val total = perR * COARSE_SLICES
+                val perR = (rs + jCoarseSlices - 1) / jCoarseSlices
+                val total = perR * jCoarseSlices
                 val to = if (all) total else min(total, cursor + perR)
                 val from = cursor
                 val cx = jCx
@@ -523,7 +538,7 @@ class MandelbrotSim : Sim {
                 val pert = jPert
                 heavyRange(to - from) { a, b ->
                     for (p in from + a until from + b) {
-                        val row = (p % perR) * COARSE_SLICES + p / perR
+                        val row = (p % perR) * jCoarseSlices + p / perR
                         if (row >= rs) continue
                         val fy = (row.toDouble() / (rs - 1) * 2.0 - 1.0) * scale
                         val base = row * cs
@@ -576,8 +591,8 @@ class MandelbrotSim : Sim {
                 // Slice j takes refined cells j, j + 7, j + 14…: an even spread
                 // over the picture, so each step gets its share of the slow
                 // boundary instead of one step drawing a whole minibrot's edge.
-                val per = (refCount + REFINE_SLICES - 1) / REFINE_SLICES
-                val total = per * REFINE_SLICES * 9
+                val per = (refCount + jRefineSlices - 1) / jRefineSlices
+                val total = per * jRefineSlices * 9
                 val to = if (all) total else min(total, cursor + per * 9)
                 refineSlice(cs, cursor, to)
                 cursor = to
@@ -687,6 +702,13 @@ class MandelbrotSim : Sim {
                 highMu += (lHi - highMu) * 0.35f
             }
         }
+        // What this image cost, from its counts: each sample ran from the
+        // skip to its escape (or to the budget, inside).
+        var work = 0.0
+        val sk = if (jPert) jSkip.toFloat() else 0f
+        for (v in iterations) work += if (v >= 0f) max(0f, v - sk) else (mi - sk)
+        for (q in 0 until refCount * 9) { val v = subMu[q]; work += if (v >= 0f) max(0f, v - sk) else (mi - sk) }
+        lastWork = work
         // A frame that is nearly all inside, or has next to no boundary in it,
         // is a dive that has run dry (the black screen). It cannot happen about
         // a Misiurewicz point, but a tap or a bug must not leave it on screen:
@@ -696,8 +718,8 @@ class MandelbrotSim : Sim {
         flatImages = if (flat && hasImage && !handoffWait && !fading) flatImages + 1 else 0
         if (flatImages >= 3) handoffWanted = true
         if (DEBUG) println(String.format(java.util.Locale.US,
-            "mandel t=%.1f zoom=%.3e pert=%b mi=%d skip=%d bits=%d k=%d p=%d lo=%.0f hi=%.0f inside=%d ref=%d dive=%d",
-            elapsed, jZoom, jPert, mi, jSkip, ref!!.bits, ref!!.k, ref!!.p, lo, hi, inside, refCount, diveIndex))
+            "mandel t=%.1f work=%.1fM slices=%d zoom=%.3e pert=%b mi=%d skip=%d bits=%d k=%d p=%d lo=%.0f hi=%.0f inside=%d ref=%d dive=%d",
+            elapsed, work / 1e6, jCoarseSlices, jZoom, jPert, mi, jSkip, ref!!.bits, ref!!.k, ref!!.p, lo, hi, inside, refCount, diveIndex))
         // The sound follows how deep the picture has become.
         val centreIter = iterations[(rs / 2) * cs + cs / 2].let { if (it < 0f) mi else it.toInt() }
         // Held until the image is swapped in (end of BUILD): sounded here it
@@ -1064,7 +1086,7 @@ class MandelbrotSim : Sim {
     private fun refineSlice(cs: Int, from: Int, to: Int) {
         val rs = rows
         val count = refCount
-        val per = (count + REFINE_SLICES - 1) / REFINE_SLICES
+        val per = (count + jRefineSlices - 1) / jRefineSlices
         val cx = jCx
         val cy = jCy
         val ox = jOffX
@@ -1081,7 +1103,7 @@ class MandelbrotSim : Sim {
             var px0 = 0.0
             var py0 = 0.0
             for (p in from + a until from + b) {
-                val r = (p / 9 % per) * REFINE_SLICES + p / 9 / per
+                val r = (p / 9 % per) * jRefineSlices + p / 9 / per
                 if (r >= count) continue
                 val sub = p % 9
                 val s = r * 9 + sub
@@ -1780,6 +1802,9 @@ class MandelbrotSim : Sim {
          */
         private const val COARSE_SLICES = 4
         private const val REFINE_SLICES = 7
+        /** Iterations an image may cost before the next is spread over more steps. */
+        private const val WORK_PER_IMAGE = 3.0e7
+        private const val MAX_SPREAD = 4
         private const val BUILD_SLICES = 3
         private val LN2 = ln(2.0)
         /** Colour cycles per e-fold of escape count: two or three bands across a view. */

@@ -218,7 +218,6 @@ class BilliardsSim : Sim {
                 val sdt = h / subs
                 repeat(subs) { physics(env, sdt) }
                 if (allStill() && elapsed - phaseAt > 0.3f && !anySinking()) {
-                    if (DEBUG && aimPocket >= 0 && shots > 1) println(String.format("DBG shot %d ball %d pocket %d potted=%b endDist=%.3f pos=(%.3f,%.3f) took %.1fs speed %.2f", shots, aimBall, aimPocket, !inPlay[aimBall], hypot(px[aimBall]-pocketX[aimPocket], py[aimBall]-pocketY[aimPocket]) / r, px[aimBall], py[aimBall], elapsed - phaseAt, shotSpeed))
                     if (remaining() > 0) {
                         if (!inPlay[0]) respotCue()
                         plan(env)
@@ -564,6 +563,12 @@ class BilliardsSim : Sim {
         // Potted balls, in the order they went down.
         val ty = if (long) -hy - rail - 0.09f else -hy - rail - 0.075f
         val tx0 = -min(hw * 0.85f, (balls - 1) * r * 1.15f)
+        if (paidAt >= 0f && trayCount > 0) {
+            // The cleared rack lit once the last ball drops; it eases in and holds.
+            val u = ((elapsed - paidAt) / 0.6f).coerceIn(0f, 1f)
+            val mid = tx0 + (trayCount - 1) * r * 1.15f
+            g.glow(mid, ty, trayCount * r * 1.5f, Palette.TEXT_PRIMARY, 0.18f * u)
+        }
         for (i in 0 until trayCount) {
             val b = tray[i]
             drawBall(env, g, b, tx0 + i * r * 2.3f, ty, r * 0.95f, 1f)
@@ -604,7 +609,6 @@ class BilliardsSim : Sim {
     )
 
     companion object {
-        @JvmField var DEBUG = false
         const val AIM = 0
         const val ROLL = 1
         const val DONE = 2
@@ -654,7 +658,7 @@ class BilliardsSim : Sim {
             lawKnobs = setOf(LawKnob.BOUNCE),
             heroLabel = "Rack them up",
             defaultPalette = "Spectrum",
-            typicalSeconds = 45f,
+            typicalSeconds = 60f,
             params = listOf(
                 Param.choice("rack", "Rack", listOf("15 balls", "10 balls", "6 balls"), 1, card = Card.DATA, input = ParamInput.TILES),
                 Param.float("power", "Break power", 3f, 10f, 7f, card = Card.MOTION, unit = "m/s")

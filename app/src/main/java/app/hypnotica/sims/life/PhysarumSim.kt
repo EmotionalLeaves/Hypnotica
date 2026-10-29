@@ -20,7 +20,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * A slime mould finding the shortest network between its meals.
+ * A slime mould finding a lean network between its meals.
  *
  * Jeff Jones's agent model of Physarum polycephalum: thousands of particles,
  * each sniffing a shared chemical field at three sensors ahead of it — left,
@@ -30,9 +30,8 @@ import kotlin.math.sqrt
  * starves the rest, and the mould's tubes thin down to a lean network joining
  * the food — the trick that let a real mould redraw the Tokyo rail map.
  *
- * The mould starts as a small blob on every oat flake; their veins reach out,
- * meet and fuse. The payoff is the moment one unbroken network links every
- * piece of food.
+ * The mould starts as a blob on every oat flake; their veins reach out, meet
+ * and fuse. The payoff is the moment one unbroken network links every flake.
  */
 class PhysarumSim : Sim {
 
@@ -49,25 +48,25 @@ class PhysarumSim : Sim {
     private var ax = FloatArray(0)
     private var ay = FloatArray(0)
     private var ah = FloatArray(0)
-    private var fed = FloatArray(0)   // 1 just after passing food, fading as the agent wanders
+    private var fed = FloatArray(0)     // 1 just after passing food, fading as the agent wanders
+    private var home = ByteArray(0)     // the flake each agent last fed at
 
     private var foods = 0
     private val fx = FloatArray(MAX_FOOD)      // in cells
     private val fy = FloatArray(MAX_FOOD)
-    private val group = IntArray(MAX_FOOD)     // union-find over the food
-    private val linkedAt = FloatArray(MAX_FOOD) // when each food last joined a bigger network, for its flash
+    private val group = IntArray(MAX_FOOD)     // union-find over the flakes
+    private val linkedAt = FloatArray(MAX_FOOD) // when each flake first joined another, for its ring
 
-    // Scratch for the connectivity flood.
-    private var label = IntArray(0)
-    private var foodNear = BooleanArray(0)
-    private var scent = FloatArray(0)
+    /** Which flake, if any, each cell is next to: an agent there is fed. */
+    private var foodAt = ByteArray(0)
+    /** Each flake's own smell through the agar, falling off with distance. */
+    private var scentOf = Array(0) { FloatArray(0) }
+    /** For each flake's network: the smell of every flake NOT in it. */
+    private var lure = Array(0) { FloatArray(0) }
+
     private var queue = IntArray(0)
-    private var dist = IntArray(0)              // network distance from the first food, for the finale
-
-    private val seeking = BooleanArray(MAX_FOOD)
-    private val seekX = FloatArray(MAX_FOOD)
-    private val seekY = FloatArray(MAX_FOOD)
-    private var anySeek = false
+    private var dist = IntArray(0)             // network steps from the first flake, for the finale
+    private var compOf = IntArray(0)
 
     private var tickCarry = 0f
     private var ticks = 0
@@ -76,7 +75,6 @@ class PhysarumSim : Sim {
     private var payoffFrame = false
     private var groups = 0
     private var maxDist = 1
-    private var veinCells = 0
     private var halfW = 0.46f
     /** The field's average at equilibrium: agents per cell × deposit ÷ decay. Levels are read against it. */
     private var mean = 1f
@@ -85,22 +83,22 @@ class PhysarumSim : Sim {
         halfW = env.halfWidth
         val rows = env.params.i("res", 230).coerceIn(80, 400)
         // The dish: the whole screen less a margin, the counters' band on top.
-        val top = FIELD_TOP; val bottom = FIELD_BOTTOM
-        cell = (top - bottom) / rows
+        cell = (FIELD_TOP - FIELD_BOTTOM) / rows
         gh = rows
         gw = ((2f * (halfW - MARGIN)) / cell).toInt().coerceAtLeast(20)
         x0 = -gw * cell * 0.5f
-        y0 = bottom
-        trail = FloatArray(gw * gh)
-        spare = FloatArray(gw * gh)
-        label = IntArray(gw * gh)
-        queue = IntArray(gw * gh)
-        dist = IntArray(gw * gh)
+        y0 = FIELD_BOTTOM
+        val cells = gw * gh
+        trail = FloatArray(cells)
+        spare = FloatArray(cells)
+        queue = IntArray(cells)
+        dist = IntArray(cells)
+        compOf = IntArray(cells)
 
-        // Food scattered with a minimum spacing, so every flake is a real
-        // destination; the first is the one the finale's light runs out from.
+        // Flakes scattered with a minimum spacing, so each is a real
+        // destination; kept off the wall, or a flake's tube ran into it.
         foods = env.params.i("food", 7).coerceIn(3, MAX_FOOD)
-        val minGap = sqrt(gw.toFloat() * gh / foods) * 0.62f
+        val minGap = sqrt(cells.toFloat() / foods) * 0.62f
         val edge = 24f
         var placed = 0
         var tries = 0
@@ -108,45 +106,51 @@ class PhysarumSim : Sim {
             tries++
             val x = env.rng.range(edge, gw - edge)
             val y = env.rng.range(edge, gh - edge)
+            val gap = minGap * (if (tries > 2000) 0.7f else 1f)
             var ok = true
             for (j in 0 until placed) {
                 val dx = fx[j] - x; val dy = fy[j] - y
-                if (dx * dx + dy * dy < minGap * minGap * (if (tries > 2000) 0.5f else 1f)) { ok = false; break }
+                if (dx * dx + dy * dy < gap * gap) { ok = false; break }
             }
             if (!ok) continue
             fx[placed] = x; fy[placed] = y
             placed++
         }
         foods = placed
-        seeking.fill(false); anySeek = false
-        foodNear = BooleanArray(gw * gh)
-        // The smell of the food itself, carried far through the agar: a
-        // steady gradient every agent can climb. Without it a flake the
-        // network had dropped was invisible from more than a few cells away,
-        // and could sit alone for half a minute.
-        scent = FloatArray(gw * gh)
-        for (y in 0 until gh) for (x in 0 until gw) {
-            var v = 0f
-            for (f in 0 until foods) {
-                val dx = x - fx[f]; val dy = y - fy[f]
-                v += exp(-sqrt(dx * dx + dy * dy) / SCENT_REACH)
-            }
-            scent[y * gw + x] = v
+        // The finale's light starts from the flake nearest the middle.
+        var mid = 0; var bestD = Float.MAX_VALUE
+        for (f in 0 until foods) {
+            val dx = fx[f] - gw * 0.5f; val dy = fy[f] - gh * 0.5f
+            if (dx * dx + dy * dy < bestD) { bestD = dx * dx + dy * dy; mid = f }
         }
+        val tx = fx[0]; val ty = fy[0]; fx[0] = fx[mid]; fy[0] = fy[mid]; fx[mid] = tx; fy[mid] = ty
+
+        foodAt = ByteArray(cells) { -1 }
         for (f in 0 until foods) for (dy in -4..4) for (dx in -4..4) {
             if (dx * dx + dy * dy > 16) continue
             val xx = fx[f].toInt() + dx; val yy = fy[f].toInt() + dy
-            if (xx in 0 until gw && yy in 0 until gh) foodNear[yy * gw + xx] = true
+            if (xx in 0 until gw && yy in 0 until gh) foodAt[yy * gw + xx] = f.toByte()
         }
+        scentOf = Array(foods) { f ->
+            FloatArray(cells).also { s ->
+                for (y in 0 until gh) for (x in 0 until gw) {
+                    val dx = x - fx[f]; val dy = y - fy[f]
+                    s[y * gw + x] = exp(-sqrt(dx * dx + dy * dy) / SCENT_REACH)
+                }
+            }
+        }
+        lure = Array(foods) { FloatArray(cells) }
         for (i in 0 until foods) { group[i] = i; linkedAt[i] = -1f }
         groups = foods
+        rebuildLures()
 
         // A blob of mould on every flake. As many agents as the dish's area
         // calls for, so a wide screen gets the same density as a phone.
         val perCell = env.params.f("density", 0.32f).coerceIn(0.05f, 1.2f)
-        n = (gw * gh * perCell).toInt().coerceIn(500, MAX_AGENTS)
-        ax = FloatArray(n); ay = FloatArray(n); ah = FloatArray(n); fed = FloatArray(n) { 1f }
-        mean = n.toFloat() / (gw * gh) * DEPOSIT / DECAY
+        n = (cells * perCell).toInt().coerceIn(500, MAX_AGENTS)
+        ax = FloatArray(n); ay = FloatArray(n); ah = FloatArray(n)
+        fed = FloatArray(n) { 1f }; home = ByteArray(n)
+        mean = n.toFloat() / cells * DEPOSIT / DECAY
         for (i in 0 until n) {
             val f = i % foods
             val a = env.rng.range(0f, TAU)
@@ -155,6 +159,7 @@ class PhysarumSim : Sim {
             ay[i] = fy[f] + FastMath.sin(a) * r
             // Facing outward: the blob's edge is where it grows.
             ah[i] = a + env.rng.range(-0.6f, 0.6f)
+            home[i] = f.toByte()
         }
         tickCarry = 0f
         ticks = 0
@@ -162,7 +167,27 @@ class PhysarumSim : Sim {
         doneAt = -1f
         payoffFrame = false
         maxDist = 1
-        veinCells = 0
+    }
+
+    /**
+     * The smell that draws each network's agents on: every flake outside it.
+     * A network's own flakes stop luring it once it holds them, and once all
+     * are joined nothing lures at all and the network relaxes into its
+     * leanest shape on the trail alone. Without the lure, a flake the young
+     * network passed by was invisible from more than a few cells away and
+     * could sit alone for half a minute. Rebuilt only when two networks fuse.
+     */
+    private fun rebuildLures() {
+        for (f in 0 until foods) {
+            val out = lure[f]
+            java.util.Arrays.fill(out, 0f)
+            val rf = find(f)
+            for (j in 0 until foods) {
+                if (find(j) == rf) continue
+                val s = scentOf[j]
+                for (k in out.indices) out[k] += s[k]
+            }
+        }
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -189,9 +214,10 @@ class PhysarumSim : Sim {
         for (i in 0 until n) {
             var hd = ah[i]
             val x = ax[i]; val y = ay[i]
-            val fc = sample(t, x + FastMath.cos(hd) * so, y + FastMath.sin(hd) * so)
-            val fl = sample(t, x + FastMath.cos(hd + sa) * so, y + FastMath.sin(hd + sa) * so)
-            val fr = sample(t, x + FastMath.cos(hd - sa) * so, y + FastMath.sin(hd - sa) * so)
+            val lu = lure[home[i].toInt()]
+            val fc = sample(t, lu, x + FastMath.cos(hd) * so, y + FastMath.sin(hd) * so)
+            val fl = sample(t, lu, x + FastMath.cos(hd + sa) * so, y + FastMath.sin(hd + sa) * so)
+            val fr = sample(t, lu, x + FastMath.cos(hd - sa) * so, y + FastMath.sin(hd - sa) * so)
             if (fc > fl && fc > fr) {
                 // keep going
             } else if (fc < fl && fc < fr) {
@@ -200,25 +226,6 @@ class PhysarumSim : Sim {
                 hd += ra
             } else if (fr > fl) {
                 hd -= ra
-            }
-            // A flake still cut off from the rest of the mould sends out a
-            // searching branch: some of the agents near it lean towards the
-            // nearest flake of another network, the way a starving mould
-            // pushes a pseudopod towards the smell of distant food. Left to
-            // chance alone, a flake the network had dropped could sit alone
-            // for half a minute.
-            if (anySeek && (i and 3) == 0) {
-                for (f in 0 until foods) {
-                    if (!seeking[f]) continue
-                    val dx = x - fx[f]; val dy = y - fy[f]
-                    if (dx * dx + dy * dy > SEEK_R * SEEK_R) continue
-                    val want = kotlin.math.atan2(seekY[f], seekX[f])
-                    var diff = (want - hd) % TAU
-                    if (diff > PI) diff -= TAU
-                    if (diff < -PI) diff += TAU
-                    hd += diff * SEEK_TURN
-                    break
-                }
             }
             var nx = x + FastMath.cos(hd)
             var ny = y + FastMath.sin(hd)
@@ -237,26 +244,24 @@ class PhysarumSim : Sim {
             // as a real mould retracts its fruitless branches. Without it the
             // spare mould wore dead-end tubes out to the dish wall.
             var fd = fed[i] * HUNGER
-            if (foodNear[k]) fd = 1f
+            val at = foodAt[k]
+            if (at >= 0) { fd = 1f; home[i] = at }
             fed[i] = fd
             t[k] += DEPOSIT * (FED_FLOOR + (1f - FED_FLOOR) * fd)
         }
-        // The food is a strong, steady smell.
+        // Each flake is a strong, steady source of the chemical.
         for (f in 0 until foods) {
             val cx = fx[f].toInt(); val cy = fy[f].toInt()
             for (dy in -2..2) for (dx in -2..2) {
                 if (dx * dx + dy * dy > 5) continue
-                val k = (cy + dy) * w + (cx + dx)
-                t[k] += FOOD_SMELL * mean
+                t[(cy + dy) * w + (cx + dx)] += FOOD_SMELL * mean
             }
         }
-        // Spread (a 3×3 mean) and fade.
-        val keep = 1f - DECAY
+        // Spread (a 3×3 mean) and fade. The dish wall soaks the chemical up
+        // (outside counts as zero), so a stream that meets the wall thins out
+        // instead of running along it.
         val o = spare
-        // The dish wall soaks the chemical up (outside counts as zero), so a
-        // stream that meets the wall thins out instead of running along it as
-        // a tube to nowhere.
-        val k9 = keep / 9f
+        val k9 = (1f - DECAY) / 9f
         for (y in 0 until hh) {
             val r0 = y * w
             val rm = r0 - w; val rp = r0 + w
@@ -274,87 +279,66 @@ class PhysarumSim : Sim {
         if (ticks % CHECK_EVERY == 0 && doneAt < 0f) checkLinks(env)
     }
 
-    private fun sample(t: FloatArray, x: Float, y: Float): Float {
+    private fun sample(t: FloatArray, lu: FloatArray, x: Float, y: Float): Float {
         val ix = x.toInt(); val iy = y.toInt()
         if (ix < 0 || iy < 0 || ix >= gw || iy >= gh) return -mean
+        val k = iy * gw + ix
+        val v = t[k] + lu[k] * mean * LURE
         // Near the dish wall the smell reads weaker than it is: without it the
         // agents a wall turned back slid along it and wore a tube round the
         // edge of the dish that led to no food.
-        val k = iy * gw + ix
-        val v = t[k] + scent[k] * mean * SCENT
         val edge = min(min(ix, gw - 1 - ix), min(iy, gh - 1 - iy))
-        if (edge < WALL_ZONE) return v * (edge / WALL_ZONE.toFloat()) - mean * WALL_PUSH * (1f - edge / WALL_ZONE.toFloat())
+        if (edge < WALL_ZONE) {
+            val u = edge / WALL_ZONE.toFloat()
+            return v * u - mean * WALL_PUSH * (1f - u)
+        }
         return v
     }
 
     /**
      * Which flakes one network of veins already joins: a flood over the cells
      * whose chemical is above the vein level, from every flake in turn. When
-     * two networks fuse it is heard, panned to where they met, and the payoff
-     * is the flood that reaches them all.
+     * two networks fuse it is heard, panned to where they met; the payoff is
+     * the fusion that leaves one.
      */
     private fun checkLinks(env: SimEnv) {
-        java.util.Arrays.fill(label, -1)
+        java.util.Arrays.fill(compOf, -1)
         val th = VEIN * mean
-        var veins = 0
-        for (k in trail.indices) if (trail[k] > th) veins++
-        veinCells = veins
-        val compOf = IntArray(foods) { -1 }
+        val comp = IntArray(foods) { -1 }
         for (f in 0 until foods) {
             val start = fy[f].toInt() * gw + fx[f].toInt()
-            if (label[start] >= 0) { compOf[f] = label[start]; continue }
+            if (compOf[start] >= 0) { comp[f] = compOf[start]; continue }
             if (trail[start] <= th) continue
-            flood(start, f, th, null)
-            compOf[f] = f
+            flood(start, th, compOf, f)
+            comp[f] = f
         }
-        val before = groups
-        // Union the flakes that share a component.
+        var merged = false
         for (a in 0 until foods) for (b in a + 1 until foods) {
-            if (compOf[a] < 0 || compOf[a] != compOf[b]) continue
+            if (comp[a] < 0 || comp[a] != comp[b]) continue
             val ra = find(a); val rb = find(b)
             if (ra == rb) continue
             group[max(ra, rb)] = min(ra, rb)
             groups--
+            merged = true
             if (linkedAt[a] < 0f) linkedAt[a] = elapsed
             if (linkedAt[b] < 0f) linkedAt[b] = elapsed
-            val mx = (fx[a] + fx[b]) * 0.5f * cell + x0
-            env.emit(
-                EventKind.HIT, 0.25f + 0.6f * (foods - groups) / max(1, foods - 1),
-                (mx / halfW).coerceIn(-1f, 1f), 0.75f
-            )
-        }
-        // Who is cut off, and which way the nearest other network lies.
-        anySeek = false
-        for (f in 0 until foods) {
-            seeking[f] = false
-            if (elapsed < SEEK_AFTER || groups == 1) continue
-            val rf = find(f)
-            var best = Float.MAX_VALUE; var bx = 0f; var by = 0f
-            for (j in 0 until foods) {
-                if (find(j) == rf) continue
-                val dx = fx[j] - fx[f]; val dy = fy[j] - fy[f]
-                val d = dx * dx + dy * dy
-                if (d < best) { best = d; bx = dx; by = dy }
-            }
-            // Only the smaller side reaches out, so two networks do not both
-            // grow towards each other along the same line at once.
-            var mine = 0; var total = 0
-            for (j in 0 until foods) if (find(j) == rf) mine++
-            total = foods - mine
-            if (best < Float.MAX_VALUE && mine <= total) {
-                seeking[f] = true; anySeek = true
-                val d = sqrt(best)
-                seekX[f] = bx / d; seekY[f] = by / d
+            // The last fusion is the payoff, which the engine sounds itself.
+            if (groups > 1) {
+                val mx = (fx[a] + fx[b]) * 0.5f * cell + x0
+                env.emit(
+                    EventKind.HIT, 0.2f + 0.7f * (foods - groups) / max(1, foods - 1),
+                    (mx / halfW).coerceIn(-1f, 1f), 0.75f
+                )
             }
         }
-        if (groups == 1 && before > 1) {
+        if (!merged) return
+        rebuildLures()
+        if (groups == 1) {
             doneAt = elapsed
             payoffFrame = true
-            // Network distance from the first flake, for the light that runs
-            // along the finished network.
             java.util.Arrays.fill(dist, -1)
             val start = fy[0].toInt() * gw + fx[0].toInt()
-            maxDist = max(1, flood(start, 0, th, dist))
+            maxDist = max(1, flood(start, th, dist, -1))
         }
     }
 
@@ -364,30 +348,28 @@ class PhysarumSim : Sim {
         return r
     }
 
-    /** Breadth-first over vein cells, 8-connected; returns the farthest step. */
-    private fun flood(start: Int, id: Int, th: Float, d: IntArray?): Int {
+    /**
+     * Breadth-first over vein cells, 8-connected. With [id] ≥ 0 it labels the
+     * cells with it; with −1 it writes each cell's step count. Returns the
+     * farthest step.
+     */
+    private fun flood(start: Int, th: Float, d: IntArray, id: Int): Int {
         var head = 0; var tail = 0
         queue[tail++] = start
-        label[start] = id
-        d?.set(start, 0)
+        d[start] = if (id >= 0) id else 0
         var far = 0
         while (head < tail) {
             val k = queue[head++]
             val x = k % gw; val y = k / gw
-            val dk = d?.get(k) ?: 0
+            val next = if (id >= 0) id else d[k] + 1
             for (dy in -1..1) for (dx in -1..1) {
                 if (dx == 0 && dy == 0) continue
                 val xx = x + dx; val yy = y + dy
                 if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue
                 val j = yy * gw + xx
-                if (d != null) {
-                    if (d[j] >= 0 || trail[j] <= th) continue
-                    d[j] = dk + 1
-                    if (dk + 1 > far) far = dk + 1
-                } else {
-                    if (label[j] >= 0 || trail[j] <= th) continue
-                    label[j] = id
-                }
+                if (d[j] >= 0 || trail[j] <= th) continue
+                d[j] = next
+                if (next > far) far = next
                 queue[tail++] = j
             }
         }
@@ -398,7 +380,7 @@ class PhysarumSim : Sim {
         val palette = env.palette
         val since = if (doneAt >= 0f) elapsed - doneAt else -1f
         // The finale: light runs out along the finished network from the
-        // first flake and stays — every vein it reaches is lit for good, and
+        // middle flake and stays — every vein it reaches is lit for good, and
         // once it has reached the far end the whole mould is.
         val front = if (since >= 0f) since / GLINT_SECONDS * maxDist else -1f
         val allLit = since >= 0f && front >= maxDist
@@ -420,8 +402,8 @@ class PhysarumSim : Sim {
                 else levels[lv]
             }
         }
-        // The food: an oat flake, its ring turning white once its network
-        // has reached another — eased in, then steady.
+        // The flakes, each ringed in white once its network has reached
+        // another — eased in, then steady.
         val accent = palette.at(0.05f)
         for (f in 0 until foods) {
             val x = x0 + fx[f] * cell; val y = y0 + fy[f] * cell
@@ -441,7 +423,12 @@ class PhysarumSim : Sim {
     /** Flakes in the biggest network so far. */
     private fun largest(): Int {
         var best = 1
-        for (f in 0 until foods) { val r = find(f); var c = 0; for (j in 0 until foods) if (find(j) == r) c++; if (c > best) best = c }
+        for (f in 0 until foods) {
+            val r = find(f)
+            var c = 0
+            for (j in 0 until foods) if (find(j) == r) c++
+            if (c > best) best = c
+        }
         return best
     }
 
@@ -471,16 +458,14 @@ class PhysarumSim : Sim {
         const val FOOD_SMELL = 3f
         const val WALL_ZONE = 14
         const val WALL_PUSH = 3f
+        const val SCENT_REACH = 28f
+        /** How strongly the flakes a network has not yet reached draw its agents, against the mean field. */
+        const val LURE = 2f
         const val DECAY = 0.1f
         const val BLOB = 9f
         const val CHECK_EVERY = 8
-        const val SEEK_AFTER = 1e9f
-        const val SCENT_REACH = 28f
-        const val SCENT = 1.5f
-        const val SEEK_R = 30f
-        const val SEEK_TURN = 0.25f
-        /** Chemical level that counts as a vein for the network test. */
-        const val VEIN = 1.6f
+        /** Chemical level that counts as a vein for the network test, against the mean field. */
+        const val VEIN = 0.8f
         const val FAINT = 0.15f
         const val BRIGHT = 3f
         const val LEVELS = 14
@@ -492,7 +477,7 @@ class PhysarumSim : Sim {
             title = "Slime mould network",
             shelf = Shelf.LIFE,
             family = "Biology & ecology",
-            blurb = "Thousands of blind agents follow their own trail and build the shortest network between the food.",
+            blurb = "Thousands of blind agents follow each other's trail and grow a lean network linking all the food.",
             formats = listOf(TrapFormat.GROW, TrapFormat.CHAIN),
             heroLabel = "New dish",
             defaultPalette = "Ember",

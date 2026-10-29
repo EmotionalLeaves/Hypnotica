@@ -1,6 +1,7 @@
 package app.hypnotica.sims.algorithms
 
 import app.hypnotica.core.recipe.Card
+import app.hypnotica.core.recipe.Macro
 import app.hypnotica.core.recipe.Param
 import app.hypnotica.core.recipe.ParamInput
 import app.hypnotica.core.render.G
@@ -539,6 +540,10 @@ class SudokuSim : Sim {
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.bool("propagate", "Propagate constraints", false, card = Card.DATA),
                 Param.float("speed", "Speed", 0.25f, 4f, 1f, card = Card.MOTION, unit = "x", logScale = true)
+            ),
+            // No count to scale, so Simple mode gets the pace as its one dial.
+            macros = listOf(
+                Macro("pace", "Pace", Card.MOTION, mapOf("speed" to 0.25f..4f), default = 0.5f, mids = mapOf("speed" to 1f))
             ),
             create = { SudokuSim() }
         )

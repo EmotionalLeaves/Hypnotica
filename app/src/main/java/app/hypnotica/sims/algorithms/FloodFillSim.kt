@@ -39,6 +39,8 @@ class FloodFillSim : Sim {
     private var startAt = FloatArray(0)
     private var layersPerSecond = 8f
     private var lastLayer = IntArray(0)
+    private var frontSum = FloatArray(0)
+    private var frontN = IntArray(0)
     private var complete = BooleanArray(0)
     private var started = BooleanArray(0)
     private var clock = 0f
@@ -202,6 +204,7 @@ class FloodFillSim : Sim {
         for (r in 0 until fills) need = max(need, depth[r] / (FILL_END - startAt[r]).coerceAtLeast(0.5f))
         layersPerSecond = need
         lastLayer = IntArray(fills) { -1 }
+        frontSum = FloatArray(fills); frontN = IntArray(fills)
         complete = BooleanArray(fills)
         started = BooleanArray(fills)
         clock = 0f; vclock = 0f; doneAt = -1f; payoffFrame = false; sinceSound = 1f; painted = 0
@@ -220,14 +223,27 @@ class FloodFillSim : Sim {
         vclock += h * env.params.f("speed", 1f).coerceIn(0.1f, 8f)
         var all = true
         var total = 0
+        // Where each wavefront is across the screen, for the pan of its sound.
+        frontSum.fill(0f); frontN.fill(0)
+        for (i in 0 until gw * gh) {
+            if (wall[i]) continue
+            val r = region[i]
+            if (r < 0 || dist[i] < 0) continue
+            val f = front(r)
+            if (dist[i] <= f) {
+                total++
+                if (dist[i] > f - 1.5f) { frontSum[r] += (i % gw).toFloat(); frontN[r]++ }
+            }
+        }
         for (r in 0 until fills) {
             val f = front(r)
             val sx = seedCell[r] % gw
-            val pan = ((sx + 0.5f) / gw * 2f - 1f)
+            val seedPan = ((sx + 0.5f) / gw * 2f - 1f)
+            val pan = if (frontN[r] > 0) ((frontSum[r] / frontN[r] + 0.5f) / gw * 2f - 1f) else seedPan
             if (!started[r] && f >= 0f) {
                 started[r] = true
                 // The click of the bucket.
-                env.emit(EventKind.HIT, (r + 0.5f) / fills, pan, 0.7f)
+                env.emit(EventKind.HIT, (r + 0.5f) / fills, seedPan, 0.7f)
                 sinceSound = 0f
             }
             val layer = f.toInt().coerceAtMost(depth[r])
@@ -242,11 +258,6 @@ class FloodFillSim : Sim {
             }
             if (started[r]) lastLayer[r] = layer
             if (!complete[r]) all = false
-        }
-        for (i in 0 until gw * gh) {
-            if (wall[i]) continue
-            val r = region[i]
-            if (r >= 0 && dist[i] >= 0 && dist[i] <= front(r)) total++
         }
         painted = total
         if (all) { doneAt = clock; payoffFrame = true }

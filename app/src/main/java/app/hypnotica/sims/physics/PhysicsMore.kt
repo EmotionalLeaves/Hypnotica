@@ -9,6 +9,7 @@ object PhysicsMore {
         BrachistochroneSim.def(),
         MagnetPendulumSim.def(),
         MetronomeSyncSim.def(),
-        BilliardsSim.def()
+        BilliardsSim.def(),
+        TrebuchetSim.def()
     )
 }
