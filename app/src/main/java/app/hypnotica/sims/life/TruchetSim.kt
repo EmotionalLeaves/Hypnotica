@@ -27,7 +27,7 @@ import kotlin.math.sqrt
  * stray loops; every path is coloured as one piece, by how long it is. Then,
  * one by one in a wave from the middle, the tiles that disagree with a design
  * turn a quarter — and the tangle reorganises, loop by loop, until the whole
- * field settles into the design: nested rings, a field of circles, or waves.
+ * field settles into the design: nested rings, a field of circles, or flowers.
  *
  * A path can only close up when every tile along it agrees, so a loop
  * appears whole, the moment its last tile lands. The payoff is the last tile.
@@ -120,7 +120,7 @@ class TruchetSim : Sim {
      * i + j closes every arc into a small circle round a grid corner; adding
      * the ring number (how many tiles in from the border) flips the parity
      * across each ring boundary, which turns the circles into rings nested
-     * round the centre; adding the row number instead gives waves.
+     * round the centre; flipping it every second tile both ways gives flowers.
      */
     private fun design(p: Int, i: Int, j: Int): Int {
         val ci = (cols - 1) * 0.5f; val cj = (rows - 1) * 0.5f
@@ -133,8 +133,9 @@ class TruchetSim : Sim {
                 (i + j + ring + 1) and 1
             }
             1 -> (i + j) and 1
-            3 -> ((i / 2) + (j / 2)) and 1
-            else -> ((i + j) / 2) and 1
+            // Pairs of tiles in both directions: four-petalled flowers, each
+            // round a circle, counted from the middle so the field is centred.
+            else -> (Math.floorDiv(i - cols / 2, 2) + Math.floorDiv(j - rows / 2, 2)) and 1
         }
     }
 
@@ -316,7 +317,7 @@ class TruchetSim : Sim {
             defaultPalette = "Aurora",
             typicalSeconds = 16f,
             params = listOf(
-                Param.choice("pattern", "Design", listOf("Rings", "Circles", "Waves", "Weave"), 0, card = Card.DATA, input = ParamInput.TILES),
+                Param.choice("pattern", "Design", listOf("Rings", "Circles", "Flowers"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.int("tiles", "Tiles across", 4, 30, 9, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 3f, 1f, card = Card.DATA)
             ),

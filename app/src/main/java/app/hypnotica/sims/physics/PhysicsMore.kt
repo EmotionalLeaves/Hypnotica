@@ -2,7 +2,14 @@ package app.hypnotica.sims.physics
 
 import app.hypnotica.core.sim.SimDef
 
-/** Unfinished sims are kept out of builds until their tests pass. */
+/** The second wave of sims for this shelf; each sim lives in its own file. */
 object PhysicsMore {
-    fun defs(): List<SimDef> = listOf()
+    fun defs(): List<SimDef> = listOf(
+        SlinkyDropSim.def(),
+        BrachistochroneSim.def(),
+        MagnetPendulumSim.def(),
+        MetronomeSyncSim.def(),
+        BilliardsSim.def(),
+        TrebuchetSim.def()
+    )
 }
