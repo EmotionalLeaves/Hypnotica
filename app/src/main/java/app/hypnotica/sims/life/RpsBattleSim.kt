@@ -125,6 +125,14 @@ class RpsBattleSim : Sim {
         val h = abs(dt)
         elapsed += h
         if (winner >= 0) {
+            // Where the crowd's middle is: the whole crowd is drawn towards
+            // the field's middle by that, as one, without squeezing it. The
+            // pull on each piece alone, gentle across a wide field, left the
+            // crowd parked for the rest of the run wherever the last catch
+            // happened, often against one side.
+            var mx = 0f; var my = 0f
+            for (i in 0 until n) { mx += x[i]; my += y[i] }
+            mx /= max(1, n); my = my / max(1, n) - FIELD_MID
             // The winners spread out over the field they have taken, rather
             // than milling in the clump the last catch left them in.
             for (i in 0 until n) {
@@ -165,7 +173,8 @@ class RpsBattleSim : Sim {
                 val acrossK = (FIELD_HALF / halfW).coerceIn(WIDE_GATHER_MIN, 1f)
                 // The turn scaled with it: at full strength against the weaker
                 // pull it threw the oval off-centre, heaped to one side.
-                sx += -x[i] * GATHER * acrossK - cy * TURN * acrossK
+                sx += -x[i] * GATHER * acrossK - cy * TURN * acrossK - mx * CENTRE_PULL
+                sy += -my * CENTRE_PULL
                 sy += -cy * GATHER + x[i] * TURN * acrossK
                 // Spacing pushes hard enough that the final crowd opens out
                 // within a second or two instead of sitting as one blob.
@@ -455,6 +464,7 @@ class RpsBattleSim : Sim {
         const val FIELD_HALF = 0.93f
         /** The weakest across-pull, on the widest screens. */
         const val WIDE_GATHER_MIN = 0.3f
+        const val CENTRE_PULL = 1.5f
         // 0.45, from 1.1: the strong swirl threw the spreading crowd round
         // in a lopsided wedge, and the run ended before it evened out.
         const val TURN = 0.45f
