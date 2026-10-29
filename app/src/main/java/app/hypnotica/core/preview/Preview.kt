@@ -37,11 +37,11 @@ class Preview(val data: FloatArray, val count: Int, val background: Int) {
         const val STRIDE = 11
 
         /**
-         * Enough to be recognisable, few enough to paint on a scrolling list:
-         * eight cards on screen at this many shapes is already two thousand
-         * draw calls a frame on the main thread.
+         * The most shapes a preview keeps. It is painted once into a small
+         * picture rather than on every frame of a scroll, so it can carry a
+         * whole field of dots; at 240 a Mandelbrot card was a sprinkle.
          */
-        const val MAX_SHAPES = 240
+        const val MAX_SHAPES = 60_000
 
         val EMPTY = Preview(FloatArray(0), 0, Palette.BG)
     }

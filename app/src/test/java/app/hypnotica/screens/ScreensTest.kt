@@ -118,7 +118,12 @@ class TallScreensTest {
                 }
             }
         }
-        compose.mainClock.advanceTimeBy(3000)
+        // Library pictures are painted on a background thread; give them
+        // real time as well as clock time.
+        repeat(60) {
+            Thread.sleep(250)
+            compose.mainClock.advanceTimeBy(250)
+        }
         compose.onRoot().captureRoboImage("build/screens/$name.png")
         context.hashCode()
     }

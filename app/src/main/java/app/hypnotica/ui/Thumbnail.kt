@@ -14,6 +14,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -30,44 +36,71 @@ import kotlin.math.min
 /**
  * Previews, built once per sim and kept for as long as the app is open.
  *
- * Every one of the 57 sims costs well under a frame to simulate for a moment,
- * but not while a list is scrolling, so they are built off the main thread and
- * remembered.
+ * Kept as pictures, not draw lists. A list had to be painted on every frame of
+ * a scroll, so it was capped at 240 shapes — and a sim made of thousands of
+ * dots (Mandelbrot, the prime spiral, a flock) came out as a sparse sprinkle
+ * of specks. Painted once, off the main thread, into a small bitmap, a card
+ * can carry the whole picture and costs one image draw to show.
  */
 object PreviewCache {
 
-    private val map = ConcurrentHashMap<String, Preview>()
+    private val map = ConcurrentHashMap<String, ImageBitmap>()
 
-    fun cached(id: String): Preview? = map[id]
+    fun cached(id: String): ImageBitmap? = map[id]
 
-    suspend fun load(def: SimDef): Preview {
+    suspend fun load(def: SimDef): ImageBitmap? {
         map[def.id]?.let { return it }
-        val built = withContext(Dispatchers.Default) { Previews.build(def) }
+        val built = withContext(Dispatchers.Default) {
+            val preview = Previews.build(def)
+            if (preview.isEmpty) null else paint(preview)
+        } ?: return null
         map[def.id] = built
         return built
     }
+
+    private fun paint(p: Preview): ImageBitmap {
+        val bmp = ImageBitmap(CARD_PX_W, CARD_PX_H)
+        val canvas = androidx.compose.ui.graphics.Canvas(bmp)
+        androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+            Density(1f), LayoutDirection.Ltr, canvas, Size(CARD_PX_W.toFloat(), CARD_PX_H.toFloat())
+        ) { drawPreview(p, 1f) }
+        return bmp
+    }
+
+    /** The card's picture size: about a card's width on a dense phone screen. */
+    private const val CARD_PX_W = 400
+    private const val CARD_PX_H = 320
 }
 
 /**
- * A Library card's picture: the sim at its best moment, painted from its draw
- * list. Falls back to a palette bar chart for the moment before it is ready, so
- * a card is never empty.
+ * A Library card's picture: the sim at its best moment. A faint palette
+ * placeholder holds the place until it is ready, so a card is never empty.
  */
 @Composable
 fun SimThumbnail(def: SimDef, modifier: Modifier = Modifier) {
-    var preview by remember(def.id) { mutableStateOf(PreviewCache.cached(def.id)) }
+    var picture by remember(def.id) { mutableStateOf(PreviewCache.cached(def.id)) }
     LaunchedEffect(def.id) {
-        if (preview == null) preview = PreviewCache.load(def)
+        if (picture == null) picture = PreviewCache.load(def)
     }
-    val shown = preview
-    val ready = shown != null && !shown.isEmpty
-    // Fades up from a faint placeholder. The placeholder used to be a fully
-    // saturated bar chart — it looked like a sort sim — swapped out in a frame.
-    // A preview already cached starts at full, so scrolling back is instant.
-    val fade by animateFloatAsState(if (ready) 1f else 0f, tween(Tokens.Base), label = "thumbFade")
+    val shown = picture
+    // Fades up from a faint placeholder; one already cached starts at full,
+    // so scrolling back is instant.
+    val fade by animateFloatAsState(if (shown != null) 1f else 0f, tween(Tokens.Base), label = "thumbFade")
     Canvas(modifier) {
         if (fade < 1f) drawFallback(def, FALLBACK_ALPHA * (1f - fade))
-        if (shown != null && !shown.isEmpty && fade > 0f) drawPreview(shown, fade)
+        if (shown != null && fade > 0f) {
+            // Cropped to fill, as the card is a slightly different shape.
+            val scale = maxOf(size.width / shown.width, size.height / shown.height)
+            val w = shown.width * scale
+            val h = shown.height * scale
+            drawImage(
+                shown,
+                dstOffset = IntOffset(((size.width - w) / 2f).toInt(), ((size.height - h) / 2f).toInt()),
+                dstSize = IntSize(w.toInt(), h.toInt()),
+                alpha = fade,
+                filterQuality = FilterQuality.Medium
+            )
+        }
     }
 }
 
