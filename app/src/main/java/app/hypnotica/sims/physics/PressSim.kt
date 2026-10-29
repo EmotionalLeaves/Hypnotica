@@ -234,7 +234,9 @@ class PressSim : Sim {
             gaveAt = elapsed
             payoffFrame = true
             // The breaking chord only when it broke: jelly that bottoms out
-            // with a few links gone is squashed, not snapped.
+            // with a few links gone is squashed, not snapped. (Kept although
+            // the engine adds its own: one DONE plays a frame and this one,
+            // queued first, carries the outcome's pitch.)
             env.emit(EventKind.DONE, if (broken > springs * GIVE_SHARE) 0.95f else 0.3f, 0f, 1f)
         }
     }
@@ -279,8 +281,11 @@ class PressSim : Sim {
             g.line(x[a], y[a], x[b], y[b], size / side * 0.42f, c)
         }
         g.reservePoints(n)
-        val pc = Palette.withAlpha(palette.at(0.25f), 0.9f)
-        for (i in 0 until n) g.point(x[i], y[i], size / side * 0.5f, pc)
+        // Joints a touch narrower than they were, and dimmer: points draw
+        // over every line, so full-size joints covered the strain colours
+        // at the very nodes where the block was failing.
+        val pc = Palette.withAlpha(palette.at(0.25f), 0.75f)
+        for (i in 0 until n) g.point(x[i], y[i], size / side * 0.4f, pc)
         // The press: a plate and the ram above it.
         // Shaded like steel lit from above (a bright top edge, a dark face
         // underneath, a highlight down the ram): flat grey slabs read as a
@@ -291,8 +296,10 @@ class PressSim : Sim {
         g.rect(0f, plate + 0.058f, pw, 0.003f, 0xFFB8C0CF.toInt())
         g.rect(0f, plate + 0.004f, pw, 0.004f, 0xFF4A5160.toInt())
         val ramBase = plate + 0.06f
-        g.rect(0f, (ramBase + 1.1f) * 0.5f, 0.06f, (1.1f - ramBase) * 0.5f, 0xFF4E5564.toInt())
-        g.rect(-0.03f, (ramBase + 1.1f) * 0.5f, 0.008f, (1.1f - ramBase) * 0.5f, 0xFF6C7486.toInt())
+        // The ram recedes: it is the tallest thing on screen, and drawn as
+        // light as the plate it outshone the block being crushed.
+        g.rect(0f, (ramBase + 1.1f) * 0.5f, 0.06f, (1.1f - ramBase) * 0.5f, 0xFF363B47.toInt())
+        g.rect(-0.03f, (ramBase + 1.1f) * 0.5f, 0.008f, (1.1f - ramBase) * 0.5f, 0xFF4C5363.toInt())
         // The collar where the ram is bolted to the plate.
         g.rect(0f, ramBase + 0.018f, 0.1f, 0.018f, 0xFF666E80.toInt())
         g.rect(0f, ramBase + 0.034f, 0.1f, 0.002f, 0xFF9AA3B4.toInt())

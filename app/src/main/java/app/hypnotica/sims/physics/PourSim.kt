@@ -488,7 +488,7 @@ class PourSim : Sim {
             val depth = if (k >= 0 && dy < gTop[k]) 0.14f * ((dy - glassBottom) / (gTop[k] - glassBottom)).coerceIn(0f, 1f) - 0.07f else 0f
             val tone = (0.25f + sp * 0.35f + depth).coerceIn(0f, 1f)
             val c = palette.at(if (lightUp) tone else 0.6f - tone * 0.6f)
-            if ((k < 0 || dy >= gTop[k]) && sp > STREAK_FROM) {
+            if (vy[i] < -STREAK_FROM) {
                 // Falling water drawn as a streak along its path, long enough
                 // to meet the drop behind: as round dots the stream was a
                 // string of pearls, not a pour.
@@ -533,7 +533,7 @@ class PourSim : Sim {
         const val GRAVITY_SCALE = 0.25f
         const val TAP_WIDTH = 0.04f
         /** Half a streak's length per unit of speed: about the gap between drops in the stream. */
-        const val STREAK = 0.0068f
+        const val STREAK = 0.0085f
         const val STREAK_FROM = 1.2f
         const val WALL = 0.012f
         /** How far a drop's centre is drawn from a wall's centre line: half a wall and a drop's drawn radius. */

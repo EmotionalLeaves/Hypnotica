@@ -58,7 +58,7 @@ class TowerSim : Sim {
         val asked = p.i("perrow", 12).coerceIn(2, 60)
         val tallest = (HEIGHT / MIN_BRICK_H).toInt().coerceAtLeast(1)
         perRow = max(asked, (bricks + tallest - 1) / tallest).coerceAtLeast(2)
-        val rows = (bricks + perRow - 1) / perRow
+        val rows = rowsFor(bricks)
         brickW = (1.7f * env.halfWidth / perRow) * 0.92f
         brickH = min(brickW * 0.6f, HEIGHT / max(1, rows))
         tint = FloatArray(bricks) { env.rng.nextFloat() }
@@ -86,7 +86,7 @@ class TowerSim : Sim {
             // brick k touches down exactly when the count reaches k + 1 in
             // draw(), so this step is the visible contact frame.
             val k = (if (rising) now - 1 else now).coerceIn(0, bricks - 1)
-            val pan = (slotX(k % perRow, env.halfWidth) / env.halfWidth).coerceIn(-1f, 1f)
+            val pan = (spanX(rowOf(k), colOf(k), env.halfWidth) / env.halfWidth).coerceIn(-1f, 1f)
             // One note for the move, not one per brick: a thousand bricks
             // arriving in a step is a click, not a thousand clicks.
             env.emit(
@@ -100,8 +100,8 @@ class TowerSim : Sim {
 
         if (!completedOnce && progress >= 0.999f) {
             completedOnce = true
+            // The engine sounds DONE on the payoff frame.
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
         if (progress < 0.9f) completedOnce = false
     }
@@ -125,17 +125,14 @@ class TowerSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val rows = (bricks + perRow - 1) / perRow
+        val rows = rowsFor(bricks)
         val floorY = -0.82f
         val exact = progress * bricks
         val whole = exact.toInt().coerceIn(0, bricks)
-        val partial = exact - whole
-
-        // Topped out: a soft light over the last course for the finale.
-        if (progress > 0.95f) {
-            val topY = floorY + (rows - 1) * brickH
-            g.glow(0f, topY, env.halfWidth * 0.9f, palette.at(0.3f), (progress - 0.95f) * 20f * 0.35f)
-        }
+        // Topped out: the last course lights up for the finale. A glow half a
+        // screen wide over it sat on the black as a grey smudge.
+        val topLit = if (progress > 0.95f) (progress - 0.95f) * 20f else 0f
+        val topRow = rows - 1
         g.line(
             -env.halfWidth * 0.95f, floorY - brickH * 0.6f,
             env.halfWidth * 0.95f, floorY - brickH * 0.6f,
@@ -148,24 +145,24 @@ class TowerSim : Sim {
         // are drawn as one course each instead; only the row being laid is
         // drawn brick by brick.
         val courses = bricks > POINT_THRESHOLD
-        val fullRows = if (courses) whole / perRow else 0
-        g.reserveInstances(if (courses) fullRows + perRow + MAX_IN_FLIGHT else whole + MAX_IN_FLIGHT)
+        val fullRows = if (courses) (if (whole >= bricks) rows else rowOf(whole)) else 0
+        g.reserveInstances(if (courses) fullRows + perRow + 1 + MAX_IN_FLIGHT else whole + MAX_IN_FLIGHT)
         if (courses) {
-            val left = slotX(0, env.halfWidth) - brickW * 0.5f
-            val right = slotX(perRow - 1, env.halfWidth) + brickW * 0.5f
+            val left = -env.halfWidth * 0.85f + slot(env.halfWidth) * 0.04f
+            val right = env.halfWidth * 0.85f - slot(env.halfWidth) * 0.04f
             for (row in 0 until fullRows) {
-                val c = palette.at(((row.toFloat() / max(1, rows)) * RAMP + 0.1f).coerceIn(0f, 1f))
+                var c = palette.at(((row.toFloat() / max(1, rows)) * RAMP + 0.1f).coerceIn(0f, 1f))
+                if (row == topRow && topLit > 0f) c = Palette.brighten(c, 0.45f * topLit)
                 g.rect((left + right) * 0.5f, floorY + row * brickH, (right - left) * 0.5f, brickH * 0.45f, c)
             }
         }
-        var i = fullRows * perRow
+        var i = if (courses) rowStart(fullRows).coerceAtMost(whole) else 0
         while (i < whole) {
-            val col = i % perRow
-            val row = i / perRow
-            val x = slotX(col, env.halfWidth)
-            val y = floorY + row * brickH
-            val c = brickColour(palette, i, rows)
-            g.rect(x, y, brickW * 0.5f, brickH * 0.42f, c)
+            val row = rowOf(i)
+            val col = colOf(i)
+            var c = brickColour(palette, i, rows)
+            if (row == topRow && topLit > 0f) c = Palette.brighten(c, 0.45f * topLit)
+            g.rect(spanX(row, col, env.halfWidth), floorY + row * brickH, spanHalf(row, col, env.halfWidth), brickH * 0.42f, c)
             i++
         }
 
@@ -183,9 +180,9 @@ class TowerSim : Sim {
             val fk = fall * (0.55f + 0.45f * tint[k])
             val t = ((exact - (k + 1 - fk)) / fk).coerceIn(0f, 1f)
             if (t <= 0f) continue
-            val col = k % perRow
-            val row = k / perRow
-            val restX = slotX(col, env.halfWidth)
+            val col = colOf(k)
+            val row = rowOf(k)
+            val restX = spanX(row, col, env.halfWidth)
             val restY = floorY + row * brickH
             // Dropped from rest, so it gathers speed all the way down.
             val x = restX + jitter[k] * brickW * 0.8f * (1f - t)
@@ -197,7 +194,7 @@ class TowerSim : Sim {
             // settling square as it lands: appearing whole at a fixed height
             // they drew a hard diagonal line of bricks across the sky.
             val tilt = jitter[k] * 0.5f * (1f - t)
-            g.rect(x, y, brickW * 0.5f, max(brickH * 0.42f, 0.002f), c, tilt, min(1f, t * 3.5f))
+            g.rect(x, y, spanHalf(row, col, env.halfWidth), max(brickH * 0.42f, 0.002f), c, tilt, min(1f, t * 3.5f))
         }
 
     }
@@ -206,10 +203,49 @@ class TowerSim : Sim {
     // that all but vanished on black, so the top of a finished tower - the
     // newest bricks, where the eye goes - was the dimmest part of it.
     private fun brickColour(palette: Palette, i: Int, rows: Int): Int =
-        palette.at((((i / perRow).toFloat() / max(1, rows)) * RAMP + 0.04f + tint[i] * 0.12f).coerceIn(0f, 1f))
+        palette.at(((rowOf(i).toFloat() / max(1, rows)) * RAMP + 0.04f + tint[i] * 0.12f).coerceIn(0f, 1f))
 
-    private fun slotX(col: Int, halfWidth: Float): Float =
-        -halfWidth * 0.85f + (col + 0.5f) * (1.7f * halfWidth / perRow)
+    // Laid in running bond, the way a real wall is: every other course is
+    // shifted half a brick, with a half brick at each end. Stacked straight,
+    // the joints ran top to bottom and the tower read as a spreadsheet grid.
+    // So a pair of courses holds perRow + (perRow + 1) bricks.
+    private val pairLen get() = 2 * perRow + 1
+
+    private fun rowOf(i: Int): Int {
+        val rem = i % pairLen
+        return 2 * (i / pairLen) + if (rem < perRow) 0 else 1
+    }
+
+    private fun colOf(i: Int): Int {
+        val rem = i % pairLen
+        return if (rem < perRow) rem else rem - perRow
+    }
+
+    private fun rowStart(row: Int): Int = (row / 2) * pairLen + if (row % 2 == 0) 0 else perRow
+
+    private fun rowsFor(n: Int): Int = if (n <= 0) 1 else rowOf(n - 1) + 1
+
+    private fun slot(halfWidth: Float): Float = 1.7f * halfWidth / perRow
+
+    /** The middle of brick [col] in course [row]. */
+    private fun spanX(row: Int, col: Int, halfWidth: Float): Float {
+        val s = slot(halfWidth)
+        val left = -halfWidth * 0.85f
+        if (row % 2 == 0) return left + (col + 0.5f) * s
+        return when (col) {
+            0 -> left + s * 0.25f
+            perRow -> left + (perRow - 0.25f) * s
+            else -> left + col * s
+        }
+    }
+
+    /** Half the drawn width of that brick, leaving a joint either side. */
+    private fun spanHalf(row: Int, col: Int, halfWidth: Float): Float {
+        val s = slot(halfWidth)
+        val joint = s * 0.04f
+        val full = row % 2 == 0 || (col != 0 && col != perRow)
+        return (if (full) s * 0.5f else s * 0.25f) - joint
+    }
 
     override fun payoff(): Boolean = payoffFrame
 

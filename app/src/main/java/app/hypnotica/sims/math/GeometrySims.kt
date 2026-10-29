@@ -84,12 +84,12 @@ class VoronoiSim : Sim {
         elapsed += abs(dt)
         if (settled) sinceSettled += abs(dt)
         val halfW = env.halfWidth
-        // The ringed pair holds still while it is ringed, easing back into
-        // its drift as the rings fade: drifting on for four seconds carried a
-        // pair picked mid-screen to the edge, rings half off the frame.
+        // The ringed pair holds still while it is ringed: drifting on for
+        // four seconds carried a pair picked mid-screen to the edge, rings
+        // half off the frame.
         val glint = if (settled) (1f - sinceSettled / HIGHLIGHT_SECONDS).coerceIn(0f, 1f) else 0f
         for (i in 0 until seeds) {
-            val m = if (glint > 0f && (i == pairA || i == pairB)) 1f - glint else 1f
+            val m = if (glint > 0f && (i == pairA || i == pairB)) 0f else 1f
             sx[i] += svx[i] * dt * m
             sy[i] += svy[i] * dt * m
             // A seed turning back off an edge is the one visible event in the
@@ -312,7 +312,7 @@ class VoronoiSim : Sim {
         const val PINCH_EARLIEST = 5f
 
         /** How far inside the frame both seeds of the closest pair must be. */
-        const val PAIR_INSET = 0.12f
+        const val PAIR_INSET = 0.2f
 
         /** How quickly a cell darkens away from its seed, in world units. */
         const val GLOW_FALLOFF = 0.28f

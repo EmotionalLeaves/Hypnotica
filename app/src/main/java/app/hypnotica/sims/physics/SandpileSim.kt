@@ -97,8 +97,8 @@ class SandpileSim : Sim {
         if (!grown && reach >= (n / 2) * PAYOFF_REACH) {
             grown = true
             grownAt = elapsed
+            // DONE is the engine's, on this payoff frame.
             payoffFrame = true
-            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
 

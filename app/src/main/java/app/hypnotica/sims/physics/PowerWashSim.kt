@@ -112,10 +112,10 @@ class PowerWashSim : Sim {
         strips = max(1, kotlin.math.ceil(gy * cell / stripH).toInt())
         // Paced for the sweep to take about this long.
         val path = strips * gx * cell
-        speed = path / SWEEP_SECONDS
+        speed = (path + strips * 2f * radius * 0.5f) / SWEEP_SECONDS
         strip = 0
         dir = 1f
-        nx = ox
+        nx = ox - overshoot
         ny = stripY(0)
         sweeping = true
         target = -1
@@ -127,7 +127,20 @@ class PowerWashSim : Sim {
         sNext = 0
     }
 
-    private fun stripY(s: Int): Float = oy + gy * cell - (s + 0.5f) * (gy * cell / strips)
+    /**
+     * The first and last strips run close to the wall's top and bottom edges:
+     * centred half a strip in, the edge rows got only the jet's weak rim and
+     * the first pass left a ragged dashed border for the clean-up to chase.
+     */
+    private fun stripY(s: Int): Float {
+        val wallH = gy * cell
+        if (strips == 1) return oy + wallH * 0.5f
+        val inset = min(radius * 0.35f, wallH / strips * 0.5f)
+        return oy + wallH - inset - s * (wallH - 2f * inset) / (strips - 1)
+    }
+
+    /** How far past each side the sweep runs before turning, for the same reason. */
+    private val overshoot get() = radius * 0.5f
 
     /** One of a few murals, coloured from the palette, laid out from the seed. */
     private fun paintMural(env: SimEnv) {
@@ -189,7 +202,7 @@ class PowerWashSim : Sim {
         val v = speed * env.params.f("pace", 1f) * (if (sweeping) 1f else 1.6f)
         if (sweeping) {
             nx += dir * v * h
-            val edge = if (dir > 0f) ox + gx * cell else ox
+            val edge = if (dir > 0f) ox + gx * cell + overshoot else ox - overshoot
             if ((dir > 0f && nx >= edge) || (dir < 0f && nx <= edge)) {
                 nx = edge
                 strip++
@@ -211,8 +224,8 @@ class PowerWashSim : Sim {
         stepSpray(env, h)
         if (dirty == 0 && doneAt < 0f) {
             doneAt = elapsed
+            // DONE is the engine's, on this payoff frame.
             payoffFrame = true
-            env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
     }
 

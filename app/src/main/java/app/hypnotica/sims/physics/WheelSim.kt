@@ -205,6 +205,17 @@ class WheelSim : Sim {
         val palette = env.palette
         val twoPi = 2f * PI.toFloat()
         g.glow(0f, 0f, radius * 1.15f, palette.at(0.5f), 0.18f)
+        // The stand it turns on: a post down from the hub to a foot on the
+        // floor. A wheel hanging in the middle of an upright phone left the
+        // bottom third an empty band, and floated rather than stood.
+        val footY = max(-0.94f, -radius - STAND_DROP)
+        if (footY < -radius * 0.5f) {
+            val postW = radius * 0.055f
+            g.rect(0f, footY * 0.5f, postW, -footY * 0.5f, STAND)
+            g.rect(-postW * 0.6f, footY * 0.5f, postW * 0.25f, -footY * 0.5f, STAND_LIT)
+            g.rect(0f, footY, radius * 0.5f, 0.018f, STAND)
+            g.rect(0f, footY + 0.016f, radius * 0.5f, 0.0025f, STAND_LIT)
+        }
         for (k in 0 until segments) {
             val a0 = angle + starts[k]
             val s = widths[k]
@@ -319,6 +330,10 @@ class WheelSim : Sim {
         /** The jackpot slice, against an ordinary one. */
         const val JACKPOT_SHARE = 0.4f
         const val GOLD = 0xFFFFC23A.toInt()
+        const val STAND = 0xFF1E222B.toInt()
+        const val STAND_LIT = 0xFF353B48.toInt()
+        /** How far below the wheel's rim the stand's foot sits, screen allowing. */
+        const val STAND_DROP = 0.36f
 
         fun def(): SimDef = SimDef(
             id = "physics/wheel",
