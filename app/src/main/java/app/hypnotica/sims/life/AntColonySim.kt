@@ -108,7 +108,7 @@ class AntColonySim : Sim {
     private fun layout(loops: Int) {
         val along: Float
         val across: Float
-        if (wide) { along = halfW * 0.86f; across = 0.66f } else { along = 0.8f; across = halfW - 0.07f }
+        if (wide) { along = halfW * 0.88f; across = 0.8f } else { along = 0.8f; across = halfW - 0.07f }
         // Local frame: u runs nest (−1) to food (+1), v across.
         fun put(u: Float, v: Float, out: FloatArray) {
             if (wide) { out[0] = u * along; out[1] = -v * across - 0.04f }
@@ -388,9 +388,9 @@ class AntColonySim : Sim {
         const val FOOD_T = 0.8f
         const val BED_W = 0.004f
         const val TRAIL_W = 0.016f
-        const val LANE = 0.009f
-        const val ANT_L = 0.009f
-        const val ANT_W = 0.0032f
+        const val LANE = 0.011f
+        const val ANT_L = 0.011f
+        const val ANT_W = 0.0038f
 
         fun def(): SimDef = SimDef(
             id = "life/ant-colony",
