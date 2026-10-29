@@ -110,25 +110,7 @@ class SlinkyDropSim : Sim {
         ballV = 0.0
         ballLanded = false
         holdFor = HOLD
-        // How long the whole fall takes, for the time axis of the trace: the
-        // centre of mass falls freely from the moment of release, and the
-        // stack lands when it is half a closed slinky above the floor.
-        var com = 0.0
-        for (i in 0 until n) com += y[i]
-        com /= n
-        val drop = com - (floorY + COLLAPSED / 2)
-        traceSpan = if (grav > 0.05) sqrt(2 * drop / grav) * 1.12 else 1.0
-        comY0 = com
-        traceN = 0
     }
-
-    private var traceSpan = 1.0
-    private var comY0 = 0.0
-    private val traceT = FloatArray(TRACE)
-    private val traceTop = FloatArray(TRACE)
-    private val traceBot = FloatArray(TRACE)
-    private val traceCom = FloatArray(TRACE)
-    private var traceN = 0
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
@@ -149,16 +131,6 @@ class SlinkyDropSim : Sim {
         val frontBefore = front
         repeat(subs) { substep(sdt) }
         real += realDt
-        // About 160 samples across the trace, whatever the slow motion.
-        if (traceN < TRACE && real <= traceSpan && (traceN == 0 || real - traceT[traceN - 1] >= traceSpan / 160)) {
-            var com = 0.0
-            for (i in 0 until n) com += y[i]
-            traceT[traceN] = real.toFloat()
-            traceTop[traceN] = y[0].toFloat()
-            traceBot[traceN] = y[n - 1].toFloat()
-            traceCom[traceN] = (com / n).toFloat()
-            traceN++
-        }
 
         if (ball && !ballLanded) {
             ballV -= grav * realDt
@@ -197,10 +169,7 @@ class SlinkyDropSim : Sim {
             if (down > 0 && landed == 0) env.emit(EventKind.HIT, 0.2f, 0f, 0.9f)
             if (down >= n) {
                 landedAt = elapsed
-                // The settle note only when the pile-up took frames of its
-                // own; a closed stack lands in one frame and the two notes
-                // fell on the same instant.
-                if (landed > 0) env.emit(EventKind.HIT, 0.5f, 0f, 0.5f)
+                env.emit(EventKind.HIT, 0.5f, 0f, 0.5f)
             }
             landed = down
         }
@@ -315,7 +284,6 @@ class SlinkyDropSim : Sim {
         val lit = if (moved) 1f else 0.6f
         g.glow(0f, by, r * 1.6f, bc, 0.35f * lit)
         g.line(-r, by, r, by - d0.toFloat() * 0.5f, lw * 1.6f, Palette.brighten(bc, 0.25f))
-        drawTrace(env, g)
         // The ball let go beside it at the same instant.
         if (ball) {
             val bx = min(BALL_X * hw, 0.32f)
@@ -327,36 +295,6 @@ class SlinkyDropSim : Sim {
             // Viewed seconds since it let go: the ring lasts 0.6 s on screen.
             val t = ((real - hangTime) * slow / 0.6).toFloat()
             if (t < 1f) g.ring(0f, mark, r * (1.2f + 1.5f * t), 0.006f, Palette.TEXT_PRIMARY, alpha = 0.8f * (1f - t))
-        }
-    }
-
-    /**
-     * Heights against real time, to the left of the slinky and at the same
-     * heights as the scene: the top coil falling, the bottom coil flat on its
-     * mark until the news arrives, and between them the centre of mass,
-     * which falls freely from the instant of release, a plain parabola.
-     */
-    private fun drawTrace(env: SimEnv, g: G) {
-        if (traceN < 2) return
-        val hw = env.halfWidth
-        val x1 = -(radius + 0.05f)
-        val x0 = max(-hw * 0.92f, x1 - 0.7f)
-        val sx = (x1 - x0) / traceSpan.toFloat()
-        val pal = env.palette
-        val top = pal.at(0f)
-        val bot = pal.at(0.85f)
-        // The time axis: a hairline from the release instant.
-        g.rect(x0, (topY.toFloat() + floorY.toFloat()) * 0.5f, 0.0012f, (topY - floorY).toFloat() * 0.5f, Palette.TEXT_SECONDARY, alpha = 0.18f)
-        for (k in 1 until traceN) {
-            val xa = x0 + traceT[k - 1] * sx; val xb = x0 + traceT[k] * sx
-            g.line(xa, traceCom[k - 1], xb, traceCom[k], 0.003f, Palette.TEXT_SECONDARY, 0.55f)
-            g.line(xa, traceTop[k - 1], xb, traceTop[k], 0.0045f, top, 0.9f)
-            g.line(xa, traceBot[k - 1], xb, traceBot[k], 0.0045f, bot, 0.9f)
-        }
-        // Where the front reached the bottom: the kink, marked once it happens.
-        if (moved) {
-            val hx = x0 + hangTime.toFloat() * sx
-            g.disc(hx, y0[n - 1].toFloat(), 0.008f, Palette.brighten(bot, 0.25f))
         }
     }
 
@@ -388,7 +326,6 @@ class SlinkyDropSim : Sim {
         const val SUBSTEPS = 40
         const val HOLD = 1.5f
         const val MOVE_SPEED = 0.03
-        const val TRACE = 600
         const val BALL_R = 0.022f
         const val BALL_X = 0.62f
         const val FLOOR = 0xFF1A1D25.toInt()

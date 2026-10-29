@@ -275,50 +275,38 @@ class MetronomeSyncSim : Sim {
             g.line(cx, cy, cx + cos(turn) * canR * 0.8f, cy + sin(turn) * canR * 0.8f, 0.004f, CAN_LIT)
         }
         val plankY = tableY + 2f * canR + 0.012f
-        val plankTop = plankY + 0.012f
-        // The plank is seen a little from above, and the metronomes stand on
-        // it in two staggered rows, front and back, as they are set out on a
-        // real plank. Each rod then only has to clear the next one in its own
-        // row, two places along, so the rods can be twice as long: in one row
-        // they had to stay under 0.6 of the spacing and read as stubs on a phone.
-        val depth = 0.06f * s
-        val pitch = span / n
-        val rodL = min(0.21f * s, 2f * pitch * 0.56f)
-        val bodyW = min(0.055f * s, pitch * 0.42f)
-        val locked = paidAt >= 0f
-        // Back row first, then the plank's top face it stands on, then the front row.
-        for (i in 0 until n) if (i % 2 == 1) drawMetronome(env, g, i, slot(i) + shift, plankTop + depth * 0.82f, rodL * BACK, bodyW * BACK, true, locked)
-        g.rect((rowX0 + rowX1) * 0.5f + shift, plankTop + depth * 0.5f, span * 0.5f + 0.03f, depth * 0.5f, PLANK_TOP)
         g.rect((rowX0 + rowX1) * 0.5f + shift, plankY, span * 0.5f + 0.03f, 0.012f, PLANK)
-        g.rect((rowX0 + rowX1) * 0.5f + shift, plankTop - 0.0008f, span * 0.5f + 0.03f, 0.0015f, PLANK_LIT)
-        for (i in 0 until n) if (i % 2 == 0) drawMetronome(env, g, i, slot(i) + shift, plankTop + depth * 0.18f, rodL, bodyW, false, locked)
-    }
-
-    /** One metronome standing at [cx] on [base]; the back row is smaller and dimmer. */
-    private fun drawMetronome(env: SimEnv, g: G, i: Int, cx: Float, base: Float, rodL: Float, bodyW: Float, back: Boolean, locked: Boolean) {
-        val s = mScale
-        val cRaw = colour(env, i)
-        val c = if (back) Palette.lerp(cRaw, Palette.BG, 0.28f) else cRaw
-        val body = if (back) Palette.lerp(BODY, Palette.BG, 0.3f) else BODY
+        g.rect((rowX0 + rowX1) * 0.5f + shift, plankY + 0.0105f, span * 0.5f + 0.03f, 0.0015f, PLANK_LIT)
+        // The metronomes.
+        val pitch = span / n
+        // The rods swing about 52° each way, so their length is set by the
+        // spacing: long enough to read, short enough not to cross a neighbour.
+        val rodL = min(0.2f * s, pitch * 0.58f)
+        val bodyW = min(0.05f * s, pitch * 0.3f)
         val bodyH = rodL * 0.95f
-        // Body: a tall block narrowing to a rounded crown.
-        g.rect(cx, base + bodyH * 0.45f, bodyW, bodyH * 0.45f, body)
-        g.rect(cx, base + bodyH * 0.9f, bodyW * 0.8f, bodyH * 0.06f, body)
-        g.disc(cx, base + bodyH * 0.95f, bodyW * 0.8f, body)
-        g.rect(cx, base + bodyH * 0.5f, bodyW * 0.62f, bodyH * 0.36f, FACE)
-        // The scale behind the rod: a faint arc of the swing.
-        val pivotY = base + bodyH * 0.12f
-        val sweep = (AMP * 2).toFloat()
-        g.ring(cx, pivotY, rodL * 0.72f, 0.003f, Palette.lerp(c, Palette.BG, 0.6f), gap = 2f * PI.toFloat() - sweep, gapAngle = (PI / 2).toFloat() - sweep / 2 + sweep)
-        // The rod and its sliding weight: tipped by θ, pivot near the foot.
-        val a = th[i].toFloat()
-        val tx = cx - sin(a) * rodL; val ty = pivotY + cos(a) * rodL
-        val w = (if (back) 0.0045f else 0.0055f) * s
-        g.line(cx, pivotY, tx, ty, w, Palette.lerp(c, Palette.TEXT_PRIMARY, if (back) 0.1f else 0.25f))
-        val wx = cx - sin(a) * rodL * 0.7f; val wy = pivotY + cos(a) * rodL * 0.7f
-        g.rect(wx, wy, bodyW * 0.42f, bodyW * 0.26f, c, -a)
-        if (locked) g.glow(tx, ty, bodyW * 1.6f, c, (if (back) 0.16f else 0.25f) * ((elapsed - paidAt) / 0.6f).coerceIn(0f, 1f))
-        g.disc(cx, pivotY, 0.007f * s, Palette.TEXT_SECONDARY)
+        val base = plankY + 0.012f
+        val locked = paidAt >= 0f
+        for (i in 0 until n) {
+            val cx = slot(i) + shift
+            val c = colour(env, i)
+            // Body: a tall block narrowing to a rounded crown.
+            g.rect(cx, base + bodyH * 0.45f, bodyW, bodyH * 0.45f, BODY)
+            g.rect(cx, base + bodyH * 0.9f, bodyW * 0.8f, bodyH * 0.06f, BODY)
+            g.disc(cx, base + bodyH * 0.95f, bodyW * 0.8f, BODY)
+            g.rect(cx, base + bodyH * 0.5f, bodyW * 0.62f, bodyH * 0.36f, FACE)
+            // The scale behind the rod: a faint arc of the swing.
+            val pivotY = base + bodyH * 0.12f
+            val sweep = (AMP * 2).toFloat()
+            g.ring(cx, pivotY, rodL * 0.72f, 0.003f, Palette.lerp(c, Palette.BG, 0.6f), gap = 2f * PI.toFloat() - sweep, gapAngle = (PI / 2).toFloat() - sweep / 2 + sweep)
+            // The rod and its sliding weight: tipped by θ, pivot near the foot.
+            val a = th[i].toFloat()
+            val tx = cx - sin(a) * rodL; val ty = pivotY + cos(a) * rodL
+            g.line(cx, pivotY, tx, ty, 0.0055f * s, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.25f))
+            val wx = cx - sin(a) * rodL * 0.7f; val wy = pivotY + cos(a) * rodL * 0.7f
+            g.rect(wx, wy, bodyW * 0.42f, bodyW * 0.26f, c, -a)
+            if (locked) g.glow(tx, ty, bodyW * 1.6f, c, 0.25f * ((elapsed - paidAt) / 0.6f).coerceIn(0f, 1f))
+            g.disc(cx, pivotY, 0.007f * s, Palette.TEXT_SECONDARY)
+        }
     }
 
     private fun drawRing(env: SimEnv, g: G) {
@@ -400,9 +388,6 @@ class MetronomeSyncSim : Sim {
         const val CAN_LIT = 0xFF6A7180.toInt()
         const val PLANK = 0xFF4A3F36.toInt()
         const val PLANK_LIT = 0xFF7A6A5C.toInt()
-        const val PLANK_TOP = 0xFF332B25.toInt()
-        /** The back row's size against the front's: farther away. */
-        const val BACK = 0.86f
         const val BODY = 0xFF262A33.toInt()
         const val FACE = 0xFF151820.toInt()
         const val RING = 0xFF2E3440.toInt()
