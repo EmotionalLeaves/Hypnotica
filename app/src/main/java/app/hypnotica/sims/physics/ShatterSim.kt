@@ -63,7 +63,9 @@ class ShatterSim : Sim {
         rays = p.i("cracks", 12).coerceIn(5, 40)
         rings = p.i("rings", 6).coerceIn(2, 14)
         hitsToBreak = p.i("hits", 7).coerceIn(1, 30)
-        radius = min(env.halfWidth, 1f) * 0.9f
+        // Capped on a wide screen, where 0.9 of the height ran the pane and its
+        // flying pieces off the top and bottom.
+        radius = min(env.halfWidth * 0.9f, 0.74f)
         rayAngle = FloatArray(rays) { (it + env.rng.range(-0.3f, 0.3f)) * 2f * PI.toFloat() / rays }
         rayAngle.sort()
         // Rings closer together near the centre, where a pane cracks finest.

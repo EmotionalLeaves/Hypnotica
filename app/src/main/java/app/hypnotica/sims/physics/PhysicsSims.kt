@@ -1293,7 +1293,10 @@ class GaltonBoardSim : Sim {
         rowGap = (PEG_TOP - BIN_TOP) / rows
         // On a wide screen the width alone would stretch the triangle flat;
         // the gap is held near the row pitch so the pegs stay a lattice.
-        spacing = min((1.7f * env.halfWidth) / (rows + 1), rowGap * 1.3f)
+        // Landscape (past 1.2 half-widths) lets it out further: held at 1.3 the
+        // board was a narrow island a third of the frame wide, and wider bins
+        // spread the bell curve out where it can be read.
+        spacing = min((1.7f * env.halfWidth) / (rows + 1), rowGap * (if (env.halfWidth > 1.2f) 1.8f else 1.3f))
         pegR = min(0.009f, spacing * 0.13f)
         pegFlash = FloatArray(rows * (rows + 1) / 2)
 

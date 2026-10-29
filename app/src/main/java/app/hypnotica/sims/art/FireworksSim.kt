@@ -53,6 +53,7 @@ class FireworksSim : Sim {
     private var pNext = 0
     private var cap = 6000
     private var halfW = 0.46f
+    private var sparkScale = 1f
     private var elapsed = 0f
     private var nextLaunch = 0.3f
     private var finaleFired = false
@@ -65,7 +66,10 @@ class FireworksSim : Sim {
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
-        cap = MAX_SPARKS
+        // A wider sky gets bigger shells (see [reachOf]) with as many more
+        // stars, so they keep their density, and room for them all.
+        sparkScale = (min(MAX_REACH_WIDTH, halfW) / PHONE_HALF_WIDTH).coerceAtLeast(1f)
+        cap = (MAX_SPARKS * sparkScale).toInt()
         px = FloatArray(cap); py = FloatArray(cap); pvx = FloatArray(cap); pvy = FloatArray(cap)
         life = FloatArray(cap); maxLife = FloatArray(cap); tint = FloatArray(cap); drag = FloatArray(cap); fall = FloatArray(cap)
         flashAge.fill(1f); flashNext = 0
@@ -84,7 +88,7 @@ class FireworksSim : Sim {
 
     /** How far a burst of [scale] reaches from where it broke, in world units. */
     private fun reachOf(env: SimEnv, scale: Float): Float =
-        BURST_REACH * scale * env.params.f("size", 1f).coerceIn(0.4f, 2f) * min(0.62f, halfW)
+        BURST_REACH * scale * env.params.f("size", 1f).coerceIn(0.4f, 2f) * min(MAX_REACH_WIDTH, halfW)
 
     /**
      * A rocket somewhere in the sky: [u] across the whole width (-1..1) and
@@ -124,7 +128,7 @@ class FireworksSim : Sim {
         // A ring is one line of stars, and at a shell's full count it drew
         // as a solid neon hoop: half as many read as sparks.
         val share = if (r.kind == RING) 0.5f else 1f
-        val n = (SPARKS_PER_BURST * share * (0.5f + 0.5f * r.scale) * env.params.f("size", 1f)).toInt().coerceIn(20, 1200)
+        val n = (SPARKS_PER_BURST * share * (0.5f + 0.5f * r.scale) * env.params.f("size", 1f) * sparkScale).toInt().coerceIn(20, (1200 * sparkScale).toInt())
         // Sized to the screen's width: a burst made for a wide sky spread
         // past both sides of an upright phone. Thrown out fast against a
         // strong drag, so a shell blooms open in a fraction of a second and
@@ -355,6 +359,13 @@ class FireworksSim : Sim {
         const val SKY_TOP = 0.75f
         /** A burst's reach, as a share of the screen's half-width. */
         const val BURST_REACH = 0.48f
+        /**
+         * The widest a burst's reach keeps growing with the screen. It was
+         * 0.62, and on a landscape screen the shells were small blooms in a
+         * big empty sky; past this a big shell no longer fits under the top.
+         */
+        const val MAX_REACH_WIDTH = 0.85f
+        const val PHONE_HALF_WIDTH = 0.46f
         const val PEONY_DRAG = 2.6f
         const val WILLOW_DRAG = 3.2f
         const val ROCKET_TAIL = 6

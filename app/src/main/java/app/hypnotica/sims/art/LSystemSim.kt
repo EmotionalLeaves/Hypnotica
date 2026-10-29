@@ -119,7 +119,9 @@ class LSystemSim : Sim {
             minX = min(minX, min(x1[i], x2[i])); maxX = max(maxX, max(x1[i], x2[i]))
             minY = min(minY, min(y1[i], y2[i])); maxY = max(maxY, max(y1[i], y2[i]))
         }
-        val scale = min(2f * halfWidth * FILL / max(1e-3f, maxX - minX), 2f * FILL / max(1e-3f, maxY - minY))
+        // The top held a little lower than the root's margin: on a wide screen,
+        // where the height decides, the tips touched the top edge.
+        val scale = min(2f * halfWidth * FILL / max(1e-3f, maxX - minX), (FILL + TOP) / max(1e-3f, maxY - minY))
         val cx = (minX + maxX) * 0.5f
         val base = -FILL
         for (i in 0 until n) {
@@ -215,6 +217,7 @@ class LSystemSim : Sim {
         private const val MAX_LENGTH = 400_000
         private const val MAX_STACK = 256
         private const val FILL = 0.92f
+        private const val TOP = 0.86f
         private const val GROW_SECONDS = 9f
         private const val HOLD_SECONDS = 6f
         private const val NOTES = 40

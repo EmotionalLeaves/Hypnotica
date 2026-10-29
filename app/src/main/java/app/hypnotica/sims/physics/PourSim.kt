@@ -46,6 +46,15 @@ class PourSim : Sim {
     private var capAt = -1f
     private var tenths = 0
     private var halfW = 0.46f
+    /**
+     * On a wide screen the scene is drawn this much larger about the middle
+     * of the floor, and laid out in the narrower, shorter world that then
+     * fills the screen: at drop size a glass is a tall narrow thing, and it
+     * stood as a small island in a landscape frame. 1 on a phone.
+     */
+    private var zoom = 1f
+    /** Top of the tap, in world units: lowered with [zoom] so it stays on screen. */
+    private var tapTop = 0.985f
     private var share = 0f
     private val level = IntArray(80)
 
@@ -74,8 +83,13 @@ class PourSim : Sim {
     override fun setup(env: SimEnv) {
         val p = env.params
         cap = MAX_DROPS
-        halfW = env.halfWidth
         glasses = p.i("glasses", 1).coerceIn(1, MAX_GLASSES)
+        val base = p.f("glass", 0.8f).coerceIn(0.2f, 1.3f)
+        // No more than leaves the brim of the tallest glass a clear fall
+        // below the tap: the tap then sits a ninth of the glass above it.
+        zoom = (env.halfWidth / 1.1f).coerceIn(1f, min(WIDE_ZOOM, 1.75f / base))
+        halfW = env.halfWidth / zoom
+        tapTop = -1f + 1.985f / zoom
         // Each glass in its own slot across the screen; one alone is a third
         // of the width, as it always was.
         val slot = 2f * halfW * 0.92f / glasses
@@ -86,7 +100,6 @@ class PourSim : Sim {
         gFull = BooleanArray(glasses); gShare = FloatArray(glasses)
         // Standing on the floor, so nothing that splashes out can run under it.
         glassBottom = -1f + FLOOR_GAP
-        val base = p.f("glass", 0.8f).coerceIn(0.2f, 1.3f)
         for (k in 0 until glasses) {
             val c = if (glasses == 1) 0f else -halfW * 0.92f + slot * (k + 0.5f)
             gL[k] = c - w; gR[k] = c + w
@@ -174,7 +187,7 @@ class PourSim : Sim {
                 // blows itself sideways in mid-air.
                 val lane = n % lanes
                 x[n] = tapX + (lane - (lanes - 1) * 0.5f) * D * 1.05f + env.rng.range(-0.001f, 0.001f)
-                y[n] = 0.95f - carry / flow * TAP_SPEED
+                y[n] = tapTop - 0.035f - carry / flow * TAP_SPEED
                 vx[n] = 0f
                 vy[n] = -TAP_SPEED
                 n++
@@ -414,6 +427,7 @@ class PourSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
+        val mark = g.drawMark()
         val wallC = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.85f)
         for (k in 0 until glasses) {
             val glassL = gL[k]; val glassR = gR[k]; val glassTop = gTop[k]
@@ -464,9 +478,10 @@ class PourSim : Sim {
         }
         if (!full) {
             // The tap: a spout, and the pipe it hangs from.
-            g.rect(tapX, 0.985f, TAP_WIDTH * 1.6f, 0.012f, Palette.TEXT_SECONDARY, alpha = 0.85f)
-            g.rect(tapX, 0.962f, TAP_WIDTH * 0.7f, 0.014f, Palette.TEXT_SECONDARY, alpha = 0.85f)
+            g.rect(tapX, tapTop, TAP_WIDTH * 1.6f, 0.012f, Palette.TEXT_SECONDARY, alpha = 0.85f)
+            g.rect(tapX, tapTop - 0.023f, TAP_WIDTH * 0.7f, 0.014f, Palette.TEXT_SECONDARY, alpha = 0.85f)
         }
+        g.zoomSince(mark, zoom, 0f, -1f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -485,6 +500,7 @@ class PourSim : Sim {
     companion object {
         /** A drop's width: none come closer. */
         const val D = 0.022f
+        const val WIDE_ZOOM = 1.6f
         const val SPACING = D
         const val PASSES = 4
         const val STIFF = 0.9f

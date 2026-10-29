@@ -52,6 +52,17 @@ class GlassBridgeSim : Sim {
     private var payoffFrame = false
     private var wait = 0f
     private var halfW = 0.46f
+    /**
+     * On a wide screen the bridge runs left to right, start on the left:
+     * upright it was a narrow strip in the middle of a landscape frame.
+     * Everything is worked out in bridge space (x across the lanes, y along
+     * the bridge) and turned onto the screen as it is drawn.
+     */
+    private var across = false
+    /** Screen units per bridge unit along the bridge, when it runs across. */
+    private var stretch = 1f
+    /** The width the lanes are laid out in: the screen's, or its height when turned. */
+    private var laneW = 0.46f
     // Shards.
     private val sx = FloatArray(SHARDS)
     private val sy = FloatArray(SHARDS)
@@ -64,6 +75,9 @@ class GlassBridgeSim : Sim {
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
+        across = halfW > 1.2f
+        stretch = if (across) halfW * 0.94f / (TOP + 0.08f) else 1f
+        laneW = if (across) 0.92f else min(halfW, 1f)
         rows = env.params.i("rows", 12).coerceIn(3, MAX_ROWS)
         marbles = env.params.i("marbles", 8).coerceIn(1, MAX_MARBLES)
         lanes = if (env.params.choiceIndex("panes") == 1) 3 else 2
@@ -90,9 +104,9 @@ class GlassBridgeSim : Sim {
 
     private fun rowY(r: Int) = BOTTOM + (TOP - BOTTOM) * (r + 1f) / (rows + 1f)
     private fun sideX(s: Int) =
-        if (lanes == 2) (if (s == 0) -1f else 1f) * min(halfW, 1f) * 0.32f
-        else (s - 1) * min(halfW, 1f) * 0.6f
-    private val paneHalf get() = min(halfW, 1f) * (if (lanes == 2) 0.26f else 0.25f)
+        if (lanes == 2) (if (s == 0) -1f else 1f) * laneW * 0.32f
+        else (s - 1) * laneW * 0.6f
+    private val paneHalf get() = laneW * (if (lanes == 2) 0.26f else 0.25f)
     private val paneH get() = (TOP - BOTTOM) / (rows + 1f) * 0.32f
 
     override fun step(env: SimEnv, dt: Float) {
@@ -108,7 +122,7 @@ class GlassBridgeSim : Sim {
             sLife[i] -= h * SHARD_FADE
             svx[i] *= 1f - min(1f, 3f * h); svy[i] *= 1f - min(1f, 3f * h)
             sx[i] += svx[i] * h; sy[i] += svy[i] * h
-            if (abs(sx[i]) > halfW) sLife[i] = 0f
+            if (abs(sx[i]) > laneW) sLife[i] = 0f
         }
         if (falling) {
             fallingV -= 5f * h
@@ -168,7 +182,7 @@ class GlassBridgeSim : Sim {
             }
             this.known[row] = true
             lastSide = side
-            env.emit(EventKind.HIT, 0.2f + 0.7f * row / rows, (sideX(side) / max(0.1f, halfW)).coerceIn(-1f, 1f), if (known) 0.25f else 0.5f)
+            env.emit(EventKind.HIT, 0.2f + 0.7f * row / rows, pan(sideX(side), rowY(row)), if (known) 0.25f else 0.5f)
             wait = if (known) 0f else GUESS_PAUSE
         }
     }
@@ -187,7 +201,7 @@ class GlassBridgeSim : Sim {
             sLife[i] = 1f
             sTurn[i] = env.rng.range(0f, 3.14f)
         }
-        repeat(4) { env.emit(EventKind.HIT, env.rng.range(0.75f, 1f), (x / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.7f) }
+        repeat(4) { env.emit(EventKind.HIT, env.rng.range(0.75f, 1f), pan(x, y), 0.7f) }
     }
 
     private fun nextMarble(env: SimEnv) {
@@ -206,8 +220,8 @@ class GlassBridgeSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         // The start and finish platforms.
-        g.rect(0f, BOTTOM - 0.04f, min(halfW, 1f) * 0.7f, 0.035f, 0xFF2A2E38.toInt())
-        g.rect(0f, TOP + 0.04f, min(halfW, 1f) * 0.7f, 0.035f, if (firstAcross >= 0) Palette.SUCCESS else 0xFF2A2E38.toInt())
+        rectB(g, 0f, BOTTOM - 0.04f, laneW * 0.7f, 0.035f, 0xFF2A2E38.toInt())
+        rectB(g, 0f, TOP + 0.04f, laneW * 0.7f, 0.035f, if (firstAcross >= 0) Palette.SUCCESS else 0xFF2A2E38.toInt())
         for (r in 0 until rows) {
             val y = rowY(r)
             for (s in 0 until lanes) {
@@ -221,22 +235,22 @@ class GlassBridgeSim : Sim {
                 // panes turn green. Opaque slate read as tiles, not glass.
                 val sure = known[r] && safe[r] == s
                 val tintC = if (sure) Palette.SUCCESS else GLASS
-                g.rect(x, y, paneHalf, paneH, Palette.withAlpha(tintC, if (sure) 0.28f else 0.16f))
+                rectB(g, x, y, paneHalf, paneH, Palette.withAlpha(tintC, if (sure) 0.28f else 0.16f))
                 outline(g, x, y, Palette.withAlpha(tintC, if (sure) 0.9f else 0.55f), 0.004f)
                 // A glint across one corner.
-                g.line(x - paneHalf * 0.75f, y - paneH * 0.2f, x - paneHalf * 0.45f, y + paneH * 0.6f, 0.004f, Palette.withAlpha(0xFFFFFFFF.toInt(), if (sure) 0.25f else 0.4f))
+                lineB(g, x - paneHalf * 0.75f, y - paneH * 0.2f, x - paneHalf * 0.45f, y + paneH * 0.6f, 0.004f, Palette.withAlpha(0xFFFFFFFF.toInt(), if (sure) 0.25f else 0.4f))
             }
         }
         for (i in 0 until SHARDS) {
             if (sLife[i] <= 0f) continue
             val k = sLife[i]
-            g.rect(sx[i], sy[i], sr[i] * k, sr[i] * 0.55f * k, GLASS, sTurn[i] + sx[i] * 7f, alpha = 0.4f + 0.5f * k)
+            rectB(g, sx[i], sy[i], sr[i] * k, sr[i] * 0.55f * k, GLASS, sTurn[i] + sx[i] * 7f, 0.4f + 0.5f * k)
         }
         // The marbles: waiting on the start platform, the one on the bridge,
         // the ones across standing on the finish.
-        val r = MARBLE
+        val r = MARBLE * (if (across) 1.35f else 1f)
         // Closer together when there are many, so the whole queue fits the platform.
-        val queueStep = min(r * 2.6f, min(halfW, 1f) * 1.2f / max(1, marbles))
+        val queueStep = min(r * 2.6f, laneW * 1.2f / max(1, marbles))
         for (m in 0 until marbles) {
             val c = palette.at((m + 0.5f) / marbles)
             when {
@@ -244,7 +258,7 @@ class GlassBridgeSim : Sim {
                     // Dropping away beneath the bridge: smaller and darker
                     // until it is gone, where it broke through.
                     val depth = ((fallingY + 1.4f) / (rowY(row) + 1.4f)).coerceIn(0f, 1f)
-                    g.disc(fallingX, rowY(row), r * (0.25f + 0.75f * depth), c, alpha = depth)
+                    discB(g, fallingX, rowY(row), r * (0.25f + 0.75f * depth), c, depth)
                 }
                 m == current && row >= -1 && !fell[m] && !crossed[m] -> {
                     val (x, y) = if (hopping) {
@@ -254,30 +268,46 @@ class GlassBridgeSim : Sim {
                     } else if (row < 0) 0f to START_Y else sideX(lastSide) to rowY(row)
                     // A hop seen from above: it grows as it rises toward us.
                     val lift = if (hopping) sin(hop.coerceIn(0f, 1f) * PI.toFloat()) else 0f
-                    g.glow(x, y, r * 2.6f, c, 0.45f)
-                    g.disc(x, y, r * (1f + 0.35f * lift), c)
+                    glowB(g, x, y, r * 2.6f, c, 0.45f)
+                    discB(g, x, y, r * (1f + 0.35f * lift), c)
                 }
                 crossed[m] -> {
-                    g.disc(-min(halfW, 1f) * 0.6f + m * queueStep, TOP + 0.04f, r, c)
+                    discB(g, -laneW * 0.6f + m * queueStep, TOP + 0.04f, r, c)
                 }
                 !fell[m] && m > current -> {
-                    g.disc(-min(halfW, 1f) * 0.6f + (m - current) * queueStep, BOTTOM - 0.04f, r, c)
+                    discB(g, -laneW * 0.6f + (m - current) * queueStep, BOTTOM - 0.04f, r, c)
                 }
             }
         }
         if (firstAcross >= 0) {
             val k = (1f - (elapsed - doneAt) * 0.8f).coerceIn(0f, 1f)
-            if (k > 0f) g.glow(0f, TOP, 0.5f, palette.at((firstAcross + 0.5f) / marbles), 0.5f * k)
+            if (k > 0f) glowB(g, 0f, TOP, 0.5f, palette.at((firstAcross + 0.5f) / marbles), 0.5f * k)
         }
     }
 
     private fun outline(g: G, x: Float, y: Float, c: Int, w: Float) {
         val hx = paneHalf; val hy = paneH
-        g.line(x - hx - w * 0.5f, y + hy, x + hx + w * 0.5f, y + hy, w, c)
-        g.line(x - hx - w * 0.5f, y - hy, x + hx + w * 0.5f, y - hy, w, c)
-        g.line(x - hx, y - hy, x - hx, y + hy, w, c)
-        g.line(x + hx, y - hy, x + hx, y + hy, w, c)
+        lineB(g, x - hx - w * 0.5f, y + hy, x + hx + w * 0.5f, y + hy, w, c)
+        lineB(g, x - hx - w * 0.5f, y - hy, x + hx + w * 0.5f, y - hy, w, c)
+        lineB(g, x - hx, y - hy, x - hx, y + hy, w, c)
+        lineB(g, x + hx, y - hy, x + hx, y + hy, w, c)
     }
+
+    // Bridge space onto the screen: upright as is; across, turned a quarter
+    // so the start is on the left and lane 0 on top, stretched along.
+    private fun sxOf(bx: Float, by: Float) = if (across) by * stretch else bx
+    private fun syOf(bx: Float, by: Float) = if (across) -bx else by
+    private fun pan(bx: Float, by: Float) = (sxOf(bx, by) / max(0.1f, halfW)).coerceIn(-1f, 1f)
+    private fun rectB(g: G, x: Float, y: Float, hx: Float, hy: Float, c: Int, rot: Float = 0f, alpha: Float = 1f) {
+        if (across) g.rect(y * stretch, -x, hy * stretch, hx, c, rot, alpha = alpha)
+        else g.rect(x, y, hx, hy, c, rot, alpha = alpha)
+    }
+    private fun discB(g: G, x: Float, y: Float, r: Float, c: Int, alpha: Float = 1f) =
+        g.disc(sxOf(x, y), syOf(x, y), r, c, alpha = alpha)
+    private fun glowB(g: G, x: Float, y: Float, r: Float, c: Int, a: Float) =
+        g.glow(sxOf(x, y), syOf(x, y), r, c, a)
+    private fun lineB(g: G, x0: Float, y0: Float, x1: Float, y1: Float, w: Float, c: Int, a: Float = 1f) =
+        g.line(sxOf(x0, y0), syOf(x0, y0), sxOf(x1, y1), syOf(x1, y1), w, c, a)
 
     override fun contenders(env: SimEnv): IntArray =
         if (marbles > MAX_PICKS) NO_CONTENDERS else IntArray(marbles) { env.palette.at((it + 0.5f) / marbles) }

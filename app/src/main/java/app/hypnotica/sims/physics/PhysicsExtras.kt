@@ -398,11 +398,15 @@ class GearsSim : Sim {
         val ys = FloatArray(count)
         val radii = FloatArray(count)
         val teethOf = IntArray(count)
+        // On a wide screen the train zigzags across instead: run downwards it
+        // was a thin column in the middle of a landscape frame.
+        val wide = env.halfWidth > 1f
+        val along = if (wide) 0f else -PI.toFloat() / 2f
         for (i in 0 until count) {
             teethOf[i] = p.i("teeth", 14).coerceIn(6, 40) + i * p.i("step", 4).coerceIn(0, 12)
             radii[i] = teethOf[i] * toothSize / (2f * PI.toFloat()) * 2f
             if (i > 0) {
-                val heading = -PI.toFloat() / 2f + (if (i % 2 == 1) ZIGZAG else -ZIGZAG)
+                val heading = along + (if (i % 2 == 1) ZIGZAG else -ZIGZAG)
                 val d = radii[i - 1] + radii[i]
                 xs[i] = xs[i - 1] + cos(heading) * d
                 ys[i] = ys[i - 1] + sin(heading) * d
@@ -422,7 +426,9 @@ class GearsSim : Sim {
             x0 = min(x0, xs[i] - reach); x1 = max(x1, xs[i] + reach)
             y0 = min(y0, ys[i] - reach); y1 = max(y1, ys[i] + reach)
         }
-        val fit = min(1f, min(2f * env.halfWidth * FILL / (x1 - x0), 2f * FILL / (y1 - y0)))
+        // A short train on a wide screen may grow to fill it; on a phone it
+        // only ever shrinks, as before.
+        val fit = min(if (wide) 1.6f else 1f, min(2f * env.halfWidth * FILL / (x1 - x0), 2f * FILL / (y1 - y0)))
         val cx = (x0 + x1) * 0.5f
         val cy = (y0 + y1) * 0.5f
         var dir = 1f
@@ -573,6 +579,9 @@ class ClothSim : Sim {
     private var pinned = BooleanArray(0)
     private var cut = BooleanArray(0)
     private var rest = 0f
+    /** Thread length across (the weft); [rest] is down (the warp). Equal on a phone. */
+    private var restX = 0f
+    private var wide = false
     private var payoffFrame = false
     private var elapsed = 0f
     private var tearing = false
@@ -600,14 +609,25 @@ class ClothSim : Sim {
         // height as width, and a square sheet hung in it as a small net in
         // the upper half with the rest of the screen empty.
         rest = min(1.5f / cols, 2.1f / rows)
-        val startX = -rest * (cols - 1) * 0.5f
+        restX = rest
+        // On a wide screen a banner instead: a curtain laid out for a phone
+        // hung as a narrow strip in the middle of a landscape frame, the
+        // view pulled back to fit its hem. The weft threads are let out so
+        // the sheet spans most of the width, the warp shortened so its hem
+        // stays on screen.
+        wide = env.halfWidth > 1.2f
+        if (wide) {
+            rest = min(rest, 1.3f / rows)
+            restX = max(rest, min(2f * env.halfWidth * 0.78f / cols, rest * 3f))
+        }
+        val startX = -restX * (cols - 1) * 0.5f
         // Hung so the sheet, once it has stretched under its own weight,
         // sits about the middle of the view.
         val startY = (rest * (rows - 1) * 0.5f + 0.12f).coerceAtLeast(0.3f)
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val i = r * cols + c
-                x[i] = startX + c * rest
+                x[i] = startX + c * restX
                 y[i] = startY - r * rest
                 ox[i] = x[i]
                 oy[i] = y[i]
@@ -657,8 +677,8 @@ class ClothSim : Sim {
                 for (c in 0 until cols) {
                     val i = r * cols + c
                     if (cut[i]) continue
-                    if (c < cols - 1) relax(i, i + 1)
-                    if (r < rows - 1) relax(i, i + cols)
+                    if (c < cols - 1) relax(i, i + 1, restX)
+                    if (r < rows - 1) relax(i, i + cols, rest)
                 }
             }
         }
@@ -728,7 +748,7 @@ class ClothSim : Sim {
         }
     }
 
-    private fun relax(a: Int, b: Int) {
+    private fun relax(a: Int, b: Int, rest: Float) {
         if (cut[a] || cut[b]) return
         val dx = x[b] - x[a]
         val dy = y[b] - y[a]
@@ -870,10 +890,13 @@ class ClothSim : Sim {
      * smaller, because a smaller sheet is a different sheet — it falls and
      * settles on another clock.
      */
-    override fun frameHalfWidth(env: SimEnv): Float = 1.02f
+    override fun frameHalfWidth(env: SimEnv): Float = if (wide) restX * (cols - 1) * 0.5f + 0.12f else 1.02f
 
-    /** The curtain hangs about 2.4 tall; on a wide screen the view pulls back to show its hem. */
-    override fun frameHalfHeight(env: SimEnv): Float = 1.3f
+    /**
+     * The curtain hangs about 2.4 tall; the view pulls back to show its hem.
+     * The wide banner is laid out to hang within the height.
+     */
+    override fun frameHalfHeight(env: SimEnv): Float = if (wide) 1f else 1.3f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -1501,8 +1524,20 @@ class ChargesSim : Sim {
     private var fy = FloatArray(0)
     /** Still on its first trip; once most have finished one, the field is revealed. */
     private var fresh = BooleanArray(0)
+    /** How far each fresh tracer has come; see [tripLength]. */
+    private var travelled = FloatArray(0)
+    /**
+     * On a wide screen a tracer far out in the weak field takes many seconds
+     * to leave a landscape frame, and the field was traced long before most
+     * had: the payoff never came within the run. There a first trip is also
+     * done once the tracer has followed its line this far. Unlimited on a
+     * phone, where it always was leaving the screen or meeting a charge.
+     */
+    private var tripLength = Float.MAX_VALUE
     private var firstTrips = 0
     private var particles = 0
+    /** The tracer count asked for, which sets the drawing style and dash size. */
+    private var asked = 0
     private var elapsed = 0f
     private var payoffFrame = false
     private var resolved = false
@@ -1528,13 +1563,20 @@ class ChargesSim : Sim {
             charges[i] = if (i % 2 == 0) 1f else -1f
             charges[i] *= env.rng.range(0.6f, 1.4f)
         }
-        particles = p.i("tracers", 2400).coerceIn(50, 80000)
+        // The slider counts tracers for an upright phone's screen; a wider one
+        // gets as many more as it has area, up to four times, so the field
+        // reads as densely there: 2,400 over a landscape frame were a faint
+        // sprinkle with the field lines lost.
+        asked = p.i("tracers", 2400).coerceIn(50, 80000)
+        particles = (asked * (env.halfWidth / PHONE_HALF_WIDTH).coerceIn(1f, 4f)).toInt()
         px = FloatArray(particles)
         py = FloatArray(particles)
         alive = BooleanArray(particles)
         fx = FloatArray(particles)
         fy = FloatArray(particles)
         fresh = BooleanArray(particles) { true }
+        travelled = FloatArray(particles)
+        tripLength = if (env.halfWidth > 0.6f) WIDE_TRIP else Float.MAX_VALUE
         firstTrips = 0
         respawnAll(env)
         elapsed = 0f
@@ -1590,6 +1632,7 @@ class ChargesSim : Sim {
                         .coerceAtMost(MAX_TRACER_SPEED)
                     px[i] += ex / len * dt * speed * sign
                     py[i] += ey / len * dt * speed * sign
+                    if (fresh[i]) travelled[i] += abs(dt) * speed
                 }
                 if (abs(px[i]) > env.halfWidth * 1.05f || abs(py[i]) > 1.05f) alive[i] = false
                 for (k in 0 until count) {
@@ -1602,6 +1645,7 @@ class ChargesSim : Sim {
         // back at once, so for most of a run the middle of the screen, where
         // the field is, was an empty hole with confetti round the edges.
         for (i in 0 until particles) {
+            if (fresh[i] && travelled[i] >= tripLength) { fresh[i] = false; firstTrips++ }
             if (alive[i]) continue
             captured++
             if (fresh[i]) { fresh[i] = false; firstTrips++ }
@@ -1630,9 +1674,9 @@ class ChargesSim : Sim {
         // filings, coloured by how strong the field is there: the whole field
         // is visible at once. Loose dots coloured by screen position showed
         // where the tracers were, not what the field was doing.
-        val dashes = particles <= DASH_LIMIT
+        val dashes = asked <= DASH_LIMIT
         if (dashes) g.reserveInstances(particles) else g.reservePoints(particles)
-        val dash = (0.9f / sqrt(particles.toFloat())).coerceIn(0.008f, 0.03f)
+        val dash = (0.9f / sqrt(asked.toFloat())).coerceIn(0.008f, 0.03f)
         for (i in 0 until particles) {
             if (!alive[i]) continue
             val len = hypot(fx[i], fy[i])
@@ -1697,6 +1741,8 @@ class ChargesSim : Sim {
          * up, though ten times the strength is 2.5 times the speed, not ten.
          */
         const val FIELD_SPEED = 1.1f
+        const val PHONE_HALF_WIDTH = 0.46f
+        const val WIDE_TRIP = 0.35f
         const val FIELD_EXPONENT = 0.4
 
         /** Above this many tracers they are drawn as dots, not dashes. */
@@ -1718,4 +1764,35 @@ object PhysicsExtras {
         OpticsSim.def(),
         ChargesSim.def()
     )
+}
+
+/** Where the draw lists stood, so what is drawn after can be zoomed. See [zoomSince]. */
+internal fun G.drawMark(): IntArray = intArrayOf(instanceCount, glowCount, pointCount)
+
+/**
+ * Zooms everything drawn since [mark] by [k] about the screen point
+ * ([ax], [ay]): a scene laid out for an upright phone, a tall island in the
+ * middle of a wide screen, is shown larger there without its physics
+ * knowing. Shapes, glows and points move and grow alike (a ring's inner edge
+ * and a gap are shares, so they hold), exactly as a camera zoom would.
+ */
+internal fun G.zoomSince(mark: IntArray, k: Float, ax: Float, ay: Float) {
+    if (k == 1f) return
+    fun scale(a: FloatArray, from: Int, to: Int) {
+        for (n in from until to) {
+            val b = n * G.STRIDE
+            a[b] = ax + (a[b] - ax) * k
+            a[b + 1] = ay + (a[b + 1] - ay) * k
+            a[b + 2] *= k
+            a[b + 3] *= k
+        }
+    }
+    scale(instances, mark[0], instanceCount)
+    scale(glows, mark[1], glowCount)
+    for (n in mark[2] until pointCount) {
+        val b = n * 3
+        pointPos[b] = ax + (pointPos[b] - ax) * k
+        pointPos[b + 1] = ay + (pointPos[b + 1] - ay) * k
+        pointPos[b + 2] *= k
+    }
 }

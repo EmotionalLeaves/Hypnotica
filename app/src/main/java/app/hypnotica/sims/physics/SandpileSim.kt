@@ -184,8 +184,12 @@ class SandpileSim : Sim {
         }
     }
 
-    /** Half the side of the grid on screen: the full width of a phone held upright. */
-    private fun view(env: SimEnv): Float = min(env.halfWidth, 1f) * 0.97f
+    /**
+     * Half the side of the grid on screen: the full width of a phone held
+     * upright. Capped below the height on a wide screen, where 0.97 of the
+     * height put the disc's top and bottom against the frame edges.
+     */
+    private fun view(env: SimEnv): Float = min(env.halfWidth * 0.97f, 0.88f)
 
     /**
      * Four clearly different tones for the counts 0..3, 0 a deep shade just
@@ -227,8 +231,13 @@ class SandpileSim : Sim {
      * an empty screen.
      */
     override fun focus(env: SimEnv): Float {
-        val cell = 2f * view(env) / n
-        return max((min(n / 2, reach + 1) + 1.5f) * cell / 0.96f, 1e-3f)
+        val view = view(env)
+        val cell = 2f * view / n
+        // Zoomed so the pile's edge lands at 0.96 / 0.97 of [view]: on a phone
+        // that is the old pile / 0.96, and on a wide screen it keeps the
+        // margin above and below instead of zooming back out to the edges.
+        val pile = (min(n / 2, reach + 1) + 1.5f) * cell
+        return max(pile * min(env.halfWidth, 1f) * 0.97f / (0.96f * view), 1e-3f)
     }
 
     override fun payoff(): Boolean = payoffFrame

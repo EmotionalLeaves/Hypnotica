@@ -253,6 +253,7 @@ class PressSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
+        val mark = g.drawMark()
         // The floor.
         g.rect(0f, FLOOR - 0.03f, halfW, 0.03f, 0xFF1C1F27.toInt())
         // The block: each spring coloured by how hard it is working. Only
@@ -279,6 +280,11 @@ class PressSim : Sim {
             val k = (1f - (elapsed - gaveAt) * 2f).coerceIn(0f, 1f)
             if (k > 0f) g.glow(0f, (plate + FLOOR) * 0.5f, size, Palette.TEXT_PRIMARY, 0.5f * k)
         }
+        // On a wide screen the whole press is shown larger, standing on the
+        // floor: the block, capped in size so its springs behave the same,
+        // was a small island low in a landscape frame. The ram runs off the
+        // top either way. 1 on a phone.
+        g.zoomSince(mark, (env.halfWidth / 1.1f).coerceIn(1f, WIDE_ZOOM), 0f, FLOOR)
     }
 
     override fun frameHalfWidth(env: SimEnv): Float = 0f
@@ -295,6 +301,7 @@ class PressSim : Sim {
     companion object {
         const val MAX_SIDE = 40
         const val FLOOR = -0.85f
+        const val WIDE_ZOOM = 1.6f
         const val PARTICLE = 0.008f
         const val GAP = 0.18f
         const val PLATE_STOP = 0.06f

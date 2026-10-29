@@ -46,6 +46,8 @@ class MarbleMusicSim : Sim {
     private var spacing = 0.1f
     private var interval = 0.3f
     private var fall = 1f
+    private var reach = 0.44f
+    private val barHalf get() = min(spacing * 0.38f, MAX_SPACING * 0.38f * 1.4f)
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
@@ -54,7 +56,12 @@ class MarbleMusicSim : Sim {
         barOf = IntArray(song.notes.size) { pitches.indexOf(song.notes[it]) }
         flash = FloatArray(pitches.size)
         // A real xylophone's spacing at most: on a wide screen the bars were slabs.
-        spacing = min(2f * halfW * 0.9f / pitches.size, MAX_SPACING)
+        // Landscape lets the bars spread further apart (each bar itself
+        // stays xylophone-sized, see [barHalf]): at the phone's cap the
+        // machine was a small island in the middle of a wide frame.
+        spacing = min(2f * halfW * 0.9f / pitches.size, if (halfW > 1.2f) WIDE_SPACING else MAX_SPACING)
+        // The beam and chute span the machine, not the whole of a wide screen.
+        reach = min(halfW * 0.95f, spacing * pitches.size * 0.5f + 0.08f)
         interval = BEAT / env.params.f("tempo", 1f).coerceIn(0.3f, 3f)
         fall = sqrt(2f * (DROP_Y - BAR_TOP) / GRAVITY)
         marbles = ArrayList()
@@ -110,10 +117,10 @@ class MarbleMusicSim : Sim {
         val palette = env.palette
         val n = pitches.size
         // The frame the bars hang on.
-        g.line(-halfW * 0.95f, FRAME_Y, halfW * 0.95f, FRAME_Y, 0.01f, 0xFF3A2E25.toInt())
+        g.line(-reach, FRAME_Y, reach, FRAME_Y, 0.01f, 0xFF3A2E25.toInt())
         // The chute along the top they drop from, and under it a faint lane
         // down to each bar, so every marble's path is laid out before it falls.
-        g.line(-halfW * 0.95f, DROP_Y + 0.04f, halfW * 0.95f, DROP_Y + 0.04f, 0.008f, 0xFF5C6373.toInt())
+        g.line(-reach, DROP_Y + 0.04f, reach, DROP_Y + 0.04f, 0.008f, 0xFF5C6373.toInt())
         for (b in 0 until n) {
             val x = barX(b)
             g.line(x, DROP_Y + 0.02f, x, BAR_TOP + 0.03f, 0.004f, palette.at(b / max(1f, n - 1f)), 0.1f)
@@ -139,19 +146,19 @@ class MarbleMusicSim : Sim {
             val x = barX(b)
             val c = palette.at(t)
             val f = flash[b]
-            if (f > 0f) g.glow(x, BAR_TOP - len * 0.4f, spacing * 1.4f, c, 0.6f * f)
+            if (f > 0f) g.glow(x, BAR_TOP - len * 0.4f, barHalf * 3.7f, c, 0.6f * f)
             val dip = 0.03f * f * f
-            g.rect(x, BAR_TOP - len * 0.5f - dip, spacing * 0.38f, len * 0.5f, Palette.brighten(c, 0.4f * f))
+            g.rect(x, BAR_TOP - len * 0.5f - dip, barHalf, len * 0.5f, Palette.brighten(c, 0.4f * f))
             // A lit edge along the top, where the marble strikes.
-            g.rect(x, BAR_TOP - 0.006f - dip, spacing * 0.38f, 0.006f, Palette.brighten(c, 0.35f + 0.4f * f))
+            g.rect(x, BAR_TOP - 0.006f - dip, barHalf, 0.006f, Palette.brighten(c, 0.35f + 0.4f * f))
             // The two pins it hangs from.
-            g.disc(x, BAR_TOP - len * 0.15f - dip, spacing * 0.07f, 0xFFB8BCC6.toInt())
-            g.disc(x, BAR_TOP - len * 0.85f - dip, spacing * 0.07f, 0xFFB8BCC6.toInt())
+            g.disc(x, BAR_TOP - len * 0.15f - dip, barHalf * 0.18f, 0xFFB8BCC6.toInt())
+            g.disc(x, BAR_TOP - len * 0.85f - dip, barHalf * 0.18f, 0xFFB8BCC6.toInt())
         }
         for (m in marbles) if (!m.hit) drawMarble(g, palette, m)
         if (doneAt >= 0f) {
             val k = (1f - (elapsed - doneAt) * 0.7f).coerceIn(0f, 1f)
-            if (k > 0f) for (b in pitches.indices) g.glow(barX(b), BAR_TOP - 0.15f, spacing * 1.2f, palette.at(b / max(1f, pitches.size - 1f)), 0.5f * k)
+            if (k > 0f) for (b in pitches.indices) g.glow(barX(b), BAR_TOP - 0.15f, barHalf * 3.2f, palette.at(b / max(1f, pitches.size - 1f)), 0.5f * k)
         }
     }
 
@@ -186,6 +193,7 @@ class MarbleMusicSim : Sim {
     companion object {
         const val GRAVITY = 3f
         const val MAX_SPACING = 0.13f
+        const val WIDE_SPACING = 0.24f
         const val DROP_Y = 0.92f
         const val BAR_TOP = -0.2f
         const val RADIUS = 0.022f
