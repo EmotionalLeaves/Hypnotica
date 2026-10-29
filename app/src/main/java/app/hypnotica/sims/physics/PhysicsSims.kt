@@ -58,6 +58,18 @@ class BallEscapeSim : Sim {
 
     private val balls = ArrayList<Ball>()
 
+    /** Where the last few hits landed on a wall, and how old each is, for the spark there. */
+    private val sparkX = FloatArray(SPARKS)
+    private val sparkY = FloatArray(SPARKS)
+    private val sparkT = FloatArray(SPARKS)
+    private val sparkAge = FloatArray(SPARKS) { SPARK_SECONDS }
+    private var sparkNext = 0
+
+    private fun spark(x: Float, y: Float, t: Float) {
+        sparkX[sparkNext] = x; sparkY[sparkNext] = y; sparkT[sparkNext] = t; sparkAge[sparkNext] = 0f
+        sparkNext = (sparkNext + 1) % SPARKS
+    }
+
     /** Balls born this step, appended once the loop over [balls] has finished. */
     private val spawned = ArrayList<Ball>()
     private var ringRadius = 0.88f
@@ -121,7 +133,7 @@ class BallEscapeSim : Sim {
                 Ball(
                     env.rng.range(-0.08f, 0.08f), env.rng.range(-0.08f, 0.08f),
                     cos(a) * speed, sin(a) * speed,
-                    p.f("size", 0.045f), env.rng.nextFloat()
+                    p.f("size", 0.06f), env.rng.nextFloat()
                 )
             )
         }
@@ -131,12 +143,15 @@ class BallEscapeSim : Sim {
         restSeconds = -1f
         runSeconds = 0f
         burstAge = 2f
+        sparkAge.fill(SPARK_SECONDS)
+        sparkNext = 0
     }
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         runSeconds += abs(dt)
         burstAge += abs(dt)
+        for (i in 0 until SPARKS) sparkAge[i] += abs(dt)
         // An escaped ball used to vanish the instant it crossed the ring, so
         // the payoff was an empty circle. It now sails on out of the frame.
         for (b in balls) {
@@ -337,6 +352,7 @@ class BallEscapeSim : Sim {
             }
             b.colorT = (b.colorT + 0.013f) % 1f
             hits++
+            spark(b.x + nx * b.r, b.y + ny * b.r, b.colorT)
             env.emit(EventKind.HIT, b.colorT, nx.coerceIn(-1f, 1f) * 0.8f, min(1f, 0.4f + b.r * 6f))
             if (multiply && balls.size + spawned.size < 180) {
                 val a = env.rng.range(0f, TWO_PI)
@@ -353,10 +369,21 @@ class BallEscapeSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
+        val gap = gapNow()
+        // The wall thickens and brightens as the hits pile up, so the build
+        // reads even in a still frame: a thin ring was a lone dot in a hoop.
+        val charge = (hits / 40f).coerceIn(0f, 1f)
+        val wall = 0.02f + 0.012f * charge
         for (ri in ringRadii.indices) {
             val c = palette.at(ri.toFloat() / max(1, rings - 1))
+            val r = ringRadii[ri]
             if (sides < 3) {
-                g.ring(0f, 0f, ringRadii[ri], 0.012f, c, gapNow(), ringAngle[ri], 0.95f)
+                // A faint floor inside, and the closed track under the wall,
+                // so a gap opening reads as a door in it, not a missing piece.
+                if (ri == 0) g.disc(0f, 0f, r, c, 0.045f)
+                g.ring(0f, 0f, r, wall * 0.5f, c, alpha = 0.14f)
+                g.ring(0f, 0f, r + wall, wall * 2.6f, c, gap, ringAngle[ri], 0.1f + 0.08f * charge)
+                g.ring(0f, 0f, r, wall, c, gap, ringAngle[ri], 0.95f)
             } else {
                 // Each side in short pieces, leaving out the ones in the gap.
                 val seg = TWO_PI / sides
@@ -368,21 +395,42 @@ class BallEscapeSim : Sim {
                     val x1 = cos(a0) + (cos(a1) - cos(a0)) * t1; val y1 = sin(a0) + (sin(a1) - sin(a0)) * t1
                     var rel = atan2((y0 + y1) * 0.5f, (x0 + x1) * 0.5f) - ringAngle[ri]
                     rel = ((rel % TWO_PI) + TWO_PI) % TWO_PI
-                    if (rel < gapNow()) continue
-                    val r = ringRadii[ri]
-                    g.line(x0 * r, y0 * r, x1 * r, y1 * r, 0.012f, c, 0.95f)
+                    if (rel < gap) {
+                        g.line(x0 * r, y0 * r, x1 * r, y1 * r, wall * 0.5f, c, 0.14f)
+                        continue
+                    }
+                    g.line(x0 * r, y0 * r, x1 * r, y1 * r, wall * 2.6f, c, 0.1f + 0.08f * charge)
+                    g.line(x0 * r, y0 * r, x1 * r, y1 * r, wall, c, 0.95f)
                 }
             }
+            // Posts either side of the gap, lit once it is open.
+            if (gap > 0.01f && sides < 3) {
+                val post = Palette.brighten(c, 0.35f)
+                for (a in floatArrayOf(ringAngle[ri], ringAngle[ri] + gap)) {
+                    val px = cos(a) * r; val py = sin(a) * r
+                    g.glow(px, py, 0.07f, post, 0.5f)
+                    g.disc(px, py, wall * 0.9f, post)
+                }
+            }
+        }
+        // A spark where each recent hit landed.
+        for (i in 0 until SPARKS) {
+            val age = sparkAge[i]
+            if (age >= SPARK_SECONDS) continue
+            val k = age / SPARK_SECONDS
+            val c = Palette.brighten(palette.at(sparkT[i]), 0.3f)
+            g.glow(sparkX[i], sparkY[i], 0.05f + 0.1f * k, c, (1f - k) * 0.6f)
+            g.ring(sparkX[i], sparkY[i], 0.015f + 0.07f * k, 0.004f, c, alpha = (1f - k) * 0.8f)
         }
         if (burstAge < BURST_SECONDS) {
             val k = burstAge / BURST_SECONDS
             val c = Palette.brighten(palette.at(burstT), 0.3f)
             val ease = 1f - (1f - k) * (1f - k)
-            g.ring(burstX, burstY, 0.05f + 0.4f * ease, 0.006f, c, alpha = (1f - k) * 0.9f)
-            g.glow(burstX, burstY, 0.12f + 0.2f * ease, c, (1f - k) * 0.5f)
+            g.ring(burstX, burstY, 0.05f + 0.4f * ease, 0.008f, c, alpha = (1f - k) * 0.9f)
+            g.glow(burstX, burstY, 0.12f + 0.25f * ease, c, (1f - k) * 0.6f)
         }
         // Trails only while there are few balls; a split storm of 180 would
-        // otherwise be a thousand-odd ghost discs.
+        // otherwise be a thousand-odd ghost segments.
         val trails = balls.size <= 24
         for (b in balls) {
             if (!b.alive && !b.out) continue
@@ -391,15 +439,19 @@ class BallEscapeSim : Sim {
             if (b.out && (abs(b.x) + b.r > max(env.halfWidth, ringRadius + 0.04f) || abs(b.y) > 2.2f)) continue
             val c = palette.at(b.colorT)
             if (trails && b.filled > 1) {
-                for (j in 1 until b.filled) {
-                    // Oldest first, so the newest ghost sits on top.
+                // A tapering comet tail, oldest first so the newest sits on top.
+                var px = Float.NaN; var py = 0f
+                for (j in 0 until b.filled) {
                     val idx = (b.head - b.filled + j + TRAIL * 2) % TRAIL
-                    val f = j.toFloat() / b.filled
-                    g.disc(b.trail[idx * 2], b.trail[idx * 2 + 1], b.r * (0.35f + 0.5f * f), c, 0.06f + 0.22f * f)
+                    val qx = b.trail[idx * 2]; val qy = b.trail[idx * 2 + 1]
+                    val f = (j + 1f) / b.filled
+                    if (!px.isNaN()) g.line(px, py, qx, qy, b.r * 1.9f * f, c, 0.04f + 0.4f * f * f)
+                    px = qx; py = qy
                 }
             }
-            g.glow(b.x, b.y, b.r * 3.2f, c, 0.55f)
-            g.disc(b.x, b.y, b.r, Palette.brighten(c, 0.15f))
+            g.glow(b.x, b.y, b.r * 4.5f, c, 0.6f)
+            g.disc(b.x, b.y, b.r, Palette.brighten(c, 0.2f))
+            g.disc(b.x - b.r * 0.3f, b.y + b.r * 0.3f, b.r * 0.35f, Palette.brighten(c, 0.7f), 0.7f)
         }
     }
 
@@ -434,7 +486,9 @@ class BallEscapeSim : Sim {
 
     companion object {
         private const val TWO_PI = (PI * 2.0).toFloat()
-        private const val TRAIL = 9
+        private const val TRAIL = 30
+        private const val SPARKS = 8
+        private const val SPARK_SECONDS = 0.45f
         private const val BURST_SECONDS = 0.9f
         private const val MAX_SPEED = 7.5f
         private const val GIVE_UP = 60f
@@ -471,7 +525,9 @@ class BallEscapeSim : Sim {
                 Param.choice("shape", "Shape", listOf("Ring", "Triangle", "Square", "Hexagon"), 0,
                     card = Card.DATA, input = ParamInput.TILES),
                 Param.int("balls", "Balls", 1, 64, 1, card = Card.DATA),
-                Param.float("size", "Ball size", 0.012f, 0.14f, 0.045f, card = Card.DATA),
+                // 0.045 read as a lone dot in a big hoop on a phone; escape timing
+                // across seeds is unchanged at 0.06 (measured 0.8–1.0 of typical).
+                Param.float("size", "Ball size", 0.012f, 0.14f, 0.06f, card = Card.DATA),
                 // Defaults chosen by sweeping seeds offline: one ring with this
                 // gap and speed-up escapes on every seed, around 16 s in.
                 // More rings make a longer, less certain run on purpose.
@@ -929,20 +985,54 @@ class NewtonsCradleSim : Sim {
         val l = STRING
         val startX = -(n - 1) * spacing * 0.5f
         val dim = Palette.TEXT_SECONDARY
-        val barHalf = (n - 1) * spacing * 0.5f + radius + 0.06f
-        g.line(-barHalf, top, barHalf, top, 0.012f, dim, 0.55f)
-        g.disc(-barHalf, top, 0.012f, dim, 0.55f)
-        g.disc(barHalf, top, 0.012f, dim, 0.55f)
-        // A polished base under the row, with the balls faintly reflected in it.
+        // The view is as wide as the end ball's swing, so on an upright phone
+        // the row can be no bigger; what fills the height is the cradle's own
+        // stand — uprights, a top rail and a plinth — rather than empty space.
         val floorY = top - l - radius - 0.09f
         val reach = sin(abs(env.params.f("swing", 0.55f)).coerceAtMost(PI.toFloat() / 2f)) * l
-        val floorHalf = (n - 1) * spacing * 0.5f + radius + reach * 0.8f
-        g.line(-floorHalf, floorY, floorHalf, floorY, 0.006f, dim, 0.35f)
+        val postX = (n - 1) * spacing * 0.5f + radius + reach * 0.92f
+        val railY = top
+        val frameCol = Palette.lerp(dim, 0xFF000000.toInt(), 0.35f)
+        // A spotlight from above: a soft cone widening down onto the plinth
+        // and a pool of light on it. It gives the tall screen above the
+        // cradle something to be, rather than a black void.
+        val beamTop = 2.4f
+        val bands = 120
+        for (k in 0 until bands) {
+            val f = (k + 0.5f) / bands
+            val y = beamTop + (floorY - beamTop) * f
+            val half = 0.12f + (postX + 0.05f - 0.12f) * f
+            g.rect(0f, y, half, (beamTop - floorY) / bands * 0.5f + 0.001f, SPOT, 0f, 0.018f + 0.03f * f)
+        }
+        g.glow(0f, floorY, postX * 1.1f, SPOT, 0.12f)
+        g.rect(0f, floorY - 0.05f, postX + 0.07f, 0.05f, Palette.lerp(dim, 0xFF000000.toInt(), 0.75f))
+        g.line(-postX - 0.07f, floorY, postX + 0.07f, floorY, 0.006f, dim, 0.5f)
+        for (sx in floatArrayOf(-1f, 1f)) {
+            g.line(sx * postX, floorY, sx * postX, railY, 0.012f, frameCol, 0.9f)
+            g.disc(sx * postX, railY, 0.016f, frameCol, 0.95f)
+            g.rect(sx * postX, floorY + 0.01f, 0.03f, 0.01f, frameCol, 0f, 0.9f)
+        }
+        g.line(-postX, railY, postX, railY, 0.012f, frameCol, 0.9f)
+        // The swing's reach at each end, faint, so the arc the end balls trace
+        // is part of the picture even while they hang still.
+        val swing = abs(env.params.f("swing", 0.55f)).coerceAtMost(PI.toFloat() / 2f)
+        for (end in 0..1) {
+            val ax = startX + (if (end == 0) 0 else n - 1) * spacing
+            val sgn = if (end == 0) -1f else 1f
+            val steps = 14
+            for (k in 0 until steps) {
+                if (k % 2 == 1) continue
+                val a0 = sgn * swing * k / steps
+                val a1 = sgn * swing * (k + 1) / steps
+                g.line(ax + sin(a0) * l, top - cos(a0) * l, ax + sin(a1) * l, top - cos(a1) * l, 0.004f, dim, 0.25f)
+            }
+        }
         for (i in 0 until n) {
             val anchorX = startX + i * spacing
             val bx = anchorX + sin(pos[i]) * l
             val by = top - cos(pos[i]) * l
             val c = palette.at(i.toFloat() / max(1, n - 1))
+            // Reflection in the polished plinth, squashed and dim.
             g.disc(bx, 2f * floorY - by, radius * 0.92f, c, 0.12f)
         }
         for (i in 0 until n) {
@@ -950,11 +1040,17 @@ class NewtonsCradleSim : Sim {
             val bx = anchorX + sin(pos[i]) * l
             val by = top - cos(pos[i]) * l
             val c = palette.at(i.toFloat() / max(1, n - 1))
-            g.line(anchorX, top, bx, by, 0.003f, dim, 0.5f)
-            g.glow(bx, by, radius * 2.2f, c, 0.3f)
+            // Two threads in a V from the rail, as a real cradle hangs them,
+            // which keeps every ball swinging in one plane.
+            g.line(anchorX - radius * 0.45f, railY, bx, by + radius * 0.9f, 0.003f, dim, 0.55f)
+            g.line(anchorX + radius * 0.45f, railY, bx, by + radius * 0.9f, 0.003f, dim, 0.55f)
+            g.glow(bx, by, radius * 2.4f, c, 0.32f)
             g.disc(bx, by, radius, c)
-            // A highlight, so the balls read as polished spheres, not flat dots.
-            g.disc(bx - radius * 0.35f, by + radius * 0.35f, radius * 0.28f, Palette.TEXT_PRIMARY, 0.35f)
+            // Shade on the lower side and a highlight, so the balls read as
+            // polished spheres, not flat dots.
+            g.disc(bx + radius * 0.12f, by - radius * 0.12f, radius * 0.86f, Palette.lerp(c, 0xFF000000.toInt(), 0.25f), 0.5f)
+            g.disc(bx - radius * 0.1f, by + radius * 0.1f, radius * 0.7f, c, 0.6f)
+            g.disc(bx - radius * 0.35f, by + radius * 0.35f, radius * 0.26f, Palette.TEXT_PRIMARY, 0.5f)
         }
         for (i in 0 until n - 1) {
             if (spark[i] < 0.02f) continue
@@ -979,6 +1075,7 @@ class NewtonsCradleSim : Sim {
          * empty screen. Real cradles hang theirs about four or five widths long.
          */
         const val STRING = 0.8f
+        private val SPOT = 0xFFDDE6FF.toInt()
         /** How long a still cradle is allowed to last before the run gives up. */
         const val STILL_SECONDS = 2.5f
 

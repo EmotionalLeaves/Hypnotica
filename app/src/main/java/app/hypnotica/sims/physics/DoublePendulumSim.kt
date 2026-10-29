@@ -57,6 +57,12 @@ class DoublePendulumSim : Sim {
     /** How scattered they were at the start: a coarse nudge starts as a fan. */
     private var startSpread = 0f
 
+    /** Where the first and last pendulums' lower bobs have been: their traced paths. */
+    private val trailX = Array(2) { FloatArray(TRAIL) }
+    private val trailY = Array(2) { FloatArray(TRAIL) }
+    private var trailHead = 0
+    private var trailFilled = 0
+
     override fun setup(env: SimEnv) {
         val p = env.params
         count = p.i("count", 600).coerceIn(1, MAX_PENDULUMS)
@@ -78,6 +84,8 @@ class DoublePendulumSim : Sim {
         lastHeight = if (a1.isEmpty()) 0f else (-cos(a1[0]) - cos(a2[0])).toFloat()
         rising = false
         startSpread = bobSpread()
+        trailHead = 0
+        trailFilled = 0
     }
 
     /** Which full turn the lower arm is on; a change is a flip over the top. */
@@ -141,6 +149,14 @@ class DoublePendulumSim : Sim {
         // The payoff is the split: the moment the lower bobs stop agreeing,
         // measured as how widely they are scattered, not timed.
         spread = bobSpread()
+        if (count > 0) {
+            for ((slot, k) in intArrayOf(0, count - 1).withIndex()) {
+                trailX[slot][trailHead] = (sin(a1[k]) * ARM + sin(a2[k]) * ARM).toFloat()
+                trailY[slot][trailHead] = (-cos(a1[k]) * ARM - cos(a2[k]) * ARM).toFloat()
+            }
+            trailHead = (trailHead + 1) % TRAIL
+            if (trailFilled < TRAIL) trailFilled++
+        }
         // Against how scattered they began, too: with a coarse nudge the fan
         // starts open, and split the instant it was let go.
         val needed = max(SPLIT_SPREAD * ARM, startSpread * SPLIT_GROWTH)
@@ -220,9 +236,12 @@ class DoublePendulumSim : Sim {
         // solid pendulum until they part, then as the fan.
         val armEvery = max(1, count / MAX_ARMS)
         val drawn = (count + armEvery - 1) / armEvery
-        val faint = (3f / sqrt(drawn.toFloat())).coerceIn(0.05f, 0.6f)
+        // Once they have split, the arms fade back and leave the spray of
+        // bobs: six hundred faint rods from the pivot were a radial scribble.
+        val after = if (split) (1f - (elapsed - splitAt) / 3f).coerceIn(0.3f, 1f) else 1f
+        val faint = (3f / sqrt(drawn.toFloat())).coerceIn(0.05f, 0.6f) * after
         val asPoints = count > DRAWN_AS_POINTS
-        g.reserveInstances(drawn * 2 + (if (asPoints) 0 else count) + 2)
+        g.reserveInstances(drawn * 2 + (if (asPoints) 0 else count) + 2 * TRAIL + 8)
         if (asPoints) g.reservePoints(count)
         val bob = if (count > 40) 0.01f else 0.022f
         val size = (0.014f - count / 2_000_000f).coerceIn(0.005f, 0.014f)
@@ -240,6 +259,29 @@ class DoublePendulumSim : Sim {
             }
             if (asPoints) g.point(x2, y2, size, c) else g.disc(x2, y2, bob, c)
             i++
+        }
+        // The path the marked bobs have traced, fading behind them: the
+        // chaotic loops the pendulum is famous for, and something to watch in
+        // the seconds before the split, when the fan is one thin pendulum.
+        if (trailFilled > 1) {
+            for (slot in 0 until (if (split && count > 1) 2 else 1)) {
+                val c = palette.at(if (slot == 0) 0f else 1f)
+                for (j in 1 until trailFilled) {
+                    val a = (trailHead - trailFilled + j - 1 + TRAIL * 2) % TRAIL
+                    val b = (a + 1) % TRAIL
+                    val f = j.toFloat() / trailFilled
+                    g.line(trailX[slot][a], trailY[slot][a], trailX[slot][b], trailY[slot][b], 0.004f + 0.004f * f, c, 0.6f * f * f)
+                }
+            }
+        }
+        // Before the split, the stacked pendulum drawn as one solid one.
+        if (!split && count > 0) {
+            val c = palette.at(0f)
+            val x1 = (sin(a1[0]) * arm).toFloat(); val y1 = (-cos(a1[0]) * arm).toFloat()
+            val x2 = x1 + (sin(a2[0]) * arm).toFloat(); val y2 = y1 + (-cos(a2[0]) * arm).toFloat()
+            g.line(0f, 0f, x1, y1, 0.012f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f), 0.85f)
+            g.line(x1, y1, x2, y2, 0.01f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f), 0.85f)
+            g.disc(x1, y1, 0.016f, Palette.lerp(c, Palette.TEXT_PRIMARY, 0.3f))
         }
         // The first and the last pendulum, the two furthest apart at the
         // start, marked: one bright bob while they agree, two once they part.
@@ -293,6 +335,8 @@ class DoublePendulumSim : Sim {
         /** At most this many pendulums have their arms drawn; the rest are sampled. */
         const val MAX_ARMS = 800
         const val VOICES = 40
+        /** Steps of the marked bobs' traced path. */
+        const val TRAIL = 150
         const val SPREAD_SAMPLES = 256
 
         fun def(): SimDef = SimDef(

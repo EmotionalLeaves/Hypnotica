@@ -574,7 +574,7 @@ class SpirographSim : Sim {
             if (err < bestErr - 1e-6f) { bestErr = err; bestQ = q; bestP = pp }
         }
         smallR = bigR * bestQ / bestP
-        penOffset = p.f("pen", 0.2f)
+        penOffset = p.f("pen", 0.24f)
         // Exactly the ink the figure needs, every turn of it. An "Ink"
         // slider ran out mid-figure below it and only retraced the closed
         // curve above it, so it is gone.
@@ -647,8 +647,13 @@ class SpirographSim : Sim {
         }
     }
 
-    /** Drawn at a fixed size; on a phone held upright the view pulls back to fit it. */
-    override fun frameHalfWidth(env: SimEnv): Float = 0.92f
+    /**
+     * Drawn at a fixed size; on a phone held upright the view pulls back to
+     * fit it — to the ring, or to the figure where a long pen loops out past
+     * the ring, and no further, so the rosette fills the width.
+     */
+    override fun frameHalfWidth(env: SimEnv): Float =
+        max(bigR + 0.006f, bigR - smallR + penOffset + env.params.f("dot", 0.009f))
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -673,7 +678,9 @@ class SpirographSim : Sim {
             typicalSeconds = 10f,
             params = listOf(
                 Param.float("wheel", "Inner wheel", 0.05f, 0.6f, 0.27f, card = Card.DATA),
-                Param.float("pen", "Pen offset", 0.02f, 0.5f, 0.2f, card = Card.DATA),
+                // Near the wheel's rim, so the rosette's points reach out to the ring
+                // and the figure fills the frame; at 0.2 it sat well inside it.
+                Param.float("pen", "Pen offset", 0.02f, 0.5f, 0.24f, card = Card.DATA),
                 // How many times round the wheel may go before it closes: the
                 // fewer, the simpler the rosette the ratio is rounded to.
                 Param.int("turns", "Most turns", 1, 20, MAX_TURNS, card = Card.DATA),

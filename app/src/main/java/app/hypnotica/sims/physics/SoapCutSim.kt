@@ -48,6 +48,7 @@ class SoapCutSim : Sim {
     private var doneAt = -1f
     private var payoffFrame = false
     private var halfW = 0.46f
+    private var floorY = FLOOR
     // Swirl.
     private var fx = 3f
     private var fy = 2f
@@ -68,7 +69,11 @@ class SoapCutSim : Sim {
         // A slice falls over to the right and lies its whole height long, so
         // the block leaves that much room on its right: it fell off the side
         // of an upright phone.
-        blockH = min(0.5f, 2f * halfW * 0.36f)
+        // Taller than it was (0.36 of the width): the width is spent on the
+        // block plus the first slice lying flat, so height is the only way
+        // the block grows on an upright phone.
+        blockH = min(0.5f, 2f * halfW * 0.42f)
+        floorY = if (halfW < 0.8f) FLOOR_UPRIGHT else FLOOR
         blockW = min(2f * halfW - blockH - 2f * MARGIN, 1.3f)
         left = -halfW + MARGIN + ((2f * halfW - blockH - 2f * MARGIN) - blockW) * 0.5f
         gridX = (slices * CELLS_PER_SLICE).coerceAtMost(240)
@@ -131,7 +136,7 @@ class SoapCutSim : Sim {
         var i = 0
         for ((lx, ly) in arrayOf(-sliceW to 0f, 0f to 0f, 0f to blockH, -sliceW to blockH)) {
             out[i++] = px + lx * c - ly * s
-            out[i++] = FLOOR + lx * s + ly * c
+            out[i++] = floorY + lx * s + ly * c
         }
     }
 
@@ -179,7 +184,7 @@ class SoapCutSim : Sim {
                 crumbCarry += h * CRUMBS_PER_SECOND * amount * env.rng.range(0.5f, 1.5f)
                 while (crumbCarry >= 1f) {
                     crumbCarry -= 1f
-                    crumb(env, cutX(cut), FLOOR + blockH * (1f - depth))
+                    crumb(env, cutX(cut), floorY + blockH * (1f - depth))
                 }
                 if (env.rng.nextFloat() < h * 30f * amount) env.emit(EventKind.HIT, env.rng.range(0.7f, 1f), 0.2f, 0.12f)
             }
@@ -204,7 +209,7 @@ class SoapCutSim : Sim {
                 tilt[k] = rest[k]
                 landed[k] = true
                 env.emit(EventKind.HIT, 0.15f + 0.1f * env.rng.nextFloat(), 0.4f, 0.7f)
-                repeat(12) { crumb(env, cutX(k) + sliceW + blockH * 0.8f, FLOOR + 0.02f) }
+                repeat(12) { crumb(env, cutX(k) + sliceW + blockH * 0.8f, floorY + 0.02f) }
                 if (k == slices - 1) {
                     doneAt = elapsed
                     payoffFrame = true
@@ -214,10 +219,10 @@ class SoapCutSim : Sim {
         }
         val cg = max(0.5f, abs(env.laws.gravity)) * 0.25f
         for (i in 0 until cn) {
-            if (cy[i] <= FLOOR + 0.003f && cvy[i] == 0f) continue
+            if (cy[i] <= floorY + 0.003f && cvy[i] == 0f) continue
             cvy[i] -= cg * h
             cx[i] += cvx[i] * h; cy[i] += cvy[i] * h
-            if (cy[i] < FLOOR + 0.003f) { cy[i] = FLOOR + 0.003f; cvy[i] = 0f; cvx[i] = 0f }
+            if (cy[i] < floorY + 0.003f) { cy[i] = floorY + 0.003f; cvy[i] = 0f; cvx[i] = 0f }
             if (abs(cx[i]) > halfW) { cx[i] = cx[i].coerceIn(-halfW, halfW); cvx[i] = 0f }
         }
     }
@@ -236,14 +241,14 @@ class SoapCutSim : Sim {
         cx[i] = x + env.rng.range(-0.01f, 0.01f); cy[i] = y
         cvx[i] = env.rng.range(-0.15f, 0.35f); cvy[i] = env.rng.range(0f, 0.25f)
         val u = ((x - left) / blockW).coerceIn(0f, 0.999f)
-        val v = ((y - FLOOR) / blockH).coerceIn(0f, 0.999f)
+        val v = ((y - floorY) / blockH).coerceIn(0f, 0.999f)
         ccol[i] = colors[(v * gridY).toInt() * gridX + (u * gridX).toInt()]
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         // The table: its top edge, and the table itself below it.
-        g.rect(0f, (FLOOR - 1f) * 0.5f, halfW, (FLOOR + 1f) * 0.5f, 0xFF0D0F14.toInt())
-        g.rect(0f, FLOOR - 0.006f, halfW, 0.006f, 0xFF2A2E38.toInt())
+        g.rect(0f, (floorY - 1f) * 0.5f, halfW, (floorY + 1f) * 0.5f, TABLE)
+        g.rect(0f, floorY - 0.006f, halfW, 0.006f, 0xFF2A2E38.toInt())
         val cw = blockW / gridX
         val ch = blockH / gridY
         val perSlice = gridX / slices
@@ -251,15 +256,43 @@ class SoapCutSim : Sim {
         // Not counting a slice the knife is through: it is drawn tipping,
         // and was drawn upright as well until the knife came back up.
         val standing = (slices - cut - (if (cut < slices && phase >= DOWN) 1 else 0)) * perSlice
-        g.reserveInstances(gridX * gridY)
+        g.reserveInstances(gridX * gridY * 3 / 2)
+        // The block mirrored in the polished table, at half the resolution and
+        // fading with depth: it grounds the block and fills the lower half,
+        // which was a flat empty slab.
+        val rr = 2
+        for (c in 0 until standing.coerceAtMost(gridX)) for (r in 0 until gridY / rr) {
+            val k = r * rr
+            val fade = 0.22f * (1f - k.toFloat() / gridY)
+            g.rect(left + (c + 0.5f) * cw, floorY - (k + rr * 0.5f) * ch, cw * 0.5f + 0.0005f, ch * rr * 0.5f + 0.0005f,
+                Palette.lerp(TABLE, colors[k * gridX + c], fade))
+        }
+        for (k in 0 until min(cut + 1, slices)) {
+            if (k == cut && (cut >= slices || phase < DOWN)) continue
+            val c0 = gridX - (k + 1) * perSlice
+            val px = cutX(k) + sliceW
+            val a = -tilt[k]
+            val ca = cos(a); val sa = sin(a)
+            for (c in c0 until c0 + perSlice) for (r in 0 until gridY / rr) {
+                val kk = r * rr
+                val lx = left + (c + 0.5f) * cw - px
+                val ly = (kk + rr * 0.5f) * ch
+                val yy = lx * sa + ly * ca
+                // Mixed into the table's colour rather than drawn see-through:
+                // overlapping translucent cells showed the grid as dark seams.
+                g.rect(px + lx * ca - ly * sa, floorY - yy, cw * 0.5f + 0.0005f, ch * rr * 0.5f + 0.0005f,
+                    Palette.lerp(TABLE, colors[kk * gridX + c], 0.22f * (1f - (yy / blockH).coerceIn(0f, 1f))), -a)
+            }
+        }
+        g.rect(0f, floorY - 0.006f, halfW, 0.006f, 0xFF2A2E38.toInt())
         for (c in 0 until standing.coerceAtMost(gridX)) for (r in 0 until gridY) {
-            g.rect(left + (c + 0.5f) * cw, FLOOR + (r + 0.5f) * ch, cw * 0.5f + 0.0005f, ch * 0.5f + 0.0005f, colors[r * gridX + c])
+            g.rect(left + (c + 0.5f) * cw, floorY + (r + 0.5f) * ch, cw * 0.5f + 0.0005f, ch * 0.5f + 0.0005f, colors[r * gridX + c])
         }
         // The cut slices: each pivots on its far bottom corner.
         for (k in 0 until min(cut + 1, slices)) {
             if (k == cut && (cut >= slices || phase < DOWN)) continue
             val c0 = gridX - (k + 1) * perSlice
-            val px = cutX(k) + sliceW; val py = FLOOR
+            val px = cutX(k) + sliceW; val py = floorY
             val a = -tilt[k]
             val ca = cos(a); val sa = sin(a)
             for (c in c0 until c0 + perSlice) for (r in 0 until gridY) {
@@ -276,7 +309,7 @@ class SoapCutSim : Sim {
         if (cut < slices - 1) {
             val d = knifeDepth(phase)
             val x = cutX(cut)
-            val tip = FLOOR + blockH * (1f - d)
+            val tip = floorY + blockH * (1f - d)
             g.rect(x, tip + 0.22f, 0.006f, 0.22f, 0xFFC9CED8.toInt())
             g.rect(x, tip + 0.5f, 0.018f, 0.07f, 0xFF3A3F4B.toInt())
         }
@@ -290,12 +323,15 @@ class SoapCutSim : Sim {
 
     companion object {
         const val MAX_SLICES = 40
+        private val TABLE = 0xFF0D0F14.toInt()
         const val CELLS_PER_SLICE = 6
         /**
          * The table top. Low on the screen, so the block and the knife over
          * it sit in the middle: at -0.3 the bottom third was empty table.
          */
         const val FLOOR = -0.45f
+        /** On an upright phone: the block in the middle and the table's sheen below it. */
+        const val FLOOR_UPRIGHT = -0.28f
         const val MARGIN = 0.03f
         const val DOWN = 1.0f
         const val UP = 0.35f

@@ -212,7 +212,9 @@ class MarbleRaceSim : Sim {
         // Once someone is home, the camera stays at the finish and the rest
         // come in to it. Following the next leader, it swung away up the
         // course the moment the race was won, and the win was never seen.
-        val target = (if (winnerAt >= 0f) finishY + 0.6f else max(lead + 0.35f, finishY + 0.6f)).coerceAtMost(-0.4f)
+        // The leader low on the screen, so the chasing pack above it is in
+        // the picture too: centred on the leader, the race was one marble.
+        val target = (if (winnerAt >= 0f) finishY + 0.6f else max(lead + 0.5f, finishY + 0.6f)).coerceAtMost(-0.4f)
         camY += (target - camY) * min(1f, h * 3f)
     }
 
@@ -362,24 +364,46 @@ class MarbleRaceSim : Sim {
         val palette = env.palette
         val top = camY + 1.15f
         val bottom = camY - 1.15f
-        // Pegs in view.
+        // The course's side rails, and a faint tick every course-unit down,
+        // so the board reads as a track and the fall as speed.
+        val rail = Palette.lerp(Palette.TEXT_SECONDARY, 0xFF000000.toInt(), 0.45f)
+        g.line(-halfW, 1.1f, -halfW, -1.1f, 0.006f, rail, 0.8f)
+        g.line(halfW, 1.1f, halfW, -1.1f, 0.006f, rail, 0.8f)
+        var tick = kotlin.math.ceil(bottom * 2f) / 2f
+        while (tick < top) {
+            if (tick < -1.0f && tick > finishY + 0.2f) g.line(-halfW, tick - camY, -halfW + 0.04f, tick - camY, 0.004f, rail, 0.8f)
+            tick += 0.5f
+        }
+        // Pegs in view: each tinted faintly by the note it plays (its place
+        // across the course), lit up when struck. Plain grey dots read as a
+        // sparse field of dust.
         for (k in pegX.indices) {
             val py = pegY[k]
             if (py > top || py < bottom) continue
-            val lit = steps - lastHitStep[k] < 10 && lastHitStep[k] > 0
-            val c = if (lit) Palette.brighten(palette.at(((pegX[k] + halfW) / (2f * halfW)).coerceIn(0f, 1f)), 0.3f)
-            else Palette.withAlpha(Palette.TEXT_SECONDARY, 0.55f)
-            g.disc(pegX[k], py - camY, PEG_R, c)
-            if (lit) g.glow(pegX[k], py - camY, PEG_R * 4f, c, 0.4f)
+            val tone = palette.at(((pegX[k] + halfW) / (2f * halfW)).coerceIn(0f, 1f))
+            val since = steps - lastHitStep[k]
+            val lit = since < 24 && lastHitStep[k] > 0
+            if (lit) {
+                val f = 1f - since / 24f
+                val c = Palette.brighten(tone, 0.3f)
+                g.glow(pegX[k], py - camY, PEG_R * (3f + 3f * f), c, 0.55f * f)
+                g.ring(pegX[k], py - camY, PEG_R * (1.4f + 2.2f * (1f - f)), 0.003f, c, alpha = 0.8f * f)
+                g.disc(pegX[k], py - camY, PEG_R, Palette.lerp(Palette.lerp(Palette.TEXT_SECONDARY, tone, 0.45f), c, f))
+            } else {
+                g.disc(pegX[k], py - camY, PEG_R, Palette.lerp(Palette.TEXT_SECONDARY, tone, 0.45f), 0.8f)
+            }
         }
         for (k in rampX1.indices) {
             if (min(rampY1[k], rampY2[k]) > top + 0.2f || max(rampY1[k], rampY2[k]) < bottom - 0.2f) continue
-            g.line(rampX1[k], rampY1[k] - camY, rampX2[k], rampY2[k] - camY, RAMP_THICK * 2f, palette.at((k * 0.37f) % 1f))
+            val c = palette.at((k * 0.37f) % 1f)
+            g.line(rampX1[k], rampY1[k] - camY, rampX2[k], rampY2[k] - camY, RAMP_THICK * 5f, c, 0.12f)
+            g.line(rampX1[k], rampY1[k] - camY, rampX2[k], rampY2[k] - camY, RAMP_THICK * 2f, c)
         }
         for (k in paddleY.indices) {
             if (paddleY[k] > top + PADDLE_LEN || paddleY[k] < bottom - PADDLE_LEN) continue
             val a = paddleSpin[k] * elapsed
-            g.rect(paddleX[k], paddleY[k] - camY, PADDLE_LEN, PADDLE_THICK, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.7f), a)
+            g.rect(paddleX[k], paddleY[k] - camY, PADDLE_LEN, PADDLE_THICK, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.75f), a)
+            g.disc(paddleX[k], paddleY[k] - camY, PADDLE_THICK * 1.6f, rail)
         }
         // The finish line: a chequered band right across.
         if (finishY in bottom - 0.1f..top + 0.1f) {
@@ -387,21 +411,51 @@ class MarbleRaceSim : Sim {
             // across a wide screen was a band of slabs.
             val flags = max(FLAGS, (2f * halfW / FLAG_MAX).toInt())
             val sq = 2f * halfW / flags
+            g.glow(0f, finishY - camY, halfW * 0.9f, Palette.TEXT_PRIMARY, 0.08f)
             for (k in 0 until flags) for (row in 0..1) {
                 if ((k + row) % 2 != 0) continue
                 g.rect(-halfW + sq * (k + 0.5f), finishY - camY + (row - 0.5f) * sq, sq * 0.5f, sq * 0.5f, Palette.TEXT_PRIMARY, alpha = 0.7f)
             }
         }
+        var leader = -1
+        for (i in 0 until count) if (!done[i] && (leader < 0 || y[i] < y[leader])) leader = i
         for (i in 0 until count) {
             val c = palette.at(i / max(1f, count - 1f))
             val yy = y[i]
             if (yy > top || yy < bottom) continue
+            val sy = yy - camY
+            if (!done[i]) {
+                // A streak behind it, as long as it is fast.
+                val tail = 0.07f
+                val tx = x[i] - vx[i] * tail; val ty = sy - vy[i] * tail
+                val sp = sqrt(vx[i] * vx[i] + vy[i] * vy[i])
+                if (sp > 0.2f) {
+                    g.line(tx, ty, x[i], sy, R * 1.3f, c, 0.18f)
+                    g.line((tx + x[i]) * 0.5f, (ty + sy) * 0.5f, x[i], sy, R * 1.7f, c, 0.25f)
+                }
+            }
             if (place[i] == 1) {
                 // The winner, ringed, and pulsing once it's home.
-                g.glow(x[i], yy - camY, R * (3.2f + 0.6f * sin(elapsed * 5f)), c, 0.7f)
-                g.ring(x[i], yy - camY, R * 1.55f, R * 0.25f, Palette.TEXT_PRIMARY)
-            } else g.glow(x[i], yy - camY, R * 2.6f, c, 0.4f)
-            g.disc(x[i], yy - camY, R, c)
+                g.glow(x[i], sy, R * (3.2f + 0.6f * sin(elapsed * 5f)), c, 0.7f)
+                g.ring(x[i], sy, R * 1.55f, R * 0.25f, Palette.TEXT_PRIMARY)
+            } else if (i == leader && winnerAt < 0f) {
+                g.glow(x[i], sy, R * 3.4f, c, 0.6f)
+                g.ring(x[i], sy, R * 1.5f, R * 0.18f, Palette.TEXT_PRIMARY, alpha = 0.7f)
+            } else g.glow(x[i], sy, R * 2.6f, c, 0.4f)
+            g.disc(x[i], sy, R, c)
+            g.disc(x[i] - R * 0.32f, sy + R * 0.32f, R * 0.3f, Palette.TEXT_PRIMARY, 0.55f)
+        }
+        // The race at a glance: every marble's progress down the whole course,
+        // on the right-hand rail. Most of the field is off
+        // screen at any moment; this keeps the whole race in the picture.
+        val trackTop = 0.85f; val trackBottom = -0.85f
+        // Along the right rail itself, which doubles as the track.
+        val trackX = halfW
+        g.rect(trackX, trackBottom, 0.016f, 0.004f, Palette.TEXT_PRIMARY, 0f, 0.7f)
+        for (i in 0 until count) {
+            val f = ((-0.6f - y[i]) / (-0.6f - finishY)).coerceIn(0f, 1f)
+            val c = palette.at(i / max(1f, count - 1f))
+            g.disc(trackX, trackTop + (trackBottom - trackTop) * f, if (i == leader || place[i] == 1) 0.013f else 0.009f, c, if (done[i] && place[i] != 1) 0.6f else 1f)
         }
     }
 

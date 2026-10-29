@@ -244,6 +244,26 @@ class CornerSim : Sim {
             g.line(cx, cy, cx, cy - sy * CORNER_MARK, w, c, a)
             if (lit) g.glow(sx * halfW, sy * 1f, 0.12f, c, 0.6f)
         }
+        // The line each badge has drawn across the screen in the last few
+        // seconds, fading behind it: its path is a straight line folded at
+        // the walls, so it is worked out exactly rather than remembered. A
+        // lone badge on a black screen left the eye nothing to follow.
+        if (count <= 4) {
+            val back = TRAIL_SECONDS.coerceAtMost(lineT)
+            if (back > 0.05f) for (k in 0 until count) {
+                val c = palette.at(tint[k])
+                var pxl = -halfW + bw + fold(x0[k] + vx[k] * (lineT - back), wx)
+                var pyl = -1f + bhEff + fold(y0[k] + vy[k] * (lineT - back), wy)
+                for (j in 1..TRAIL_SAMPLES) {
+                    val t = lineT - back + back * j / TRAIL_SAMPLES
+                    val qx = -halfW + bw + fold(x0[k] + vx[k] * t, wx)
+                    val qy = -1f + bhEff + fold(y0[k] + vy[k] * t, wy)
+                    val f = j.toFloat() / TRAIL_SAMPLES
+                    g.line(pxl, pyl, qx, qy, bh * (0.15f + 0.5f * f), c, 0.32f * f * f)
+                    pxl = qx; pyl = qy
+                }
+            }
+        }
         // A wobble, if asked for: a little tilt back and forth as it goes.
         val rot = env.params.f("wobble", 0f) * 0.35f * sin(elapsed * 3f)
         // The round ends reach exactly to the box's edge, so a wall touch is a touch.
@@ -251,15 +271,16 @@ class CornerSim : Sim {
         for (k in 0 until count) {
             val c = palette.at(tint[k])
             val won = doneAt >= 0f && k == first
-            // The badge: a rounded slab with a ring set in it.
+            // The badge: a rounded slab with a diamond set in it. It had a
+            // ring with a bar through it, which read as a famous transit sign.
             g.glow(x[k], y[k], bw * 1.6f, c, 0.25f + (if (won || count == 1) 0.5f * flash else 0f))
             // Sparks before the badge that won, so they fly out from behind it.
             if (won && sparkLife > 0f) drawSparks(g, palette)
             g.rect(x[k], y[k], bw - bh, bh, c, rot)
             g.disc(x[k] - ex, y[k] - ey, bh, c)
             g.disc(x[k] + ex, y[k] + ey, bh, c)
-            g.ring(x[k], y[k], bh * 0.75f, bh * 0.22f, 0xFF07080C.toInt())
-            g.rect(x[k], y[k], bw * 0.55f, bh * 0.12f, 0xFF07080C.toInt(), rot)
+            g.rect(x[k], y[k], bh * 0.5f, bh * 0.5f, 0xFF07080C.toInt(), rot + 0.785398f)
+            g.rect(x[k], y[k], bh * 0.2f, bh * 0.2f, c, rot + 0.785398f)
         }
     }
 
@@ -291,6 +312,9 @@ class CornerSim : Sim {
     )
 
     companion object {
+        /** Seconds of path drawn behind each badge, and the pieces it is drawn in. */
+        const val TRAIL_SECONDS = 2.5f
+        const val TRAIL_SAMPLES = 90
         const val BASE_SPEED = 0.42f
         const val SPARKS = 220
         const val SPARK_LIFE = 1.8f

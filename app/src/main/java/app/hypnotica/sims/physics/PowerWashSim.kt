@@ -64,7 +64,7 @@ class PowerWashSim : Sim {
 
     override fun setup(env: SimEnv) {
         halfW = env.halfWidth
-        gx = env.params.i("detail", 40).coerceIn(10, MAX_DETAIL)
+        gx = env.params.i("detail", 56).coerceIn(10, MAX_DETAIL)
         val w = 2f * halfW * 0.92f
         cell = min(w / gx, 1.8f / 10f)
         gy = (1.8f / cell).toInt().coerceIn(10, 400)
@@ -138,7 +138,7 @@ class PowerWashSim : Sim {
         val f1 = env.rng.range(0.15f, 0.35f); val turn = env.rng.range(0f, 6.28f)
         // Two or three turns of the palette across the wall: more, and at one
         // colour step a cell the mural broke into stair-stepped rainbow noise.
-        val bands = env.rng.range(0.9f, 1.6f)
+        val bands = env.rng.range(0.7f, 1.1f)
         for (k in 0 until gx * gy) {
             val c = k % gx; val r = k / gx
             val u = (c - cx) / gx; val v = (r - cy) / gx
@@ -165,8 +165,17 @@ class PowerWashSim : Sim {
                     kotlin.math.floor((kotlin.math.atan2(v, u) / (2f * PI.toFloat()) + 0.5f) * rays) / rays + turn
                 }
             }
-            val tone = ((t % 1f) + 1f) % 1f
-            mural[k] = palette.at(tone)
+            // Back and forth along the palette rather than round and round:
+            // wrapped, every turn ended in a hard edge where the last colour
+            // met the first, and the wall was a harsh rainbow of stripes.
+            val w = ((t % 2f) + 2f) % 2f
+            val tone = if (w > 1f) 2f - w else w
+            // Lit from the top left and a touch muted at the edges, so the
+            // mural reads as paint on a wall, not a test card.
+            val light = 0.8f + 0.2f * ((1f - c.toFloat() / gx) * 0.4f + (r.toFloat() / gy) * 0.6f)
+            val edge = (min(min(c, gx - 1 - c).toFloat() / gx, min(r, gy - 1 - r).toFloat() / gx) * 6f).coerceIn(0f, 1f)
+            val paint = Palette.lerp(0xFF000000.toInt(), palette.at(0.08f + 0.84f * tone), light * (0.88f + 0.12f * edge))
+            mural[k] = paint
         }
     }
 
@@ -354,11 +363,13 @@ class PowerWashSim : Sim {
             lawKnobs = setOf(LawKnob.GRAVITY),
             heroLabel = "Turbo",
             heroRestarts = false,
-            defaultPalette = "Spectrum",
+            // Aurora: a gradient, so the mural shades from colour to colour;
+            // the spectrum wheel put every hue on the wall at full strength.
+            defaultPalette = "Aurora",
             typicalSeconds = 19f,
             params = listOf(
                 Param.choice("mural", "Under the dirt", MURALS, 0, card = Card.DATA, input = ParamInput.CHIPS),
-                Param.int("detail", "Detail", 10, MAX_DETAIL, 40, card = Card.DATA),
+                Param.int("detail", "Detail", 10, MAX_DETAIL, 56, card = Card.DATA),
                 Param.float("pace", "Pace", 0.3f, 4f, 1f, card = Card.MOTION),
                 Param.float("spray", "Spray width", 0.5f, 2.5f, 1f, card = Card.MOTION)
             ),

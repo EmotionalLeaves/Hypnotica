@@ -590,17 +590,20 @@ class ClothSim : Sim {
         peakMotion = 0f
         elapsed = 0f
         cols = p.i("cols", 26).coerceIn(3, 200)
-        rows = p.i("rows", 20).coerceIn(2, 200)
+        rows = p.i("rows", 34).coerceIn(2, 200)
         val n = cols * rows
         x = FloatArray(n); y = FloatArray(n)
         ox = FloatArray(n); oy = FloatArray(n)
         pinned = BooleanArray(n)
         cut = BooleanArray(n)
-        rest = min(1.5f / cols, 1.4f / rows)
+        // A curtain, taller than wide: an upright phone has twice as much
+        // height as width, and a square sheet hung in it as a small net in
+        // the upper half with the rest of the screen empty.
+        rest = min(1.5f / cols, 2.1f / rows)
         val startX = -rest * (cols - 1) * 0.5f
-        // Hung so the sheet sits about the middle of the screen; from 0.82
-        // it filled the top third of a tall phone and left the rest empty.
-        val startY = (rest * (rows - 1) * 0.5f + 0.1f).coerceAtLeast(0.3f)
+        // Hung so the sheet, once it has stretched under its own weight,
+        // sits about the middle of the view.
+        val startY = (rest * (rows - 1) * 0.5f + 0.12f).coerceAtLeast(0.3f)
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val i = r * cols + c
@@ -634,7 +637,7 @@ class ClothSim : Sim {
         // Air drag per second, not per step, so a faster screen doesn't
         // make the air thicker.
         val drag = Math.pow((1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)).toDouble(), (abs(dt) * 60f).toDouble()).toFloat()
-        val wind = env.params.f("wind", 0.2f) *
+        val wind = env.params.f("wind", 0.08f) *
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
         val n = cols * rows
@@ -649,7 +652,7 @@ class ClothSim : Sim {
         }
 
         // Several relaxation passes keep the cloth from looking like jelly.
-        repeat(env.params.i("stiffness", 4).coerceIn(1, 12)) {
+        repeat(env.params.i("stiffness", 6).coerceIn(1, 12)) {
             for (r in 0 until rows) {
                 for (c in 0 until cols) {
                     val i = r * cols + c
@@ -703,9 +706,17 @@ class ClothSim : Sim {
                 i += maxOf(1, vertices / 64)
             }
             val perVertex = if (sampled == 0) 0f else motion / sampled
-            if (perVertex > peakMotion) peakMotion = perVertex
-            val calm = peakMotion > 0f && perVertex < peakMotion * CALM_SHARE
-            if (calm && elapsed > 3f) stillFor += abs(dt) else stillFor = 0f
+            // Calm against the sheet's own recent sway (a slow running
+            // average), not against its peak: the curtain, being tall, sways
+            // in the wind more than it ever moved in the drop, so measured
+            // against the peak it either counted as calm at once or never.
+            // A calm moment is the hem pausing at the end of a swing, or the
+            // sheet simply hanging still.
+            val k = (abs(dt) / CALM_WINDOW).coerceIn(0f, 1f)
+            peakMotion += (perVertex - peakMotion) * k
+            val calm = perVertex < peakMotion * CALM_SHARE || perVertex < STILL_MOTION
+            if (calm && elapsed > EARLIEST_SETTLE) stillFor += abs(dt) else stillFor = 0f
+            if (elapsed > LATEST_SETTLE) stillFor = STILL_SECONDS + 1f
             // A tear is the louder moment when the sheet is set up to give way,
             // so it wins over the settling.
             val tore = tears > 0
@@ -738,7 +749,7 @@ class ClothSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val n = cols * rows
-        g.reserveInstances(n * 2 + cols)
+        g.reserveInstances(n * 3 + cols)
         // Shading: where the weave is bunched across, the sheet is folded
         // away from us, so it is drawn darker; where it lies flat it is lit.
         // A flat-coloured grid read as a net, not as cloth with folds in it.
@@ -761,6 +772,36 @@ class ClothSim : Sim {
         var left = Float.MAX_VALUE; var right = -Float.MAX_VALUE; var railY = 0f
         for (c in 0 until cols) if (pinned[c]) { left = min(left, x[c]); right = max(right, x[c]); railY = y[c] }
         if (left < right) g.line(left - 0.04f, railY + 0.012f, right + 0.04f, railY + 0.012f, 0.008f, Palette.TEXT_SECONDARY, 0.45f)
+        // The fabric itself: each cell of the weave filled as a quad turned to
+        // follow its threads, a touch oversized so neighbours overlap with no
+        // seams. Threads alone read as a net, not as cloth.
+        for (r in 0 until rows - 1) {
+            val t = (r + 0.5f) / max(1, rows - 1)
+            val col = palette.at(t)
+            for (c in 0 until cols - 1) {
+                val i00 = r * cols + c
+                val i01 = i00 + 1
+                val i10 = i00 + cols
+                val i11 = i10 + 1
+                if (cut[i00] || cut[i01] || cut[i10] || cut[i11]) continue
+                val ux = (x[i01] - x[i00] + x[i11] - x[i10]) * 0.5f
+                val uy = (y[i01] - y[i00] + y[i11] - y[i10]) * 0.5f
+                val vx = (x[i10] - x[i00] + x[i11] - x[i01]) * 0.5f
+                val vy = (y[i10] - y[i00] + y[i11] - y[i01]) * 0.5f
+                val vl = hypot(vx, vy)
+                if (vl < 1e-6f) continue
+                // Turned along the warp (the hanging threads), so the sheet's
+                // sides run straight; turned along the weft, a sheared cell
+                // stuck its corners out and the sides read as a saw blade.
+                val across = abs(ux * vy - uy * vx) / vl
+                val sh = (shade[i00] + shade[i01] + shade[i10] + shade[i11]) * 0.25f
+                val cx = (x[i00] + x[i01] + x[i10] + x[i11]) * 0.25f
+                val cy = (y[i00] + y[i01] + y[i10] + y[i11]) * 0.25f
+                g.rect(cx, cy, vl * 0.5f + rest * 0.06f, across * 0.5f + rest * 0.08f,
+                    Palette.lerp(0xFF000000.toInt(), col, 0.14f + 0.6f * sh * sh), atan2(vy, vx))
+            }
+        }
+        // The weave over it, faint, lit where the sheet faces us.
         for (r in 0 until rows) {
             val t = r.toFloat() / max(1, rows - 1)
             val col = palette.at(t)
@@ -769,10 +810,10 @@ class ClothSim : Sim {
                 if (cut[i]) continue
                 val lit = Palette.lerp(0xFF000000.toInt(), col, shade[i])
                 if (c < cols - 1 && !cut[i + 1]) {
-                    g.line(x[i], y[i], x[i + 1], y[i + 1], 0.0034f, lit, 0.95f)
+                    g.line(x[i], y[i], x[i + 1], y[i + 1], 0.003f, lit, 0.55f)
                 }
                 if (r < rows - 1 && !cut[i + cols]) {
-                    g.line(x[i], y[i], x[i + cols], y[i + cols], 0.0034f, lit, 0.95f)
+                    g.line(x[i], y[i], x[i + cols], y[i + cols], 0.003f, lit, 0.4f)
                 }
             }
         }
@@ -829,7 +870,10 @@ class ClothSim : Sim {
      * smaller, because a smaller sheet is a different sheet — it falls and
      * settles on another clock.
      */
-    override fun frameHalfWidth(env: SimEnv): Float = 1.05f
+    override fun frameHalfWidth(env: SimEnv): Float = 1.02f
+
+    /** The curtain hangs about 2.4 tall; on a wide screen the view pulls back to show its hem. */
+    override fun frameHalfHeight(env: SimEnv): Float = 1.3f
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -842,10 +886,22 @@ class ClothSim : Sim {
         private const val GUST = 0.012f
 
         /** Share of its own peak motion below which the sheet has arrived. */
-        const val CALM_SHARE = 0.22f
+        const val CALM_SHARE = 0.5f
+
+        /** Seconds the running average of the sway looks back over. */
+        const val CALM_WINDOW = 4f
+
+        /** Per-vertex motion a step below which the sheet is simply still. */
+        const val STILL_MOTION = 2e-5f
+
+        /** The drop and the first big swings come first. */
+        const val EARLIEST_SETTLE = 20f
+
+        /** Wind that never lets up still owes the run its moment. */
+        const val LATEST_SETTLE = 40f
 
         /** How long it has to stay calm before the cloth has settled. */
-        const val STILL_SECONDS = 0.8f
+        const val STILL_SECONDS = 0.3f
 
         fun def(): SimDef = SimDef(
             id = "physics/cloth",
@@ -861,11 +917,11 @@ class ClothSim : Sim {
             typicalSeconds = 48f,
             params = listOf(
                 Param.int("cols", "Columns", 3, 200, 26, card = Card.DATA, logScale = true),
-                Param.int("rows", "Rows", 2, 200, 20, card = Card.DATA, logScale = true),
+                Param.int("rows", "Rows", 2, 200, 34, card = Card.DATA, logScale = true),
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
-                Param.float("wind", "Wind", 0f, 1.5f, 0.2f, card = Card.MOTION),
-                Param.int("stiffness", "Stiffness", 1, 12, 4, card = Card.MOTION)
+                Param.float("wind", "Wind", 0f, 1.5f, 0.08f, card = Card.MOTION),
+                Param.int("stiffness", "Stiffness", 1, 12, 6, card = Card.MOTION)
             ),
             create = { ClothSim() }
         )
@@ -905,12 +961,41 @@ class OpticsSim : Sim {
     private var pB = PRISM_BOTTOM
     private var pH = PRISM_HALF
 
+    // Where the glass sits on screen. Rays are traced in the glass's own
+    // frame and turned and moved into the world to be drawn. Upright in the
+    // middle of a phone, a prism as wide as the screen sent its rainbow off
+    // the right edge after a few millimetres; turned so the light leaves
+    // heading down the long axis, the fan has the whole height to open in.
+    private var rotC = 1f
+    private var rotS = 0f
+    private var offX = 0f
+    private var offY = 0f
+    private var viewHalfW = 0.5f
+
+    private fun wx(x: Float, y: Float) = offX + rotC * x - rotS * y
+    private fun wy(x: Float, y: Float) = offY + rotS * x + rotC * y
+    private fun inView(x: Float, y: Float): Boolean {
+        val a = wx(x, y); val b = wy(x, y)
+        return a < viewHalfW && a > -viewHalfW * 1.02f && abs(b) < 1.05f
+    }
+
     override fun setup(env: SimEnv) {
         val p = env.params
         rays.clear()
         shape = p.choiceIndex("shape")
-        val ps = min(1f, env.halfWidth * 0.82f / PRISM_HALF)
-        pT = PRISM_TOP * ps; pB = PRISM_BOTTOM * ps; pH = PRISM_HALF * ps
+        viewHalfW = env.halfWidth
+        val upright = env.halfWidth < 0.8f
+        if (shape == 0) {
+            val ps = if (upright) 0.5f else min(0.8f, env.halfWidth * 0.5f / PRISM_HALF)
+            pT = PRISM_TOP * ps; pB = PRISM_BOTTOM * ps; pH = PRISM_HALF * ps
+            val turn = if (upright) PRISM_TURN_UPRIGHT else PRISM_TURN_WIDE
+            rotC = cos(turn); rotS = sin(turn)
+            offX = if (upright) -0.02f else -env.halfWidth * 0.4f
+            offY = if (upright) 0.5f else 0.3f
+        } else {
+            pT = PRISM_TOP; pB = PRISM_BOTTOM; pH = PRISM_HALF
+            rotC = 1f; rotS = 0f; offX = 0f; offY = 0f
+        }
         val count = p.i("rays", 9).coerceIn(1, 60)
         for (i in 0 until count) {
             val t = if (count == 1) 0.5f else i.toFloat() / (count - 1)
@@ -1063,6 +1148,18 @@ class OpticsSim : Sim {
             }
             var dx = cos(aim)
             var dy = sin(aim)
+            if (shape == 0) {
+                // The prism is turned, so its beam starts wherever its line
+                // into the left face enters the view: walked back from the
+                // face until it leaves the screen.
+                val faceDirX = pH; val faceDirY = pB - pT
+                val fl = hypot(faceDirX, faceDirY)
+                val along = (sourceY - 0.35f) * 0.8f
+                x = -pH * 0.5f - faceDirX / fl * along - dx * 0.02f
+                y = (pT + pB) * 0.5f - faceDirY / fl * along - dy * 0.02f
+                var back = 0
+                while (back++ < 400 && inView(x - dx * 0.01f, y - dy * 0.01f)) { x -= dx * 0.01f; y -= dy * 0.01f }
+            }
             ray.count = 0
             ray.firstHit = -1
             ray.xs[ray.count] = x
@@ -1071,9 +1168,7 @@ class OpticsSim : Sim {
             var inside = insideGlass(x, y)
             var guard = MAX_SEGMENTS - 2
             val stepLen = 0.012f
-            while (guard-- > 0 && ray.count < MAX_SEGMENTS - 2 &&
-                x < halfW && x > -halfW * 1.02f && abs(y) < 1.05f
-            ) {
+            while (guard-- > 0 && ray.count < MAX_SEGMENTS - 2 && inView(x, y)) {
                 var nx = x + dx * stepLen
                 var ny = y + dy * stepLen
                 if (insideGlass(nx, ny) != inside) {
@@ -1169,14 +1264,16 @@ class OpticsSim : Sim {
                 // Filled in thin bands, row by row, under the edges.
                 val bands = 48
                 val h = (pT - pB) / bands
+                val turn = atan2(rotS, rotC)
                 for (k in 0 until bands) {
                     val yMid = pB + (k + 0.5f) * h
                     val half = (pT - yMid) / (pT - pB) * pH
-                    g.rect(0f, yMid, half, h * 0.5f, GLASS_FILL, 0f, 1f)
+                    g.rect(wx(0f, yMid), wy(0f, yMid), half, h * 0.5f + 0.0005f, GLASS_FILL, turn, 1f)
                 }
-                g.line(0f, pT, -pH, pB, 0.006f, edge, 0.6f)
-                g.line(0f, pT, pH, pB, 0.006f, edge, 0.6f)
-                g.line(-pH, pB, pH, pB, 0.006f, edge, 0.6f)
+                g.line(wx(0f, pT), wy(0f, pT), wx(-pH, pB), wy(-pH, pB), 0.007f, edge, 0.75f)
+                g.line(wx(0f, pT), wy(0f, pT), wx(pH, pB), wy(pH, pB), 0.007f, edge, 0.75f)
+                g.line(wx(-pH, pB), wy(-pH, pB), wx(pH, pB), wy(pH, pB), 0.007f, edge, 0.75f)
+                for ((cx0, cy0) in listOf(0f to pT, -pH to pB, pH to pB)) g.disc(wx(cx0, cy0), wy(cx0, cy0), 0.0035f, edge, 0.75f)
             }
             1 -> {
                 // The two arcs that bound the lens, as short chords.
@@ -1219,6 +1316,47 @@ class OpticsSim : Sim {
             strokes(g, ray, 0, split, 0.014f, Palette.TEXT_PRIMARY, 0.08f)
             strokes(g, ray, 0, split, 0.0045f, Palette.TEXT_PRIMARY, 0.95f)
         }
+        // The spectrum between neighbouring rays filled in, a band at a time,
+        // so the dispersed light is one continuous rainbow rather than nine
+        // hairlines; only for the prism, whose rays share one white beam.
+        if (shape == 0 && rays.size >= 2) {
+            for (k in 0 until rays.size - 1) {
+                val ra = rays[k]; val rb = rays[k + 1]
+                val ca = Palette.hsv(250f - ra.tint * 240f, 0.8f, 1f)
+                val cb = Palette.hsv(250f - rb.tint * 240f, 0.8f, 1f)
+                val col = Palette.lerp(ca, cb, 0.5f)
+                // The last straight run of each: from where it last turned to its end.
+                val sa = lastTurn(ra); val sb = lastTurn(rb)
+                if (sa < 0 || sb < 0) continue
+                // Only neighbours that left the glass together: when one ray
+                // reflects inside and its neighbour gets out, their last runs
+                // start far apart and the band between them is not light.
+                if (hypot(ra.xs[sa] - rb.xs[sb], ra.ys[sa] - rb.ys[sb]) > 0.06f) continue
+                if (hypot(ra.xs[ra.count - 1] - rb.xs[rb.count - 1], ra.ys[ra.count - 1] - rb.ys[rb.count - 1]) > 0.35f) continue
+                val pieces = 18
+                for (q in 0 until pieces) {
+                    val t0 = q / pieces.toFloat(); val t1 = (q + 1) / pieces.toFloat()
+                    val ax0 = lerpF(ra.xs[sa], ra.xs[ra.count - 1], t0); val ay0 = lerpF(ra.ys[sa], ra.ys[ra.count - 1], t0)
+                    val bx0 = lerpF(rb.xs[sb], rb.xs[rb.count - 1], t0); val by0 = lerpF(rb.ys[sb], rb.ys[rb.count - 1], t0)
+                    val ax1 = lerpF(ra.xs[sa], ra.xs[ra.count - 1], t1); val ay1 = lerpF(ra.ys[sa], ra.ys[ra.count - 1], t1)
+                    val bx1 = lerpF(rb.xs[sb], rb.xs[rb.count - 1], t1); val by1 = lerpF(rb.ys[sb], rb.ys[rb.count - 1], t1)
+                    val mx0 = wx((ax0 + bx0) * 0.5f, (ay0 + by0) * 0.5f); val my0 = wy((ax0 + bx0) * 0.5f, (ay0 + by0) * 0.5f)
+                    val mx1 = wx((ax1 + bx1) * 0.5f, (ay1 + by1) * 0.5f); val my1 = wy((ax1 + bx1) * 0.5f, (ay1 + by1) * 0.5f)
+                    val wide = hypot((ax0 + ax1 - bx0 - bx1) * 0.5f, (ay0 + ay1 - by0 - by1) * 0.5f)
+                    // Brighter close to the glass, and dimmer the wider the
+                    // band: the same light spread over more of the wall.
+                    g.line(mx0, my0, mx1, my1, wide + 0.002f, col, (0.5f - 0.2f * t0) * min(1f, 0.035f / (wide + 1e-4f)))
+                }
+            }
+            // Where each colour leaves the picture, a soft glow, like the
+            // spectrum cast on a wall.
+            for (ray in rays) {
+                if (ray.firstHit < 0) continue
+                val c = Palette.hsv(250f - ray.tint * 240f, 0.8f, 1f)
+                val ex = wx(ray.xs[ray.count - 1], ray.ys[ray.count - 1]); val ey = wy(ray.xs[ray.count - 1], ray.ys[ray.count - 1])
+                g.glow(ex, ey, 0.09f, c, 0.25f)
+            }
+        }
         for ((index, ray) in rays.withIndex()) {
             val c = Palette.hsv(250f - ray.tint * 240f, 0.8f, 1f)
             val from = when {
@@ -1249,10 +1387,26 @@ class OpticsSim : Sim {
                 val scale = hypot(ax, ay) * hypot(bx, by)
                 if (cross <= scale * 1e-4f) continue
             }
-            g.line(ray.xs[start], ray.ys[start], ray.xs[i], ray.ys[i], width, color, alpha)
+            g.line(wx(ray.xs[start], ray.ys[start]), wy(ray.xs[start], ray.ys[start]),
+                wx(ray.xs[i], ray.ys[i]), wy(ray.xs[i], ray.ys[i]), width, color, alpha)
             start = i
         }
     }
+
+    /** The index where a ray's path last bends: the start of its final straight run, or -1. */
+    private fun lastTurn(ray: Ray): Int {
+        if (ray.firstHit < 0 || ray.count < 3) return -1
+        var i = ray.count - 2
+        while (i > ray.firstHit) {
+            val ax = ray.xs[i] - ray.xs[i - 1]; val ay = ray.ys[i] - ray.ys[i - 1]
+            val bx = ray.xs[i + 1] - ray.xs[i]; val by = ray.ys[i + 1] - ray.ys[i]
+            if (abs(ax * by - ay * bx) > hypot(ax, ay) * hypot(bx, by) * 1e-4f) return i
+            i--
+        }
+        return ray.firstHit
+    }
+
+    private fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -1275,6 +1429,9 @@ class OpticsSim : Sim {
         /** Least deviation for a 60° prism at n ≈ 1.65: in at about 55° to the face. */
         const val PRISM_AIM = 0.42f + 0.35f * 0.5f
         const val PRISM_SWEEP = 0.5f
+        /** The prism's turn on screen, clockwise, upright phone and wide. */
+        const val PRISM_TURN_UPRIGHT = -1.0f
+        const val PRISM_TURN_WIDE = -0.3f
         const val DISPERSION = 0.06f
         const val CROWN_RED = 1.51f
         const val CROWN_DISPERSION = 0.015f

@@ -435,6 +435,11 @@ class PourSim : Sim {
         // Between the last two fixed steps, when time runs slow.
         val t = (stepCarry / FIXED_STEP).coerceIn(0f, 1f)
         g.reservePoints(n)
+        // Which end of the palette is the light one: moving water goes that
+        // way. Taken as rising t, it went dark on a light-to-dark palette like
+        // the default Ocean, and the falling stream was a navy thread on black.
+        fun lum(c: Int) = ((c shr 16) and 255) * 0.3f + ((c shr 8) and 255) * 0.59f + (c and 255) * 0.11f
+        val lightUp = lum(palette.at(0.9f)) > lum(palette.at(0.1f))
         for (i in 0 until n) {
             val sp = sqrt(vx[i] * vx[i] + vy[i] * vy[i])
             // Still water deep, moving water bright: the stream and the
@@ -454,7 +459,8 @@ class PourSim : Sim {
                     dx = if (dx < (gL[q] + gR[q]) * 0.5f) gL[q] - DRAW_INSET else gR[q] + DRAW_INSET
                 }
             }
-            g.point(dx, dy, D * 1.3f, palette.at((0.25f + sp * 0.35f).coerceIn(0f, 1f)))
+            val tone = (0.25f + sp * 0.35f).coerceIn(0f, 1f)
+            g.point(dx, dy, D * 1.3f, palette.at(if (lightUp) tone else 0.6f - tone * 0.6f))
         }
         if (!full) {
             // The tap: a spout, and the pipe it hangs from.

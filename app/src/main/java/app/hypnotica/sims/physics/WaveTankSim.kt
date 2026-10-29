@@ -193,22 +193,24 @@ class WaveTankSim : Sim {
         // cell across left a lattice of dark gaps that beat against the
         // wavefronts into moiré.
         g.reservePoints(w * (screenRow + 1))
-        val crest = palette.at(0.75f)
-        val trough = palette.at(0.3f)
+        val crest = Palette.brighten(palette.at(0.45f), 0.08f)
+        // Still water is a dim tone of its own, troughs darker than it and
+        // crests brighter, shaded smoothly through zero. Drawn as light on
+        // black, every zero crossing was a hard black line, and at seven
+        // cells a wave those lines beat into dark moiré stripes.
+        val still = Palette.lerp(Palette.BG, palette.at(0.6f), 0.2f)
+        val deep = Palette.lerp(Palette.BG, 0xFF000000.toInt(), 0.5f)
         for (y in 0 until screenRow) {
             val wy = 1f - (y + 0.5f) * cell
             val row = y * w
             for (x in 0 until w) {
                 val i = row + x
                 if (wall[i]) continue
-                val q = u[i] / SHOW_AMPLITUDE
-                // Crests bright, troughs a dim second colour: the ripples read
-                // as lines of light, the way a ripple tank throws them.
-                val a = if (q > 0f) min(1f, q) else min(1f, -q) * TROUGH
-                if (a < 0.03f) continue
-                // Opaque, faded toward the background instead: see-through
-                // dots doubled up where they overlap and the field went grainy.
-                g.point(left + (x + 0.5f) * cell, wy, cell * 1.45f, Palette.lerp(Palette.BG, if (q > 0f) crest else trough, a))
+                val q = (u[i] / SHOW_AMPLITUDE).coerceIn(-1f, 1f)
+                // Opaque: see-through dots doubled up where they overlap and
+                // the field went grainy.
+                val c = if (q >= 0f) Palette.lerp(still, crest, q * (2f - q)) else Palette.lerp(still, deep, -q * TROUGH_DEPTH)
+                g.point(left + (x + 0.5f) * cell, wy, cell * 1.45f, c)
             }
         }
         // The wall, drawn solid.
@@ -260,8 +262,8 @@ class WaveTankSim : Sim {
         const val UPDATES_PER_SECOND = 70f
         const val SOURCE_AMPLITUDE = 1f
         const val SHOW_AMPLITUDE = 0.7f
-        /** How bright a trough is next to a crest of the same height. */
-        const val TROUGH = 0.4f
+        /** How far a full trough darkens the still water towards black. */
+        const val TROUGH_DEPTH = 0.75f
         const val ARRIVAL = 0.02f
         const val FORMING_PERIODS = 6f
         const val STONE = 2.5f
