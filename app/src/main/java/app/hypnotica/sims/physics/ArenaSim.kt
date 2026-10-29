@@ -243,7 +243,10 @@ class ArenaSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        // The arena, and where it started, faintly.
+        // The arena, and where it started, faintly. The floor still in play
+        // is a shade lighter than the void, so the zone closing in reads as
+        // ground being lost, not just a line moving.
+        g.disc(0f, 0f, arena, FLOOR)
         g.ring(0f, 0f, arena0, 0.004f, Palette.TEXT_SECONDARY, alpha = 0.25f)
         // Won, the closing zone stops being a threat and takes the winner's
         // colour: the fight is resolved, and the picture says whose it is.
@@ -306,6 +309,7 @@ class ArenaSim : Sim {
         else listOf("standing" to "$aliveCount / $n")
 
     companion object {
+        private val FLOOR = 0xFF0D1118.toInt()
         const val MAX_FIGHTERS = 64
         const val SHRINK_AFTER = 4f
         const val SHRINK_RATE = 0.035f

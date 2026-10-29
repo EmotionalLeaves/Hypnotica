@@ -195,6 +195,9 @@ class LastOutSim : Sim {
         val shut = if (doneAt < 0f) 1f else (1f - (elapsed - doneAt) / SHUT_SECONDS).coerceIn(0f, 1f)
         val gapVis = gapNow * shut
         val arc = twoPi / gaps - gapVis
+        // The floor inside the ring a shade above the void, so in and out
+        // read at a glance: a ball that has escaped is on the dark.
+        g.disc(0f, 0f, ringR, FLOOR)
         val ringC = if (doneAt >= 0f && winner >= 0) Palette.lerp(Palette.TEXT_PRIMARY, palette.at(tint[winner]), 1f - shut) else Palette.TEXT_PRIMARY
         for (k in 0 until gaps) {
             val start = gapAngle + k * twoPi / gaps + gapVis + (gapNow - gapVis) * 0.5f
@@ -225,6 +228,7 @@ class LastOutSim : Sim {
         else listOf("inside" to "$inside / $n")
 
     companion object {
+        private val FLOOR = 0xFF0D1118.toInt()
         const val MAX_BALLS = 300
         const val MAX_GAPS = 4
         const val MAX_PICKS = 8

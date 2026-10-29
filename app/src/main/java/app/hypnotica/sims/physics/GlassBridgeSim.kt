@@ -225,6 +225,16 @@ class GlassBridgeSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
+        // The steel the panes sit in: a pair of rails down each lane, from
+        // platform to platform. Without them the panes floated in the dark
+        // as loose tiles, and a broken one left no gap in anything.
+        val railOff = paneHalf + RAIL_GAP
+        for (s in 0 until lanes) {
+            for (side in floatArrayOf(-1f, 1f)) {
+                val x = sideX(s) + side * railOff
+                lineB(g, x, BOTTOM, x, TOP, RAIL_W, RAIL)
+            }
+        }
         // The start and finish platforms.
         rectB(g, 0f, BOTTOM - 0.04f, laneW * 0.7f, 0.035f, 0xFF2A2E38.toInt())
         rectB(g, 0f, TOP + 0.04f, laneW * 0.7f, 0.035f, if (firstAcross >= 0) Palette.SUCCESS else 0xFF2A2E38.toInt())
@@ -245,6 +255,18 @@ class GlassBridgeSim : Sim {
                 outline(g, x, y, Palette.withAlpha(tintC, if (sure) 0.9f else 0.55f), 0.004f)
                 // A glint across one corner.
                 lineB(g, x - paneHalf * 0.75f, y - paneH * 0.2f, x - paneHalf * 0.45f, y + paneH * 0.6f, 0.004f, Palette.withAlpha(0xFFFFFFFF.toInt(), if (sure) 0.25f else 0.4f))
+            }
+        }
+        // Once it is decided, the panes nobody tried show which held: the
+        // whole safe path laid out, so the end reads as an answer rather
+        // than a half-tested bridge.
+        if (doneAt >= 0f) {
+            val k = ((elapsed - doneAt) / REVEAL_SECONDS).coerceIn(0f, 1f)
+            if (k > 0f) for (r in 0 until rows) {
+                if (known[r]) continue
+                val x = sideX(safe[r]); val y = rowY(r)
+                rectB(g, x, y, paneHalf, paneH, Palette.withAlpha(Palette.SUCCESS, 0.14f * k))
+                outline(g, x, y, Palette.withAlpha(Palette.SUCCESS, 0.6f * k), 0.004f)
             }
         }
         for (i in 0 until SHARDS) {
@@ -348,6 +370,10 @@ class GlassBridgeSim : Sim {
         const val FOLLOW_SECONDS = 9f
         const val SHARD_FADE = 1.4f
         val GLASS = 0xFFA8D8FF.toInt()
+        val RAIL = 0xFF343A47.toInt()
+        const val RAIL_W = 0.006f
+        const val RAIL_GAP = 0.012f
+        const val REVEAL_SECONDS = 1.2f
 
         fun def(): SimDef = SimDef(
             id = "physics/glass-bridge",

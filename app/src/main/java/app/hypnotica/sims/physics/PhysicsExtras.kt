@@ -702,7 +702,8 @@ class ClothSim : Sim {
             pinned[c] = true
         }
         tearing = p.b("tear", false)
-        lastDt = 0f
+        owed = 0f
+        px0 = x.copyOf(); py0 = y.copyOf()
         tears = 0
         lastTears = 0
         swayClock = 0f
@@ -712,6 +713,26 @@ class ClothSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
+        // Always in whole steps of one size, drawn between them. Verlet with
+        // a fixed number of relaxation passes holds the sheet stretched by an
+        // amount that depends on the step: when the payoff's slow motion
+        // switched to finer steps, the stretch sprang back all at once and
+        // the curtain crumpled into a jagged mess at the very moment it paid
+        // off. A time-corrected velocity made it worse; the step must not change.
+        owed += abs(dt)
+        var taken = 0
+        while (owed >= FIXED_STEP * 0.999f && taken < MAX_CATCH_UP) {
+            owed -= FIXED_STEP
+            System.arraycopy(x, 0, px0, 0, x.size)
+            System.arraycopy(y, 0, py0, 0, y.size)
+            advance(env, FIXED_STEP)
+            taken++
+        }
+        if (taken == MAX_CATCH_UP) owed = 0f
+        owed = owed.coerceAtLeast(0f)
+    }
+
+    private fun advance(env: SimEnv, dt: Float) {
         elapsed += abs(dt)
         val laws = env.laws
         // Gravity along whichever way it points: only its downward part was
@@ -723,24 +744,17 @@ class ClothSim : Sim {
         val drag = Math.pow((1f - (laws.friction * 0.2f).coerceIn(0f, 0.3f)).toDouble(), (abs(dt) * 60f).toDouble()).toFloat()
         // A breeze, by default: the hem swings out by the sheet's length
         // times the wind, and at 0.08 the taller curtain swung off the edge.
-        // 0.022 since the phone curtain grew longer: its hem swings out
-        // further for the same breeze, and at 0.055 it left the screen.
-        val wind = env.params.f("wind", 0.022f) *
+        // 0.015 since the phone curtain grew longer: its hem swings out
+        // further for the same breeze (the gusts come near its own swing), and
+        // at 0.055 it left the screen.
+        val wind = env.params.f("wind", 0.015f) *
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
         val n = cols * rows
-        // Time-corrected Verlet: the velocity is the last step's move, so
-        // when the step shrinks (the payoff's slow motion runs on finer
-        // steps) that move is scaled to the new step. Carried over whole, a
-        // quarter-size step moved every vertex four times too fast and the
-        // curtain crumpled into a jagged mess at the very moment it paid off.
-        val h = abs(dt)
-        val ratio = if (lastDt > 0f && h > 0f) (h / lastDt).coerceIn(0.1f, 10f) else 1f
-        if (h > 0f) lastDt = h
         for (i in 0 until n) {
             if (pinned[i] || cut[i]) continue
-            val vx = (x[i] - ox[i]) * drag * ratio
-            val vy = (y[i] - oy[i]) * drag * ratio
+            val vx = (x[i] - ox[i]) * drag
+            val vy = (y[i] - oy[i]) * drag
             ox[i] = x[i]
             oy[i] = y[i]
             x[i] += vx + (wind + gSide) * dt * dt * 40f
@@ -826,8 +840,13 @@ class ClothSim : Sim {
     }
 
     private var tearX = 0f
-    /** The previous step's size, for [step]'s time-corrected Verlet. */
-    private var lastDt = 0f
+    /** Time owed to [advance], which only ever takes whole FIXED_STEPs. */
+    private var owed = 0f
+    /** Where every vertex was one fixed step ago, to draw between steps. */
+    private var px0 = FloatArray(0)
+    private var py0 = FloatArray(0)
+    private var drawX = FloatArray(0)
+    private var drawY = FloatArray(0)
 
     private fun relax(a: Int, b: Int, rest: Float) {
         if (cut[a] || cut[b]) return
@@ -849,6 +868,19 @@ class ClothSim : Sim {
     }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
+        // Between the last two fixed steps, by how far time has got.
+        val n = cols * rows
+        if (drawX.size != n) { drawX = FloatArray(n); drawY = FloatArray(n) }
+        val f = (owed / FIXED_STEP).coerceIn(0f, 1f)
+        if (px0.size == n) for (i in 0 until n) {
+            drawX[i] = px0[i] + (x[i] - px0[i]) * f
+            drawY[i] = py0[i] + (y[i] - py0[i]) * f
+        }
+        // Passed in rather than swapped into x and y, which the step owns.
+        if (px0.size == n) drawSheet(env, g, drawX, drawY) else drawSheet(env, g, x, y)
+    }
+
+    private fun drawSheet(env: SimEnv, g: G, xs: FloatArray, ys: FloatArray) {
         val palette = env.palette
         val n = cols * rows
         g.reserveInstances(n * 3 + cols)
@@ -861,8 +893,8 @@ class ClothSim : Sim {
                 val i = r * cols + c
                 val a = if (c > 0) i - 1 else i
                 val b = if (c < cols - 1) i + 1 else i
-                val dx = x[b] - x[a]
-                val len = hypot(dx, y[b] - y[a])
+                val dx = xs[b] - xs[a]
+                val len = hypot(dx, ys[b] - ys[a])
                 // How square-on the weft runs: tipped threads are a sheet
                 // turning away from the light.
                 val face = if (len < 1e-6f) 1f else abs(dx) / len
@@ -872,7 +904,7 @@ class ClothSim : Sim {
         }
         // The rail the sheet hangs from.
         var left = Float.MAX_VALUE; var right = -Float.MAX_VALUE; var railY = 0f
-        for (c in 0 until cols) if (pinned[c]) { left = min(left, x[c]); right = max(right, x[c]); railY = y[c] }
+        for (c in 0 until cols) if (pinned[c]) { left = min(left, xs[c]); right = max(right, xs[c]); railY = ys[c] }
         if (left < right) g.line(left - 0.04f, railY + 0.012f, right + 0.04f, railY + 0.012f, 0.008f, Palette.TEXT_SECONDARY, 0.45f)
         // The fabric itself: each cell of the weave filled as a quad turned to
         // follow its threads, a touch oversized so neighbours overlap with no
@@ -886,10 +918,10 @@ class ClothSim : Sim {
                 val i10 = i00 + cols
                 val i11 = i10 + 1
                 if (cut[i00] || cut[i01] || cut[i10] || cut[i11]) continue
-                val ux = (x[i01] - x[i00] + x[i11] - x[i10]) * 0.5f
-                val uy = (y[i01] - y[i00] + y[i11] - y[i10]) * 0.5f
-                val vx = (x[i10] - x[i00] + x[i11] - x[i01]) * 0.5f
-                val vy = (y[i10] - y[i00] + y[i11] - y[i01]) * 0.5f
+                val ux = (xs[i01] - xs[i00] + xs[i11] - xs[i10]) * 0.5f
+                val uy = (ys[i01] - ys[i00] + ys[i11] - ys[i10]) * 0.5f
+                val vx = (xs[i10] - xs[i00] + xs[i11] - xs[i01]) * 0.5f
+                val vy = (ys[i10] - ys[i00] + ys[i11] - ys[i01]) * 0.5f
                 val vl = hypot(vx, vy)
                 if (vl < 1e-6f) continue
                 // Turned along the warp (the hanging threads), so the sheet's
@@ -897,8 +929,8 @@ class ClothSim : Sim {
                 // stuck its corners out and the sides read as a saw blade.
                 val across = abs(ux * vy - uy * vx) / vl
                 val sh = (shade[i00] + shade[i01] + shade[i10] + shade[i11]) * 0.25f
-                val cx = (x[i00] + x[i01] + x[i10] + x[i11]) * 0.25f
-                val cy = (y[i00] + y[i01] + y[i10] + y[i11]) * 0.25f
+                val cx = (xs[i00] + xs[i01] + xs[i10] + xs[i11]) * 0.25f
+                val cy = (ys[i00] + ys[i01] + ys[i10] + ys[i11]) * 0.25f
                 g.rect(cx, cy, vl * 0.5f + rest * 0.06f, across * 0.5f + restX * 0.035f,
                     Palette.lerp(0xFF000000.toInt(), col, 0.14f + 0.6f * sh * sh), atan2(vy, vx))
             }
@@ -912,16 +944,16 @@ class ClothSim : Sim {
                 if (cut[i]) continue
                 val lit = Palette.lerp(0xFF000000.toInt(), col, shade[i])
                 if (c < cols - 1 && !cut[i + 1]) {
-                    g.line(x[i], y[i], x[i + 1], y[i + 1], 0.003f, lit, 0.55f)
+                    g.line(xs[i], ys[i], xs[i + 1], ys[i + 1], 0.003f, lit, 0.55f)
                 }
                 if (r < rows - 1 && !cut[i + cols]) {
-                    g.line(x[i], y[i], x[i + cols], y[i + cols], 0.003f, lit, 0.4f)
+                    g.line(xs[i], ys[i], xs[i + cols], ys[i + cols], 0.003f, lit, 0.4f)
                 }
             }
         }
         for (c in 0 until cols) if (pinned[c] && !cut[c]) {
-            g.disc(x[c], y[c] + 0.012f, 0.014f, Palette.TEXT_SECONDARY)
-            g.disc(x[c], y[c] + 0.012f, 0.007f, AXLE_DARK)
+            g.disc(xs[c], ys[c] + 0.012f, 0.014f, Palette.TEXT_SECONDARY)
+            g.disc(xs[c], ys[c] + 0.012f, 0.007f, AXLE_DARK)
         }
     }
 
@@ -987,6 +1019,9 @@ class ClothSim : Sim {
 
     companion object {
         private val AXLE_DARK = 0xFF07090D.toInt()
+        /** The one step the cloth is ever advanced by, and the most it catches up in a frame. */
+        const val FIXED_STEP = 1f / 120f
+        const val MAX_CATCH_UP = 12
         /** How tall the curtain hangs on an upright phone, before it stretches. */
         const val PHONE_DROP = 3.3f
         /** A gust's push, in world units a step, at the hem. */
@@ -1027,7 +1062,7 @@ class ClothSim : Sim {
                 Param.int("rows", "Rows", 2, 200, 44, card = Card.DATA, logScale = true),
                 Param.int("pins", "Pins", 1, 12, 5, card = Card.DATA),
                 Param.bool("tear", "Let it tear", false, card = Card.DATA),
-                Param.float("wind", "Wind", 0f, 1.5f, 0.022f, card = Card.MOTION),
+                Param.float("wind", "Wind", 0f, 1.5f, 0.015f, card = Card.MOTION),
                 Param.int("stiffness", "Stiffness", 1, 12, 6, card = Card.MOTION)
             ),
             create = { ClothSim() }
@@ -1142,10 +1177,23 @@ class OpticsSim : Sim {
     }
 
     /** Where a prism's beam starts: on a straight line into the middle of the left face. */
+    /**
+     * How far along the prism's left face, from its middle, the beam aims.
+     * The slider's whole range maps onto most of the face, either side of
+     * the default: as (height - 0.35) * 0.8 most of the range aimed past
+     * the corners, and along the right face's slope rather than the left's,
+     * so away from the default the beam missed the glass altogether.
+     */
+    private fun faceAlong(): Float {
+        val half = hypot(pH, pB - pT) * 0.5f * 0.8f
+        val d = sourceY - 0.35f
+        return if (d >= 0f) d / 0.45f * half else d / 0.95f * half
+    }
+
     private fun prismStartY(x0: Float, dir: Float): Float {
-        val faceDirX = pH; val faceDirY = pB - pT
+        val faceDirX = -pH; val faceDirY = pB - pT
         val fl = hypot(faceDirX, faceDirY)
-        val along = (sourceY - 0.35f) * 0.8f
+        val along = faceAlong()
         val hx = -pH * 0.5f - faceDirX / fl * along
         val hy = (pT + pB) * 0.5f - faceDirY / fl * along
         return hy + (x0 - hx) * kotlin.math.tan(dir)
@@ -1277,9 +1325,9 @@ class OpticsSim : Sim {
                 // The prism is turned, so its beam starts wherever its line
                 // into the left face enters the view: walked back from the
                 // face until it leaves the screen.
-                val faceDirX = pH; val faceDirY = pB - pT
+                val faceDirX = -pH; val faceDirY = pB - pT
                 val fl = hypot(faceDirX, faceDirY)
-                val along = (sourceY - 0.35f) * 0.8f
+                val along = faceAlong()
                 x = -pH * 0.5f - faceDirX / fl * along - dx * 0.02f
                 y = (pT + pB) * 0.5f - faceDirY / fl * along - dy * 0.02f
                 var back = 0

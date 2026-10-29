@@ -73,6 +73,8 @@ class PourSim : Sim {
     private var flowScale = 1f
     private var poured = 0
     private var gNow = 1f
+    /** Half a falling drop's streak per unit of speed: half the gap to the next drop in its lane. */
+    private var streak = STREAK
 
     // Neighbour grid.
     private var cellsX = 1
@@ -119,6 +121,7 @@ class PourSim : Sim {
         cap = (area / DROP_AREA * 1.4f + 500f).toInt().coerceIn(1200, MAX_DROPS)
         poured = 0
         gNow = 1f
+        streak = STREAK
         x = FloatArray(cap); y = FloatArray(cap); vx = FloatArray(cap); vy = FloatArray(cap)
         px = FloatArray(cap); py = FloatArray(cap); dvx = FloatArray(cap); dvy = FloatArray(cap)
         n = 0
@@ -174,6 +177,10 @@ class PourSim : Sim {
             carry += h * flow
             // As many lanes as keep each one's drops a drop apart.
             val lanes = kotlin.math.ceil(flow * D * 1.2f / TAP_SPEED).toInt().coerceIn(1, maxLanes)
+            // Drops in a lane are speed x lanes / flow apart; a fixed streak
+            // length joined them at the default flow and drew a dashed line
+            // at any other.
+            streak = (0.6f * lanes / max(flow, 1f)).coerceIn(0.002f, 0.03f)
             // Out of water: the array is full, or the tap has run three
             // glasses' worth (spill drains away, so it could run for ever).
             if (n >= cap || poured >= cap * 3) { if (capAt < 0f) capAt = elapsed }
@@ -492,7 +499,7 @@ class PourSim : Sim {
                 // Falling water drawn as a streak along its path, long enough
                 // to meet the drop behind: as round dots the stream was a
                 // string of pearls, not a pour.
-                g.rect(dx, dy, max(D * 0.55f, sp * STREAK), D * 0.42f, c, atan2(vy[i], vx[i]))
+                g.rect(dx, dy, max(D * 0.55f, sp * streak), D * 0.42f, c, atan2(vy[i], vx[i]))
             } else {
                 g.point(dx, dy, D * 1.3f, c)
             }

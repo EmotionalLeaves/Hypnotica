@@ -251,7 +251,9 @@ class DoublePendulumSim : Sim {
         val drawn = (count + armEvery - 1) / armEvery
         // Once they have split, the arms fade back and leave the spray of
         // bobs: six hundred faint rods from the pivot were a radial scribble.
-        val after = if (split) (1f - (elapsed - splitAt) / 3f).coerceIn(0.3f, 1f) else 1f
+        // Down to a sixth, not a third: at 0.3 the rods still crossed the
+        // spray as a grey-rainbow hatch behind the bobs.
+        val after = if (split) (1f - (elapsed - splitAt) / 3f).coerceIn(0.16f, 1f) else 1f
         val faint = (3f / sqrt(drawn.toFloat())).coerceIn(0.05f, 0.6f) * after
         val asPoints = count > DRAWN_AS_POINTS
         g.reserveInstances(drawn * 2 + (if (asPoints) 0 else count) + 2 * TRAIL + 16)
