@@ -181,9 +181,22 @@ class TesseractUnfoldSim : Sim {
     private var reachX = 0.66f
     private var reachY = 1f
 
+    /**
+     * On a wide screen the cross is laid on its side and drawn bigger: upright
+     * it is twice as tall as wide, and on a landscape screen it stood small in
+     * the middle with most of the width black. Zero means upright, as drawn.
+     */
+    private fun sideways(env: SimEnv): Float =
+        if (env.halfWidth > WIDE_FROM) min(env.halfWidth * 0.94f / reachY, 0.94f / reachX) else 0f
+
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         projectAll(viewAngle)
+        val k = sideways(env)
+        if (k > 0f) for (i in 0 until CELLS * 8) {
+            val x = sx[i]
+            sx[i] = sy[i] * k; sy[i] = -x * k
+        }
         val open = paid && progress[LAST] >= 1f
         val pulse = if (open) (sin(elapsed * 3f) + 1f) * 0.5f else 0f
         for (c in 0 until CELLS) {
@@ -205,9 +218,11 @@ class TesseractUnfoldSim : Sim {
         }
     }
 
-    override fun frameHalfWidth(env: SimEnv): Float = reachX + 0.03f
+    override fun frameHalfWidth(env: SimEnv): Float =
+        sideways(env).let { if (it > 0f) reachY * it + 0.03f else reachX + 0.03f }
 
-    override fun frameHalfHeight(env: SimEnv): Float = reachY + 0.03f
+    override fun frameHalfHeight(env: SimEnv): Float =
+        sideways(env).let { if (it > 0f) reachX * it + 0.03f else reachY + 0.03f }
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -244,6 +259,8 @@ class TesseractUnfoldSim : Sim {
         const val VIEWER_W = 3.5f
         const val VIEWER_Z = 16f
         const val SCALE = 0.22f
+        /** Wider than this, the cross lies on its side. */
+        const val WIDE_FROM = 1.2f
 
         fun def(): SimDef = SimDef(
             id = "dimensions/tesseract-unfold",
@@ -377,19 +394,32 @@ class GrayWalkSim : Sim {
         val n = 1 shl dims
         // The view turns at 1 and at 0.6 of the angle, so it repeats only
         // after five whole turns.
+        var my = 0.1f
         for (k in 0 until 240) {
             projectAll(k * 10f * PI.toFloat() / 240f)
-            for (i in 0 until n) m = max(m, abs(sx[i]))
+            for (i in 0 until n) { m = max(m, abs(sx[i])); my = max(my, abs(sy[i])) }
         }
         reach = m
+        reachY = my
     }
 
     private var reach = 0.66f
+    private var reachY = 0.66f
+
+    /**
+     * Drawn larger where there is room: sized for an upright phone's width,
+     * on a wide screen the cube was a small figure in the middle of the frame.
+     * One on a phone, where the width is what limits it.
+     */
+    private fun zoom(env: SimEnv): Float =
+        min((env.halfWidth - 0.03f) / reach, 0.9f / reachY).coerceAtLeast(1f)
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val n = 1 shl dims
         projectAll(viewAngle)
+        val z = zoom(env)
+        if (z > 1f) for (i in 0 until n) { sx[i] *= z; sy[i] *= z }
         val done = stepIndex >= n
         val glowAt = if (done) (1f - (elapsed - doneAt)).coerceIn(0f, 1f) else 0f
         // Edges still to walk, then walked ones over them. A walked edge is
@@ -435,7 +465,7 @@ class GrayWalkSim : Sim {
         }
     }
 
-    override fun frameHalfWidth(env: SimEnv): Float = reach + 0.03f
+    override fun frameHalfWidth(env: SimEnv): Float = reach * zoom(env) + 0.03f
 
     override fun payoff(): Boolean = payoffFrame
 

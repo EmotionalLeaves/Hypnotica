@@ -183,6 +183,11 @@ class EquationSim : Sim {
         g.line(-halfW, 0f, halfW, 0f, 0.002f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f))
         g.line(0f, -1f, 0f, 1f, 0.002f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.22f))
         val dot = env.params.f("dot", 0.004f)
+        // "Scale" is sized for an upright phone's narrow width; on a wide
+        // screen the default curve was a small figure in a lot of black.
+        // Magnified there, but only so far: the height is the same, and a
+        // tall curve that fits a phone should still fit.
+        val mag = (min(halfW, 0.8f) / 0.46f).coerceAtLeast(1f)
         if (mode == Mode.MAP) {
             // A map's points are separate by nature: dots.
             g.reservePoints(filled)
@@ -190,7 +195,7 @@ class EquationSim : Sim {
                 val idx = (head - 1 - k + trailX.size * 2) % trailX.size
                 val age = k.toFloat() / filled
                 g.point(
-                    trailX[idx], trailY[idx], dot * (1.15f - age * 0.5f),
+                    trailX[idx] * mag, trailY[idx] * mag, dot * (1.15f - age * 0.5f),
                     Palette.withAlpha(palette.at((1f - age) * 0.85f), (1f - age) * 0.85f + 0.15f)
                 )
             }
@@ -209,7 +214,7 @@ class EquationSim : Sim {
                 if (dx * dx + dy * dy > JUMP * JUMP) continue
                 val age = k.toFloat() / filled
                 g.line(
-                    trailX[a], trailY[a], trailX[b], trailY[b], dot * (1.1f - age * 0.55f),
+                    trailX[a] * mag, trailY[a] * mag, trailX[b] * mag, trailY[b] * mag, dot * (1.1f - age * 0.55f),
                     palette.at((1f - age) * 0.85f), 0.12f + 0.88f * (1f - age)
                 )
             }
@@ -217,8 +222,8 @@ class EquationSim : Sim {
         if (filled > 0) {
             val last = (head - 1 + trailX.size) % trailX.size
             val pen = Palette.brighten(palette.at(0.85f), 0.3f)
-            g.glow(trailX[last], trailY[last], 0.04f, pen, 0.6f)
-            g.disc(trailX[last], trailY[last], max(0.008f, dot * 1.6f), pen)
+            g.glow(trailX[last] * mag, trailY[last] * mag, 0.04f, pen, 0.6f)
+            g.disc(trailX[last] * mag, trailY[last] * mag, max(0.008f, dot * 1.6f), pen)
         }
     }
 

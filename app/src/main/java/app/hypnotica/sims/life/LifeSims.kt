@@ -109,7 +109,10 @@ class BoidsSim : Sim {
     override fun setup(env: SimEnv) {
         flocked = false
         val p = env.params
-        n = p.i("count", 600).coerceIn(10, 60000)
+        // The count is for an upright phone; a wide screen has several times
+        // the room, and the same six hundred birds there were a sparse, dim
+        // scatter. Scaled to the area, so the density — and the look — hold.
+        n = (p.i("count", 600) * max(1f, env.halfWidth / 0.46f)).toInt().coerceIn(10, 60000)
         separation = p.f("separation", 1f)
         alignment = p.f("alignment", 1f)
         cohesion = p.f("cohesion", 1f)
@@ -828,6 +831,21 @@ class FallingSandSim : Sim {
         val p = env.params
         w = p.i("width", 120).coerceIn(20, 400)
         h = p.i("height", 250).coerceIn(20, 600)
+        // The sliders give the tank for an upright phone. On a wide screen
+        // that tank stood as a narrow column in the middle of the frame, so
+        // the same grains (half as many again, for the bigger picture) are
+        // reshaped to the screen: a tank as wide as the screen allows.
+        // Filled a little less: the pile is one broad heap, and at the phone's
+        // share its peak reached the rim and took half a minute more to settle.
+        val shape = env.halfWidth * TANK_FILL_X / TANK_FILL_Y
+        var fill = SAND_FILL
+        if (shape > w.toFloat() / h * 1.3f) {
+            fill = SAND_FILL * 0.72f
+            val cells = w * h * 1.2f
+            val rows = kotlin.math.sqrt(cells / shape).toInt().coerceIn(20, 600)
+            w = (rows * shape).toInt().coerceIn(20, 800)
+            h = rows
+        }
         grid = ByteArray(w * h)
         colour = FloatArray(w * h)
         vacated = IntArray(w * h)
@@ -837,7 +855,7 @@ class FallingSandSim : Sim {
         filled = 0
         payoffFrame = false
         pourX = w / 2
-        capacity = (w * h * SAND_FILL).toInt()
+        capacity = (w * h * fill).toInt()
         pourAt = w / 2f
         pourDrift = 0f
         settled = false
@@ -859,8 +877,10 @@ class FallingSandSim : Sim {
         // A gentle pull back towards the middle, too: left to wander, the
         // spout could spend half a run against one wall and heap the whole
         // pile into that corner of the tank.
-        pourDrift = (pourDrift * (1f - abs(dt)) + env.rng.range(-1f, 1f) * abs(dt) * 40f +
-            (w * 0.5f - pourAt) / w * abs(dt) * 12f).coerceIn(-14f, 14f)
+        // In columns, so scaled to the tank: a wide tank's spout crawled.
+        val sway = max(1f, w / 120f)
+        pourDrift = (pourDrift * (1f - abs(dt)) + env.rng.range(-1f, 1f) * abs(dt) * 40f * sway +
+            (w * 0.5f - pourAt) / w * abs(dt) * 12f * sway).coerceIn(-14f * sway, 14f * sway)
         pourAt = (pourAt + pourDrift * abs(dt)).coerceIn(w * 0.2f, w * 0.8f)
         if (pourAt <= w * 0.2f || pourAt >= w * 0.8f) pourDrift = -pourDrift
         pourX = pourAt.toInt().coerceIn(2, w - 3)
@@ -1177,27 +1197,36 @@ class PredatorPreySim : Sim {
         // pair of out-of-step waves. It was the loop as a faint dotted
         // trail with two tall solid bars over the bottom of it, which hid
         // the loop's lower edge and said nothing the loop did not.
-        val pw = min(halfW, 1.1f) * 0.84f
-        val left = -pw
-        val phaseBottom = -0.1f
-        val phaseTop = 0.84f
-        val waveBottom = -0.88f
-        val waveTop = -0.34f
-        val sx = 2f * pw / peakPrey.toFloat()
+        // Stacked on a phone; side by side on a wide screen, where stacking
+        // left both plots short strips in the middle of a lot of black.
+        val wide = halfW > 1f
+        val left: Float; val pRight: Float; val phaseBottom: Float; val phaseTop: Float
+        val wLeft: Float; val wRight: Float; val waveBottom: Float; val waveTop: Float
+        if (wide) {
+            val span = halfW * 0.9f
+            val half = (2f * span - 0.2f) * 0.5f
+            left = -span; pRight = -span + half; phaseBottom = -0.8f; phaseTop = 0.84f
+            wLeft = span - half; wRight = span; waveBottom = -0.62f; waveTop = 0.62f
+        } else {
+            val pw = min(halfW, 1.1f) * 0.84f
+            left = -pw; pRight = pw; phaseBottom = -0.1f; phaseTop = 0.84f
+            wLeft = -pw; wRight = pw; waveBottom = -0.88f; waveTop = -0.34f
+        }
+        val sx = (pRight - left) / peakPrey.toFloat()
         val sy = (phaseTop - phaseBottom) / peakPred.toFloat()
         val axis = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.2f)
         val preyColour = palette.at(0.08f)
         val predColour = palette.at(0.92f)
         val loopColour = palette.at(0.5f)
         // Axes: each plot's own L, coloured by what it measures.
-        g.line(left, phaseBottom, pw, phaseBottom, 0.004f, Palette.withAlpha(preyColour, 0.45f))
+        g.line(left, phaseBottom, pRight, phaseBottom, 0.004f, Palette.withAlpha(preyColour, 0.45f))
         g.line(left, phaseBottom, left, phaseTop, 0.004f, Palette.withAlpha(predColour, 0.45f))
-        g.line(left, waveBottom, pw, waveBottom, 0.004f, axis)
+        g.line(wLeft, waveBottom, wRight, waveBottom, 0.004f, axis)
         // The balance point, which the loop circles and never reaches: prey
         // d/c, predators a/b.
         val ex = left + (d / c).toFloat() * sx
         val ey = phaseBottom + (a / b).toFloat() * sy
-        if (ex < pw && ey < phaseTop) {
+        if (ex < pRight && ey < phaseTop) {
             g.line(ex - 0.018f, ey, ex + 0.018f, ey, 0.003f, axis)
             g.line(ex, ey - 0.018f, ex, ey + 0.018f, 0.003f, axis)
         }
@@ -1234,7 +1263,7 @@ class PredatorPreySim : Sim {
         k = filled - 1
         while (k >= 0) {
             val idx = (head - 1 - k + historyX.size * 2) % historyX.size
-            val x = pw - 2f * pw * (newest - historyT[idx]) / window
+            val x = wRight - (wRight - wLeft) * (newest - historyT[idx]) / window
             val yp = waveBottom + (historyX[idx] / peakPrey.toFloat()).coerceIn(0f, 1f) * wh
             val yq = waveBottom + (historyY[idx] / peakPred.toFloat()).coerceIn(0f, 1f) * wh
             if (!lx.isNaN()) {
@@ -1245,8 +1274,8 @@ class PredatorPreySim : Sim {
             k = if (k == 0) -1 else max(0, k - stride)
         }
         if (filled > 0) {
-            g.disc(pw, waveBottom + (prey / peakPrey).toFloat().coerceIn(0f, 1f) * wh, 0.011f, preyColour)
-            g.disc(pw, waveBottom + (predators / peakPred).toFloat().coerceIn(0f, 1f) * wh, 0.011f, predColour)
+            g.disc(wRight, waveBottom + (prey / peakPrey).toFloat().coerceIn(0f, 1f) * wh, 0.011f, preyColour)
+            g.disc(wRight, waveBottom + (predators / peakPred).toFloat().coerceIn(0f, 1f) * wh, 0.011f, predColour)
         }
     }
 

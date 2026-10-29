@@ -164,7 +164,7 @@ class HypercubeSim : Sim {
         // corners off the screen, and to infinity at the slider's end.
         val radius = 0.5f * sqrt(dims.toFloat())
         val viewer = Nd.viewerFor(radius, dims) * env.params.f("viewer", 3f) / 3f
-        val scale = SCREEN_REACH / radius
+        val scale = reach(env) / radius
         for (i in 0 until n) {
             Nd.project(verts, i * dims, dims, viewer, proj)
             screenX[i] = proj[0] * scale
@@ -224,7 +224,13 @@ class HypercubeSim : Sim {
      * fit it. Just the corners' reach and a corner's own radius: 0.65 left a
      * fifth of the width empty and the shape small in an upright phone.
      */
-    override fun frameHalfWidth(env: SimEnv): Float = SCREEN_REACH + 0.04f
+    override fun frameHalfWidth(env: SimEnv): Float = reach(env) + 0.04f
+
+    /**
+     * Sized for an upright phone's width; on a wide screen, where the height
+     * limits it, larger — it was a small figure in the middle of the frame.
+     */
+    private fun reach(env: SimEnv): Float = max(SCREEN_REACH, min(env.halfWidth - 0.04f, WIDE_REACH))
 
     override fun payoff(): Boolean = payoffFrame
 
@@ -248,6 +254,7 @@ class HypercubeSim : Sim {
         val SHAPES = listOf("Hypercube", "Cross-polytope", "Simplex", "24-cell")
         /** The shape's corners reach about this far on screen, at their widest. */
         const val SCREEN_REACH = 0.52f
+        const val WIDE_REACH = 0.84f
 
         fun def(): SimDef = SimDef(
             id = "dimensions/hypercube",
@@ -589,7 +596,16 @@ class SlicingSim : Sim {
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
         val lineColour = palette.at(0.75f)
-        val sideScale = PANEL / radius
+        // Stacked on a phone: the flat world's view above, the object from
+        // outside below. Side by side and larger on a wide screen, where the
+        // stack was two small panels in a strip down the middle.
+        val wide = env.halfWidth > WIDE_FROM
+        val panel = if (wide) WIDE_PANEL else PANEL
+        val sideX = if (wide) -env.halfWidth * 0.46f else 0f
+        val topX = -sideX
+        val sideY = if (wide) WIDE_Y else SIDE_Y
+        val topY = if (wide) WIDE_Y + 0.08f else TOP_Y
+        val sideScale = panel / radius
         // A ball of three or more dimensions is drawn as a lit solid seen a
         // little from above (orthographic, elevation VIEW_ELEV), so heights
         // along w are foreshortened by its cosine and the cut through it is
@@ -598,8 +614,8 @@ class SlicingSim : Sim {
         val solid = shape == 0 && dims >= 3
         val elevCos = if (solid) kotlin.math.cos(VIEW_ELEV) else 1f
         val elevSin = if (solid) kotlin.math.sin(VIEW_ELEV) else 0f
-        val worldY = SIDE_Y + cutPos * sideScale * elevCos
-        val reachX = env.halfWidth * 0.95f
+        val worldY = sideY + cutPos * sideScale * elevCos
+        val reachX = if (wide) env.halfWidth * 0.42f else env.halfWidth * 0.95f
         // ---- Outside: the object with its true height, and the flat world.
         // The object from outside was a hairline at half strength, and with
         // the slice a line across it the frame read as two thin circles in
@@ -607,7 +623,7 @@ class SlicingSim : Sim {
         val body = palette.at(0.3f)
         val ghost = Palette.withAlpha(body, 0.8f)
         if (solid) {
-            shadedBall(g, 0f, SIDE_Y, radius * sideScale, body)
+            shadedBall(g, sideX, sideY, radius * sideScale, body)
             // The cross-section itself, inside the ball: what the flat world
             // will see, drawn where it is.
             val r = sliceRadius()
@@ -620,14 +636,14 @@ class SlicingSim : Sim {
                     val v1 = v0 + 2f / strips
                     val vm = (v0 + v1) * 0.5f
                     val half = a * sqrt(max(0f, 1f - vm * vm))
-                    g.rect(0f, worldY + vm * b, half, b / strips, Palette.withAlpha(lineColour, 0.32f))
+                    g.rect(sideX, worldY + vm * b, half, b / strips, Palette.withAlpha(lineColour, 0.32f))
                 }
                 // Its far half, behind the front of the ball, faint.
-                ellipseArc(g, 0f, worldY, a, b, 0f, PI.toFloat(), 0.004f, Palette.withAlpha(lineColour, 0.45f))
+                ellipseArc(g, sideX, worldY, a, b, 0f, PI.toFloat(), 0.004f, Palette.withAlpha(lineColour, 0.45f))
             }
         } else if (shape == 0) {
-            g.disc(0f, SIDE_Y, radius * sideScale, Palette.withAlpha(body, 0.1f))
-            g.ring(0f, SIDE_Y, radius * sideScale, 0.006f, ghost)
+            g.disc(sideX, sideY, radius * sideScale, Palette.withAlpha(body, 0.1f))
+            g.ring(sideX, sideY, radius * sideScale, 0.006f, ghost)
         } else {
             val d = dims
             val nv = verts.size / d
@@ -637,8 +653,8 @@ class SlicingSim : Sim {
                 for (k in 0 until d - 1) tmp[k] = verts[i * d + k]
                 tmp[d - 1] = 0f
                 Nd.project(tmp, 0, max(1, d - 1), sideViewer, proj)
-                sx[i] = proj[0] * sideScale
-                sy[i] = SIDE_Y + verts[i * d + d - 1] * sideScale
+                sx[i] = sideX + proj[0] * sideScale
+                sy[i] = sideY + verts[i * d + d - 1] * sideScale
             }
             var e = 0
             while (e < edges.size) {
@@ -649,22 +665,26 @@ class SlicingSim : Sim {
             for (i in 0 until nv) g.disc(sx[i], sy[i], 0.006f, ghost)
         }
         // The flat world: a soft band with the plane through it.
-        g.rect(0f, worldY, reachX, 0.022f, Palette.withAlpha(lineColour, 0.07f))
-        g.line(-reachX, worldY, reachX, worldY, 0.004f, Palette.TEXT_SECONDARY, 0.7f)
+        g.rect(sideX, worldY, reachX, 0.022f, Palette.withAlpha(lineColour, 0.07f))
+        g.line(sideX - reachX, worldY, sideX + reachX, worldY, 0.004f, Palette.TEXT_SECONDARY, 0.7f)
         // Where it cuts, on the line.
         if (shape == 0) {
             val r = sliceRadius()
             if (r > 0f) {
                 val half = r * sideScale
-                if (solid) ellipseArc(g, 0f, worldY, half, half * elevSin, PI.toFloat(), 2f * PI.toFloat(), 0.009f, lineColour)
-                else g.line(-half, worldY, half, worldY, 0.012f, lineColour)
-                g.disc(-half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
-                g.disc(half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
+                if (solid) ellipseArc(g, sideX, worldY, half, half * elevSin, PI.toFloat(), 2f * PI.toFloat(), 0.009f, lineColour)
+                else g.line(sideX - half, worldY, sideX + half, worldY, 0.012f, lineColour)
+                g.disc(sideX - half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
+                g.disc(sideX + half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
                 // The cut and what the flat world sees of it are drawn to one
                 // scale, so the chord's ends rise straight to the slice's
                 // edge: the measurement carried up, not just asserted.
-                g.line(-half, worldY + 0.02f, -half, TOP_Y, 0.003f, lineColour, 0.4f)
-                g.line(half, worldY + 0.02f, half, TOP_Y, 0.003f, lineColour, 0.4f)
+                // Side by side, the same scale carries across instead: the
+                // chord's ends led level to the panel beside it.
+                if (!wide) {
+                    g.line(-half, worldY + 0.02f, -half, topY, 0.003f, lineColour, 0.4f)
+                    g.line(half, worldY + 0.02f, half, topY, 0.003f, lineColour, 0.4f)
+                }
             }
         } else {
             // On its edge as drawn: the side view's mapping doesn't keep
@@ -679,39 +699,39 @@ class SlicingSim : Sim {
         }
         // ---- Inside: what the flat world sees, in its own dimensions.
         val sliceDims = dims - 1
-        val topScale = PANEL / radius
+        val topScale = panel / radius
         if (shape == 0) {
             // The largest the slice ever gets, faintly, so the panel is never
             // an empty black square while the ball is out of the world and
             // the slice is seen growing into it.
-            if (sliceDims >= 2) g.ring(0f, TOP_Y, radius * topScale, 0.004f, Palette.withAlpha(lineColour, 0.3f))
-            else g.line(-radius * topScale, TOP_Y, radius * topScale, TOP_Y, 0.004f, Palette.withAlpha(lineColour, 0.3f))
+            if (sliceDims >= 2) g.ring(topX, topY, radius * topScale, 0.004f, Palette.withAlpha(lineColour, 0.3f))
+            else g.line(topX - radius * topScale, topY, topX + radius * topScale, topY, 0.004f, Palette.withAlpha(lineColour, 0.3f))
             val r = sliceRadius()
             if (r > 0f) {
                 val content = sliceContent()
                 if (sliceDims == 1) {
-                    g.line(-r * topScale, TOP_Y, r * topScale, TOP_Y, 0.014f, lineColour)
-                    g.disc(-r * topScale, TOP_Y, 0.012f, Palette.brighten(lineColour, 0.25f))
-                    g.disc(r * topScale, TOP_Y, 0.012f, Palette.brighten(lineColour, 0.25f))
+                    g.line(topX - r * topScale, topY, topX + r * topScale, topY, 0.014f, lineColour)
+                    g.disc(topX - r * topScale, topY, 0.012f, Palette.brighten(lineColour, 0.25f))
+                    g.disc(topX + r * topScale, topY, 0.012f, Palette.brighten(lineColour, 0.25f))
                 } else {
                     // A disc in two dimensions; from three up, a ball, which
                     // seen from anywhere has a round outline of its radius.
                     // The glow stays inside the outline's reach: at 1.2 times
                     // it smeared the edge the flat world is measuring.
-                    g.glow(0f, TOP_Y, r * topScale * 1.1f, lineColour, 0.12f + 0.2f * content)
+                    g.glow(topX, topY, r * topScale * 1.1f, lineColour, 0.12f + 0.2f * content)
                     if (sliceDims >= 3) {
                         // A ball: lit as a solid, like the object below.
-                        shadedBall(g, 0f, TOP_Y, r * topScale, lineColour)
+                        shadedBall(g, topX, topY, r * topScale, lineColour)
                     } else {
                         // A disc: flat, as it is, but filled from a soft
                         // centre outwards so it reads as a surface.
                         val rr = r * topScale
                         for (k in 0 until 14) {
                             val f = 1f - k / 14f
-                            g.disc(0f, TOP_Y, rr * f, Palette.withAlpha(lineColour, if (k == 0) 0.2f else 0.04f))
+                            g.disc(topX, topY, rr * f, Palette.withAlpha(lineColour, if (k == 0) 0.2f else 0.04f))
                         }
                     }
-                    g.ring(0f, TOP_Y, r * topScale, 0.007f, Palette.brighten(lineColour, 0.1f))
+                    g.ring(topX, topY, r * topScale, 0.007f, Palette.brighten(lineColour, 0.1f))
                 }
             }
         } else if (sliceN > 0) {
@@ -726,11 +746,11 @@ class SlicingSim : Sim {
                     Nd.rotatePlane(tmp, 1, sliceDims, 1, 2, TILT)
                 }
                 Nd.project(tmp, 0, sliceDims, viewer, proj)
-                sx[i] = proj[0] * topScale
-                sy[i] = TOP_Y + (if (sliceDims >= 2) proj[1] else 0f) * topScale
+                sx[i] = topX + proj[0] * topScale
+                sy[i] = topY + (if (sliceDims >= 2) proj[1] else 0f) * topScale
                 sd[i] = proj[2]
             }
-            g.glow(0f, TOP_Y, PANEL * 1.1f, lineColour, 0.08f)
+            g.glow(topX, topY, panel * 1.1f, lineColour, 0.08f)
             for (k in 0 until sliceEdgeN) {
                 val a = sliceEdges[2 * k]; val b = sliceEdges[2 * k + 1]
                 val near = ((sd[a] + sd[b]) * 0.5f - 0.6f).coerceIn(0f, 1f)
@@ -795,6 +815,10 @@ class SlicingSim : Sim {
         val SHAPES = listOf("Hypersphere", "Cube, face first", "Cube, corner first", "Simplex, point first", "Tumbling cube")
         /** Half the height of each panel, in world units, at the object's widest. */
         const val PANEL = 0.36f
+        /** Wider than this the panels sit side by side, this big, at this height. */
+        const val WIDE_FROM = 1.1f
+        const val WIDE_PANEL = 0.56f
+        const val WIDE_Y = -0.1f
         const val TOP_Y = 0.5f
         const val SIDE_Y = -0.45f
         /** How far past the object the flat world sweeps, so it's seen arriving. */

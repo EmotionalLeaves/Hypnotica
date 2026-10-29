@@ -1115,14 +1115,20 @@ class MonteCarloPiSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
-        val r = 0.86f
         // On a tall screen the view pulls back to fit the square's width, and
         // the room that leaves above and below goes to the trace: the square
-        // moves up, the estimate's history runs underneath.
+        // moves up, the estimate's history runs underneath. On a wide screen
+        // there is no room below, and the trace simply vanished; there it
+        // runs beside the square instead.
+        val hw = env.halfWidth
+        val beside = hw > WIDE_FROM
+        val traceW = if (beside) max(WIDE_TRACE, 2f * hw - 4f * GAP - 2f * 0.86f) else 0f
+        val r = if (beside) min(0.86f, (2f * hw - 4f * GAP - traceW) * 0.5f) else 0.86f
+        val sx = if (beside) -hw + GAP + r else 0f
         val visibleHalf = max(1f, frameHalfWidth(env) / env.halfWidth)
         val room = visibleHalf * 2f - 2f * r - GAP * 3f
-        val traced = room > MIN_TRACE
-        val cy = if (traced) visibleHalf - GAP - r else 0f
+        val traced = beside || room > MIN_TRACE
+        val cy = if (traced && !beside) visibleHalf - GAP - r else 0f
         g.reservePoints(stored + FRESH)
         // Hits in the palette's bright colour, misses in a dim warm coral, and
         // each grain big enough that by the default count they tile into a
@@ -1133,7 +1139,7 @@ class MonteCarloPiSim : Sim {
         val outC = Palette.withAlpha(Palette.lerp(Palette.BG, MISS, 0.7f), 0.7f)
         val grain = (0.0075f * sqrt(60000f / max(20000, capacity).toFloat())).coerceIn(0.0035f, 0.009f)
         for (i in 0 until stored) {
-            g.point(xs[i] * r, cy + ys[i] * r, grain, if (hit[i]) inC else outC)
+            g.point(sx + xs[i] * r, cy + ys[i] * r, grain, if (hit[i]) inC else outC)
         }
         // The newest darts, larger and bright, so the throwing is visible.
         val fresh = min(FRESH.toLong(), total).toInt()
@@ -1141,24 +1147,25 @@ class MonteCarloPiSim : Sim {
             val slot = ((total - 1 - k) % capacity).toInt()
             val fade = 1f - k.toFloat() / FRESH
             val c = if (hit[slot]) Palette.brighten(palette.at(HIT_T), 0.35f) else Palette.brighten(MISS, 0.2f)
-            g.point(xs[slot] * r, cy + ys[slot] * r, 0.009f + 0.006f * fade, Palette.withAlpha(c, 0.35f + 0.65f * fade))
+            g.point(sx + xs[slot] * r, cy + ys[slot] * r, 0.009f + 0.006f * fade, Palette.withAlpha(c, 0.35f + 0.65f * fade))
         }
         // The square's outline, so the board the darts land on is drawn.
         val edge = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f)
-        g.rect(0f, cy + r, r + 0.003f, 0.003f, edge); g.rect(0f, cy - r, r + 0.003f, 0.003f, edge)
-        g.rect(-r, cy, 0.003f, r, edge); g.rect(r, cy, 0.003f, r, edge)
-        g.ring(0f, cy, r, 0.006f, Palette.brighten(palette.at(HIT_T), 0.45f), alpha = 0.95f)
-        if (traced) drawTrace(g, palette, -visibleHalf + GAP, cy - r - GAP, r)
+        g.rect(sx, cy + r, r + 0.003f, 0.003f, edge); g.rect(sx, cy - r, r + 0.003f, 0.003f, edge)
+        g.rect(sx - r, cy, 0.003f, r, edge); g.rect(sx + r, cy, 0.003f, r, edge)
+        g.ring(sx, cy, r, 0.006f, Palette.brighten(palette.at(HIT_T), 0.45f), alpha = 0.95f)
+        if (beside) drawTrace(g, palette, -r * 0.62f, r * 0.62f, traceW * 0.5f, hw - GAP - traceW * 0.5f)
+        else if (traced) drawTrace(g, palette, -visibleHalf + GAP, cy - r - GAP, r, 0f)
     }
 
     /** The estimate against the number of darts, on a log scale, with pi drawn across. */
-    private fun drawTrace(g: G, palette: Palette, bottom: Float, top: Float, halfW: Float) {
+    private fun drawTrace(g: G, palette: Palette, bottom: Float, top: Float, halfW: Float, cx: Float) {
         val mid = (bottom + top) * 0.5f
         val half = (top - bottom) * 0.5f
         val lineC = Palette.brighten(palette.at(HIT_T), 0.2f)
         // The frame the trace lives in, faint.
         val frame = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.18f)
-        g.rect(0f, top, halfW, 0.002f, frame); g.rect(0f, bottom, halfW, 0.002f, frame)
+        g.rect(cx, top, halfW, 0.002f, frame); g.rect(cx, bottom, halfW, 0.002f, frame)
         // The first few darts swing the estimate between 0 and 4; drawn, they
         // were spikes pinned to the frame's edges. The trace starts once the
         // count is large enough for the estimate to mean something.
@@ -1169,8 +1176,8 @@ class MonteCarloPiSim : Sim {
         // A tick at every power of ten darts, on the log axis.
         var decade = 100.0
         while (kotlin.math.ln(decade) <= hi) {
-            val tx = -halfW + 2f * halfW * (kotlin.math.ln(decade).toFloat() - lo) / (hi - lo)
-            if (tx > -halfW) g.rect(tx, bottom + 0.018f, 0.002f, 0.018f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.4f))
+            val tx = cx - halfW + 2f * halfW * (kotlin.math.ln(decade).toFloat() - lo) / (hi - lo)
+            if (tx > cx - halfW) g.rect(tx, bottom + 0.018f, 0.002f, 0.018f, Palette.withAlpha(Palette.TEXT_SECONDARY, 0.4f))
             decade *= 10.0
         }
         // Two standard errors either side of pi, 2·4·sqrt(p(1−p)/n) with
@@ -1183,7 +1190,7 @@ class MonteCarloPiSim : Sim {
         for (j in 0..steps) {
             val lnN = lo + (hi - lo) * j / steps
             val band = (2.0 * sigma1 / Math.exp(lnN.toDouble()).let { sqrt(it) }).toFloat() / TRACE_RANGE
-            val x = -halfW + 2f * halfW * j / steps
+            val x = cx - halfW + 2f * halfW * j / steps
             val bc = band.coerceAtMost(1f)
             val u = mid + bc * half
             val l = mid - bc * half
@@ -1199,11 +1206,11 @@ class MonteCarloPiSim : Sim {
             }
             ex = x; eu = u; el = l
         }
-        g.line(-halfW, mid, halfW, mid, 0.004f, Palette.WARNING, 0.8f)
+        g.line(cx - halfW, mid, cx + halfW, mid, 0.004f, Palette.WARNING, 0.8f)
         if (historyCount - first < 2) return
         var px = 0f; var py = 0f
         for (k in first until historyCount) {
-            val x = -halfW + 2f * halfW * (kotlin.math.ln(historyAt[k].toFloat()) - lo) / (hi - lo)
+            val x = cx - halfW + 2f * halfW * (kotlin.math.ln(historyAt[k].toFloat()) - lo) / (hi - lo)
             val off = ((historyPi[k] - PI.toFloat()) / TRACE_RANGE).coerceIn(-1f, 1f)
             val y = mid + off * half
             // Older history fainter and thinner, the recent estimate bold.
@@ -1235,6 +1242,9 @@ class MonteCarloPiSim : Sim {
         private const val GAP = 0.08f
         /** Below this much spare height the trace is not drawn. */
         private const val MIN_TRACE = 0.3f
+        /** Wider than this, the trace goes beside the square, at least this wide. */
+        private const val WIDE_FROM = 1.2f
+        private const val WIDE_TRACE = 0.7f
         /** The trace spans pi plus or minus this. */
         private const val TRACE_RANGE = 0.25f
         /** The trace's time axis runs to at least this many darts. */

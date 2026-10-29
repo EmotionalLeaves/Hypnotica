@@ -48,7 +48,12 @@ class RpsBattleSim : Sim {
     private var grip = 0.025f
 
     override fun setup(env: SimEnv) {
-        val per = env.params.i("each", 40).coerceIn(3, MAX_EACH)
+        val perPhone = env.params.i("each", 40).coerceIn(3, MAX_EACH)
+        // "Per side" is for an upright phone. On a wide screen the same armies
+        // were small knots in a mostly empty field, so the count grows with
+        // the area while the pieces keep their size (both below are worked
+        // out from the phone count): the same density, the same battle.
+        val per = (perPhone * max(1f, env.halfWidth / 0.46f)).toInt().coerceIn(3, max(perPhone, WIDE_EACH))
         // Three armies, or five: rock paper scissors lizard Spock, where
         // each side beats two and loses to two.
         teams = if (env.params.choiceIndex("game") == 1) 5 else 3
@@ -59,10 +64,10 @@ class RpsBattleSim : Sim {
         // clash was a heap of shapes on top of one another.
         // Scaled by the number of sides too: five armies of the same size
         // as three started overlapping one another.
-        size = (0.027f * sqrt(40f / per) * sqrt(3f / teams)).coerceIn(0.008f, 0.045f)
+        size = (0.027f * sqrt(40f / perPhone) * sqrt(3f / teams)).coerceIn(0.008f, 0.045f)
         // How close a catch is, kept as it was tuned: drawing them bigger
         // shouldn't make the battle shorter.
-        grip = (0.025f * sqrt(40f / per)).coerceIn(0.008f, 0.04f)
+        grip = (0.025f * sqrt(40f / perPhone)).coerceIn(0.008f, 0.04f)
         x = FloatArray(n); y = FloatArray(n); vx = FloatArray(n); vy = FloatArray(n)
         side = IntArray(n); flashT = FloatArray(n)
         // Some are quicker than others, or a chase at equal speed never ends.
@@ -376,6 +381,8 @@ class RpsBattleSim : Sim {
 
     companion object {
         const val MAX_EACH = 200
+        /** The most a side grows to on a wide screen: the battle is n-squared. */
+        const val WIDE_EACH = 130
         const val LEGS_MIN = 0.9f
         const val LEGS_MAX = 1.1f
         const val BASE_SPEED = 0.16f
