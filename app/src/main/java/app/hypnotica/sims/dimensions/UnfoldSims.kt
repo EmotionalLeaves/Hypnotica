@@ -212,7 +212,7 @@ class TesseractUnfoldSim : Sim {
             sx[i] = sy[i] * k; sy[i] = -x * k
         }
         val open = paid && progress[LAST] >= 1f
-        val pulse = if (open) (sin(elapsed * 3f) + 1f) * 0.5f else 0f
+        val pulse = if (open) 0.6f else 0f  // steady: a throb read as the screen pulsing
         for (c in 0 until CELLS) {
             val col = if (c == BASE) Palette.TEXT_PRIMARY else palette.at((c - 0.5f) / (CELLS - 1))
             val moving = progress[c] > 0f && progress[c] < 1f

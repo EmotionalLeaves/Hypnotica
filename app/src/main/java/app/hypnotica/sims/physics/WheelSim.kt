@@ -251,7 +251,7 @@ class WheelSim : Sim {
                 g.line(cos(a) * radius * 0.12f, sin(a) * radius * 0.12f, cos(a) * radius, sin(a) * radius, 0.007f, Palette.TEXT_PRIMARY)
             }
             val sx = cos(mid) * radius * 0.82f; val sy = sin(mid) * radius * 0.82f
-            val star = radius * 0.08f * (1f + 0.15f * sin(elapsed * 6f))
+            val star = radius * 0.08f
             g.rect(sx, sy, star, star * 0.3f, Palette.TEXT_PRIMARY, mid)
             g.rect(sx, sy, star, star * 0.3f, Palette.TEXT_PRIMARY, mid + PI.toFloat() / 2f)
             g.rect(sx, sy, star * 0.7f, star * 0.21f, Palette.TEXT_PRIMARY, mid + PI.toFloat() / 4f)
