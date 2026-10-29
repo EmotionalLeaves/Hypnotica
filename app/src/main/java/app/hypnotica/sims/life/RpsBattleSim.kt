@@ -67,26 +67,32 @@ class RpsBattleSim : Sim {
         side = IntArray(n); flashT = FloatArray(n)
         // Some are quicker than others, or a chase at equal speed never ends.
         legs = FloatArray(n) { env.rng.range(LEGS_MIN, LEGS_MAX) }
-        // Each side starts in its own corner of a triangle (or pentagon), so
-        // the first clash is a charge rather than a scramble.
-        // Packed in a sunflower spiral round its corner, with a little
-        // jitter: a random scatter in a box put pieces on top of each other,
-        // so the opening frames were a heap rather than three armies.
-        val radius = sqrt(per.toFloat()) * size * 1.25f
+        // The sides start as squads round a ring, in cycle order, each squad
+        // with its prey on one side and its hunter on the other — two squads
+        // a side, round an ellipse the shape of the screen. As one army per
+        // corner of a triangle squeezed onto an upright phone, the corners
+        // were not equally far apart: whichever side sat between the other
+        // two was eaten from both ends, and one colour took the field as a
+        // blob within seconds. Round a ring every side starts the same.
+        // Packed in a sunflower spiral round its centre, with a little
+        // jitter: a random scatter put pieces on top of each other.
+        val squads = teams * SQUADS_PER_SIDE
+        val perSquad = (per + SQUADS_PER_SIDE - 1) / SQUADS_PER_SIDE
+        val radius = sqrt(perSquad.toFloat()) * size * 1.3f
+        val ex = (halfW - radius - size).coerceAtLeast(0.1f)
+        val ey = (0.86f - radius - size).coerceAtLeast(0.1f) * 0.92f
+        val spin = env.rng.range(0f, 2f * PI.toFloat())
         for (i in 0 until n) {
-            val s = i % teams
+            val sd = i % teams
             val k = i / teams
-            side[i] = s
-            // On an upright screen the triangle lies on its side, one army on
-            // the right and two stacked on the left: pointing up, the two
-            // bottom armies had less than the narrow width between them and
-            // started already touching.
-            val turn = if (halfW < 0.8f) 0.0 else PI / 2
-            val a = (turn + s * 2 * PI / teams).toFloat()
-            val cx = kotlin.math.cos(a) * (halfW - radius - size).coerceAtLeast(0.1f) * 0.95f
-            val cy = kotlin.math.sin(a) * (if (halfW < 0.8f) 0.62f else 0.5f)
-            val rr = radius * sqrt((k + 0.5f) / per)
-            val th = k * GOLDEN_ANGLE
+            side[i] = sd
+            val squad = (k % SQUADS_PER_SIDE) * teams + sd
+            val m = k / SQUADS_PER_SIDE
+            val a = spin + squad * 2f * PI.toFloat() / squads
+            val cx = kotlin.math.cos(a) * ex
+            val cy = kotlin.math.sin(a) * ey - 0.07f
+            val rr = radius * sqrt((m + 0.5f) / perSquad)
+            val th = m * GOLDEN_ANGLE
             x[i] = cx + kotlin.math.cos(th) * rr + env.rng.range(-0.15f, 0.15f) * size
             y[i] = cy + kotlin.math.sin(th) * rr + env.rng.range(-0.15f, 0.15f) * size
         }
@@ -110,7 +116,7 @@ class RpsBattleSim : Sim {
             // than milling in the clump the last catch left them in.
             for (i in 0 until n) {
                 var sx = 0f; var sy = 0f
-                val far = 4f * size
+                val far = 5.5f * size
                 for (j in 0 until n) {
                     if (j == i) continue
                     val dx = x[i] - x[j]; val dy = y[i] - y[j]
@@ -137,8 +143,10 @@ class RpsBattleSim : Sim {
                 // their spacing alone they set into a stiff grid of shapes.
                 sx += -x[i] * GATHER - y[i] * TURN
                 sy += -y[i] * GATHER + x[i] * TURN
-                vx[i] = vx[i] * (1f - 2f * h) + (sx * 0.6f + env.rng.range(-1f, 1f)) * h
-                vy[i] = vy[i] * (1f - 2f * h) + (sy * 0.6f + env.rng.range(-1f, 1f)) * h
+                // Spacing pushes hard enough that the final crowd opens out
+                // within a second or two instead of sitting as one blob.
+                vx[i] = vx[i] * (1f - 2f * h) + (sx * 1.4f + env.rng.range(-1f, 1f)) * h
+                vy[i] = vy[i] * (1f - 2f * h) + (sy * 1.4f + env.rng.range(-1f, 1f)) * h
                 move(i, h)
             }
             return
@@ -307,8 +315,8 @@ class RpsBattleSim : Sim {
             val s = side[i]
             // A catch flashes, briefly and not to white: at full strength, in
             // a big five-sided battle a third of the field was pale blobs.
-            val c = if (flashT[i] > 0f) Palette.brighten(colors[s], 0.35f * flashT[i]) else colors[s]
-            val r = size * (1f + 0.35f * flashT[i])
+            val c = if (flashT[i] > 0f) Palette.brighten(colors[s], 0.2f * flashT[i]) else colors[s]
+            val r = size * (1f + 0.15f * flashT[i])
             when (kindOf(s)) {
                 // Rock: a stone.
                 0 -> g.disc(x[i], y[i], r, c)
@@ -347,7 +355,9 @@ class RpsBattleSim : Sim {
                 val delay = sqrt(x[i] * x[i] + y[i] * y[i]) * 0.5f
                 val k = (since - delay) / 0.9f
                 if (k <= 0f || k >= 1f) continue
-                g.ring(x[i], y[i], size * (1.3f + 3.5f * k), size * 0.18f, colors[winner], alpha = (1f - k) * 0.8f)
+                // Modest: a full-size ring from every one of a packed crowd
+                // was a tangle of circles over the winners.
+                g.ring(x[i], y[i], size * (1.3f + 1.8f * k), size * 0.12f, colors[winner], alpha = (1f - k) * 0.45f)
             }
         }
     }
@@ -380,9 +390,12 @@ class RpsBattleSim : Sim {
         const val FRENZY_SPEED = 1.7f
         const val MAX_TEAMS = 5
         const val GOLDEN_ANGLE = 2.3999632f
+        /** Squads each side starts in, round the ring. */
+        const val SQUADS_PER_SIDE = 2
         /** The victory lap: pull to the middle, and the turn round it. */
-        const val GATHER = 1.2f
-        const val TURN = 1.5f
+        // Gentle: at 1.2 the victors packed into one dense blob mid-screen.
+        const val GATHER = 0.35f
+        const val TURN = 1.1f
         val NAMES = arrayOf("rock", "paper", "scissors", "lizard", "Spock")
         /** Sides 0 to 4 as kinds: rock, Spock, paper, lizard, scissors. */
         val FIVE_ORDER = intArrayOf(0, 4, 1, 3, 2)

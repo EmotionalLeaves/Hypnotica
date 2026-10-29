@@ -61,6 +61,14 @@ class ParticleFieldSim : Sim {
     private var soundTimer = 0f
     private var flipped = false
     private val wallHits = java.util.concurrent.atomic.AtomicInteger(0)
+    private val waveP = FloatArray(WAVES)
+    private val waveQ = FloatArray(WAVES)
+    private val waveA = FloatArray(WAVES)
+    private val waveW = FloatArray(WAVES)
+    private val wavePh = FloatArray(WAVES)
+    /** Each particle's stream-function value: constant along a streamline, so it colours the streams. */
+    private var psiNow = FloatArray(0)
+    private var psiScale = 1f
 
     override fun setup(env: SimEnv) {
         val p = env.params
@@ -101,6 +109,22 @@ class ParticleFieldSim : Sim {
             attractorY[a] = env.rng.range(-0.7f, 0.7f)
             attractorK[a] = env.rng.range(0.4f, 1f) * (if (env.rng.bool(0.75f)) 1f else -1f)
         }
+        // The waves: whole numbers of periods across the screen each way, the
+        // biggest carrying most of the flow, each drifting slowly.
+        psiNow = FloatArray(n)
+        for (k in 0 until WAVES) {
+            val m = WAVE_M[k]
+            val nn = WAVE_N[k] * (if (env.rng.bool(0.5f)) 1f else -1f)
+            waveP[k] = m * PI.toFloat() / w
+            waveQ[k] = nn * PI.toFloat()
+            val kk = sqrt(waveP[k] * waveP[k] + waveQ[k] * waveQ[k])
+            waveA[k] = WAVE_SPEED[k] / kk
+            waveW[k] = env.rng.range(0.25f, 0.6f) * (if (env.rng.bool(0.5f)) 1f else -1f)
+            wavePh[k] = env.rng.range(0f, 2f * PI.toFloat())
+        }
+        var amp = 0f
+        for (k in 0 until WAVES) amp += waveA[k]
+        psiScale = PSI_BANDS / max(1e-4f, amp * flow.coerceAtLeast(0.2f))
         elapsed = 0f
         payoffFrame = false
         soundTimer = 0f
@@ -133,12 +157,13 @@ class ParticleFieldSim : Sim {
 
         wallHits.set(0)
         stepCount++
-        val sampleTrail = stepCount % 2 == 0
+        val sampleTrail = stepCount % TRAIL_EVERY == 0
         Parallel.forRange(n) { from, to -> integrate(from, to, dt, gx, gy, dragF, t, w, wrap, restitution, sampleTrail) }
         val movedFast = wallHits.get()
 
         // At this scale individual events would be static, so the sound follows
-        // the texture: one voice whose pitch tracks how much is hitting the walls.
+        // the texture: one voice whose pitch tracks how much of the field is
+        // racing round the vortex cores.
         soundTimer += abs(dt)
         if (soundTimer > 0.08f) {
             soundTimer = 0f
@@ -163,100 +188,115 @@ class ParticleFieldSim : Sim {
         t: Float, w: Float, wrap: Boolean, restitution: Float, sampleTrail: Boolean
     ) {
         var localHits = 0
+        val relax = min(1f, RELAX * abs(dt))
         for (i in from until to) {
-            var ax = gx
-            var ay = gy
-
-            // A cheap, allocation-free flow field: two sine layers, fast trig.
+            val x = px[i]
+            val y = py[i]
+            // The flow is the curl of a stream function: a few slow plane
+            // waves, periodic across the screen so wrap-around has no seam.
+            // Divergence-free, so the particles neither bunch nor thin out:
+            // they ride closed streamlines. The old field was two forces
+            // with nothing to stop it converging, and with inertia on top
+            // every particle crossed every other — a hash of streaks.
+            var psi = 0f
+            var psiX = 0f
+            var psiY = 0f
             if (flow > 0.001f) {
-                val fx = FastMath.sin(py[i] * 3.1f + t) + 0.5f * FastMath.sin(py[i] * 7.3f - t * 1.7f)
-                val fy = FastMath.cos(px[i] * 2.9f - t * 1.1f) + 0.5f * FastMath.cos(px[i] * 6.7f + t * 1.3f)
-                ax += fx * flow * 0.5f
-                ay += fy * flow * 0.5f
+                for (k in 0 until WAVES) {
+                    val th = waveP[k] * x + waveQ[k] * y + waveW[k] * t + wavePh[k]
+                    val sn = FastMath.sin(th)
+                    val cs = FastMath.cos(th)
+                    psi += waveA[k] * sn
+                    psiX += waveA[k] * waveP[k] * cs
+                    psiY += waveA[k] * waveQ[k] * cs
+                }
+                psi *= flow; psiX *= flow; psiY *= flow
             }
+            var u: Float
+            var v: Float
+            var win = 1f
+            if (!wrap) {
+                // In a walled box the stream function is windowed to zero at
+                // the walls, which makes each wall a streamline: the flow runs
+                // along it instead of piling particles into it.
+                val xr = x / w
+                val x6 = xr * xr * xr * xr * xr * xr
+                val y6 = y * y * y * y * y * y
+                val wx = 1f - x6
+                val wy = 1f - y6
+                win = (wx * wy).coerceAtLeast(0f)
+                val winX = -6f * (xr * xr * xr * xr * xr) / w * wy
+                val winY = -6f * (y * y * y * y * y) * wx
+                u = psiY * win + psi * winY
+                v = -(psiX * win + psi * winX)
+            } else {
+                u = psiY
+                v = -psiX
+            }
+            psiNow[i] = psi
 
+            // Point vortices with soft cores, also divergence-free: the
+            // attractors stir the field into eddies rather than swallowing it.
             if (swirl > 0.001f) {
                 for (a in 0 until attractors) {
-                    val dx = attractorX[a] - px[i]
-                    val dy = attractorY[a] - py[i]
-                    val d2 = dx * dx + dy * dy + 0.01f
-                    val inv = attractorK[a] * swirl / d2
-                    ax += dx * inv * 0.008f
-                    ay += dy * inv * 0.008f
-                    // A tangential term is what makes the field curl instead of
-                    // collapse. It leads now: with the pull leading, each
-                    // attractor swallowed its share into a dot.
-                    ax += -dy * inv * 0.02f
-                    ay += dx * inv * 0.02f
+                    val dx = x - attractorX[a]
+                    val dy = y - attractorY[a]
+                    val k = attractorK[a] * swirl * VORTEX / (dx * dx + dy * dy + CORE2) * win
+                    u += -dy * k
+                    v += dx * k
                 }
             }
 
-            // In a walled box, a soft push back from the last stretch before
-            // each wall. The flow field drives into the corners, and without
-            // it most of the cloud ended up packed against two walls, the rest
-            // of the screen emptied to a few stragglers.
-            if (!wrap) {
-                val ex = w - EDGE
-                if (px[i] > ex) ax -= EDGE_PUSH * (px[i] - ex) / EDGE
-                else if (px[i] < -ex) ax -= EDGE_PUSH * (px[i] + ex) / EDGE
-                val ey = 1f - EDGE
-                if (py[i] > ey) ay -= EDGE_PUSH * (py[i] - ey) / EDGE
-                else if (py[i] < -ey) ay -= EDGE_PUSH * (py[i] + ey) / EDGE
-            }
-
-            var nvx = (vx[i] + ax * dt) * dragF
-            var nvy = (vy[i] + ay * dt) * dragF
+            // Particles relax onto the flow, with a little inertia, so they
+            // trace its streamlines; gravity still drifts them.
+            var nvx = (vx[i] + (u - vx[i]) * relax + gx * dt) * dragF
+            var nvy = (vy[i] + (v - vy[i]) * relax + gy * dt) * dragF
 
             val sp2 = nvx * nvx + nvy * nvy
             if (sp2 > MAX_SPEED2) {
-                val k = MAX_SPEED / sqrt(sp2)
-                nvx *= k; nvy *= k
+                val kk = MAX_SPEED / sqrt(sp2)
+                nvx *= kk; nvy *= kk
             }
+            if (sp2 > FAST2) localHits++
 
-            var nx = px[i] + nvx * dt
-            var ny = py[i] + nvy * dt
+            var nx = x + nvx * dt
+            var ny = y + nvy * dt
 
             if (wrap) {
-                // Crossing the seam is this space's event, and its sound: with
-                // wrap-around on, nothing was ever counted and it was silent.
-                if (nx > w) { nx -= 2 * w; localHits++ } else if (nx < -w) { nx += 2 * w; localHits++ }
-                if (ny > 1f) { ny -= 2f; localHits++ } else if (ny < -1f) { ny += 2f; localHits++ }
+                if (nx > w) nx -= 2 * w else if (nx < -w) nx += 2 * w
+                if (ny > 1f) ny -= 2f else if (ny < -1f) ny += 2f
             } else {
-                if (nx > w) { nx = w; nvx = -nvx * restitution; localHits++ }
-                else if (nx < -w) { nx = -w; nvx = -nvx * restitution; localHits++ }
-                if (ny > 1f) { ny = 1f; nvy = -nvy * restitution; localHits++ }
-                else if (ny < -1f) { ny = -1f; nvy = -nvy * restitution; localHits++ }
+                if (nx > w) { nx = w; nvx = -nvx * restitution }
+                else if (nx < -w) { nx = -w; nvx = -nvx * restitution }
+                if (ny > 1f) { ny = 1f; nvy = -nvy * restitution }
+                else if (ny < -1f) { ny = -1f; nvy = -nvy * restitution }
             }
 
             // Every particle lives a few seconds and is reborn somewhere
-            // random. Without this the attractors and the walls herded the
-            // whole cloud into one clump in a corner within half a minute and
-            // left the rest of the screen a dim haze; with it the field stays
-            // spread over the screen and what shows is the flow, the way
-            // tracer dye shows a current. Rebirth is a hash of the index and
-            // the count, not env.rng: this runs on several threads at once.
-            // A particle that has stalled ages up to four times as fast:
-            // stalled ones are what piled up in the corners the flow drives
-            // into, and they make way for moving ones sooner.
-            val moving = min(1f, sqrt(nvx * nvx + nvy * nvy) * 2f)
-            var a = age[i] + abs(dt) * (4f - 3f * moving)
+            // random, the way tracer dye shows a current; gravity and the
+            // vortex cores would otherwise gather it in the end. Rebirth is a
+            // hash of the index and the count, not env.rng: this runs on
+            // several threads at once.
+            var a = age[i] + abs(dt)
             val tb = i * trail
-            // Sampled every other step, so the tail is twice as long for the
-            // same number of points.
             if (sampleTrail) {
                 for (k in trail - 1 downTo 1) {
                     trailX[tb + k] = trailX[tb + k - 1]
                     trailY[tb + k] = trailY[tb + k - 1]
                 }
-                if (trail > 0) { trailX[tb] = px[i]; trailY[tb] = py[i] }
+                if (trail > 0) { trailX[tb] = x; trailY[tb] = y }
+            }
+            // A jump across the seam would draw its tail across the screen.
+            if (wrap && trail > 0 && (abs(nx - x) > 0.5f || abs(ny - y) > 0.5f)) {
+                for (k in 0 until trail) { trailX[tb + k] = nx; trailY[tb + k] = ny }
             }
             if (a > lifeOf(tint[i])) {
                 val b = births[i] + 1
                 births[i] = b
                 var h = i * -0x61c88647 + b * -0x7a143595
                 h = h xor (h ushr 16); h *= -0x7a143595; h = h xor (h ushr 13); h *= -0x3d4d51cb; h = h xor (h ushr 16)
-                nx = ((h and 0xFFFF) / 65535f * 2f - 1f) * w
-                ny = ((h ushr 16) and 0xFFFF) / 65535f * 2f - 1f
+                nx = ((h and 0xFFFF) / 65535f * 2f - 1f) * w * 0.98f
+                ny = (((h ushr 16) and 0xFFFF) / 65535f * 2f - 1f) * 0.98f
                 nvx = 0f; nvy = 0f
                 a = 0f
                 for (k in 0 until trail) { trailX[tb + k] = nx; trailY[tb + k] = ny }
@@ -286,12 +326,19 @@ class ParticleFieldSim : Sim {
         // dimmer: what gravity and the field herd into a corner sits there
         // quietly instead of being the brightest thing on screen.
         while (i < n) {
-            val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 0.9f)
+            val speed = min(1f, sqrt(vx[i] * vx[i] + vy[i] * vy[i]) * 1.6f)
             // Faded in at birth and out before rebirth, so no particle pops.
             val life = lifeOf(tint[i])
             val fade = min(1f, min(age[i], life - age[i]) * 2.5f).coerceAtLeast(0f)
-            val c = Palette.withAlpha(palette.at((0.1f + 0.8f * speed + (tint[i] - 0.5f) * 0.08f).coerceIn(0f, 1f)), (0.6f + 0.4f * speed) * fade)
-            val size = dotSize * sizeScale * spread * (0.8f + speed * 0.6f)
+            // Hue from the stream function, which is constant along a
+            // streamline: each stream is one ribbon of colour and the field's
+            // structure shows as bands. Brightness from speed.
+            val band = 0.5f + 0.5f * FastMath.sin(psiNow[i] * psiScale)
+            val c = Palette.withAlpha(
+                Palette.brighten(palette.at((0.12f + 0.76f * band + (tint[i] - 0.5f) * 0.04f).coerceIn(0f, 1f)), 0.25f * speed),
+                (0.45f + 0.55f * speed) * fade
+            )
+            val size = dotSize * sizeScale * spread * (0.85f + speed * 0.3f)
             g.point(px[i], py[i], size, c)
             // The trail, fading: a point alone cannot show which way it is
             // going, and twenty thousand of them read as static noise. With a
@@ -303,10 +350,12 @@ class ParticleFieldSim : Sim {
             }
             i += stride
         }
+        // The vortex centres, small and quiet: the eddies round them show
+        // where they are.
         for (a in 0 until attractors) {
             val c = if (attractorK[a] > 0) Palette.ACCENT else Palette.DANGER
-            g.glow(attractorX[a], attractorY[a], 0.09f, c, 0.28f)
-            g.ring(attractorX[a], attractorY[a], 0.022f, 0.004f, c, alpha = 0.6f)
+            g.glow(attractorX[a], attractorY[a], 0.05f, c, 0.18f)
+            g.ring(attractorX[a], attractorY[a], 0.014f, 0.003f, c, alpha = 0.5f)
         }
     }
 
@@ -333,19 +382,33 @@ class ParticleFieldSim : Sim {
          */
         const val DRAW_EVERY_ABOVE = 200_000
 
-        private const val MAX_SPEED = 3.2f
+        private const val MAX_SPEED = 1.6f
 
         /** A particle's lifetime, from its tint, in seconds. */
-        private fun lifeOf(tint: Float): Float = 2.5f + 4f * tint
+        private fun lifeOf(tint: Float): Float = 3.5f + 5f * tint
 
-        /** Trail points per particle, and the count above which there are none. */
-        private const val TRAIL = 6
+        /** Plane waves in the stream function: periods across the width and height, and peak speed. */
+        // Three: a fourth, finer wave added little to see and a third more
+        // trig per particle at four hundred thousand.
+        private const val WAVES = 3
+        private val WAVE_M = floatArrayOf(1f, 2f, 1f)
+        private val WAVE_N = floatArrayOf(1f, 1f, 2f)
+        private val WAVE_SPEED = floatArrayOf(0.27f, 0.15f, 0.13f)
+        /** How quickly a particle takes up the flow's velocity, per second. */
+        private const val RELAX = 4f
+        /** Vortex strength and soft-core radius squared. */
+        private const val VORTEX = 0.05f
+        private const val CORE2 = 0.006f
+        /** Speed counted as racing, for the sound. */
+        private const val FAST2 = 0.5f * 0.5f
+        /** Radians of colour band across the stream function's full range. */
+        private const val PSI_BANDS = 3.2f
+        /** Trail points per particle, sampled every [TRAIL_EVERY] steps, and the count above which there are none. */
+        private const val TRAIL = 8
+        private const val TRAIL_EVERY = 3
         private const val TRAIL_UP_TO = 60_000
         private const val MAX_SPEED2 = MAX_SPEED * MAX_SPEED
         private const val PAYOFF_AT = 18f
-        /** How far in from a wall its soft push reaches, and how hard it pushes at the wall. */
-        private const val EDGE = 0.1f
-        private const val EDGE_PUSH = 3f
 
         fun def(): SimDef = SimDef(
             id = "life/particle-field",

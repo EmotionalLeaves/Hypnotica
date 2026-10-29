@@ -590,7 +590,15 @@ class SlicingSim : Sim {
         val palette = env.palette
         val lineColour = palette.at(0.75f)
         val sideScale = PANEL / radius
-        val worldY = SIDE_Y + cutPos * sideScale
+        // A ball of three or more dimensions is drawn as a lit solid seen a
+        // little from above (orthographic, elevation VIEW_ELEV), so heights
+        // along w are foreshortened by its cosine and the cut through it is
+        // an ellipse. Seen dead level it was a flat disc with a line across:
+        // two circles, no depth.
+        val solid = shape == 0 && dims >= 3
+        val elevCos = if (solid) kotlin.math.cos(VIEW_ELEV) else 1f
+        val elevSin = if (solid) kotlin.math.sin(VIEW_ELEV) else 0f
+        val worldY = SIDE_Y + cutPos * sideScale * elevCos
         val reachX = env.halfWidth * 0.95f
         // ---- Outside: the object with its true height, and the flat world.
         // The object from outside was a hairline at half strength, and with
@@ -598,7 +606,26 @@ class SlicingSim : Sim {
         // the dark: drawn now as a solid thing, the flat world as a lit sheet.
         val body = palette.at(0.3f)
         val ghost = Palette.withAlpha(body, 0.8f)
-        if (shape == 0) {
+        if (solid) {
+            shadedBall(g, 0f, SIDE_Y, radius * sideScale, body)
+            // The cross-section itself, inside the ball: what the flat world
+            // will see, drawn where it is.
+            val r = sliceRadius()
+            if (r > 0f) {
+                val a = r * sideScale
+                val b = a * elevSin
+                val strips = 20
+                for (k in 0 until strips) {
+                    val v0 = -1f + 2f * k / strips
+                    val v1 = v0 + 2f / strips
+                    val vm = (v0 + v1) * 0.5f
+                    val half = a * sqrt(max(0f, 1f - vm * vm))
+                    g.rect(0f, worldY + vm * b, half, b / strips, Palette.withAlpha(lineColour, 0.32f))
+                }
+                // Its far half, behind the front of the ball, faint.
+                ellipseArc(g, 0f, worldY, a, b, 0f, PI.toFloat(), 0.004f, Palette.withAlpha(lineColour, 0.45f))
+            }
+        } else if (shape == 0) {
             g.disc(0f, SIDE_Y, radius * sideScale, Palette.withAlpha(body, 0.1f))
             g.ring(0f, SIDE_Y, radius * sideScale, 0.006f, ghost)
         } else {
@@ -629,7 +656,8 @@ class SlicingSim : Sim {
             val r = sliceRadius()
             if (r > 0f) {
                 val half = r * sideScale
-                g.line(-half, worldY, half, worldY, 0.012f, lineColour)
+                if (solid) ellipseArc(g, 0f, worldY, half, half * elevSin, PI.toFloat(), 2f * PI.toFloat(), 0.009f, lineColour)
+                else g.line(-half, worldY, half, worldY, 0.012f, lineColour)
                 g.disc(-half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
                 g.disc(half, worldY, 0.012f, Palette.brighten(lineColour, 0.25f))
                 // The cut and what the flat world sees of it are drawn to one
@@ -671,9 +699,19 @@ class SlicingSim : Sim {
                     // The glow stays inside the outline's reach: at 1.2 times
                     // it smeared the edge the flat world is measuring.
                     g.glow(0f, TOP_Y, r * topScale * 1.1f, lineColour, 0.12f + 0.2f * content)
-                    g.disc(0f, TOP_Y, r * topScale, Palette.withAlpha(lineColour, 0.3f))
+                    if (sliceDims >= 3) {
+                        // A ball: lit as a solid, like the object below.
+                        shadedBall(g, 0f, TOP_Y, r * topScale, lineColour)
+                    } else {
+                        // A disc: flat, as it is, but filled from a soft
+                        // centre outwards so it reads as a surface.
+                        val rr = r * topScale
+                        for (k in 0 until 14) {
+                            val f = 1f - k / 14f
+                            g.disc(0f, TOP_Y, rr * f, Palette.withAlpha(lineColour, if (k == 0) 0.2f else 0.04f))
+                        }
+                    }
                     g.ring(0f, TOP_Y, r * topScale, 0.007f, Palette.brighten(lineColour, 0.1f))
-                    if (sliceDims >= 3) g.disc(-r * topScale * 0.35f, TOP_Y + r * topScale * 0.35f, r * topScale * 0.18f, Palette.withAlpha(Palette.TEXT_PRIMARY, 0.25f))
                 }
             }
         } else if (sliceN > 0) {
@@ -699,6 +737,37 @@ class SlicingSim : Sim {
                 g.line(sx[a], sy[a], sx[b], sy[b], 0.006f + 0.004f * near, lineColour, 0.6f + 0.4f * near)
             }
             for (i in 0 until sliceN) g.disc(sx[i], sy[i], 0.011f, Palette.brighten(lineColour, 0.25f))
+        }
+    }
+
+    /**
+     * A ball lit from the upper left: nested discs stepping towards the
+     * highlight, dark at the limb, so it reads as a solid. The outline is the
+     * ball's exact radius.
+     */
+    private fun shadedBall(g: G, cx: Float, cy: Float, r: Float, c: Int) {
+        val steps = 28
+        for (k in 0 until steps) {
+            val t = k / (steps - 1f)
+            val rk = r * (1f - 0.86f * t)
+            val off = r * 0.36f * t
+            val shade = Palette.lerp(Palette.lerp(Palette.BG, c, 0.2f), Palette.brighten(c, 0.18f), t * sqrt(t))
+            g.disc(cx - off, cy + off, rk, shade)
+        }
+        g.ring(cx, cy, r, 0.005f, Palette.withAlpha(Palette.brighten(c, 0.2f), 0.85f))
+    }
+
+    /** An axis-aligned ellipse's arc from angle [a0] to [a1], as joined strokes. */
+    private fun ellipseArc(g: G, cx: Float, cy: Float, a: Float, b: Float, a0: Float, a1: Float, width: Float, c: Int) {
+        val n = 32
+        var px = cx + a * kotlin.math.cos(a0)
+        var py = cy + b * kotlin.math.sin(a0)
+        for (k in 1..n) {
+            val th = a0 + (a1 - a0) * k / n
+            val x = cx + a * kotlin.math.cos(th)
+            val y = cy + b * kotlin.math.sin(th)
+            g.line(px, py, x, y, width, c)
+            px = x; py = y
         }
     }
 
@@ -732,6 +801,8 @@ class SlicingSim : Sim {
         const val SWEEP = 1.12f
         const val VIEW_TURN = 0.3f
         const val TILT = 0.4f
+        /** How far above level the solid ball is seen from, in radians. */
+        const val VIEW_ELEV = 0.32f
         private const val IN_PLANE = -2
 
         fun def(): SimDef = SimDef(
