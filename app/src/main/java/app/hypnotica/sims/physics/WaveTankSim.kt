@@ -206,11 +206,7 @@ class WaveTankSim : Sim {
             for (x in 0 until w) {
                 val i = row + x
                 if (wall[i]) continue
-                // A soft knee instead of a hard clip: clipped at 0.7, every
-                // crest near the source was a flat plateau of one colour with
-                // hard edges, and the plane waves read as painted stripes.
-                // The weaker diffracted waves land about where they did.
-                val q = (kotlin.math.tanh(u[i] / SHOW_AMPLITUDE * KNEE) / KNEE_NORM).coerceIn(-1f, 1f)
+                val q = (u[i] / SHOW_AMPLITUDE).coerceIn(-1f, 1f)
                 // Opaque: see-through dots doubled up where they overlap and
                 // the field went grainy.
                 val c = if (q >= 0f) Palette.lerp(still, crest, q * (2f - q)) else Palette.lerp(still, deep, -q * TROUGH_DEPTH)
@@ -279,9 +275,7 @@ class WaveTankSim : Sim {
         const val C2 = 0.25f
         const val UPDATES_PER_SECOND = 70f
         const val SOURCE_AMPLITUDE = 1f
-        const val SHOW_AMPLITUDE = 1.0f
-        const val KNEE = 1.3f
-        val KNEE_NORM = kotlin.math.tanh(KNEE)
+        const val SHOW_AMPLITUDE = 0.7f
         /** How far a full trough darkens the still water towards black. */
         const val TROUGH_DEPTH = 0.75f
         const val ARRIVAL = 0.02f

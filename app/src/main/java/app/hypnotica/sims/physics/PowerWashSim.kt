@@ -382,7 +382,13 @@ class PowerWashSim : Sim {
         val MURALS = listOf("Surprise", "Rings", "Spiral", "Diamonds", "Waves", "Tiles", "Sunburst")
         const val MAX_DETAIL = 120
         const val SWEEP_SECONDS = 12f
-        const val BLAST = 22f
+        /**
+         * Strong enough that one pass takes even the thickest ordinary grime
+         * (overlapping blotches): at 22 the thick blotches survived the sweep
+         * as half-cleaned dashes, a moth-eaten wall waiting for the clean-up.
+         * Only the baked-on crust is left for the nozzle to come back to.
+         */
+        const val BLAST = 30f
         const val JETS_ACROSS = 13f
         const val STUBBORN = 2.6f
         const val SPRAY = 900

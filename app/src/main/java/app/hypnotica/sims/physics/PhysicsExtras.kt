@@ -702,6 +702,7 @@ class ClothSim : Sim {
             pinned[c] = true
         }
         tearing = p.b("tear", false)
+        lastDt = 0f
         tears = 0
         lastTears = 0
         swayClock = 0f
@@ -728,10 +729,18 @@ class ClothSim : Sim {
             sin(elapsed * 1.7f) * cos(elapsed * 0.6f)
 
         val n = cols * rows
+        // Time-corrected Verlet: the velocity is the last step's move, so
+        // when the step shrinks (the payoff's slow motion runs on finer
+        // steps) that move is scaled to the new step. Carried over whole, a
+        // quarter-size step moved every vertex four times too fast and the
+        // curtain crumpled into a jagged mess at the very moment it paid off.
+        val h = abs(dt)
+        val ratio = if (lastDt > 0f && h > 0f) (h / lastDt).coerceIn(0.1f, 10f) else 1f
+        if (h > 0f) lastDt = h
         for (i in 0 until n) {
             if (pinned[i] || cut[i]) continue
-            val vx = (x[i] - ox[i]) * drag
-            val vy = (y[i] - oy[i]) * drag
+            val vx = (x[i] - ox[i]) * drag * ratio
+            val vy = (y[i] - oy[i]) * drag * ratio
             ox[i] = x[i]
             oy[i] = y[i]
             x[i] += vx + (wind + gSide) * dt * dt * 40f
@@ -817,6 +826,8 @@ class ClothSim : Sim {
     }
 
     private var tearX = 0f
+    /** The previous step's size, for [step]'s time-corrected Verlet. */
+    private var lastDt = 0f
 
     private fun relax(a: Int, b: Int, rest: Float) {
         if (cut[a] || cut[b]) return
