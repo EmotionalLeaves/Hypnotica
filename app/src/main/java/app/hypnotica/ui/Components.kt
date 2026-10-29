@@ -331,7 +331,10 @@ fun ChipRow(
         val target = measured.take(selectedIndex).sum()
         scroll.animateScrollTo(target.coerceIn(0, scroll.maxValue))
     }
-    Box(modifier.fillMaxWidth()) {
+    // Bottom padding: a slider label or a palette strip right under a row of
+    // chips sat 4dp from it and read as part of the row; section labels above
+    // a row already carry their own space, so only the bottom needed it.
+    Box(modifier.fillMaxWidth().padding(bottom = 8.dp)) {
     Row(
         Modifier
             .fillMaxWidth()

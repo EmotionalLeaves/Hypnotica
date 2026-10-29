@@ -650,7 +650,7 @@ private fun MotionCard(state: AppState) {
     ) { v -> state.speed = if (v in SPEED_DETENT) 1f else v }
     // The sim's own controls come first: each card leads with what is worth
     // dragging. Reverse time was between Speed and them.
-    CardControls(state, Card.MOTION)
+    CardControls(state, Card.MOTION, showEmpty = false)
     // Simple mode's Laws card is gated on law knobs too, so these were
     // unreachable here for the same forty-seven sims.
     TimeControls(state)
@@ -707,7 +707,10 @@ private fun LookCard(state: AppState) {
     ) { state.trails = it }
     // The sim's own look controls before the camera switch, which is rarely
     // touched.
-    CardControls(state, Card.LOOK)
+    // No empty note here or on Motion: both cards always carry the shared
+    // controls above, and "Nothing to set here" read under a Trails slider
+    // contradicted the slider it sat beneath.
+    CardControls(state, Card.LOOK, showEmpty = false)
     ToggleRow("Drag pans the view", state.cameraDrag) { state.cameraDrag = it }
     Text(
         "One finger moves the camera instead of the sim.",
