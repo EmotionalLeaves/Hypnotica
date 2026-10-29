@@ -175,11 +175,9 @@ private fun HaltedCard(state: AppState, why: String) {
 
 @Composable
 private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: String) {
-    state.halted?.let {
-        HaltedCard(state, it)
-        return
-    }
-    when (state.screen) {
+    androidx.compose.runtime.CompositionLocalProvider(app.hypnotica.ui.LocalChipEdge provides app.hypnotica.ui.Tokens.Bg) {
+    val halted = state.halted
+    if (halted != null) HaltedCard(state, halted) else when (state.screen) {
         Screen.FEED -> FeedScreen(state, surface)
         Screen.PLAYER -> PlayerScreen(state, surface)
         // The opaque panels fade up; the four screens that host the sim do not,
@@ -189,6 +187,7 @@ private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: Strin
         Screen.TICKTOCK -> TickTockScreen(state, surface)
         Screen.STUDIO -> StudioScreen(state, surface)
         Screen.RECIPES -> ScreenEnter { RecipeScreen(state) }
+    }
     }
 }
 

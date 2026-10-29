@@ -65,14 +65,18 @@ class ScreensTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val engine = SimEngine(SimRegistry.defaultSim())
         val surface = SimSurfaceView(context, engine)
+        // The GL surface draws nothing here and would cover the painted sim.
+        surface.visibility = android.view.View.INVISIBLE
         val state = AppState(engine)
         setup(state)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             HypnoticaTheme {
-                Box(Modifier.fillMaxSize().background(Tokens.Bg)) {
-                    Backdrop(state.currentDef)
-                    content(state, surface)
+                androidx.compose.runtime.CompositionLocalProvider(app.hypnotica.ui.LocalChipEdge provides Tokens.Bg) {
+                    Box(Modifier.fillMaxSize().background(Tokens.Bg)) {
+                        Backdrop(state.currentDef)
+                        content(state, surface)
+                    }
                 }
             }
         }

@@ -66,6 +66,9 @@ object Previews {
     var lastError: String? = null
         private set
 
+    /** How far into a sort its card is taken: well under way, not done. */
+    private const val SORT_PREVIEW_SHARE = 0.35f
+
     fun build(def: SimDef, seconds: Float? = null, aspect: Float = 1.35f): Preview {
         return try {
             val core = SimCore(def, SEED)
@@ -78,7 +81,12 @@ object Previews {
                 if (core.params.f(p.key) > cap) core.params.set(p.key, cap)
             }
             core.restart(SEED)
-            val limit = seconds ?: min(def.typicalSeconds * 1.15f, MAX_SECONDS)
+            // A sort's payoff is a sorted array, and a sorted array is the same
+            // green ramp for every algorithm: twelve identical cards. Mid-sort,
+            // each one shows its own way of working.
+            val midway = seconds == null && def.id.startsWith("sorting/") && def.id != "sorting/race"
+            val limit = if (midway) def.typicalSeconds * SORT_PREVIEW_SHARE
+            else seconds ?: min(def.typicalSeconds * 1.15f, MAX_SECONDS)
             val steps = (limit * core.stepHz).toInt()
             val after = (AFTER_PAYOFF_SECONDS * core.stepHz).toInt()
             var done = 0
@@ -91,7 +99,7 @@ object Previews {
                 core.advanceSteps(STEP_CHUNK)
                 core.events.clear()
                 done += STEP_CHUNK
-                if (seconds == null) {
+                if (seconds == null && !midway) {
                     if (payoffSeenAt < 0 && core.payoffFired) payoffSeenAt = done
                     if (payoffSeenAt >= 0 && done - payoffSeenAt >= after) break
                 }
@@ -125,10 +133,12 @@ object Previews {
         var cursor = 0f
         var index = 0
 
+        // Glows first: they sit under everything, as on screen. Last, they
+        // were painted over the picture.
         var i = 0
-        while (i < g.instanceCount && written < keep) {
+        while (i < g.glowCount && written < keep) {
             if (index >= cursor) {
-                copyInstance(out, written, g.instances, i * G.STRIDE)
+                copyInstance(out, written, g.glows, i * G.STRIDE)
                 written++
                 cursor += step
             }
@@ -136,9 +146,9 @@ object Previews {
             i++
         }
         i = 0
-        while (i < g.glowCount && written < keep) {
+        while (i < g.instanceCount && written < keep) {
             if (index >= cursor) {
-                copyInstance(out, written, g.glows, i * G.STRIDE)
+                copyInstance(out, written, g.instances, i * G.STRIDE)
                 written++
                 cursor += step
             }

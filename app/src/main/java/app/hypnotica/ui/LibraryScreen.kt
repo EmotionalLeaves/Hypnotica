@@ -94,7 +94,7 @@ private fun SavedClips(state: AppState) {
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("♥", color = Tokens.AccentText, style = MaterialTheme.typography.titleMedium)
+                GlyphIcon("♥", Tokens.AccentText, size = 20.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(def?.title ?: "A clip", color = Tokens.TextPrimary, style = MaterialTheme.typography.titleMedium, maxLines = 1)
@@ -162,12 +162,7 @@ fun LibraryScreen(state: AppState) {
                 .padding(start = 44.dp, end = 16.dp),
             contentAlignment = Alignment.CenterStart
         ) {
-            Text(
-                "⌕",
-                color = Tokens.TextSecondary,
-                fontSize = 20.sp,
-                modifier = Modifier.align(Alignment.CenterStart).offset(x = (-32).dp)
-            )
+            GlyphIcon("⌕", Tokens.TextSecondary, Modifier.align(Alignment.CenterStart).offset(x = (-32).dp), size = 20.dp)
             if (query.isEmpty()) {
                 Text(
                     "Search ${SimRegistry.all.size} sims",
@@ -193,7 +188,7 @@ fun LibraryScreen(state: AppState) {
                         .clickable { query = "" },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("×", color = Tokens.TextSecondary, style = MaterialTheme.typography.titleMedium)
+                    GlyphIcon("×", Tokens.TextSecondary, size = 20.dp)
                 }
             }
         }

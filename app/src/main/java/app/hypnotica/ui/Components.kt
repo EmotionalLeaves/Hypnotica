@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
@@ -242,12 +244,78 @@ fun ScreenEnter(content: @Composable () -> Unit) {
 }
 
 /** A chip row that scrolls sideways when it does not fit. */
+/** What a scrolling chip row sits on, so its edges can fade into it. */
+val LocalChipEdge = androidx.compose.runtime.compositionLocalOf { Color.Transparent }
+
+/**
+ * A row of tabs that always fits: equal shares of the width, the chosen one on
+ * an accent lozenge that slides between them. The drawer's tabs were a
+ * scrolling row of pills, and on a phone the fourth was always cut through
+ * the middle against the edge.
+ */
+@Composable
+fun TabBar(
+    options: List<String>,
+    selectedIndex: Int,
+    modifier: Modifier = Modifier,
+    onSelect: (Int) -> Unit
+) {
+    val count = options.size.coerceAtLeast(1)
+    val slide by animateFloatAsState(selectedIndex.coerceAtLeast(0).toFloat(), tween(Tokens.Base), label = "tabSlide")
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .background(Color.White.copy(alpha = 0.05f), CircleShape)
+            .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
+            .padding(4.dp)
+    ) {
+        val share = maxWidth / count
+        // The lozenge, under the labels.
+        Box(
+            Modifier
+                .offset(x = share * slide)
+                .width(share)
+                .height(40.dp)
+                .background(Tokens.Accent.copy(alpha = 0.28f), CircleShape)
+        )
+        Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            options.forEachIndexed { i, label ->
+                val chosen = i == selectedIndex
+                val ink by animateColorAsState(if (chosen) Tokens.TextPrimary else Tokens.TextSecondary, tween(Tokens.Fast), label = "tabInk")
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp)
+                        .clip(CircleShape)
+                        .clickable(role = Role.Tab) { onSelect(i) }
+                        .semantics { if (chosen) stateDescription = "selected" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = ink,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun ChipRow(
     options: List<String>,
     selectedIndex: Int,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /**
+     * The colour behind the row. When given, the row fades into it at an edge
+     * with more chips beyond, instead of cutting a chip through the middle.
+     */
+    edge: Color = LocalChipEdge.current,
     onSelect: (Int) -> Unit
 ) {
     // The selected chip is scrolled to, which it never used to be. A row of
@@ -263,8 +331,9 @@ fun ChipRow(
         val target = measured.take(selectedIndex).sum()
         scroll.animateScrollTo(target.coerceIn(0, scroll.maxValue))
     }
+    Box(modifier.fillMaxWidth()) {
     Row(
-        modifier
+        Modifier
             .fillMaxWidth()
             .horizontalScroll(scroll),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -283,6 +352,19 @@ fun ChipRow(
                 enabled = enabled
             ) { onSelect(i) }
         }
+    }
+    if (edge.alpha > 0f) {
+        val fadeLeft = scroll.value > 0
+        val fadeRight = scroll.value < scroll.maxValue
+        if (fadeLeft) Box(
+            Modifier.align(Alignment.CenterStart).width(24.dp).height(48.dp)
+                .background(Brush.horizontalGradient(listOf(edge, edge.copy(alpha = 0f))))
+        )
+        if (fadeRight) Box(
+            Modifier.align(Alignment.CenterEnd).width(24.dp).height(48.dp)
+                .background(Brush.horizontalGradient(listOf(edge.copy(alpha = 0f), edge)))
+        )
+    }
     }
 }
 
@@ -470,24 +552,29 @@ fun GlyphButton(
             },
         contentAlignment = Alignment.Center
     ) {
-        // The variation selector asks for the text form: ⚙ ▶ ⏸ ⤴ ♥ are colour
-        // emoji by default on many phones, and an emoji ignores the colour.
-        // Sizes are per glyph because they come from different fallback fonts:
-        // ‹ is an x-height mark and read half the size of ★ at the same 16sp.
-        Text(
-            if (glyph in EMOJI_PRONE) glyph + "\uFE0E" else glyph,
-            color = if (pop && selected) Tokens.AccentText else Tokens.TextPrimary,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontSize = GLYPH_SIZES[glyph] ?: 20.sp,
-                lineHeight = GLYPH_SIZES[glyph] ?: 20.sp,
-                platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
-                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
-                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
-                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
-                )
-            ),
-            modifier = Modifier.clearAndSetSemantics { }
-        )
+        val ink = if (pop && selected) Tokens.AccentText else Tokens.TextPrimary
+        if (hasIcon(glyph)) {
+            GlyphIcon(glyph, ink, Modifier.clearAndSetSemantics { }, size = 24.dp)
+        } else {
+            // The variation selector asks for the text form: ⚙ ▶ ⏸ ⤴ ♥ are colour
+            // emoji by default on many phones, and an emoji ignores the colour.
+            // Sizes are per glyph because they come from different fallback fonts:
+            // ‹ is an x-height mark and read half the size of ★ at the same 16sp.
+            Text(
+                if (glyph in EMOJI_PRONE) glyph + "\uFE0E" else glyph,
+                color = ink,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = GLYPH_SIZES[glyph] ?: 20.sp,
+                    lineHeight = GLYPH_SIZES[glyph] ?: 20.sp,
+                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                    )
+                ),
+                modifier = Modifier.clearAndSetSemantics { }
+            )
+        }
     }
 }
 

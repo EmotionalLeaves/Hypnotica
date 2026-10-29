@@ -330,13 +330,9 @@ private fun QuietGlyph(glyph: String, onClick: () -> Unit) {
             .semantics(mergeDescendants = true) { contentDescription = if (glyph == "◷") "TickTock" else "Studio" },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            glyph,
-            // Quiet, but findable: at a fifth of the ink the doors were
-            // effectively invisible.
-            color = Tokens.TextSecondary.copy(alpha = 0.5f),
-            style = MaterialTheme.typography.titleMedium
-        )
+        // Quiet, but findable: at a fifth of the ink the doors were
+        // effectively invisible.
+        GlyphIcon(glyph, Tokens.TextSecondary.copy(alpha = 0.5f), size = 24.dp)
     }
 }
 
@@ -379,7 +375,7 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
             .fillMaxWidth()
             .background(Tokens.Surface, RoundedCornerShape(12.dp))
             .padding(16.dp)
-    ) { content() }
+    ) { androidx.compose.runtime.CompositionLocalProvider(LocalChipEdge provides Tokens.Surface) { content() } }
 }
 
 /** A full-width row that unfolds what is under it, with a turning caret. */
@@ -396,6 +392,6 @@ private fun Disclosure(label: String, open: Boolean, onToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Text("▾", color = Tokens.TextSecondary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.rotate(turn))
+        GlyphIcon("▾", Tokens.TextSecondary, Modifier.rotate(turn), size = 20.dp)
     }
 }

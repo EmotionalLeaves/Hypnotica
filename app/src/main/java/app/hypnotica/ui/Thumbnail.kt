@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -88,8 +89,19 @@ private fun DrawScope.drawPreview(p: Preview, fade: Float) {
         when (p.shape(i)) {
             G.SHAPE_DISC.toInt() -> drawCircle(color, hw, Offset(x, y))
 
-            G.SHAPE_GLOW.toInt() ->
-                drawCircle(color.copy(alpha = color.alpha * 0.45f), hw * 1.3f, Offset(x, y))
+            // Soft, as the GL shader draws it ((1 − d)² from the middle out).
+            // It was a flat translucent disc, which on a card read as a stain.
+            G.SHAPE_GLOW.toInt() -> if (hw > 0.5f) drawCircle(
+                Brush.radialGradient(
+                    0f to color,
+                    0.5f to color.copy(alpha = color.alpha * 0.25f),
+                    1f to color.copy(alpha = 0f),
+                    center = Offset(x, y),
+                    radius = hw
+                ),
+                hw,
+                Offset(x, y)
+            )
 
             G.SHAPE_RING.toInt() -> {
                 // A ring narrower than the minimum would make an empty range,

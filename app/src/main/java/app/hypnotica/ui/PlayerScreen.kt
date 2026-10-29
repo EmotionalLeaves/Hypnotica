@@ -368,6 +368,7 @@ private fun ActionBar(state: AppState, surface: SimSurfaceView) {
 
 @Composable
 private fun ControlDrawer(state: AppState) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalChipEdge provides Tokens.Surface) {
     // Pulled down to close, as a sheet is: it closed only by a tap on the sim,
     // ≡ or Back. The handle at the top is where the pull starts.
     var pull by remember { mutableFloatStateOf(0f) }
@@ -420,7 +421,7 @@ private fun ControlDrawer(state: AppState) {
             }
             val selected = tabs.indexOf(state.advancedTab).coerceAtLeast(0)
             val shown = tabs[selected]
-            ModeRow(state) { ChipRow(tabs.map { it.title }, selected) { state.advancedTab = tabs[it] } }
+            ModeRow(state) { TabBar(tabs.map { it.title }, selected) { state.advancedTab = tabs[it] } }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 AdvancedPanel(state, shown)
@@ -434,7 +435,7 @@ private fun ControlDrawer(state: AppState) {
             // because the card outlives the sim it was chosen on.
             val selected = cards.indexOf(state.card).coerceAtLeast(0)
             val shown = cards[selected]
-            ModeRow(state) { ChipRow(cards.map { it.title }, selected) { state.card = cards[it] } }
+            ModeRow(state) { TabBar(cards.map { it.title }, selected) { state.card = cards[it] } }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 // Crossfaded, with the drawer's height carried along: Sound is
@@ -468,6 +469,7 @@ private fun ControlDrawer(state: AppState) {
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
     }
 }
 
@@ -887,39 +889,13 @@ private const val GESTURE_TIP_MS = 5000L
 @Composable
 private fun ModeRow(state: AppState, chips: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        // The chips scroll under a soft edge rather than being cut off hard
-        // against the switch, which made the last one look broken.
-        val fadeWidth = with(LocalDensity.current) { CHIP_FADE_DP.dp.toPx() }
-        Box(
-            Modifier
-                .weight(1f)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                .drawWithContent {
-                    drawContent()
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            0f to Color.Black,
-                            1f to Color.Transparent,
-                            startX = size.width - fadeWidth,
-                            endX = size.width
-                        ),
-                        blendMode = BlendMode.DstIn
-                    )
-                }
-        ) { chips() }
-        Spacer(Modifier.width(8.dp))
-        // A rule between the tabs and the switch, so the switch does not read
-        // as one more tab.
-        Box(Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.12f)))
+        Box(Modifier.weight(1f)) { chips() }
         Spacer(Modifier.width(8.dp))
         // Says where you are, lit when on: "Advanced" while in Simple read
         // like a tab already chosen.
         Pill("Advanced", selected = state.advanced) { state.advanced = !state.advanced }
     }
 }
-
-/** The soft edge the drawer's chips scroll under. */
-private const val CHIP_FADE_DP = 24
 
 /** How long the remix's note stays up. */
 private const val REMIX_NOTE_MS = 1400L
