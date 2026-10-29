@@ -40,6 +40,17 @@ class PenroseTilingSim : Sim {
     private var dist = arrayOf<FloatArray>()
     private var reach = 1f
     private var builtAspect = -1f
+    /**
+     * The tiling is built in world units (the wheel has radius 1) and seen
+     * through a camera that moves in steadily from showing the whole wheel to
+     * the final close-up. Built at screen size, the first generations were a
+     * few tiles bigger than the screen, and all you saw was two or three
+     * flat slabs of colour.
+     */
+    private var zoomFrom = 1f
+    private var zoomTo = 1f
+    private var clock = 0f
+    private var leadIn = true
 
     private var gen = 0
     private var progress = 0f
@@ -61,6 +72,8 @@ class PenroseTilingSim : Sim {
         gen = 0
         progress = 0f
         wait = LEAD_IN
+        leadIn = true
+        clock = 0f
         done = false
         payoffFrame = false
         sinceDone = 0f
@@ -68,12 +81,31 @@ class PenroseTilingSim : Sim {
         starBands = 0
     }
 
+    /** The whole run's length in cut-seconds, holds included. */
+    private fun runLength(): Float = gens * CUT_SECONDS + (gens - 1) * HOLD
+
+    /**
+     * The camera's zoom at run-clock c: even in log scale (a steady move in,
+     * not a lurch), eased once at each end, so it starts and stops softly
+     * and never bobs between generations.
+     */
+    private fun zoomAt(c: Float): Float {
+        val u = smooth(c / runLength())
+        return zoomFrom * Math.pow((zoomTo / zoomFrom).toDouble(), u.toDouble()).toFloat()
+    }
+
+    private fun zoom(): Float = if (done) zoomTo else zoomAt(clock)
+
     private fun build(env: SimEnv) {
         builtAspect = env.aspect
         val hw = env.halfWidth
         reach = sqrt(hw * hw + 1f)
-        // The wheel's inner radius covers the screen's corners.
-        val r0 = reach * 1.03f / cos(PI / 10.0).toFloat()
+        // At the end the wheel's inner radius covers the screen's corners
+        // (the density the finished tiling was designed at); at the start the
+        // whole wheel sits inside the screen.
+        zoomTo = reach * 1.03f / cos(PI / 10.0).toFloat()
+        zoomFrom = min(hw, 1f) * 0.94f
+        val r0 = 1f
         type = Array(gens + 1) { ByteArray(0) }
         tri = Array(gens + 1) { FloatArray(0) }
         parent = Array(gens + 1) { IntArray(0) }
@@ -100,7 +132,15 @@ class PenroseTilingSim : Sim {
             val nv = FloatArray(count * 6)
             val np = IntArray(count)
             var k = 0
+            // The camera only ever moves in, so a tile wholly outside the view
+            // as its generation first appears is never seen again; neither are
+            // its children. Leaving them out keeps the last generation to what
+            // is on screen.
+            val z = zoomAt((g - 1) * (CUT_SECONDS + HOLD))
+            val vx = hw / z * 1.05f + 0.02f; val vy = 1f / z * 1.05f + 0.02f
             fun put(ty: Int, ax: Float, ay: Float, bx: Float, by: Float, cx: Float, cy: Float, p: Int) {
+                if (max(ax, max(bx, cx)) < -vx || min(ax, min(bx, cx)) > vx ||
+                    max(ay, max(by, cy)) < -vy || min(ay, min(by, cy)) > vy) return
                 nt[k] = ty.toByte(); np[k] = p
                 val o = k * 6
                 nv[o] = ax; nv[o + 1] = ay; nv[o + 2] = bx; nv[o + 3] = by; nv[o + 4] = cx; nv[o + 5] = cy
@@ -123,9 +163,9 @@ class PenroseTilingSim : Sim {
                     put(0, rx, ry, qx, qy, ax, ay, i)
                 }
             }
-            t = nt; v = nv
-            type[g] = nt; tri[g] = nv; parent[g] = np
-            dist[g] = distances(nv, count)
+            t = nt.copyOf(k); v = nv.copyOf(k * 6)
+            type[g] = t; tri[g] = v; parent[g] = np.copyOf(k)
+            dist[g] = distances(v, k)
         }
         findStars(env)
     }
@@ -165,9 +205,10 @@ class PenroseTilingSim : Sim {
                 val x = v[o + c * 2]; val y = v[o + c * 2 + 1]
                 val k = key(x, y)
                 if ((counts[k] ?: 0) == 10) {
-                    val d = hypot(x, y)
+                    // In screen units at the final zoom, where the stars light.
+                    val d = hypot(x, y) * zoomTo
                     starOf[i] = if (starOf[i] < 0f) d else min(starOf[i], d)
-                    if (abs(x) < hw && abs(y) < 1f && centres.add(k)) starReach = max(starReach, d)
+                    if (abs(x * zoomTo) < hw && abs(y * zoomTo) < 1f && centres.add(k)) starReach = max(starReach, d)
                 }
             }
         }
@@ -193,7 +234,13 @@ class PenroseTilingSim : Sim {
             }
             return
         }
-        if (wait > 0f) { wait -= a * speed; return }
+        if (wait > 0f) {
+            wait -= a * speed
+            if (!leadIn) clock += a * speed
+            return
+        }
+        leadIn = false
+        clock += a * speed
         val before = progress
         progress = min(1f, progress + a * speed / CUT_SECONDS)
         // A note each time the cutting front passes another ring, rising
@@ -216,8 +263,12 @@ class PenroseTilingSim : Sim {
 
     /** How far the cut has got at distance d from the centre, 0..1. */
     private fun localCut(d: Float): Float {
-        val w = reach * FRONT
-        return ((progress * (reach + w) - d) / w).coerceIn(0f, 1f)
+        // d is in world units; the front sweeps what is on screen now.
+        // Never past the wheel's own rim (radius 1): early on the screen is
+        // wider than the wheel, and the front spent half its time in empty space.
+        val r = min(reach / zoom(), 1f)
+        val w = r * FRONT
+        return ((progress * (r + w) - d) / w).coerceIn(0f, 1f)
     }
 
     /** Thin rhombs from one end of the palette, thick from the other: two clear hues. */
@@ -228,8 +279,13 @@ class PenroseTilingSim : Sim {
         val hw = env.halfWidth
         val cutting = !done && progress > 0f
         val show = if (cutting) gen + 1 else min(gen, gens)
-        val t = type[show]; val v = tri[show]; val par = parent[show]
+        val t = type[show]; val par = parent[show]
         val n = t.size
+        val z = zoom()
+        if (scr.size < n * 6) scr = FloatArray(n * 6)
+        val wv = tri[show]
+        for (q in 0 until n * 6) scr[q] = wv[q] * z
+        val v = scr
         val side = hypot(v[2] - v[0], v[3] - v[1])
         val grout = (side * 0.11f).coerceIn(0.003f, 0.009f)
         val lineW = grout * 0.42f
@@ -237,7 +293,7 @@ class PenroseTilingSim : Sim {
 
         // Kept between frames: two fresh arrays of twenty thousand a frame
         // were the garbage collector's main work.
-        if (cutOf.size < n) { cutOf = FloatArray(n); visible = BooleanArray(n); inside = BooleanArray(n) }
+        if (cutOf.size < n) { cutOf = FloatArray(n); visible = BooleanArray(n); inside = BooleanArray(n); starLit = FloatArray(n) }
         for (i in 0 until n) {
             val o = i * 6
             val minX = min(v[o], min(v[o + 2], v[o + 4])); val maxX = max(v[o], max(v[o + 2], v[o + 4]))
@@ -259,17 +315,25 @@ class PenroseTilingSim : Sim {
             // out of it once the tiling is finished, and stay lit.
             var lit = 0.34f
             if (done && starOf[i] >= 0f) {
+                // Lifted, not lit up: a full-strength fill made the stars a
+                // loud pink that drowned the rest of the pattern. A step up in
+                // depth, cooled a little towards the thin tiles' hue, and the
+                // star's leading brightens (below) to draw its outline.
                 val s = smooth((stars * (starReach + 0.4f) - starOf[i]) / 0.4f)
-                lit += 0.5f * s
-                c = Palette.lerp(c, Palette.TEXT_PRIMARY, 0.15f * s)
-            }
+                starLit[i] = s
+                lit += 0.2f * s
+                c = Palette.lerp(c, Palette.lerp(colour(pal, 0), Palette.TEXT_PRIMARY, 0.5f), 0.22f * s)
+            } else starLit[i] = 0f
             fill(g, v, i, Palette.lerp(Palette.BG, c, lit), side, hw)
         }
         // Then the leading: the dark came, and a thin lit edge in it.
         for (pass in 0..1) {
             if (cutting) {
                 // The old edges fade as each region is cut; the new ones come in.
-                val pt = type[show - 1]; val pv = tri[show - 1]
+                val pt = type[show - 1]; val pw = tri[show - 1]
+                if (prevScr.size < pw.size) prevScr = FloatArray(pw.size)
+                for (q in pw.indices) prevScr[q] = pw[q] * z
+                val pv = prevScr
                 for (j in pt.indices) {
                     val u = localCut(dist[show - 1][j])
                     val a = 1f - u * u
@@ -281,7 +345,9 @@ class PenroseTilingSim : Sim {
                 if (!visible[i]) continue
                 val a = smooth(cutOf[i])
                 if (a <= 0.01f) continue
-                edges(g, v, i, if (pass == 0) Palette.BG else edgeColour(pal, t[i].toInt()), if (pass == 0) grout else lineW, a, hw)
+                val sl = starLit[i]
+                val ec = if (sl > 0f) Palette.lerp(edgeColour(pal, t[i].toInt()), Palette.TEXT_PRIMARY, 0.6f * sl) else edgeColour(pal, t[i].toInt())
+                edges(g, v, i, if (pass == 0) Palette.BG else ec, if (pass == 0) grout else lineW * (1f + 0.5f * sl), a, hw)
             }
         }
     }
@@ -349,6 +415,9 @@ class PenroseTilingSim : Sim {
     }
 
     private var cutOf = FloatArray(0)
+    private var scr = FloatArray(0)
+    private var starLit = FloatArray(0)
+    private var prevScr = FloatArray(0)
     private var visible = BooleanArray(0)
     private var inside = BooleanArray(0)
 

@@ -145,6 +145,9 @@ class BilliardsSim : Sim {
         aimX = cos(a); aimY = sin(a)
         aimBall = 1; aimPocket = -1
         layoutPockets()
+        histX = FloatArray(balls * HIST); histY = FloatArray(balls * HIST)
+        for (b in 0 until balls) resetHist(b)
+        histHead = 0
         cushionE = (CUSHION_E * env.laws.bounce / 0.88f).coerceIn(0.5f, 0.92f)
         elapsed = 0f
         phase = AIM
@@ -159,6 +162,14 @@ class BilliardsSim : Sim {
     }
 
     private var numbers = IntArray(0)
+    // The last few positions of every ball, for the fading path behind it.
+    private var histX = FloatArray(0)
+    private var histY = FloatArray(0)
+    private var histHead = 0
+
+    private fun resetHist(b: Int) {
+        for (k in 0 until HIST) { histX[b * HIST + k] = px[b]; histY[b * HIST + k] = py[b] }
+    }
 
     /** A point on the table's long axis: −1 head cushion … 1 foot cushion. */
     private fun alongLong(t: Float): Pair<Float, Float> = if (long) Pair(t * hx, 0f) else Pair(0f, -t * hy)
@@ -218,6 +229,8 @@ class BilliardsSim : Sim {
                 val subs = SUBSTEPS
                 val sdt = h / subs
                 repeat(subs) { physics(env, sdt) }
+                for (b in 0 until balls) { histX[b * HIST + histHead] = px[b]; histY[b * HIST + histHead] = py[b] }
+                histHead = (histHead + 1) % HIST
                 if (allStill() && elapsed - phaseAt > 0.3f && !anySinking()) {
                     if (remaining() > 0) {
                         if (!inPlay[0]) respotCue()
@@ -393,6 +406,7 @@ class BilliardsSim : Sim {
             tries++
         }
         px[0] = x; py[0] = y; vx[0] = 0f; vy[0] = 0f
+        resetHist(0)
         inPlay[0] = true
         sinking[0] = -1f
         cueOut = false
@@ -539,6 +553,20 @@ class BilliardsSim : Sim {
             g.ring(ghostX, ghostY, r, 0.0025f, Palette.TEXT_PRIMARY, alpha = fade)
             if (aimPocket >= 0) dashed(g, px[aimBall], py[aimBall], pocketX[aimPocket], pocketY[aimPocket], fade * 0.7f)
         }
+        // Each moving ball's last third of a second, as a fading thread in
+        // its own colour, so a shot reads as a path: the cut, the carom, the
+        // run into the pocket.
+        if (phase == ROLL) for (b in 0 until balls) {
+            if (!inPlay[b] || (vx[b] == 0f && vy[b] == 0f)) continue
+            val c = if (numbers[b] == 8) EIGHT_RIM else ballColour(env, b)
+            for (k in 1 until HIST) {
+                val i0 = b * HIST + (histHead + k - 1) % HIST
+                val i1 = b * HIST + (histHead + k) % HIST
+                val sx = histX[i1] - histX[i0]; val sy = histY[i1] - histY[i0]
+                if (sx * sx + sy * sy < r * r * 0.0004f) continue
+                g.line(histX[i0], histY[i0], histX[i1], histY[i1], r * 0.5f, c, 0.3f * k / HIST)
+            }
+        }
         // Balls: shadow, body, stripe, highlight.
         for (b in 0 until balls) {
             if (!inPlay[b] && sinking[b] < 0f) continue
@@ -584,6 +612,8 @@ class BilliardsSim : Sim {
             g.disc(x, y, rr, STRIPE_WHITE, a)
             g.rect(x, y, rr * 0.8f, rr * 0.44f, c, band[b], a)
         } else g.disc(x, y, rr, c, a)
+        // The black ball gets a faint rim, or it vanished into the dark tray.
+        if (n == 8) g.ring(x, y, rr, rr * 0.12f, EIGHT_RIM, alpha = 0.8f * a)
         if (n in 1..15) g.disc(x, y, rr * 0.36f, STRIPE_WHITE, 0.85f * a)
         g.disc(x - rr * 0.38f, y + rr * 0.4f, rr * 0.22f, 0xFFFFFFFF.toInt(), 0.55f * a)
     }
@@ -645,6 +675,8 @@ class BilliardsSim : Sim {
         const val POCKET_RIM = 0xFF15110E.toInt()
         const val CUE = 0xFFF2EFE6.toInt()
         const val EIGHT = 0xFF141519.toInt()
+        const val EIGHT_RIM = 0xFF5A606C.toInt()
+        const val HIST = 20
         const val STRIPE_WHITE = 0xFFEDEAE2.toInt()
         const val CUE_STICK = 0xFFB8925E.toInt()
         const val CUE_TIP = 0xFFE8E2D4.toInt()
