@@ -53,6 +53,7 @@ class GrowBounceSim : Sim {
     private var trailClock = 0f
     private var elapsed = 0f
     private var doneAt = -1f
+    private var lastMark = 0
     private var payoffFrame = false
 
     override fun setup(env: SimEnv) {
@@ -65,7 +66,7 @@ class GrowBounceSim : Sim {
         py = ringR * 0.45f
         vx = ringR * (0.9f + env.rng.nextFloat() * 0.4f)
         vy = 0f
-        bounces = 0; hits = 0; flash = 0f
+        bounces = 0; hits = 0; flash = 0f; lastMark = 0
         trailHead = 0; trailN = 0; trailClock = 0f
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
@@ -123,11 +124,16 @@ class GrowBounceSim : Sim {
         flashAng = atan2(ny, nx)
         r = min(ringR * END_SHARE, r + growth)
         val full = r / ringR
+        // The fill named as it passes each half and three quarters.
+        if (full >= 0.5f && lastMark < 50) { lastMark = 50; env.callout("Half full!") }
+        else if (full >= 0.75f && lastMark < 75) { lastMark = 75; env.callout("No room left…") }
+        else if (bounces % 25 == 0) env.callout("$bounces bounces")
         env.emit(EventKind.HIT, full, nx.coerceIn(-1f, 1f), (0.45f + 0.4f * full).coerceAtMost(0.9f))
         if (r >= ringR * END_SHARE) {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 1f, 0f, 1f)
+            env.callout("FULL!", big = true)
         }
     }
 
@@ -163,6 +169,9 @@ class GrowBounceSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 4f
+
+    override fun scoreForBest(): Float = bounces.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} bounces to fill it"
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "bounces" to "$bounces",

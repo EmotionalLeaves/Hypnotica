@@ -150,6 +150,7 @@ class ThreeStarsSim : Sim {
                 if (loops == 1 && doneAt < 0f) {
                     doneAt = elapsed; payoffFrame = true
                     env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+                    env.callout("Back where they started!", big = true)
                 }
             }
             lastNear = near
@@ -161,6 +162,7 @@ class ThreeStarsSim : Sim {
                 if (doneAt < 0f) {
                     doneAt = elapsed; payoffFrame = true
                     env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+                    env.callout("Thrown out!", big = true)
                 }
             }
         }

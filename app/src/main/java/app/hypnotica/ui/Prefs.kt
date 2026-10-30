@@ -161,6 +161,15 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_DAY_STREAK, 0)
         set(value) = sp.edit().putInt(KEY_DAY_STREAK, value).apply()
 
+    /** A sim's personal best, or NaN if it has none yet. */
+    fun bestOf(id: String): Float = sp.getFloat(KEY_BEST_PREFIX + id, Float.NaN)
+
+    fun setBest(id: String, value: Float, text: String) =
+        sp.edit().putFloat(KEY_BEST_PREFIX + id, value).putString(KEY_BEST_TEXT_PREFIX + id, text).apply()
+
+    /** A sim's best in words, for its Library card, or null. */
+    fun bestTextOf(id: String): String? = sp.getString(KEY_BEST_TEXT_PREFIX + id, null)?.takeIf { it.isNotEmpty() }
+
     var mutedFormats: Set<String>
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
@@ -211,6 +220,8 @@ class Prefs(context: Context) {
         const val KEY_GUESS_STREAK = "guess_streak"
         const val KEY_GUESS_BEST = "guess_best"
         const val KEY_LAST_DAY = "last_open_day"
+        const val KEY_BEST_PREFIX = "best_"
+        const val KEY_BEST_TEXT_PREFIX = "best_text_"
         const val KEY_DAY_STREAK = "day_streak"
         const val KEY_SEEN = "seen_sims"
         const val KEY_RECENT = "recent_sims"

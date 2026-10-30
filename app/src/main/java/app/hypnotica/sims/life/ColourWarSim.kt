@@ -269,6 +269,7 @@ class ColourWarSim : Sim {
         winnerTeam = (0 until teams).maxByOrNull { counts[it] } ?: -1
         decidedAt = elapsed
         payoffFrame = true
+        env.callout("Decided!", big = true)
     }
 
     private var tickCarry = 0f

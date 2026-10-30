@@ -668,6 +668,9 @@ class MonteCarloPiSim : Sim {
 
     override fun finished(): Boolean = false
 
+    override fun scoreForBest(): Float = -abs(estimate() - PI.toFloat())
+    override fun scoreForBestText(value: Float): String = String.format(java.util.Locale.US, "π ≈ %.5f", estimate())
+
     override fun counters(): List<Pair<String, String>> = listOf(
         "pi" to String.format(java.util.Locale.US, "%.5f", estimate()),
         "darts" to String.format(java.util.Locale.US, "%,d", total)

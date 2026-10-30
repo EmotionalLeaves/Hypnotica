@@ -158,6 +158,7 @@ class GlassBridgeSim : Sim {
                     firstAcross = current
                     doneAt = elapsed
                     payoffFrame = true
+                    env.callout("Made it across!", big = true)
                     env.emit(EventKind.DONE, 1f, 0f, 1f)
                 }
                 nextMarble(env)
@@ -235,6 +236,7 @@ class GlassBridgeSim : Sim {
             // Nobody made it.
             doneAt = elapsed
             payoffFrame = true
+            env.callout("Nobody made it", big = true)
             env.emit(EventKind.DONE, 0.2f, 0f, 1f)
         }
     }

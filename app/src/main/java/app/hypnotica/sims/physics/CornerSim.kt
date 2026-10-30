@@ -44,6 +44,7 @@ class CornerSim : Sim {
     private var lastCellY = IntArray(1)
     private var cornerAt = FloatArray(1)
     private var wx = 1f
+    private var nearMisses = 0
     private var wy = 1f
     private var bw = 0.1f
     private var bh = 0.06f
@@ -106,6 +107,7 @@ class CornerSim : Sim {
         }
         for (k in 0 until count) { lastCellX[k] = cellOf(x0[k], wx, vx[k]); lastCellY[k] = cellOf(y0[k], wy, vy[k]) }
         bounces = 0
+        nearMisses = 0
         elapsed = 0f
         doneAt = -1f
         payoffFrame = false
@@ -189,7 +191,18 @@ class CornerSim : Sim {
                 // one step counted, and a near miss a few thousandths off
                 // ended the run seconds early, before the exact hit.
                 if (doneAt < 0f && k == first && u >= cornerAt[k] - 1e-3f) corner(env)
-                else env.emit(EventKind.HIT, tint[k], (x[k] / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.45f)
+                else {
+                    env.emit(EventKind.HIT, tint[k], (x[k] / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.45f)
+                    // A bounce close enough to a corner to hold your breath:
+                    // the other wall only a sliver away.
+                    val nx = abs(x[k]) / max(1e-3f, halfW - bw)
+                    val ny = abs(y[k]) / max(1e-3f, 1f - bhEff)
+                    val other = min(nx, ny)
+                    if (doneAt < 0f && other > NEAR) {
+                        nearMisses++
+                        env.callout(if (other > NEAR_BIG) "SO close!" else "Almost…", big = other > NEAR_BIG)
+                    }
+                }
             }
         }
         if (doneAt < 0f && u >= cornerAt[first]) corner(env)
@@ -216,6 +229,7 @@ class CornerSim : Sim {
         lastCellY[k] = cellOf(y0[k] + vy[k] * (cornerAt[k] + 1e-3f), wy, vy[k])
         payoffFrame = true
         flash = 1f
+        env.callout("CORNER!", big = true)
         // Heard from the side of the corner it struck.
         env.emit(EventKind.DONE, 1f, if (x[k] > 0f) 0.85f else -0.85f, 1f)
         // Sparks from the exact corner it touched.
@@ -316,8 +330,12 @@ class CornerSim : Sim {
 
     override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
 
+    override fun scoreForBest(): Float = nearMisses.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} near misses"
+
     override fun counters(): List<Pair<String, String>> = listOf(
         "bounces" to bounces.toString(),
+        "near misses" to nearMisses.toString(),
         if (doneAt >= 0f) "corner" to (if (count > 1) "#${first + 1}!" else "yes!") else "corner" to "not yet"
     )
 
@@ -326,6 +344,9 @@ class CornerSim : Sim {
         const val TRAIL_SECONDS = 2.5f
         const val TRAIL_SAMPLES = 90
         const val BASE_SPEED = 0.42f
+        /** How close to the other wall, as a share of the way there, counts as nearly a corner. */
+        const val NEAR = 0.9f
+        const val NEAR_BIG = 0.965f
         const val SPARKS = 220
         const val SPARK_LIFE = 1.8f
         const val MAX_BADGES = 4

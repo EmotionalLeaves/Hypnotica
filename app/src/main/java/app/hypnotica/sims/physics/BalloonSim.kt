@@ -178,6 +178,7 @@ class BalloonSim : Sim {
             first = k
             firstPump = pumps
             payoffFrame = true
+            env.callout("POP!", big = true)
             env.emit(EventKind.DONE, 1f, 0f, 1f)
         }
         // The bang is heard where the balloon was, spread a little by its size;
@@ -291,6 +292,9 @@ class BalloonSim : Sim {
     // Over once the first has popped and its confetti has come down; with
     // several, the rest keep growing (and going) meanwhile.
     override fun finished(): Boolean = first >= 0 && elapsed - poppedAt[first] > FALL_SECONDS
+
+    override fun scoreForBest(): Float = firstPump.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} pumps before a pop"
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "pumps" to pumps.toString(),

@@ -68,7 +68,12 @@ class MarbleRaceSim : Sim {
     private var rampX2 = FloatArray(0)
     private var rampY2 = FloatArray(0)
 
+    private var leadNow = -1
+    private var lastLeadCall = -9f
+    private var finalStretch = false
+
     override fun setup(env: SimEnv) {
+        leadNow = -1; lastLeadCall = -9f; finalStretch = false
         val p = env.params
         count = p.i("marbles", 8).coerceIn(2, MAX_MARBLES)
         length = p.f("length", 9f).coerceIn(4f, 40f)
@@ -194,7 +199,29 @@ class MarbleRaceSim : Sim {
                     winnerAt = elapsed
                     payoffFrame = true
                     env.emit(EventKind.DONE, 0.95f, 0f, 1f)
+                    env.callout("Winner!", big = true)
+                } else if (placed == 2 && elapsed - winnerAt < PHOTO_FINISH) {
+                    env.callout("Photo finish!", big = true)
                 }
+            }
+        }
+        // The lead changing hands in the home stretch is worth a word; up
+        // the board it changes on every bounce and would be noise.
+        if (winnerAt < 0f) {
+            var lead = -1
+            for (i in 0 until count) if (!done[i] && (lead < 0 || y[i] < y[lead])) lead = i
+            if (lead >= 0 && lead != leadNow) {
+                val stretch = (y[lead] - finishY) / max(1f, length)
+                if (leadNow >= 0 && stretch < 0.22f && elapsed - lastLeadCall > 1.6f) {
+                    env.callout("New leader!")
+                    lastLeadCall = elapsed
+                }
+                leadNow = lead
+            }
+            if (!finalStretch && lead >= 0 && (y[lead] - finishY) / max(1f, length) < 0.12f) {
+                finalStretch = true
+                env.callout("Final stretch!")
+                lastLeadCall = elapsed
             }
         }
         // Marbles knock each other.
@@ -517,6 +544,8 @@ class MarbleRaceSim : Sim {
     }
 
     companion object {
+        /** A second marble home within this many seconds of the first. */
+        const val PHOTO_FINISH = 0.35f
         const val MAX_MARBLES = 24
         const val R = 0.032f
         const val PEG_R = 0.014f

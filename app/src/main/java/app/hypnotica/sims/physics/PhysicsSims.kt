@@ -357,6 +357,7 @@ class BallEscapeSim : Sim {
                     // or every one replayed the ending.
                     if (escaped == 0) env.emit(EventKind.DONE, b.colorT, (b.x).coerceIn(-1f, 1f), 1f)
                     else env.emit(EventKind.CROSS, b.colorT, (b.x / ringRadius).coerceIn(-1f, 1f), 0.7f)
+                    if (escaped == 0) env.callout("ESCAPED!", big = true)
                     escaped++
                     payoffFrame = true
                     restSeconds = 1.5f

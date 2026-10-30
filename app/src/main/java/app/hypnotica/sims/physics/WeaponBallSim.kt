@@ -53,6 +53,7 @@ class WeaponBallSim : Sim {
     /** The Whirl control: every weapon's spin, scaled live. */
     private var spinMul = 1f
     private var beat = 0f
+    private var parries = 0
     private var arena = 0.44f
     private var speed = 0.9f
     private var alive = 2
@@ -93,7 +94,7 @@ class WeaponBallSim : Sim {
         }
         cool.fill(0f); parryCool.fill(0f)
         slife.fill(0f)
-        alive = n; winner = -1; beat = 0f
+        alive = n; winner = -1; beat = 0f; parries = 0
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
 
@@ -167,6 +168,8 @@ class WeaponBallSim : Sim {
                 val my = (tipY(i) + tipY(j) + baseY(i) + baseY(j)) * 0.25f
                 spark(env, mx, my, 8, Palette.TEXT_PRIMARY)
                 env.emit(EventKind.CROSS, 0.85f, (mx / arena).coerceIn(-1f, 1f), 0.55f)
+                parries++
+                if (parries % 5 == 0) env.callout("Parry ×$parries") else if (parries == 1) env.callout("Parry!")
             }
         }
         // Blade on ball: a hit.
@@ -186,9 +189,17 @@ class WeaponBallSim : Sim {
 
     private fun hit(env: SimEnv, i: Int, j: Int) {
         cool[i * MAX + j] = 0.45f
+        val before = hp[j]
         hp[j] -= dmg[i] / START_HP
         flash[j] = 1f
         hits[i]++
+        // Named moments: a big hit, a ball dropping into the red, a weapon
+        // that has grown into something else.
+        if (hp[j] > 0f) when {
+            dmg[i] >= 20f && hits[i] % 3 == 0 -> env.callout("Crushing!")
+            before >= 0.2f && hp[j] < 0.2f -> env.callout("Critical!")
+            hits[i] == 10 -> env.callout("${NAMES[kind[i]]} ×10!")
+        }
         // Knocked back along the line between them.
         val dx = x[j] - x[i]; val dy = y[j] - y[i]
         val d = max(1e-4f, sqrt(dx * dx + dy * dy))
@@ -210,11 +221,13 @@ class WeaponBallSim : Sim {
             alive--
             spark(env, x[j], y[j], 30, env.palette.at(tint[j]))
             env.emit(EventKind.DEATH, 0.4f, (x[j] / arena).coerceIn(-1f, 1f), 0.9f)
+            if (alive > 1) env.callout("${NAMES[kind[j]]} is out!")
             if (alive == 1 && doneAt < 0f) {
                 winner = (0 until n).first { !gone[it] }
                 doneAt = elapsed
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+                env.callout(if (hp[winner] < 0.15f) "Clutch win!" else "${NAMES[kind[winner]]} wins!", big = true)
             }
         }
     }
@@ -300,6 +313,9 @@ class WeaponBallSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = (doneAt >= 0f && elapsed - doneAt > 4f) || elapsed > GIVE_UP
+
+    override fun scoreForBest(): Float = parries.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} parries"
 
     override fun counters(): List<Pair<String, String>> {
         val out = ArrayList<Pair<String, String>>(n)

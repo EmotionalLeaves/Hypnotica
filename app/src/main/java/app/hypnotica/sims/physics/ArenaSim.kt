@@ -48,6 +48,8 @@ class ArenaSim : Sim {
     private var payoffFrame = false
     private var winner = -1
     private var beat = 0f
+    private var lastKo = -9f
+    private var koRun = 0
     // Debris from the knocked-out.
     private var dx = FloatArray(0)
     private var dy = FloatArray(0)
@@ -97,6 +99,7 @@ class ArenaSim : Sim {
         doneAt = -1f
         payoffFrame = false
         winner = -1
+        lastKo = -9f; koRun = 0
         dx = FloatArray(DEBRIS); dy = FloatArray(DEBRIS); dvx = FloatArray(DEBRIS); dvy = FloatArray(DEBRIS)
         dlife = FloatArray(DEBRIS); dtint = FloatArray(DEBRIS); dNext = 0
         koX = FloatArray(n); koY = FloatArray(n); koAt = FloatArray(n) { -1f }
@@ -221,6 +224,15 @@ class ArenaSim : Sim {
         aliveCount--
         env.emit(EventKind.STEP, 0.1f, (x[i] / max(0.1f, arena0)).coerceIn(-1f, 1f), 0.9f)
         koX[i] = x[i]; koY[i] = y[i]; koAt[i] = elapsed
+        // Knockouts close together are named as a run of them.
+        koRun = if (elapsed - lastKo < 1.2f) koRun + 1 else 1
+        lastKo = elapsed
+        when {
+            aliveCount <= 1 -> {}
+            koRun == 2 -> env.callout("Double KO!")
+            koRun >= 3 -> env.callout("Triple KO!", big = true)
+            aliveCount == 2 -> env.callout("Final two!")
+        }
         repeat(DEBRIS_PER_KO) {
             val k = dNext; dNext = (dNext + 1) % DEBRIS
             // Evenly round, a little jittered: a burst, not a random spray.
@@ -234,6 +246,7 @@ class ArenaSim : Sim {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.3f + 0.6f * tint[winner], 0f, 1f)
+            env.callout(if (hp[winner] < 0.15f) "Clutch!" else "Winner!", big = true)
         }
     }
 

@@ -156,6 +156,13 @@ class HungryBallsSim : Sim {
         gone[small] = true
         gx[small] = x[small]; gy[small] = y[small]; gr[small] = r[small]; gLife[small] = 1f; gBy[small] = big
         alive--
+        // Named moments: a big swallow, the last two, a swallow of an equal.
+        val ratio = sqrt(a2 / a1)
+        val total = (arena * FINAL) * (arena * FINAL)
+        if (alive > 1) when {
+            alive == 2 -> env.callout("Final two!")
+            ratio > 0.9f && a > total * 0.15f -> env.callout("Giant gulp!")
+        }
         // The bigger the eater, the lower the gulp.
         env.emit(EventKind.HIT, (1f - r[big] / (arena * FINAL)).coerceIn(0.05f, 1f), (x[big] / arena).coerceIn(-1f, 1f), (0.35f + 0.5f * sqrt(a2) / r[big]).coerceAtMost(0.9f))
         if (alive == 1 && doneAt < 0f) {
@@ -163,6 +170,7 @@ class HungryBallsSim : Sim {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.6f, 0f, 1f)
+            env.callout("Last one left!", big = true)
         }
     }
 
@@ -201,6 +209,9 @@ class HungryBallsSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = (doneAt >= 0f && elapsed - doneAt > 4f) || elapsed > 90f
+
+    override fun scoreForBest(): Float = if (winner >= 0) eaten[winner].toFloat() else Float.NaN
+    override fun scoreForBestText(value: Float): String = "one ball ate ${value.toInt()}"
 
     override fun counters(): List<Pair<String, String>> {
         var big = -1

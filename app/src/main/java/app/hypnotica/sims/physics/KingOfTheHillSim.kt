@@ -45,6 +45,8 @@ class KingOfTheHillSim : Sim {
     private var tickClock = 0f
     private var bumps = 0
     private var beat = 0f
+    private var heldFor = 0f
+    private var matchPoint = false
 
     override fun setup(env: SimEnv) {
         n = env.params.i("players", 4).coerceIn(2, MAX)
@@ -61,6 +63,7 @@ class KingOfTheHillSim : Sim {
         }
         holder = -1; winner = -1
         elapsed = 0f; doneAt = -1f; payoffFrame = false; tickClock = 0f; bumps = 0; beat = 0f
+        heldFor = 0f; matchPoint = false
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -117,9 +120,14 @@ class KingOfTheHillSim : Sim {
         for (i in 0 until n) if (sqrt(x[i] * x[i] + y[i] * y[i]) < hill) { inside = i; count++ }
         val now = if (count == 1) inside else -1
         if (now != holder) {
+            // Knocked off after holding it a while: a steal.
+            if (holder >= 0 && heldFor > 1.2f && now >= 0) env.callout("Stolen!")
             holder = now
+            heldFor = 0f
             if (now >= 0) env.emit(EventKind.CROSS, 0.4f + 0.5f * now / n, 0f, 0.5f)
         }
+        if (holder >= 0) heldFor += h0
+        if (!matchPoint) for (i in 0 until n) if (score[i] > target * 0.8f) { matchPoint = true; env.callout("Match point!") }
         if (holder >= 0) {
             score[holder] += h0 * SCORE_RATE
             tickClock += h0
@@ -129,6 +137,7 @@ class KingOfTheHillSim : Sim {
                 doneAt = elapsed
                 payoffFrame = true
                 env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+                env.callout("King of the hill!", big = true)
             }
         }
         // Close to the line: a heartbeat.
@@ -178,6 +187,9 @@ class KingOfTheHillSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = (doneAt >= 0f && elapsed - doneAt > 4f) || elapsed > 120f
+
+    override fun scoreForBest(): Float = bumps.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} shoves"
 
     override fun counters(): List<Pair<String, String>> =
         (0 until n).map { "player ${it + 1}" to String.format(java.util.Locale.US, "%.1f / %.0f", score[it], target) } +

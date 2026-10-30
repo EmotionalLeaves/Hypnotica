@@ -274,6 +274,10 @@ class AppState(
             prefs?.gestureTipsLeft = gestureTipsState
         }
 
+    /** This feed visit rolled a rare run: gold, folded, turning, and tagged. */
+    var rareRun by mutableStateOf(false)
+        private set
+
     /** Feed runs in a row watched to their payoff this session; a swipe before one resets it. */
     var watchedThrough by mutableIntStateOf(0)
 
@@ -286,6 +290,25 @@ class AppState(
     /** Days in a row the app has been opened. */
     var dayStreak by mutableIntStateOf(0)
         private set
+
+    /**
+     * A run's number against this phone's best for the sim. The first is
+     * kept quietly; beating it is said out loud. Called from the GL thread:
+     * it touches only the preferences and the banner's state.
+     */
+    fun noteRecord(id: String, value: Float, text: String) {
+        val p = prefs ?: return
+        val best = p.bestOf(id)
+        if (best.isNaN()) { p.setBest(id, value, text); return }
+        if (value > best) {
+            p.setBest(id, value, text)
+            announce(if (text.isNotEmpty()) "New best: $text" else "New personal best!")
+            if (haptics) engine.haptics?.verdict()
+        }
+    }
+
+    /** A sim's best in words, for the Library. */
+    fun bestText(id: String): String? = prefs?.bestTextOf(id)
 
     /** A line for the milestone banner. */
     fun announce(line: String) {
@@ -758,6 +781,7 @@ class AppState(
             chosenSound = p.soundPreset
             cameraDragState = p.cameraDrag
             applySafety()
+            engine.onRecord = { id, v, text -> noteRecord(id, v, text) }
             director.importTaste(p.taste)
             director.importMuted(p.mutedFormats)
             mutedFormats = director.mutedFormats.toSet()
@@ -1165,16 +1189,7 @@ class AppState(
         exprEpoch++
     }
 
-    /**
-     * Load [def] as the feed does: a fresh variation each time it comes
-     * round — its settings varied within a watchable band, and a palette of
-     * its own or another, unless the person has chosen one. Met again, a sim
-     * used to be the same picture every time.
-     */
-    /** This feed visit rolled a rare run: gold, folded, turning, and tagged. */
-    var rareRun by mutableStateOf(false)
-        private set
-
+    /** Make this feed visit a rare run, or an ordinary one. */
     fun rollRare(rare: Boolean) {
         rareRun = rare
         if (!rare) return
@@ -1185,6 +1200,12 @@ class AppState(
         tick(1)
     }
 
+    /**
+     * Load [def] as the feed does: a fresh variation each time it comes
+     * round — its settings varied within a watchable band, and a palette of
+     * its own or another, unless the person has chosen one. Met again, a sim
+     * used to be the same picture every time.
+     */
     fun loadRemixed(def: SimDef) {
         rareRun = false
         // The same sim again (the player's dice): keep what is loaded, so a

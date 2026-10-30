@@ -181,9 +181,11 @@ class BrickBreakerSim : Sim {
         remaining--
         // Higher rows ring higher.
         env.emit(EventKind.HIT, 0.25f + 0.7f * (rows - 1 - r).toFloat() / max(1, rows - 1), ((left + (c + 0.5f) * bw) / wall).coerceIn(-1f, 1f), 0.55f)
+        if (remaining in 1..3 && doneAt < 0f) env.callout("$remaining left!")
         if (remaining == 0 && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
+            env.callout("CLEARED!", big = true)
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }

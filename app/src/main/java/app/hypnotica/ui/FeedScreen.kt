@@ -392,7 +392,9 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                         Text(
                             if (hint) "swipe ↑↓  ·  tap to play with it  ·  hold for controls"
                             // Which variant this visit landed on, when it isn't the usual.
-                            else state.remixVariant?.let { "${state.currentDef.shelf.title}  ·  $it" } ?: state.currentDef.shelf.title,
+                            else (state.remixVariant?.let { "${state.currentDef.shelf.title}  ·  $it" } ?: state.currentDef.shelf.title) +
+                                // The run of ones watched to the end, carried along under every title.
+                                (if (state.watchedThrough >= 3) "  ·  🔥 ${state.watchedThrough}" else ""),
                             color = Tokens.TextSecondary,
                             style = MaterialTheme.typography.bodySmall.copy(shadow = Tokens.OverlayShadow),
                             maxLines = 1,

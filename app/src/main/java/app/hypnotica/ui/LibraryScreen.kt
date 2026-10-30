@@ -256,6 +256,7 @@ fun LibraryScreen(state: AppState) {
                     def,
                     state.isFavourite(def.id),
                     isNew = Discovery.isNew(def.id, seen),
+                    best = state.bestText(def.id),
                     onLongClick = { state.toggleFavourite(def.id) }
                 ) {
                     // The sim already playing carries on rather than restarting.
@@ -272,6 +273,7 @@ private fun SimTile(
     def: SimDef,
     favourite: Boolean,
     isNew: Boolean = false,
+    best: String? = null,
     onLongClick: () -> Unit = {},
     onClick: () -> Unit
 ) {
@@ -328,9 +330,11 @@ private fun SimTile(
             overflow = TextOverflow.Ellipsis
         )
         Spacer(Modifier.height(4.dp))
+        // Your best on it, once there is one, in place of the family:
+        // something of yours on the card to come back and beat.
         Text(
-            def.family,
-            color = Tokens.TextSecondary,
+            if (best != null) "Best: $best" else def.family,
+            color = if (best != null) Tokens.AccentText else Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

@@ -43,6 +43,8 @@ class RpsBattleSim : Sim {
     private var doneAt = -1f
     private var payoffFrame = false
     private var winner = -1
+    private val wasLow = BooleanArray(8)
+    private var cameBack = false
     private val out = BooleanArray(MAX_TEAMS)
     private var size = 0.025f
     private var grip = 0.025f
@@ -108,6 +110,7 @@ class RpsBattleSim : Sim {
         doneAt = -1f
         payoffFrame = false
         winner = -1
+        wasLow.fill(false); cameBack = false
         quiet = 0f
         frenzy = 0f
         hitCarry = 1f; heldCatches = 0; heldX = 0f; heldSide = 0
@@ -317,12 +320,26 @@ class RpsBattleSim : Sim {
         for (s in 0 until teams) if (!out[s] && count[s] == 0) {
             out[s] = true
             // Where its last piece was caught.
-            if (alive > 1) env.emit(EventKind.STEP, note(s), (lostAtX[s] / halfW).coerceIn(-1f, 1f), 0.8f)
+            if (alive > 1) {
+                env.emit(EventKind.STEP, note(s), (lostAtX[s] / halfW).coerceIn(-1f, 1f), 0.8f)
+                env.callout("Wiped out!")
+            }
+        }
+        // A side that was nearly gone now the biggest: a comeback.
+        // Once a run, and only a real one: a side that was under an eighth
+        // of the field going on to hold two fifths of it.
+        if (alive > 1 && !cameBack) {
+            val total = count.sum()
+            if (total >= 20) for (t in 0 until teams) {
+                if (count[t] in 1 until total / 8) wasLow[t] = true
+                if (wasLow[t] && count[t] * 5 >= total * 2) { env.callout("Comeback!", big = true); cameBack = true }
+            }
         }
         if (alive == 1) {
             winner = (0 until teams).first { count[it] > 0 }
             doneAt = elapsed
             payoffFrame = true
+            env.callout("Victory!", big = true)
         }
     }
 

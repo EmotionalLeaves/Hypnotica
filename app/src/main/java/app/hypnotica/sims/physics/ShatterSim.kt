@@ -147,6 +147,7 @@ class ShatterSim : Sim {
         broken = true
         brokenAt = elapsed
         payoffFrame = true
+        env.callout("SHATTER!", big = true)
         // DONE comes from the engine on this payoff frame; a second, fixed
         // pitch one here only doubled it.
         val n = rings * rays

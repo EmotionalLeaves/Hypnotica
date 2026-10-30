@@ -230,6 +230,7 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         while (kotlin.math.abs(accumulator) >= dt && budget > 0) {
             val signedDt = if (accumulator > 0f) dt else -dt
             params.tick(env.time)
+            val calloutsBefore = env.calloutSerial
             sim.step(env, signedDt)
             env.time += signedDt
             accumulator -= signedDt
@@ -238,6 +239,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
 
             if (!payoffFired && sim.payoff()) {
                 payoffFired = true
+                // Its word, unless the sim named the moment itself this step.
+                if (env.calloutSerial == calloutsBefore) PayoffWords.of(def.id)?.let { env.callout(it, big = true) }
                 // How far into the run it landed. Backwards time makes env.time
                 // negative, and a negative payoff time looks like "never" to the
                 // clip director.

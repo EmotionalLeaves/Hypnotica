@@ -25,6 +25,23 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Refine loop R1 — moments named, records kept
+
+- Callouts: a word pops over the picture when something happens — "Double
+  KO!", "Parry!", "Critical!", "Comeback!", "Final two!", "Photo finish!",
+  "SO close!" when the corner badge nearly makes it, "TETRA!", "Perfect ×5",
+  "POP!", "SHATTER!", "CLEARED!", and a word for the moment itself on fifty
+  more sims ("Sorted!", "Solved!", "Bell curve!", "The whole set again!").
+  Small words are a second apart at most and a test keeps every sim under
+  about one every two seconds; big ones come with a buzz.
+- Personal bests: twelve sims keep a number that varies run to run — the
+  longest perfect streak in Stack it, pumps before a pop, near misses
+  before the corner, parries, shoves, lead changes, the biggest swarm, how
+  close the darts got to π. The first run sets it quietly; beating it says
+  "New best: …", and the Library card shows it ("Best: 14 parries").
+- The feed carries the watched-through run under every title once it is
+  three or more ("🔥 7").
+
 ### Trap loop T3 — a clock to beat
 
 - Paint battle: a ball of each colour paints the floor as it rolls, over

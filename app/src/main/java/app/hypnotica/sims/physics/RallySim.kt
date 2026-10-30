@@ -147,6 +147,9 @@ class RallySim : Sim {
                 by = lineY
                 rally++
                 longest = max(longest, rally)
+                if (rally == 10 || rally == 20 || rally % 50 == 0) env.callout("Rally ×$rally!", big = rally >= 20)
+                // A save off the very edge of the paddle.
+                else if (abs(off) > 0.9f && rally > 2) env.callout("Edge save!")
                 speedUp = min(MAX_SPEEDUP, speedUp * SPEEDUP)
                 hitGlow[s] = 1f
                 env.emit(EventKind.HIT, (0.15f + rally * 0.05f).coerceAtMost(1f), (px[s] / wall).coerceIn(-1f, 1f), 0.5f)
@@ -163,7 +166,13 @@ class RallySim : Sim {
                     doneAt = elapsed
                     payoffFrame = true
                     env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+                    env.callout("Game!", big = true)
                 } else {
+                    when {
+                        score[other] == target - 1 && score[s] == target - 1 -> env.callout("Deciding point!")
+                        score[other] == target - 1 -> env.callout("Game point!")
+                        else -> env.callout("Point!")
+                    }
                     server = s
                     serve(env, SERVE_PAUSE)
                 }
@@ -255,6 +264,9 @@ class RallySim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+
+    override fun scoreForBest(): Float = longest.toFloat()
+    override fun scoreForBestText(value: Float): String = "a rally of ${value.toInt()}"
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "score" to "${score[0]} – ${score[1]}",

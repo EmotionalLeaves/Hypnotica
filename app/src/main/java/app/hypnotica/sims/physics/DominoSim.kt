@@ -189,6 +189,7 @@ class DominoSim : Sim {
                 if (fallen == n) {
                     doneAt = elapsed
                     payoffFrame = true
+                    env.callout("All down!", big = true)
                     env.emit(EventKind.DONE, 0.9f, 0f, 1f)
                 }
             }

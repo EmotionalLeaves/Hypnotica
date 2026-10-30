@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -874,4 +875,52 @@ fun RareTag(modifier: Modifier = Modifier) {
             .background(Color(0xFFFFD166), RoundedCornerShape(50))
             .padding(horizontal = 8.dp, vertical = 2.dp)
     )
+}
+
+/**
+ * A sim's callout — "KO!", "So close!" — popped over the picture in the
+ * upper half, springing in and fading out. Touches pass straight through.
+ */
+@Composable
+fun CalloutPop(state: AppState) {
+    var text by remember { mutableStateOf("") }
+    var big by remember { mutableStateOf(false) }
+    var serial by remember { mutableIntStateOf(state.engine.callout.serial) }
+    val scale = remember { androidx.compose.animation.core.Animatable(0f) }
+    val fade = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val c = state.engine.callout
+            if (c.serial != serial && c.text.isNotEmpty()) {
+                serial = c.serial
+                text = c.text
+                big = c.big
+            }
+            kotlinx.coroutines.delay(40)
+        }
+    }
+    LaunchedEffect(serial) {
+        if (text.isEmpty()) return@LaunchedEffect
+        fade.snapTo(1f)
+        scale.snapTo(0.55f)
+        scale.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.42f, stiffness = 520f))
+        kotlinx.coroutines.delay(if (big) 900L else 520L)
+        fade.animateTo(0f, androidx.compose.animation.core.tween(Tokens.Slow))
+    }
+    if (fade.value <= 0f || text.isEmpty()) return
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text,
+            color = if (big) Color(0xFFFFE27A) else Tokens.TextPrimary,
+            style = (if (big) MaterialTheme.typography.displayMedium else MaterialTheme.typography.headlineMedium)
+                .copy(shadow = Tokens.OverlayShadow, fontWeight = androidx.compose.ui.text.font.FontWeight.Black),
+            modifier = Modifier
+                .offset(y = (-150).dp)
+                .graphicsLayer {
+                    alpha = fade.value
+                    scaleX = scale.value; scaleY = scale.value
+                    rotationZ = if (big) -4f * (1f - scale.value) else 0f
+                }
+        )
+    }
 }

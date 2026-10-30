@@ -101,6 +101,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     @Volatile
     var onFinished: (() -> Unit)? = null
 
+    /** A run's record, as its moment lands: the sim, the value, and the value in words. */
+    var onRecord: ((String, Float, String) -> Unit)? = null
+
     private var payoffNotified = false
 
     /** The engine's own flash for the payoff frame, before the limiter sees it. */
@@ -145,6 +148,13 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     @Volatile
     var pick = PickSnapshot(0L, app.hypnotica.core.sim.NO_CONTENDERS, -1)
         private set
+
+    /** The sim's latest callout, for the UI to pop; see [SimEnv.callout]. */
+    @Volatile
+    var callout = CalloutSnapshot(0, "", false)
+        private set
+    private var calloutSeen = 0
+    private var calloutEnv: app.hypnotica.core.sim.SimEnv? = null
     private var runId = 0L
 
     /**
@@ -580,6 +590,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             // happen. Keeping the quiet half and dropping the loud half leaves
             // a moment you notice without being told about.
             if (safety.haptics) haptics?.heavy()
+            val rv = core.sim.scoreForBest()
+            if (!rv.isNaN()) onRecord?.invoke(core.def.id, rv, core.sim.scoreForBestText(rv))
             onPayoff?.invoke()
         }
         if (core.finished && !finishNotified) {
@@ -675,6 +687,16 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         fitFor = core.sim
         scene.fit = if (!sameSim || kotlin.math.abs(wantFit - scene.fit) < 0.002f) wantFit
         else scene.fit + (wantFit - scene.fit) * kotlin.math.min(1f, dt * FIT_RATE)
+
+        // A new callout from the sim. A new run (a new env) starts the count
+        // again, so a callout left over from the last run never pops.
+        val env = core.env
+        if (env !== calloutEnv) { calloutEnv = env; calloutSeen = env.calloutSerial }
+        if (env.calloutSerial != calloutSeen) {
+            calloutSeen = env.calloutSerial
+            callout = CalloutSnapshot(callout.serial + 1, env.calloutText, env.calloutBig)
+            if (env.calloutBig && safety.haptics) haptics?.medium()
+        }
 
         sinceCounters += dt
         if (sinceCounters >= COUNTERS_EVERY) {
@@ -883,6 +905,9 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
 
 /** What a run offers to bet on, and how it came out; see [SimEngine.pick]. */
 class PickSnapshot(val run: Long, val sides: IntArray, val winner: Int)
+
+/** One callout: a serial that goes up with each, the words, and whether it is a big one. */
+class CalloutSnapshot(val serial: Int, val text: String, val big: Boolean)
 
 /** How long one frame's simulation may run in live play: most of a 60 Hz frame. */
 private const val LIVE_STEP_BUDGET_NANOS = 12_000_000L

@@ -47,6 +47,10 @@ class CloneWarSim : Sim {
     private var payoffFrame = false
     private var voice = 0f
     private var beat = 0f
+    private val wasLow = BooleanArray(4)
+    private var leadNow = -1
+    private var lastStand = false
+    private var warCalled = false
     // Bursts where two met.
     private val bx = FloatArray(BURSTS)
     private val by = FloatArray(BURSTS)
@@ -73,6 +77,7 @@ class CloneWarSim : Sim {
         gw = max(1, (2f * arena / (2f * r)).toInt())
         cell = IntArray(gw * gw)
         winner = -1; elapsed = 0f; doneAt = -1f; payoffFrame = false; voice = 0f; beat = 0f
+        wasLow.fill(false); leadNow = -1; lastStand = false; warCalled = false
         rngClash = app.hypnotica.core.sim.Rng(env.rng.int(0, Int.MAX_VALUE).toLong())
     }
 
@@ -124,6 +129,7 @@ class CloneWarSim : Sim {
                 i++
             }
             // A truce at first, while the two swarms breed: then war.
+            if (!warCalled && elapsed > TRUCE) { warCalled = true; env.callout("Fight!", big = true) }
             if (elapsed > TRUCE) clashes += collide()
         }
         if (clashes > 0) env.emit(EventKind.DEATH, 0.3f + 0.4f * (count.toFloat() / CAP), 0f, min(0.8f, 0.25f + clashes * 0.05f))
@@ -139,6 +145,18 @@ class CloneWarSim : Sim {
             beat += h0 * (1.4f + 0.25f * (6 - fewest))
             if (beat >= 1f) { beat -= 1f; env.emit(EventKind.STEP, 0.02f, 0f, 0.5f) }
         } else beat = 0f
+        // A comeback: a side that was down to a fifth of the field leading it.
+        if (doneAt < 0f && elapsed > TRUCE) {
+            var lead = 0
+            for (t in 1 until teams) if (counts[t] > counts[lead]) lead = t
+            val total = max(1, count)
+            for (t in 0 until teams) if (counts[t] * 5 < total) wasLow[t] = true
+            if (lead != leadNow) {
+                if (wasLow[lead]) { env.callout("Comeback!", big = true); wasLow[lead] = false }
+                leadNow = lead
+            }
+            if (!lastStand) for (t in 0 until teams) if (counts[t] in 1..3 && count > 12) { env.callout("Last stand!"); lastStand = true }
+        }
         var standing = 0; var last = -1
         for (t in 0 until teams) if (counts[t] > 0) { standing++; last = t }
         if (doneAt < 0f && standing <= 1 && elapsed > TRUCE) {
@@ -146,6 +164,7 @@ class CloneWarSim : Sim {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            env.callout("Wiped out!", big = true)
         }
     }
 
@@ -233,6 +252,9 @@ class CloneWarSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = (doneAt >= 0f && elapsed - doneAt > 4f) || elapsed > 90f
+
+    override fun scoreForBest(): Float = peak.max().toFloat()
+    override fun scoreForBestText(value: Float): String = "a swarm of ${value.toInt()}"
 
     override fun counters(): List<Pair<String, String>> =
         (0 until teams).map { t -> "colour ${t + 1}" to (if (counts[t] == 0 && elapsed > 1f) "wiped out" else "${counts[t]} (peak ${peak[t]})") }

@@ -270,6 +270,8 @@ class MandelbrotSim : Sim {
             arrivedAt = elapsed
             intro = false
             if (!reached) { reached = true; payoffFrame = true }
+            // Every dive's arrival, not just the first.
+            env.callout("The whole set again!", big = true)
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
         if (arrivedAt >= 0f && elapsed - arrivedAt > ARRIVE_HOLD && !handoffWait && !fading) handoffWanted = true

@@ -175,11 +175,13 @@ class LastOutSim : Sim {
         inside--
         // Down the scale as they go: the last few notes are the lowest.
         env.emit(EventKind.HIT, (inside.toFloat() / n).coerceIn(0f, 1f) * 0.8f + 0.1f, (x[i] / max(0.1f, halfW)).coerceIn(-1f, 1f), 0.6f)
+        if (inside == 2) env.callout("Final two!")
         if (inside == 1) {
             winner = (0 until n).first { !out[it] }
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            env.callout("Last one in!", big = true)
         }
     }
 

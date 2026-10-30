@@ -41,6 +41,7 @@ class StackSim : Sim {
 
     private var streak = 0
     private var best = 0
+    private var longestStreak = 0
     private var perfectGlow = 0f
     private var attempts = 1
     private var failT = -1f
@@ -79,6 +80,7 @@ class StackSim : Sim {
         lx[0] = 0f; lw[0] = baseW
         streak = 0
         perfectGlow = 0f
+        longestStreak = 0
         failT = -1f
         scroll = 0f
         nextSlab(env)
@@ -152,10 +154,12 @@ class StackSim : Sim {
         if (abs(off) <= PERFECT) {
             // Dead on: snapped, nothing cut; a run of them earns width back.
             streak++
+            longestStreak = max(longestStreak, streak)
             perfectGlow = 1f
             val grow = if (streak >= 3) min(baseW, prevW * 1.06f) else prevW
             lx[layers] = prevX; lw[layers] = grow
             env.emit(EventKind.CROSS, (0.3f + 0.08f * streak).coerceAtMost(1f), 0f, 0.7f)
+            if (streak == 3 || streak == 5 || streak % 10 == 0) env.callout("Perfect ×$streak", big = streak >= 5)
         } else {
             streak = 0
             val keep = prevW - abs(off)
@@ -179,6 +183,7 @@ class StackSim : Sim {
         if (layers - 1 >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
+            env.callout("Tower done!", big = true)
             perfectGlow = 1f
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
@@ -252,6 +257,9 @@ class StackSim : Sim {
 
     /** Endless: the tower keeps climbing past the finish line. */
     override fun finished(): Boolean = false
+
+    override fun scoreForBest(): Float = longestStreak.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} perfect in a row"
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("height" to if (doneAt < 0f) "${layers - 1} / $target" else "${layers - 1}")

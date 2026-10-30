@@ -173,6 +173,9 @@ class MartingaleSim : Sim {
 
     override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3.5f
 
+    override fun scoreForBest(): Float = top.toFloat()
+    override fun scoreForBestText(value: Float): String = "a gambler reached ${value.toInt()}"
+
     override fun counters(): List<Pair<String, String>> = listOf(
         "spins" to "$bets",
         "still at the table" to "$standing of $n",

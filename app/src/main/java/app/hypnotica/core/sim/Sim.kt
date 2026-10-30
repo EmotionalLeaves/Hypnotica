@@ -136,6 +136,33 @@ class SimEnv(
 
     /** Half-width of the visible world (half-height is always 1). */
     val halfWidth: Float get() = aspect
+
+    /**
+     * A word to pop over the picture — "KO!", "So close!", "Comeback!" — for
+     * a moment worth naming. Written on the step thread and read by the
+     * engine once a frame; [calloutSerial] goes up with each, so the same
+     * word twice still shows twice. For rare events: never every step.
+     */
+    @Volatile
+    var calloutText: String = ""
+        private set
+    @Volatile
+    var calloutBig: Boolean = false
+        private set
+    @Volatile
+    var calloutSerial: Int = 0
+        private set
+    private var lastCalloutAt = -100f
+
+    fun callout(text: String, big: Boolean = false) {
+        // A small word never lands on the heels of the last: one at a time,
+        // a second apart. A big one (a winner, a finish) always gets through.
+        if (!big && calloutSerial > 0 && kotlin.math.abs(time - lastCalloutAt) < CALLOUT_GAP) return
+        lastCalloutAt = time
+        calloutText = text
+        calloutBig = big
+        calloutSerial++
+    }
 }
 
 /**
@@ -217,6 +244,17 @@ interface Sim {
      * setup, so a sim can let its own controls pick the tune.
      */
     fun tune(env: SimEnv): String? = null
+
+    /**
+     * This run's number for the personal-best board — higher is better —
+     * read once, when its moment lands; NaN for a sim that keeps none.
+     * Only for numbers that genuinely vary from run to run, so a new best
+     * means something happened.
+     */
+    fun scoreForBest(): Float = Float.NaN
+
+    /** [scoreForBest]'s value as words, e.g. "41 bounces". */
+    fun scoreForBestText(value: Float): String = ""
 }
 
 /** Metadata plus the factory for one sim. */
@@ -282,3 +320,6 @@ data class SimDef(
 
 /** Shared, so a sim with nothing to bet on allocates nothing. */
 val NO_CONTENDERS = IntArray(0)
+
+/** Seconds between two small callouts from one sim. */
+const val CALLOUT_GAP = 1.0f

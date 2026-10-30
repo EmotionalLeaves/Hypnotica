@@ -111,7 +111,12 @@ class PaintBattleSim : Sim {
         var best = -1
         for (t in 0 until teams) if (best < 0 || counts[t] > counts[best]) best = t
         if (best != leader && counts[best] > 0) {
-            if (leader >= 0) { leadChanges++; env.emit(EventKind.CROSS, 0.4f + 0.5f * best / teams, 0f, 0.5f) }
+            if (leader >= 0) {
+                leadChanges++
+                env.emit(EventKind.CROSS, 0.4f + 0.5f * best / teams, 0f, 0.5f)
+                // Late lead changes are the ones worth naming.
+                if (duration - elapsed < 6f) env.callout("Lead change!")
+            }
             leader = best
         }
         val left = duration - elapsed
@@ -119,12 +124,17 @@ class PaintBattleSim : Sim {
         if (sec != lastSecond) {
             lastSecond = sec
             if (sec in 1..5) env.emit(EventKind.STEP, 0.3f + 0.1f * (5 - sec), 0f, 0.55f)
+            if (sec == 5) env.callout("5 seconds!")
+            if (sec in 1..3) env.callout("$sec")
         }
         if (left <= 0f) {
             winner = best
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            var second = 0
+            for (t in 0 until teams) if (t != best && counts[t] > second) second = counts[t]
+            env.callout(if (counts[best] - second < cols * rows / 50) "Photo finish!" else "Time!", big = true)
         }
     }
 
@@ -195,6 +205,9 @@ class PaintBattleSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 4f
+
+    override fun scoreForBest(): Float = leadChanges.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} lead changes"
 
     override fun counters(): List<Pair<String, String>> {
         val total = (cols * rows).toFloat()

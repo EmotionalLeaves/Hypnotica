@@ -192,6 +192,10 @@ private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: Strin
     // Over every screen, so a shelf finished from the feed or the player
     // is said wherever the person is.
     if (halted == null) app.hypnotica.ui.MilestoneBanner(state)
+    // A sim's callouts, over the screens that show a sim and nothing else.
+    if (halted == null && (state.screen == Screen.FEED || state.screen == Screen.PLAYER || state.screen == Screen.TICKTOCK)) {
+        app.hypnotica.ui.CalloutPop(state)
+    }
     }
     }
 }

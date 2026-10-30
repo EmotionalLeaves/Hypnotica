@@ -264,6 +264,11 @@ class BlockDropSim : Sim {
         val before = lines
         lines += n
         if (n == 4) fours++
+        when (n) {
+            4 -> env.callout("TETRA!", big = true)
+            3 -> env.callout("Triple!")
+            2 -> env.callout("Double!")
+        }
         if (before < target && lines >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
@@ -337,6 +342,9 @@ class BlockDropSim : Sim {
 
     /** Endless: past the target it plays on; the line count keeps climbing. */
     override fun finished(): Boolean = false
+
+    override fun scoreForBest(): Float = fours.toFloat()
+    override fun scoreForBestText(value: Float): String = "${value.toInt()} four-line clears"
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("lines" to "$lines / $target")
