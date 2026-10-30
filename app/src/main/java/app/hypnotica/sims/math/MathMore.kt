@@ -10,6 +10,7 @@ object MathMore {
         HilbertCurveSim.def(),
         DragonCurveSim.def(),
         BirthdayParadoxSim.def(),
-        PenroseTilingSim.def()
+        PenroseTilingSim.def(),
+        LissajousTableSim.def()
     )
 }

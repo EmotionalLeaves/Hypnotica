@@ -158,6 +158,13 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # Ten ahead of the run number: builds made off CI (0.1.241 to 0.1.245,
+      # during the polish loops) must not outrank the next CI build, or the
+      # phone refuses it as a downgrade.
+      - name: Version
+        run: |
+          echo "HYPNOTICA_VERSION_CODE=$(( ${{ github.run_number }} + 10 ))" >> "$GITHUB_ENV"
+
       - name: Use custom signing key if configured
         if: env.KEYSTORE_B64 != ''
         run: |
