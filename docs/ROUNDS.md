@@ -25,6 +25,17 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Trap loop T3 — a clock to beat
+
+- Paint battle: a ball of each colour paints the floor as it rolls, over
+  the others' paint too; most floor when the clock runs out wins. The
+  leader wears a ring, the shares run across the top, the clock along the
+  bottom turns red and ticks for the last five seconds.
+- King of the hill: every ball is drawn to the circle in the middle and
+  scores while it holds it alone; two in it shove each other out. A ring
+  fills round each ball as it scores, the race runs across the top, and
+  there is a heartbeat once someone is close.
+
 ### Trap loop T2 — a reward you can't schedule
 
 - Rare runs: about one feed visit in twelve (never the first few) comes up

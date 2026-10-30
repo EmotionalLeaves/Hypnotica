@@ -23,6 +23,8 @@ object PhysicsMore {
         GrowBounceSim.def(),
         WeaponBallSim.def(),
         HungryBallsSim.def(),
-        CloneWarSim.def()
+        CloneWarSim.def(),
+        PaintBattleSim.def(),
+        KingOfTheHillSim.def()
     )
 }
