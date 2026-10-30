@@ -408,6 +408,7 @@ class CirclePackingSim : Sim {
 
     /** The payoff fires once; without this the bell retriggers every step. */
     private var packed = false
+    private var packedFor = 0f
     private var spawnCarry = 0f
 
     private var cx = FloatArray(0)
@@ -434,6 +435,7 @@ class CirclePackingSim : Sim {
         payoffFrame = false
         coverage = 0f
         packed = false
+        packedFor = 0f
         spawnCarry = 0f
         specks = 0
     }
@@ -491,6 +493,7 @@ class CirclePackingSim : Sim {
         for (i in 0 until count) area += cr[i] * cr[i] * PI.toFloat()
         coverage = (area / (4f * halfW)).coerceIn(0f, 1f)
 
+        if (packed) packedFor += abs(dt)
         if (!packed && (count >= target || coverage > 0.78f)) {
             packed = true
             // The engine sounds the payoff on this step; one here doubled it.
@@ -541,7 +544,8 @@ class CirclePackingSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = count >= target
+    /** Packed, then a few seconds to look at it: it used to end on the same step it paid off. */
+    override fun finished(): Boolean = packed && packedFor > PACKED_HOLD
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "circles" to count.toString(),
@@ -551,6 +555,7 @@ class CirclePackingSim : Sim {
     companion object {
         /** A new circle's size when it appears. */
         const val SEED_R = 0.004f
+        const val PACKED_HOLD = 4f
         /** Below this share of the largest radius a finished circle is a speck. */
         const val SPECK = 0.12f
         const val TINT_REACH = 0.8f
@@ -714,8 +719,16 @@ class SpirographSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
+    /**
+     * The rest after closing is the point. The ink buffer is sized to the
+     * figure exactly, so "buffer full" arrived on the very step the curve
+     * closed and ended the run there — the five seconds to look at the
+     * finished rosette never happened. A figure that somehow never closes
+     * still ends once its ink is spent.
+     */
     override fun finished(): Boolean =
-        count >= trailX.size || (closedAt >= 0f && restAfterClose > REST_AFTER_CLOSE)
+        (closedAt >= 0f && restAfterClose > REST_AFTER_CLOSE) ||
+            (closedAt < 0f && count >= trailX.size)
 
     override fun counters(): List<Pair<String, String>> =
         listOf("ink" to String.format(java.util.Locale.US, "%,d", count))

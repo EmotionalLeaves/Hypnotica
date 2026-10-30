@@ -246,7 +246,7 @@ class SimCore(def: SimDef, seed: Long = 1L) {
                 slowMoRemaining = SLOWMO_SIM_SECONDS
                 events.emit(EventKind.DONE, 1f, 0f, 1f)
             }
-            if (sim.finished()) {
+            if (sim.finished() && heldLongEnough()) {
                 finished = true
                 break
             }
@@ -263,6 +263,19 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         }
         if (budget == 0) accumulator = 0f
     }
+
+    /**
+     * Whether a run that says it is finished has had its resolve beat.
+     *
+     * A run is set up, builds, pays off — and the resolve, the settled picture
+     * after the moment, is a fifth of it by the arc. Measured across the
+     * catalogue, some runs ended the very step they paid off (circle packing)
+     * or a second after, and the next began before the moment had landed. The
+     * picture after a payoff is held at least [MIN_RESOLVE_SECONDS] whatever
+     * the sim says; a run that ends without paying off is not held.
+     */
+    private fun heldLongEnough(): Boolean =
+        !payoffFired || kotlin.math.abs(env.time) - payoffAt >= MIN_RESOLVE_SECONDS
 
     /**
      * Run exactly n steps with no rendering.
@@ -290,7 +303,7 @@ class SimCore(def: SimDef, seed: Long = 1L) {
                 // this stream, and without it an exported clip loses its payoff.
                 events.emit(EventKind.DONE, 1f, 0f, 1f)
             }
-            if (sim.finished()) finished = true
+            if (sim.finished() && heldLongEnough()) finished = true
             i++
         }
     }
@@ -322,6 +335,8 @@ class SimCore(def: SimDef, seed: Long = 1L) {
     fun hero() = sim.hero(env)
 
     companion object {
+        /** The least time the picture after a payoff is held before the run may end. */
+        const val MIN_RESOLVE_SECONDS = 4f
 
         /**
          * How many running frames to watch before deciding what a sim reads

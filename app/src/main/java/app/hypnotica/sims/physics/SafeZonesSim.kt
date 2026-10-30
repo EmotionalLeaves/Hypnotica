@@ -134,7 +134,8 @@ class SafeZonesSim : Sim {
         // a trickle — under one planet in sixty over the last two orbits.
         if (o < lostByOrbit.size) for (k in o until lostByOrbit.size) lostByOrbit[k] = lost
         val nowOrbits = (t / (2.0 * PI)).toFloat()
-        val recent = if (o >= 2) lost - lostByOrbit[o - 2] else n
+        // Only needed until the payoff; an endless run goes far past the table.
+        val recent = if (o >= 2 && o - 2 < lostByOrbit.size) lost - lostByOrbit[o - 2] else n
         if (doneAt < 0f && nowOrbits > MIN_ORBITS && (recent * TRICKLE < n || nowOrbits > MAX_ORBITS)) {
             doneAt = elapsed
             payoffFrame = true

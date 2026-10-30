@@ -361,7 +361,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
         const val MAX_OPS_PER_STEP = 400_000
         const val POINT_THRESHOLD = 6_000
 
-        private fun sharedParams(): List<Param> = listOf(
+        private fun sharedParams(view: Int = 0): List<Param> = listOf(
             Param.choice(
                 "shape", "Data shape", DataShape.entries.map { it.title }, 0,
                 card = Card.DATA, input = app.hypnotica.core.recipe.ParamInput.TILES
@@ -369,11 +369,30 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             Param.float("messiness", "Messiness", 0f, 1f, 1f, card = Card.DATA),
             Param.int("n", "Size", 8, 200_000, 220, card = Card.DATA, unit = "bars", logScale = true),
             Param.choice(
-                "view", "View", SortView.entries.map { it.title }, 0,
+                "view", "View", SortView.entries.map { it.title }, view,
                 card = Card.LOOK, input = app.hypnotica.core.recipe.ParamInput.TILES
             ),
             Param.float("duration", "Run length", 4f, 180f, 26f, card = Card.MOTION, unit = "s"),
             Param.float("effort", "Effort", 0.1f, 6f, 1f, card = Card.MOTION, advancedOnly = true)
+        )
+
+        /** Default views, in [Algorithms.all] order. */
+        private val VIEWS = intArrayOf(0, 2, 4, 0, 1, 3, 1, 0, 2, 4, 3, 2)
+
+        /** What each one does, in a line, in [Algorithms.all] order. */
+        private val BLURBS = listOf(
+            "Pick a pivot, split around it, repeat: the halves sort themselves.",
+            "Sort the halves, then zip them together. Order spreads in widening blocks.",
+            "Heap it up, then lift the biggest off the top, one at a time.",
+            "Swap neighbours until nothing moves. The big ones float to the end.",
+            "Take the next one and slide it back into place, like a hand of cards.",
+            "Find the smallest left and put it next. Slow, but never a step back.",
+            "Bubble sort that sweeps both ways, so small ones sink as fast as big ones rise.",
+            "One gnome, one pot at a time: step forward, or swap and step back.",
+            "Bubble sort with a shrinking gap: the stragglers leap instead of crawl.",
+            "Insertion sort over shrinking gaps: rough order first, then fine.",
+            "Odd pairs, then even pairs, all at once: a sort built for many hands.",
+            "Never compares two numbers: deals them into buckets, digit by digit."
         )
 
         private fun macros(): List<Macro> = listOf(
@@ -411,9 +430,11 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
                         title = name,
                         shelf = Shelf.ALGORITHMS,
                         family = "Sorting algorithms",
-                        blurb = "Watch $name find the order.",
+                        blurb = BLURBS.getOrElse(index) { "Watch $name find the order." },
                         formats = listOf(TrapFormat.GUESS, TrapFormat.SONG, TrapFormat.RACE),
-                        params = sharedParams(),
+                        // Each its own look by default: twelve sorts all opening
+                        // as the same bar chart read as one sim twelve times.
+                        params = sharedParams(VIEWS.getOrElse(index) { 0 }),
                         macros = macros(),
                         heroLabel = "Shuffle",
                         typicalSeconds = 26f,

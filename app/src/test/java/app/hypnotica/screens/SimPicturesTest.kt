@@ -96,7 +96,7 @@ class SimPicturesTest {
                     if (a <= 0.003f) continue
                     shape(
                         cx0 + arr[o] * s, cy0 - arr[o + 1] * s, arr[o + 2] * s, arr[o + 3] * s,
-                        arr[o + 4], arr[o + 5], arr[o + 6],
+                        arr[o + 4], arr[o + 5], arr[o + 6], arr[o + 7],
                         arr[o + 8], arr[o + 9], arr[o + 10], a, left
                     )
                 }
@@ -106,7 +106,7 @@ class SimPicturesTest {
             for (i in 0 until g.pointCount) {
                 val r = (g.pointPos[i * 3 + 2] * s).coerceIn(0.7f, 6f)
                 shape(
-                    cx0 + g.pointPos[i * 3] * s, cy0 - g.pointPos[i * 3 + 1] * s, r, r, 0f, G.SHAPE_DISC, 0f,
+                    cx0 + g.pointPos[i * 3] * s, cy0 - g.pointPos[i * 3 + 1] * s, r, r, 0f, G.SHAPE_DISC, 0f, 0f,
                     (g.pointColor[i * 4].toInt() and 0xFF) / 255f, (g.pointColor[i * 4 + 1].toInt() and 0xFF) / 255f,
                     (g.pointColor[i * 4 + 2].toInt() and 0xFF) / 255f, (g.pointColor[i * 4 + 3].toInt() and 0xFF) / 255f, left
                 )
@@ -114,7 +114,7 @@ class SimPicturesTest {
         }
 
         private fun shape(
-            x: Float, y: Float, hw0: Float, hh0: Float, rot: Float, kind: Float, inner: Float,
+            x: Float, y: Float, hw0: Float, hh0: Float, rot: Float, kind: Float, inner: Float, gap: Float,
             r: Float, gr: Float, b: Float, a: Float, left: Int
         ) {
             val hw = max(hw0, 0.5f); val hh = max(hh0, 0.5f)
@@ -132,7 +132,15 @@ class SimPicturesTest {
                     G.SHAPE_DISC -> if (dx * dx + dy * dy <= hw * hw) 1f else 0f
                     G.SHAPE_RING -> {
                         val d = sqrt(dx * dx + dy * dy)
-                        if (d <= hw && d >= hw * inner.coerceIn(0f, 0.999f) - 0.5f) 1f else 0f
+                        if (d <= hw && d >= hw * inner.coerceIn(0f, 0.999f) - 0.5f) {
+                            // The gap: an arc of [gap] radians centred on the ring's rotation.
+                            if (gap > 0.001f) {
+                                var diff = kotlin.math.atan2(-dy, dx) - rot
+                                while (diff > PI_F) diff -= 2f * PI_F
+                                while (diff < -PI_F) diff += 2f * PI_F
+                                if (kotlin.math.abs(diff) < gap * 0.5f) 0f else 1f
+                            } else 1f
+                        } else 0f
                     }
                     else -> {
                         val d = sqrt(dx * dx + dy * dy) / hw
@@ -189,5 +197,6 @@ class SimPicturesTest {
         const val H = 852
         const val GAP = 8
         const val BG = 0xFF07080C.toInt()
+        const val PI_F = 3.1415927f
     }
 }
