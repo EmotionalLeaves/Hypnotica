@@ -48,6 +48,8 @@ class ColourWarSim : Sim {
     private var decided = false
     private var winnerTeam = -1
     private var decidedAt = -1f
+    /** When one colour took the whole board; the run holds on it a moment. */
+    private var sweptAt = -1f
     private var taken = 0L
     private var halfW = 0.46f
     private var takenBy = IntArray(0)
@@ -119,6 +121,7 @@ class ColourWarSim : Sim {
         decided = false
         winnerTeam = -1
         decidedAt = -1f
+        sweptAt = -1f
         taken = 0L
     }
 
@@ -163,6 +166,9 @@ class ColourWarSim : Sim {
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
+        // Ended on the very step the last cell changed hands, the board was
+        // gone the instant it turned one colour: the win is held a moment.
+        if (sweptAt < 0f && counts.any { it == owner.size }) sweptAt = elapsed
         val base = abs(dt) * env.params.f("pace", 1.8f)
         tickCarry = min(1.5f, tickCarry + abs(dt) * 6f)
         takeCarry = min(2f, takeCarry + abs(dt) * 30f)
@@ -376,7 +382,7 @@ class ColourWarSim : Sim {
 
     /** A while after the first one goes out, or someone takes the whole board. */
     override fun finished(): Boolean =
-        (decided && elapsed - decidedAt > AFTER_SECONDS) || counts.any { it == owner.size }
+        (decided && elapsed - decidedAt > AFTER_SECONDS) || (sweptAt >= 0f && elapsed - sweptAt > SWEPT_HOLD)
 
     override fun contenders(env: SimEnv): IntArray =
         IntArray(teams) { env.palette.at(0.08f + 0.84f * it / max(1f, teams - 1f)) }
@@ -401,6 +407,7 @@ class ColourWarSim : Sim {
         const val REINFORCE_EVERY = 30
         const val MAX_BALLS_EACH = 12
         const val AFTER_SECONDS = 12f
+        const val SWEPT_HOLD = 2.5f
 
         fun def(): SimDef = SimDef(
             id = "life/colour-war",

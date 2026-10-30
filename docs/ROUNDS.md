@@ -25,6 +25,19 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Quality loop Q4 — endings held, scribbles that resolve
+
+- Four rules, one fern: Barnsley's fern (and a mutant fern and a maple
+  leaf) filling in from a dot hopping by four random rules.
+- The sorts' round views thread their dots together: a scribble across
+  the disc that pulls itself into one clean curve as the sort finishes.
+- The ball that shrinks holds its finished chart three seconds; it ended on
+  the frame the last bar topped out. Colour war holds the moment one
+  colour takes the whole board instead of cutting on that step.
+- The convex hull's finished inside is tinted strongly enough to see.
+- The feed deals a big family more thinly still: one sort early, the
+  rest drifting later, so the new sims get their turn.
+
 ### Quality loop Q3 — two classics from the science channels
 
 - Elliptical pool, after Nils Berglund's most-watched billiard videos: two

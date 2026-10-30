@@ -327,7 +327,7 @@ class ConvexHullSim : Sim {
         var minY = 9f; var maxY = -9f
         for (s in 0 until hullN) { val v = hull[s]; minY = min(minY, py[v]); maxY = max(maxY, py[v]) }
         val step = FILL_ROW
-        val tint = Palette.lerp(Palette.BG, palette.at(STRING_T), 0.13f)
+        val tint = Palette.lerp(Palette.BG, palette.at(STRING_T), 0.22f)
         var y = minY + step * 0.5f
         while (y < maxY) {
             var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE

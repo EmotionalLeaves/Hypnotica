@@ -54,6 +54,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
 
         values = FloatArray(n)
         buildShape(shape, messiness, env)
+        if (n <= POINT_THRESHOLD && lineX.size != n) { lineX = FloatArray(n); lineY = FloatArray(n) }
 
         array = SortArray(values, env)
         algo = if (algorithmIndex != null) Algorithms.byIndex(algorithmIndex)
@@ -219,7 +220,7 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
     private fun roundScale(env: SimEnv): Float = min(env.halfWidth, 1f) * 0.96f / 0.9f
 
     /** A dot's radius on a round view, by how much track each dot has. */
-    private fun roundDot(s: Float): Float = max(2.2f * s / n, 0.0045f).coerceAtMost(0.02f)
+    private fun roundDot(s: Float): Float = max(3f * s / n, 0.0055f).coerceAtMost(0.02f)
 
     /**
      * An element's colour. A wheel palette (Spectrum) comes back round to its
@@ -296,6 +297,20 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
         }
     }
 
+    /**
+     * The round views also thread their dots together in order, faintly: a
+     * scribble across the disc while it is scrambled that pulls itself into
+     * one clean curve as the sort finishes. Dots alone were a sparse speckle
+     * on a phone, and the moment of order was easy to miss.
+     */
+    private var lineX = FloatArray(0)
+    private var lineY = FloatArray(0)
+
+    private fun thread(g: G, palette: Palette, usePoints: Boolean, s: Float) {
+        if (usePoints || lineX.size != n) return
+        g.polyline(lineX, lineY, n, max(0.0025f, roundDot(s) * 0.45f), palette.at(0.5f), 0.28f)
+    }
+
     private fun drawWheel(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {
         val radius = 0.86f * s
         if (usePoints) g.reservePoints(n) else g.reserveInstances(n)
@@ -305,10 +320,12 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = radius * (0.35f + 0.65f * v)
             val x = cos(ang) * rr
             val y = sin(ang) * rr
+            if (i < lineX.size) { lineX[i] = x; lineY[i] = y }
             var c = shade(i, Palette.hsv(v * 360f, 0.75f, 1f), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.01f, c) else g.disc(x, y, roundDot(s), c)
         }
+        thread(g, palette, usePoints, s)
     }
 
     private fun drawSpiral(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {
@@ -321,10 +338,12 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = (0.12f + 0.78f * sqrt(t) * (0.55f + 0.45f * v)) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
+            if (i < lineX.size) { lineX[i] = x; lineY[i] = y }
             var c = shade(i, col(palette, v), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }
+        thread(g, palette, usePoints, s)
     }
 
     private fun drawDisparity(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {
@@ -338,10 +357,12 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             val rr = (0.9f - err * 0.78f) * s
             val x = cos(ang) * rr
             val y = sin(ang) * rr
+            if (i < lineX.size) { lineX[i] = x; lineY[i] = y }
             var c = shade(i, col(palette, v), sweepIndex)
             if (!usePoints && highlight(i)) c = Palette.brighten(c, 0.6f)
             if (usePoints) g.point(x, y, 0.009f, c) else g.disc(x, y, roundDot(s), c)
         }
+        thread(g, palette, usePoints, s)
         g.ring(0f, 0f, 0.9f * s, 0.004f, Palette.TEXT_SECONDARY, alpha = 0.35f)
     }
 

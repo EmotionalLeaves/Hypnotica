@@ -1905,9 +1905,12 @@ class BallVolumeSim : Sim {
     private var measure = 0
     private var milestone = 5
     private var top = 1.0
+    /** Seconds the whole chart has stood complete. */
+    private var fullFor = 0f
 
     override fun setup(env: SimEnv) {
         upTo = env.params.i("upto", 20).coerceIn(4, MAX_UP_TO)
+        fullFor = 0f
         measure = env.params.choiceIndex("measure").coerceIn(0, MEASURES.size - 1)
         shown = 0f
         payoffFrame = false
@@ -1940,6 +1943,7 @@ class BallVolumeSim : Sim {
         // still half empty slots when the run was cut, its end never seen.
         val tail = if (shown > milestone + 1f) TAIL_PACE else 1f
         shown = min(upTo.toFloat(), shown + env.params.f("rate", 0.7f) * tail * abs(dt))
+        if (shown >= upTo) fullFor += abs(dt)
         val after = shown.toInt()
         if (after > before) {
             val t = (value(after) / top).toFloat().coerceIn(0f, 1f)
@@ -2008,7 +2012,12 @@ class BallVolumeSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = shown >= upTo
+    /**
+     * The finished chart is held a moment: it ended on the frame its last bar
+     * topped out, and the whole fall from the peak — the point — was gone
+     * before it could be taken in.
+     */
+    override fun finished(): Boolean = fullFor > FULL_HOLD
 
     override fun counters(): List<Pair<String, String>> {
         val d = max(1, kotlin.math.ceil(shown).toInt())
@@ -2024,6 +2033,7 @@ class BallVolumeSim : Sim {
         val MEASURES = listOf("Volume", "Surface", "Share of the cube", "Share in the peel")
         const val MAX_UP_TO = 40
         const val TAIL_PACE = 2.2f
+        const val FULL_HOLD = 3f
         const val BASE = -0.85f
         /** The tallest bar's height: up to 0.8, where it stopped at 0.65 with the top fifth empty. */
         const val HEIGHT = 1.65f

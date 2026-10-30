@@ -17,6 +17,7 @@ object MathMore {
         PrisonersSim.def(),
         SecretarySim.def(),
         BertrandSim.def(),
-        MartingaleSim.def()
+        MartingaleSim.def(),
+        FernSim.def()
     )
 }

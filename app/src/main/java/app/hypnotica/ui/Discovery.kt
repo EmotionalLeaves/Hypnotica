@@ -44,12 +44,12 @@ object Discovery {
             if (def.id in favourites) key -= FAVOURITE_PULL
             key to def
         }
-        // A big family is dealt thinly: its first two members keep their
-        // places and the rest drift later. There are thirteen sorts, and a
-        // feed that met one every eight swipes was mostly bar charts.
+        // A big family is dealt thinly: its first member keeps its place
+        // and the rest drift later. There are thirteen sorts, and a feed
+        // that met one every eight swipes was mostly bar charts.
         val spread = keyed.groupBy { it.second.family }.values.flatMap { members ->
             members.sortedBy { it.first }.mapIndexed { r, (key, def) ->
-                (if (r >= 2) key + FAMILY_DRIFT * (r - 1) else key) to def
+                (if (r >= 1) key + FAMILY_DRIFT * r else key) to def
             }
         }
         val pool = spread.sortedBy { it.first }.map { it.second }.toMutableList()
