@@ -48,7 +48,7 @@ class BertrandSim : Sim {
 
     override fun setup(env: SimEnv) {
         target = env.params.i("chords", 600).coerceIn(20, MAX_CHORDS)
-        cap = min(target, DRAWN)
+        cap = DRAWN
         r = min(env.halfWidth * 0.62f, 0.27f)
         for (k in 0..2) cy[k] = 0.62f - k * 0.62f
         x1 = Array(3) { FloatArray(cap) }; y1 = Array(3) { FloatArray(cap) }
@@ -63,12 +63,11 @@ class BertrandSim : Sim {
         payoffFrame = false
         val a = abs(dt)
         elapsed += a
-        if (count[0] >= target) return
         val speed = env.params.f("speed", 1f).coerceIn(0.1f, 6f)
         val rate = min(MAX_RATE, START_RATE * exp(elapsed * speed / ACCEL_S))
         budget += a * rate * speed
         var k = 0
-        while (budget >= 1f && count[0] < target && k < MAX_PER_STEP) {
+        while (budget >= 1f && k < MAX_PER_STEP) {
             budget -= 1f
             for (m in 0..2) chord(env, m, k == 0)
             k++
@@ -145,7 +144,8 @@ class BertrandSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3.5f
+    /** Endless: past the target it plays on, the count settling ever closer. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> {
         fun pc(m: Int) = if (count[m] == 0) "—" else String.format(java.util.Locale.US, "%.1f%%", long[m] * 100f / count[m])

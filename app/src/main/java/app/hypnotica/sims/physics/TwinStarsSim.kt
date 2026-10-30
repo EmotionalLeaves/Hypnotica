@@ -167,7 +167,8 @@ class TwinStarsSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 8f
+    /** Endless: once apart, the two go on their separate ways. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "nudged by" to String.format(java.util.Locale.US, "%.0e", nudge),

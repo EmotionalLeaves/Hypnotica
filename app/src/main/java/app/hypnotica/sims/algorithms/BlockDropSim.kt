@@ -335,7 +335,8 @@ class BlockDropSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > RESOLVE_S
+    /** Endless: past the target it plays on; the line count keeps climbing. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("lines" to "$lines / $target")

@@ -50,6 +50,8 @@ class BuffonNeedleSim : Sim {
     private val hy = FloatArray(HIST)
     private val hv = FloatArray(HIST)
     private var hn = 0
+    private var cap = 0
+    private var every = 1
 
     override fun setup(env: SimEnv) {
         target = env.params.i("needles", 3000).coerceIn(50, MAX_NEEDLES)
@@ -57,8 +59,10 @@ class BuffonNeedleSim : Sim {
         len = env.params.f("length", 0.09f).coerceIn(0.02f, 0.3f)
         gap = len
         x0 = -halfW; y0 = -0.15f
-        nx = FloatArray(target); ny = FloatArray(target); na = FloatArray(target)
-        cross = BooleanArray(target)
+        cap = min(target, MAX_DRAWN)
+        nx = FloatArray(cap); ny = FloatArray(cap); na = FloatArray(cap)
+        cross = BooleanArray(cap)
+        every = max(1, target / HIST)
         dropped = 0; crossed = 0; budget = 0f; lastAt = -1; hn = 0
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
@@ -67,12 +71,11 @@ class BuffonNeedleSim : Sim {
         payoffFrame = false
         val a = abs(dt)
         elapsed += a
-        if (dropped >= target) return
         val speed = env.params.f("speed", 1f).coerceIn(0.1f, 6f)
         val rate = min(MAX_RATE, START_RATE * exp(elapsed * speed / ACCEL_S))
         budget += a * rate * speed
         var n = 0
-        while (budget >= 1f && dropped < target && n < MAX_PER_STEP) {
+        while (budget >= 1f && n < MAX_PER_STEP) {
             budget -= 1f
             drop(env, n == 0)
             n++
@@ -80,7 +83,7 @@ class BuffonNeedleSim : Sim {
     }
 
     private fun drop(env: SimEnv, audible: Boolean) {
-        val i = dropped
+        val i = dropped % cap
         // The floor is the lower part of the screen; boards run across it.
         val x = env.rng.range(x0, -x0)
         val y = env.rng.range(-0.95f, y0)
@@ -94,8 +97,12 @@ class BuffonNeedleSim : Sim {
         if (cross[i]) crossed++
         lastAt = i
         if (audible) env.emit(if (cross[i]) EventKind.HIT else EventKind.STEP, if (cross[i]) 0.6f else 0.3f, (x / halfW).coerceIn(-1f, 1f), if (cross[i]) 0.4f else 0.15f)
-        val every = max(1, target / HIST)
-        if (dropped % every == 0 && hn < HIST && crossed > 0) {
+        if (dropped % every == 0 && crossed > 0) {
+            if (hn >= HIST) {
+                for (k in 0 until HIST / 2) hv[k] = hv[k * 2 + 1]
+                hn = HIST / 2
+                every *= 2
+            }
             hv[hn] = (2.0 * dropped / crossed).toFloat()
             hn++
         }
@@ -117,7 +124,7 @@ class BuffonNeedleSim : Sim {
         val cHit = pal.at(0.08f)
         val cMiss = Palette.withAlpha(Palette.TEXT_SECONDARY, 0.5f)
         // Needles, the newest brightest.
-        for (i in 0 until dropped) {
+        for (i in 0 until min(dropped, cap)) {
             val dx = cos(na[i]) * len * 0.5f; val dy = sin(na[i]) * len * 0.5f
             val c = if (cross[i]) cHit else cMiss
             g.line(nx[i] - dx, ny[i] - dy, nx[i] + dx, ny[i] + dy, if (i == lastAt) 0.006f else 0.0035f, c, if (cross[i]) 0.85f else 0.5f)
@@ -143,7 +150,8 @@ class BuffonNeedleSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3.5f
+    /** Endless: past the target it plays on, the count settling ever closer. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "needles" to "$dropped",
@@ -153,6 +161,8 @@ class BuffonNeedleSim : Sim {
 
     companion object {
         const val MAX_NEEDLES = 20_000
+        /** The newest this many lie on the floor; older ones are swept up, still counted. */
+        const val MAX_DRAWN = 4000
         const val HIST = 200
         const val START_RATE = 1.5f
         const val MAX_RATE = 3000f

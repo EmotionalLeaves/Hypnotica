@@ -220,7 +220,8 @@ class SafeZonesSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 4f
+    /** Endless: the survivors go on orbiting in their safe zones. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> {
         fun pc(v: Int) = "${v * 100 / max(1, n)}%"

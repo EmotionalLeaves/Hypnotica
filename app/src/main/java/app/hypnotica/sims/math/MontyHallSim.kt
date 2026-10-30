@@ -49,6 +49,7 @@ class MontyHallSim : Sim {
     private val histYs = FloatArray(HIST)
     private val histYw = FloatArray(HIST)
     private var histN = 0
+    private var every = 1
     private var flashStick = 0f
     private var flashSwitch = 0f
 
@@ -58,6 +59,7 @@ class MontyHallSim : Sim {
         games = 0; stickWins = 0; switchWins = 0
         phase = 0f; budget = 0f; rate = START_RATE
         histN = 0
+        every = max(1, target / HIST)
         flashStick = 0f; flashSwitch = 0f
         elapsed = 0f; doneAt = -1f; payoffFrame = false; winner = -1
         deal(env)
@@ -82,18 +84,17 @@ class MontyHallSim : Sim {
         elapsed += a
         flashStick = max(0f, flashStick - a * 3f)
         flashSwitch = max(0f, flashSwitch - a * 3f)
-        if (doneAt >= 0f && elapsed - doneAt > 0.01f && games >= target) return
         val speed = env.params.f("speed", 1f).coerceIn(0.1f, 6f)
         // Slow enough to follow at first, then faster and faster.
         rate = min(MAX_RATE, START_RATE * exp(elapsed * speed / ACCEL_S))
         if (rate < SLOW_RATE) {
             phase += a * rate * speed
-            if (phase >= 1f) { phase = 0f; finish(env, true); if (games < target) deal(env) }
+            if (phase >= 1f) { phase = 0f; finish(env, true); deal(env) }
         } else {
             phase = 1f
             budget += a * rate * speed
             var n = 0
-            while (budget >= 1f && games < target && n < MAX_PER_STEP) {
+            while (budget >= 1f && n < MAX_PER_STEP) {
                 budget -= 1f
                 deal(env)
                 finish(env, n == 0)
@@ -111,8 +112,14 @@ class MontyHallSim : Sim {
             else { flashSwitch = 1f; env.emit(EventKind.HIT, 0.7f, 0.5f, 0.4f) }
         }
         // The running rates, kept at evenly spaced games for the graph.
-        val every = max(1, target / HIST)
-        if (games % every == 0 && histN < HIST) {
+        if (games % every == 0) {
+            if (histN >= HIST) {
+                // Full: keep every other point and sample half as often, so
+                // the whole run always fits the graph.
+                for (i in 0 until HIST / 2) { histStick[i] = histStick[i * 2 + 1]; histSwitch[i] = histSwitch[i * 2 + 1] }
+                histN = HIST / 2
+                every *= 2
+            }
             histStick[histN] = stickWins.toFloat() / games
             histSwitch[histN] = switchWins.toFloat() / games
             histN++
@@ -198,7 +205,8 @@ class MontyHallSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3.5f
+    /** Endless: past the target it plays on, the rates settling ever closer. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> {
         val n = max(1, games)

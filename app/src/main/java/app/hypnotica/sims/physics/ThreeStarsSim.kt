@@ -207,7 +207,8 @@ class ThreeStarsSim : Sim {
 
     private fun periodic() = scenario == 1 || scenario == 3 || scenario == 4
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > (if (periodic()) 3f else 5f)
+    /** A choreography goes on dancing; a throw-out goes round again. */
+    override fun finished(): Boolean = !periodic() && doneAt >= 0f && elapsed - doneAt > 5f
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("time" to String.format(java.util.Locale.US, "%.1f", b.t))

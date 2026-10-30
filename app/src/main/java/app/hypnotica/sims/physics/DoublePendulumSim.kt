@@ -342,12 +342,13 @@ class DoublePendulumSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    /** Once they have split, a while to watch the spray, then go again. */
-    override fun finished(): Boolean =
-        (split && elapsed - splitAt > AFTER_SPLIT_SECONDS) ||
-            // Let go low, a double pendulum swings politely and they never
-            // disagree; after a long look the run goes round again.
-            (!split && elapsed > NEVER_SPLITS_SECONDS)
+    /**
+     * Once they have split, the spray goes on: chaos does not end, and
+     * starting the fan over threw it away just as it got going. Let go low,
+     * a double pendulum swings politely and they never disagree; after a long
+     * look that run goes round again.
+     */
+    override fun finished(): Boolean = !split && elapsed > NEVER_SPLITS_SECONDS
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "pendulums" to String.format(java.util.Locale.US, "%,d", count),

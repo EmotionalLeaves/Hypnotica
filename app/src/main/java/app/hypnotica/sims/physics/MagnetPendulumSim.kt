@@ -391,7 +391,12 @@ class MagnetPendulumSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = paidAt >= 0f && elapsed - paidAt > 5f
+    /**
+     * Endless: once the map is whole the pendulum goes on swinging over it.
+     * It used to wipe the finished map five seconds later and paint it all
+     * again from the coarsest blocks, which threw away the picture just made.
+     */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> {
         val pct = if (totalCells > 0) 100 * computed / totalCells else 0

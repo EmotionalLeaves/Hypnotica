@@ -47,6 +47,7 @@ class SecretarySim : Sim {
     private val hy = FloatArray(HIST)
     private val hv = FloatArray(HIST)
     private var hn = 0
+    private var every = 1
 
     override fun setup(env: SimEnv) {
         n = env.params.i("candidates", 40).coerceIn(5, MAX_N)
@@ -54,6 +55,7 @@ class SecretarySim : Sim {
         cut = (n / E).toInt().coerceAtLeast(1)
         score = FloatArray(n)
         rounds = 0; wins = 0; hn = 0; budget = 0f; flash = 0f
+        every = max(1, target / HIST)
         elapsed = 0f; doneAt = -1f; payoffFrame = false
         deal(env)
     }
@@ -76,7 +78,6 @@ class SecretarySim : Sim {
         val a = abs(dt)
         elapsed += a
         flash = max(0f, flash - a * 2f)
-        if (rounds >= target) return
         val speed = env.params.f("speed", 1f).coerceIn(0.1f, 6f)
         val rate = min(MAX_RATE, START_RATE * exp(elapsed * speed / ACCEL_S))
         if (rate < SLOW_RATE) {
@@ -88,11 +89,11 @@ class SecretarySim : Sim {
                 env.emit(if (i == hired) EventKind.CROSS else EventKind.STEP, score[i], (i.toFloat() / n * 2f - 1f), if (i == hired) 0.5f else 0.15f)
                 shown++
             }
-            if (phase >= 1f) { finish(env, true); if (rounds < target) deal(env) }
+            if (phase >= 1f) { finish(env, true); deal(env) }
         } else {
             budget += a * rate * speed
             var k = 0
-            while (budget >= 1f && rounds < target && k < MAX_PER_STEP) {
+            while (budget >= 1f && k < MAX_PER_STEP) {
                 budget -= 1f
                 deal(env)
                 shown = n
@@ -109,8 +110,10 @@ class SecretarySim : Sim {
         if (lastWon) wins++
         flash = 1f
         if (audible) env.emit(if (lastWon) EventKind.HIT else EventKind.DEATH, if (lastWon) 0.8f else 0.2f, 0f, 0.4f)
-        val every = max(1, target / HIST)
-        if (rounds % every == 0 && hn < HIST) { hv[hn] = wins.toFloat() / rounds; hn++ }
+        if (rounds % every == 0) {
+            if (hn >= HIST) { for (k in 0 until HIST / 2) hv[k] = hv[k * 2 + 1]; hn = HIST / 2; every *= 2 }
+            hv[hn] = wins.toFloat() / rounds; hn++
+        }
         if (rounds >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
@@ -157,7 +160,8 @@ class SecretarySim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3.5f
+    /** Endless: past the target it plays on, the count settling ever closer. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rounds" to "$rounds",

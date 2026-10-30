@@ -16,6 +16,7 @@ object MathMore {
         BuffonNeedleSim.def(),
         PrisonersSim.def(),
         SecretarySim.def(),
-        BertrandSim.def()
+        BertrandSim.def(),
+        MartingaleSim.def()
     )
 }

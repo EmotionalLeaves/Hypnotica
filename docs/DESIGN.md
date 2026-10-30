@@ -403,7 +403,12 @@ Every sim, before its round is done:
       say how far it reaches with `frameHalfWidth` and the view pulls back
       (`FrameTest`)
 - [ ] No two-second silence while something is still moving
-- [ ] Loops cleanly, or hands off smoothly to the next clip
+- [ ] Loops cleanly, or hands off smoothly to the next clip — or, for a sim
+      whose picture goes on being worth watching after its payoff (a map
+      that is finished, metronomes in step, a choreography, a tally still
+      settling), is endless: `finished()` stays false and nothing the run
+      built is thrown away. Restarting those wiped the very picture the run
+      had just made.
 - [ ] Inside the flash and loudness limits above
 - [ ] At least one Simple-mode macro worth dragging
 - [ ] Reaches its payoff under every law preset that keeps its premise — the

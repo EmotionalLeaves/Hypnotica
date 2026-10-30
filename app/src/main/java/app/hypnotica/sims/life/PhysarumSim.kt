@@ -461,7 +461,8 @@ class PhysarumSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 10f
+    /** Endless: the network goes on reshaping itself. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "food linked" to "${largest()}/$foods",

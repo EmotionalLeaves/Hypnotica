@@ -385,7 +385,8 @@ class MetronomeSyncSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = paidAt >= 0f && elapsed - paidAt > 6f
+    /** Endless: in step, they stay in step; there is nothing to start over. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "in step" to String.format(java.util.Locale.US, "%.0f%%", order * 100),

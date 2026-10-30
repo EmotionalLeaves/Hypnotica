@@ -135,7 +135,7 @@ class LissajousTableSim : Sim {
             val k = r * n + c
             val col = Palette.lerp(pal.at(c.toFloat() / n), pal.at(r.toFloat() / n), 0.5f)
             g.polyline(xs[k], ys[k], min(count, POINTS + 1), size * 0.022f, col, 0.9f)
-            if (!closed) {
+            run {
                 val px = cx(c + 1) + rad * cos((c + 1) * theta - HALF_PI)
                 val py = cy(r + 1) - rad * sin((r + 1) * theta - HALF_PI)
                 g.disc(px, py, size * 0.045f, Palette.TEXT_PRIMARY)
@@ -146,7 +146,8 @@ class LissajousTableSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+    /** Endless: closed, the curves go on being traced round and round. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "turns of the slowest" to String.format(java.util.Locale.US, "%.2f", (theta / TWO_PI).coerceAtMost(1f)),

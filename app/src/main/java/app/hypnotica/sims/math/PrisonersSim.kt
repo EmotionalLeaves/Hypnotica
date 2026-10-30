@@ -60,6 +60,7 @@ class PrisonersSim : Sim {
     private val hy = FloatArray(HIST)
     private val hv = FloatArray(HIST)
     private var hn = 0
+    private var every = 1
 
     override fun setup(env: SimEnv) {
         n = (env.params.i("boxes", 100) / 2 * 2).coerceIn(4, MAX_N)
@@ -72,6 +73,7 @@ class PrisonersSim : Sim {
         ox = -cols * cell * 0.5f
         oy = 0.95f
         rounds = 0; wins = 0; phase = 0f; budget = 0f; hn = 0; flash = 0f
+        every = max(1, target / HIST)
         elapsed = 0f; doneAt = -1f; payoffFrame = false
         deal(env)
     }
@@ -106,7 +108,6 @@ class PrisonersSim : Sim {
         val a = abs(dt)
         elapsed += a
         flash = max(0f, flash - a * 2f)
-        if (rounds >= target) return
         val speed = env.params.f("speed", 1f).coerceIn(0.1f, 6f)
         val rate = min(MAX_RATE, START_RATE * exp(elapsed * speed / ACCEL_S))
         if (rate < SLOW_RATE) {
@@ -118,11 +119,11 @@ class PrisonersSim : Sim {
                 env.emit(EventKind.WRITE, (len.toFloat() / n).coerceIn(0.05f, 1f), 0f, 0.3f)
                 tracedLoops++
             }
-            if (phase >= 1f) { finish(env, true); if (rounds < target) deal(env) }
+            if (phase >= 1f) { finish(env, true); deal(env) }
         } else {
             budget += a * rate * speed
             var k = 0
-            while (budget >= 1f && rounds < target && k < MAX_PER_STEP) {
+            while (budget >= 1f && k < MAX_PER_STEP) {
                 budget -= 1f
                 deal(env)
                 tracedLoops = loops
@@ -141,8 +142,10 @@ class PrisonersSim : Sim {
         if (audible) {
             if (lastWon) env.emit(EventKind.CROSS, 0.75f, 0f, 0.5f) else env.emit(EventKind.DEATH, 0.2f, 0f, 0.4f)
         }
-        val every = max(1, target / HIST)
-        if (rounds % every == 0 && hn < HIST) { hv[hn] = wins.toFloat() / rounds; hn++ }
+        if (rounds % every == 0) {
+            if (hn >= HIST) { for (k in 0 until HIST / 2) hv[k] = hv[k * 2 + 1]; hn = HIST / 2; every *= 2 }
+            hv[hn] = wins.toFloat() / rounds; hn++
+        }
         if (rounds >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
@@ -215,7 +218,8 @@ class PrisonersSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3.5f
+    /** Endless: past the target it plays on, the count settling ever closer. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "rounds" to "$rounds",

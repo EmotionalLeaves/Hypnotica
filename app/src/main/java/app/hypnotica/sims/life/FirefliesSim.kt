@@ -150,7 +150,8 @@ class FirefliesSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 4f
+    /** Endless: once the field has caught, it goes on flashing together. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "fireflies" to "$n",

@@ -123,7 +123,6 @@ class StackSim : Sim {
             if (failT > FAIL_S) { attempts++; startTower(env) }
             return
         }
-        if (doneAt >= 0f) return
 
         if (!dropping) {
             val prev = lx[layers - 1]
@@ -177,13 +176,15 @@ class StackSim : Sim {
         layers++
         best = max(best, layers - 1)
         env.emit(EventKind.HIT, ((layers - 1).toFloat() / target * 0.85f + 0.1f).coerceAtMost(1f), (lx[layers - 1] / range).coerceIn(-1f, 1f), 0.5f)
-        if (layers - 1 >= target) {
+        if (layers - 1 >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
             perfectGlow = 1f
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
-            return
         }
+        // Past the finish line it keeps climbing; at the very top of what it
+        // can hold, it starts a fresh tower rather than stopping.
+        if (layers >= MAX_LAYERS - 1) { startTower(env); return }
         nextSlab(env)
     }
 
@@ -231,7 +232,7 @@ class StackSim : Sim {
             g.glow(lx[t], y, lw[t] * 0.8f, Palette.TEXT_PRIMARY, perfectGlow * 0.3f)
         }
         // The slab in play.
-        if (failT < 0f && doneAt < 0f) {
+        if (failT < 0f) {
             val y = BASE_Y + (layers + 0.5f) * SLAB_H + (if (dropping) dropY else SLAB_H * 1.5f) + sy
             g.rect(curX, y, curW * 0.5f, SLAB_H * 0.47f, Palette.brighten(colourOf(env, layers.toFloat()), 0.25f))
         }
@@ -239,9 +240,9 @@ class StackSim : Sim {
             if (cutLife[k] <= 0f) continue
             g.rect(cutX[k], cutY[k] + sy, cutW[k] * 0.5f, SLAB_H * 0.47f, colourOf(env, cutCol[k]), cutRot[k], cutLife[k].coerceIn(0f, 1f))
         }
-        if (doneAt >= 0f) {
+        if (doneAt >= 0f && elapsed - doneAt < 2f) {
             val t = layers - 1
-            g.glow(lx[t], BASE_Y + (t + 0.5f) * SLAB_H + sy, 0.35f, Palette.SUCCESS, 0.35f)
+            g.glow(lx[t], BASE_Y + (t + 0.5f) * SLAB_H + sy, 0.35f, Palette.SUCCESS, 0.35f * (1f - (elapsed - doneAt) / 2f))
         }
     }
 
@@ -249,10 +250,12 @@ class StackSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+    /** Endless: the tower keeps climbing past the finish line. */
+    override fun finished(): Boolean = false
 
     override fun counters(): List<Pair<String, String>> = buildList {
-        add("height" to "${layers - 1} / $target")
+        add("height" to if (doneAt < 0f) "${layers - 1} / $target" else "${layers - 1}")
+        if (best > target) add("highest" to "$best")
         if (streak >= 2) add("perfect in a row" to "$streak")
         if (attempts > 1) add("attempt" to "$attempts")
     }
