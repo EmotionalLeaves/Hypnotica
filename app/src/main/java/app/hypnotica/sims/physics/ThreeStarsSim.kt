@@ -30,6 +30,10 @@ import kotlin.math.sqrt
  *   pushes the middle star sideways to see how hard it has to be to break it.
  * - **Thrown together**: three equal stars dropped from rest at random. Half
  *   of such systems throw a star out within a few dozen crossings.
+ * - **Butterfly** and **Moth** (Šuvakov and Dmitrašinović, 2013): two more of
+ *   the orbits that should not exist — three equal stars on a line, the
+ *   outer two thrown the same way and the middle one twice as hard the other,
+ *   that come back exactly to where they began.
  */
 class ThreeStarsSim : Sim {
 
@@ -41,8 +45,6 @@ class ThreeStarsSim : Sim {
     private var ejected = -1
     private var ejectedAt = -1f
     private var loops = 0
-    private var startX = 0.0
-    private var startY = 0.0
     private var lastNear = false
     private var nearGlow = FloatArray(3)
     private var elapsed = 0f
@@ -56,6 +58,8 @@ class ThreeStarsSim : Sim {
     private var tTick = 0f
     private var trailLen = 240
     private val pairClose = BooleanArray(3)
+    private val sx0 = DoubleArray(3)
+    private val sy0 = DoubleArray(3)
 
     override fun setup(env: SimEnv) {
         scenario = env.params.choiceIndex("start")
@@ -81,6 +85,17 @@ class ThreeStarsSim : Sim {
                 rate = 0.85f
                 eta = 0.01
             }
+            3, 4 -> {
+                // Their table's p1, p2: velocities (p1, p2), (p1, p2), (-2p1, -2p2).
+                val p1 = if (scenario == 3) 0.306893 else 0.464445
+                val p2 = if (scenario == 3) 0.125507 else 0.396060
+                b.set(0, 1.0, -1.0, 0.0, p1, p2)
+                b.set(1, 1.0, 1.0, 0.0, p1, p2)
+                b.set(2, 1.0, 0.0, 0.0, -2 * p1, -2 * p2)
+                scale = env.halfWidth * 0.92f / (if (scenario == 3) 1.3f else 1.6f)
+                rate = if (scenario == 3) 0.85f else 1.6f
+                eta = 0.005
+            }
             else -> {
                 val r = env.rng
                 for (i in 0..2) b.set(i, 1.0, r.range(-1f, 1f).toDouble(), r.range(-1f, 1f).toDouble(), 0.0, 0.0)
@@ -90,7 +105,7 @@ class ThreeStarsSim : Sim {
             }
         }
         b.centre()
-        startX = b.x[2]; startY = b.y[2]
+        for (i in 0..2) { sx0[i] = b.x[i]; sy0[i] = b.y[i] }
         ejected = -1; ejectedAt = -1f; loops = 0; lastNear = true
         nearGlow.fill(0f)
         elapsed = 0f; doneAt = -1f; payoffFrame = false
@@ -121,10 +136,14 @@ class ThreeStarsSim : Sim {
             pairClose[p] = close
         }
 
-        if (scenario == 1) {
-            // A loop is the middle star back where it began.
-            val dx = b.x[2] - startX; val dy = b.y[2] - startY
-            val near = dx * dx + dy * dy < 0.0025
+        if (periodic()) {
+            // A loop is every star back where it began at once.
+            var far = 0.0
+            for (i in 0..2) {
+                val dx = b.x[i] - sx0[i]; val dy = b.y[i] - sy0[i]
+                far = max(far, dx * dx + dy * dy)
+            }
+            val near = far < 0.0025
             if (near && !lastNear && b.t > 1.0) {
                 loops++
                 env.emit(EventKind.CROSS, 0.6f, 0f, 0.6f)
@@ -186,12 +205,14 @@ class ThreeStarsSim : Sim {
 
     override fun payoff(): Boolean = payoffFrame
 
-    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > (if (scenario == 1) 3f else 5f)
+    private fun periodic() = scenario == 1 || scenario == 3 || scenario == 4
+
+    override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > (if (periodic()) 3f else 5f)
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("time" to String.format(java.util.Locale.US, "%.1f", b.t))
-        when (scenario) {
-            1 -> add("loops" to "$loops")
+        when {
+            periodic() -> add("loops" to "$loops")
             else -> add("thrown out" to if (ejected < 0) "not yet" else massName(ejected))
         }
         add("closest pass" to String.format(java.util.Locale.US, "%.4f", b.closest))
@@ -206,8 +227,8 @@ class ThreeStarsSim : Sim {
         const val TRAIL = 600
         const val EDGE = 0.98f
         private val STAR_HUE = floatArrayOf(0.12f, 0.6f, 0.95f)
-        private val CLOSE = doubleArrayOf(0.25, 0.12, 0.15)
-        private val ESCAPE = doubleArrayOf(8.0, 99.0, 5.0)
+        private val CLOSE = doubleArrayOf(0.25, 0.12, 0.15, 0.12, 0.12)
+        private val ESCAPE = doubleArrayOf(8.0, 99.0, 5.0, 99.0, 99.0)
 
         fun def(): SimDef = SimDef(
             id = "physics/three-stars",
@@ -220,7 +241,7 @@ class ThreeStarsSim : Sim {
             defaultPalette = "Spectrum",
             typicalSeconds = 24f,
             params = listOf(
-                Param.choice("start", "Start", listOf("3, 4, 5 triangle", "Figure eight", "Thrown together"), 0, card = Card.DATA, input = ParamInput.TILES),
+                Param.choice("start", "Start", listOf("3, 4, 5 triangle", "Figure eight", "Thrown together", "Butterfly", "Moth"), 0, card = Card.DATA, input = ParamInput.TILES),
                 Param.float("kick", "Kick to the eight", 0f, 0.4f, 0f, card = Card.DATA),
                 Param.int("trail", "Trail", 20, TRAIL, 240, card = Card.LOOK),
                 Param.float("speed", "Speed", 0.3f, 4f, 1f, card = Card.MOTION, logScale = true)
@@ -230,7 +251,7 @@ class ThreeStarsSim : Sim {
     }
 
     override fun contenders(env: SimEnv): IntArray =
-        if (scenario == 1) app.hypnotica.core.sim.NO_CONTENDERS else intArrayOf(colour(env, 0), colour(env, 1), colour(env, 2))
+        if (periodic()) app.hypnotica.core.sim.NO_CONTENDERS else intArrayOf(colour(env, 0), colour(env, 1), colour(env, 2))
 
     override fun winner(): Int = ejected
 }

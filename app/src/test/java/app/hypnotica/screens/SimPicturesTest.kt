@@ -48,6 +48,11 @@ class SimPicturesTest {
         val img = Canvas(W * 3 + GAP * 2, H)
         val core = SimCore(def, 3L)
         core.setAspect(W.toFloat() / H)
+        // -Pparams=key=value,key=value sets parameters before the run.
+        System.getProperty("params")?.split(',')?.forEach { kv ->
+            val parts = kv.split('=')
+            if (parts.size == 2) parts[1].toFloatOrNull()?.let { core.params.set(parts[0].trim(), it) }
+        }
         core.restart(3L)
         // -Pmoments=a,b,c: three shares of the run to draw instead (0 = just after the payoff).
         val moments = System.getProperty("moments")?.split(',')?.mapNotNull { it.trim().toFloatOrNull() }

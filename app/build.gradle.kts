@@ -110,6 +110,7 @@ android {
                 // -Psims=id,id draws only those in SimPicturesTest.
                 (project.findProperty("sims") as String?)?.let { ids -> it.systemProperty("sims", ids) }
                 (project.findProperty("moments") as String?)?.let { m -> it.systemProperty("moments", m) }
+                (project.findProperty("params") as String?)?.let { v -> it.systemProperty("params", v) }
             } else {
                 it.exclude("app/hypnotica/screens/**")
             }
