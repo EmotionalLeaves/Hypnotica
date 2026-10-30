@@ -36,12 +36,13 @@ import kotlin.math.sqrt
  * every pixel is iterated as a small difference δ from one reference orbit
  * (perturbation: δ' = 2Zδ + δ² + δc, in doubles), and only that one orbit is
  * worked out in big fixed-point numbers, with as many bits as the zoom needs.
- * The dive is aimed at a Misiurewicz point — a point of the boundary whose
- * orbit lands on a repelling cycle — found by Newton's method. The set is
- * self-similar about such a point at every scale, so the frame never runs out
- * of detail (aimed anywhere else, a long dive ends inside a mini-set: a black
- * screen). Its orbit is exactly periodic after k steps, so the reference is a
- * short array repeated, as long as any pixel needs it, for free.
+ * The dive is aimed at the nucleus of a mini-set — a tiny, turned copy of
+ * the whole set — found by Newton's method on z_p(c) = 0. On the way down
+ * the shapes keep changing, each level a doubling of the one before, and at
+ * the bottom the whole set appears again; it is held there a few seconds,
+ * then the next dive begins. A nucleus's orbit is exactly periodic, so the
+ * reference is a short array repeated, as long as any pixel needs it, for
+ * free.
  *
  * At [HANDOFF_ZOOM] (doubles themselves end near 1e308) the dive dissolves
  * into a fresh one at another Misiurewicz point, so it is endless to watch.
@@ -50,6 +51,22 @@ class MandelbrotSim : Sim {
 
     /** The payoff fires once; without this the bell retriggers every step. */
     private var reached = false
+
+    /**
+     * The zoom at which the dive's mini-set fills the frame, or +inf for a dive
+     * with no end in view (one a tap retargeted). The dive used to be aimed at
+     * a Misiurewicz point, about which the set is exactly self-similar: from
+     * twenty seconds in the same spiral came round again, and again, for
+     * ever — a loop, not a journey. Aimed at a mini-set instead, the shapes
+     * change all the way down (each level a new doubling of the ones before)
+     * until the whole set appears again, small and turned, at the bottom.
+     */
+    private var arriveZoom = Double.MAX_VALUE
+    private var arrivedAt = -1f
+    private var screenHalfW = 0.46f
+    /** Where the view sits from the nucleus: the middle of its mini-set. */
+    private var aimX = 0.0
+    private var aimY = 0.0
 
     /**
      * The opening: the whole set, still, in the middle of the screen, before
@@ -178,11 +195,12 @@ class MandelbrotSim : Sim {
         muBase = 0f
         maxIter = p.i("detail", 220).coerceIn(40, 1200)
         iterNow = maxIter
-        zoomRate = p.f("zoom", 0.27f)
+        zoomRate = p.f("zoom", 0.6f)
         doublings = 0
         logBase = 0.0
         lastLowCount = 0f
         diveIndex = p.choiceIndex("target").coerceIn(0, 3)
+        screenHalfW = env.halfWidth
         // Wide enough for the whole set, tip of the antenna to the cardioid's
         // back, across an upright screen; never closer than the old start.
         introZoom = min(0.6, 1.4 * env.halfWidth / SET_HALF_SPAN)
@@ -227,6 +245,10 @@ class MandelbrotSim : Sim {
         computedZoom = z0
         imgScale = 1.4 / z0
         stalled = false
+        arrivedAt = -1f
+        val size = sqrt(t.sr * t.sr + t.si * t.si)
+        arriveZoom = if (size > 0.0) ARRIVE_FIT * screenHalfW / size else Double.MAX_VALUE
+        aimX = -0.5 * t.sr; aimY = -0.5 * t.si
     }
 
     override fun step(env: SimEnv, dt: Float) {
@@ -239,7 +261,18 @@ class MandelbrotSim : Sim {
         stalled = zoom >= PERTURB_ZOOM && r.bits < bitsNeeded(targetZoom * exp((zoomRate * 0.5f).toDouble()))
         // Held still at first, then easing into the dive.
         val ramp = if (intro) ((elapsed - INTRO_HOLD) / INTRO_RAMP).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) } else 1f
-        if (!stalled) targetZoom *= exp((zoomRate * dt * ramp).toDouble())
+        // Easing to a stop over the last few-fold before the mini-set fills
+        // the frame, rather than braking on it.
+        val near = if (arriveZoom < Double.MAX_VALUE) (ln(arriveZoom / targetZoom) / ARRIVE_EASE).coerceIn(0.12, 1.0) else 1.0
+        if (!stalled && arrivedAt < 0f) targetZoom *= exp((zoomRate * dt * ramp).toDouble() * near)
+        if (arrivedAt < 0f && targetZoom >= arriveZoom && !handoffWait && !fading) {
+            targetZoom = arriveZoom
+            arrivedAt = elapsed
+            intro = false
+            if (!reached) { reached = true; payoffFrame = true }
+            env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+        }
+        if (arrivedAt >= 0f && elapsed - arrivedAt > ARRIVE_HOLD && !handoffWait && !fading) handoffWanted = true
         zoom += (targetZoom - zoom) * min(1.0, (dt * 6f).toDouble())
         if (intro) {
             if (gliding || seek != null) intro = false
@@ -247,9 +280,18 @@ class MandelbrotSim : Sim {
                 // From the set's middle onto the target, faster than the zoom
                 // closes in, so the target never leaves the frame.
                 val k = Math.pow(introZoom / zoom, 1.5)
-                offX = introOffX * k; offY = introOffY * k
-                if (k < 1e-9) { offX = 0.0; offY = 0.0; intro = false }
+                offX = aimX + (introOffX - aimX) * k; offY = aimY + (introOffY - aimY) * k
+                if (k < 1e-9) { offX = aimX; offY = aimY; intro = false }
             }
+        }
+
+        // A dive at a mini-set looks at the middle of it, not its nucleus:
+        // the copy of the whole set, c = nucleus + s·w, has the middle of its
+        // body (bulb to cusp, −1.25 to 0.25) at w = −0.5. A few
+        // hundred-millionths off the nucleus, which no
+        // earlier frame of the dive can tell apart from it.
+        if (!intro && !gliding && seek == null && job?.let { !jobRetargets } != false && arriveZoom < Double.MAX_VALUE) {
+            offX = aimX; offY = aimY
         }
 
         if (gliding) {
@@ -404,7 +446,10 @@ class MandelbrotSim : Sim {
         diveIndex = next
         // Not from the whole set: three thousand to a hundred thousand times in, so
         // the new dive already looks like the deep one it replaces.
-        val z0 = 0.6 * Math.pow(10.0, 3.5 + 1.5 * env.rng.nextFloat())
+        val t = CATALOGUE[next]
+        val size = sqrt(t.sr * t.sr + t.si * t.si)
+        val room = if (size > 0.0) ARRIVE_FIT * screenHalfW / size / 300.0 else Double.MAX_VALUE
+        val z0 = min(room, 0.6 * Math.pow(10.0, 3.5 + 1.5 * env.rng.nextFloat()))
         startDive(next, z0)
         logBase = prevLog - ln(z0 / 0.6)
         lastLowCount = 0f
@@ -481,7 +526,9 @@ class MandelbrotSim : Sim {
         // always was; deep, a budget above the lowest count in view, which
         // about a Misiurewicz point climbs steadily with the depth.
         val depth = ln(max(1.0, zoom / 0.6)) / LN2
-        val shallow = (maxIter * (1.0 + 0.12 * depth)).toInt().coerceAtMost(SHALLOW_ITER_CAP)
+        // Round a mini-set of period p the outside escapes in multiples of p:
+        // the cap grows with it, or its edge came out a blob.
+        val shallow = (maxIter * (1.0 + 0.12 * depth) + r.p * 6.0 * min(1.0, depth / 20.0)).toInt().coerceAtMost(max(SHALLOW_ITER_CAP, r.p * 30))
         jPert = zoom >= PERTURB_ZOOM
         jMi = if (!jPert) shallow else max(shallow, (lastLowCount + maxIter * (2.0 + depth / 40.0)).toInt())
         if (jMi > MAX_ITER_CAP) { jMi = MAX_ITER_CAP; handoffWanted = true }
@@ -678,7 +725,7 @@ class MandelbrotSim : Sim {
                     // Deep enough that the detail on screen is a thousand times finer than
                     // where it started. That is the zoom arriving, which is what the sim
                     // promises, rather than eighteen seconds having gone by.
-                    if (!reached && jZoom >= 0.6 * TARGET_DEPTH) {
+                    if (!reached && arriveZoom == Double.MAX_VALUE && jZoom >= 0.6 * TARGET_DEPTH) {
                         reached = true
                         payoffFrame = true
                     }
@@ -1571,6 +1618,10 @@ class MandelbrotSim : Sim {
         val tx = offX + e.x * scale
         val ty = offY + e.y * scale
         job = null
+        // A tap's point has no mini-set worked out for it: that dive goes on.
+        arriveZoom = Double.MAX_VALUE
+        arrivedAt = -1f
+        aimX = 0.0; aimY = 0.0
         seek = Seek(r, tx, ty, scale, guessEscape(r, tx, ty))
     }
 
@@ -1629,7 +1680,12 @@ class MandelbrotSim : Sim {
     }
 
     /** A dive's target: a Misiurewicz point given to double precision, preperiod k, period p. */
-    class Target(val re: String, val im: String, val k: Int, val p: Int)
+    /**
+     * A point to dive at: preperiod [k] and period [p] (k = 0 is the nucleus
+     * of a mini-set), and for a nucleus its size estimate (sr, si) — the
+     * complex scale that maps the whole set onto that mini copy of it.
+     */
+    class Target(val re: String, val im: String, val k: Int, val p: Int, val sr: Double = 0.0, val si: Double = 0.0)
 
     /**
      * A reference point, exact to [bits], and its orbit z_0 … z_{k+p} in
@@ -1916,30 +1972,28 @@ class MandelbrotSim : Sim {
         private val DEBUG = System.getenv("MANDEL_DEBUG") != null
 
         /**
-         * Misiurewicz points, each found by Newton's method (preperiod k,
-         * period p) near the spot the dive was always aimed at. The first
-         * four are the "Where to dive" choices; all of them are the dives a
-         * hand-off goes on to. Picked for a cycle that repels fast enough
-         * (|multiplier|^(1/p) ≥ ~1.07): about a point whose cycle barely
-         * repels (the old spiral's was 1.012 an iteration) every pixel runs
-         * five times the iterations and the frame is solid filigree.
+         * Mini-sets near the spots the dive was always aimed at, each the
+         * lowest period found within a few hundred-thousandths of it. The
+         * first four are the "Where to dive" choices; all of them are dives a
+         * hand-off goes on to. Each is reached in about half a minute at the
+         * default speed and then shown whole.
          */
         val CATALOGUE = listOf(
-            // Seahorse valley.
-            Target("-0.7432918908524302", "0.13124055230879758", 24, 2),
-            // Spiral.
-            Target("-0.16254547044532094", "1.0262854812701585", 13, 4),
-            // Out on the antenna, beside its period-3 copy of the set.
-            Target("-1.7732746084008726", "0.006388268773377751", 19, 6),
-            // Misiurewicz.
-            Target("0.3554323472125332", "0.647090198204969", 21, 5),
-            // Further seahorse-valley and antenna points for later dives.
-            Target("-0.745950170346325", "0.132750204860054", 17, 7),
-            Target("-0.746791980247121", "0.132818988954767", 19, 5),
-            Target("-0.7468556637982409", "0.13427090126716748", 50, 2),
-            Target("-1.7798774149162109", "-0.0021457146579731204", 22, 6)
-            // Not the classic c = i or other fast-repelling points: those are
-            // tips of the set, and their dive is one thin hair on a dark frame.
+            // Seahorse valley: a period-37 mini-set, found offline (mpmath,
+            // Newton on z_p(c) = 0, sixty digits) and sharpened again here.
+            Target("-0.745980216481067423714977969053", "0.132738821510216944825035965899", 0, 37, 4.81334e-8, -1.87773e-8),
+            // The spiral arm off the top bulb: period 68.
+            Target("-0.162537151149055056487203197711", "1.02626307412280601537069702933", 0, 68, -8.68526e-8, 2.04039e-8),
+            // Out on the antenna: period 51.
+            Target("-1.77327957389394605393109985695", "0.00640771960581539921279039243013", 0, 51, 4.38794e-8, -1.11694e-7),
+            // Feathers off the upper right: period 65.
+            Target("0.355433427531727679258378504546", "0.647113098091290172769994027198", 0, 65, -7.97346e-8, -1.02429e-7),
+            // More for the hand-offs, some of them deeper.
+            Target("-1.77990281598314779594595012188", "-0.00214535040076200041175459645584", 0, 45, 1.67881e-7, -4.9163e-8),
+            Target("-0.746798123715550114504290119403", "0.132798980979293510730257364696", 0, 34, -1.36762e-9, -2.37953e-9),
+            Target("-0.162540256885277284720170370281", "1.02629157466238809210393627732", 0, 84, 7.21817e-9, 7.68749e-9),
+            Target("0.355427762376584164070261059291", "0.647084241769259012906111051652", 0, 80, -1.30806e-8, 5.38274e-9),
+            Target("-1.7798847775120833856595041499", "-0.00214057281159017635447594557216", 0, 57, 2.29957e-9, -2.21467e-8)
         )
 
         /** The palette's lightest colour, for the edge of the set: white on Mono, yellow on Viridis. */
@@ -1960,6 +2014,13 @@ class MandelbrotSim : Sim {
          */
         const val TARGET_DEPTH = 1000.0
 
+        /** The mini-set's size to the frame's half-width: it fills the width with a margin. */
+        const val ARRIVE_FIT = 1.25
+        /** The zoom eases to a stop over the last e^this-fold. */
+        const val ARRIVE_EASE = 1.4
+        /** Seconds the mini-set is looked at before the next dive. */
+        const val ARRIVE_HOLD = 6f
+
         /** The middle of the set, and half its width with a margin, for the opening frame. */
         const val SET_CX = -0.75
         const val SET_HALF_SPAN = 1.6
@@ -1979,16 +2040,16 @@ class MandelbrotSim : Sim {
             formats = listOf(TrapFormat.GROW, TrapFormat.REVEAL),
             heroLabel = "New target",
             defaultPalette = "Aurora",
-            typicalSeconds = 30f,
+            typicalSeconds = 34f,
             params = listOf(
                 Param.choice(
                     "target", "Where to dive",
-                    listOf("Seahorse valley", "Spiral", "Antenna", "Misiurewicz"), 0,
+                    listOf("Seahorse valley", "Spiral", "Antenna", "Feathers"), 0,
                     card = Card.DATA, input = ParamInput.CHIPS
                 ),
                 Param.int("resolution", "Resolution", 40, 460, 240, card = Card.LOOK),
                 Param.int("detail", "Detail", 40, 1200, 220, card = Card.LOOK, logScale = true),
-                Param.float("zoom", "Zoom speed", 0.02f, 1.2f, 0.27f, card = Card.MOTION)
+                Param.float("zoom", "Zoom speed", 0.02f, 1.6f, 0.6f, card = Card.MOTION)
             ),
             create = { MandelbrotSim() }
         )

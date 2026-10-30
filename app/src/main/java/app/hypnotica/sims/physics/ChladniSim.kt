@@ -171,9 +171,10 @@ class ChladniSim : Sim {
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val pal = env.palette
-        // The plate: dark metal with a rim, struck bright as each note starts.
-        g.rect(0f, 0f, half, halfH, Palette.lerp(Palette.BG, pal.at(0.15f), 0.12f + 0.1f * ring))
-        val rim = Palette.withAlpha(pal.at(0.3f), 0.5f)
+        // The plate: its rim, struck bright as each note starts. No filled
+        // plate: the renderer draws points before shapes, and an opaque
+        // plate drawn over the sand hid every grain on the phone.
+        val rim = Palette.withAlpha(Palette.lerp(pal.at(0.3f), Palette.TEXT_PRIMARY, 0.5f * ring), 0.5f + 0.4f * ring)
         g.line(-half, -halfH, half, -halfH, 0.005f, rim)
         g.line(-half, halfH, half, halfH, 0.005f, rim)
         g.line(-half, -halfH, -half, halfH, 0.005f, rim)

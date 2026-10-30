@@ -25,6 +25,29 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Quality loop Q5 — the whole catalogue drawn again
+
+- Mandelbrot, again: past twenty seconds the dive showed the same spiral
+  over and over, because it was aimed at a Misiurewicz point, about which
+  the set is exactly self-similar. It now dives at the nucleus of a mini-set
+  (found offline to sixty digits, sharpened again on the phone): the shapes
+  change all the way down, it eases to a stop with the whole set showing
+  again, small and turned, holds it six seconds, and the next dive begins.
+- Singing sand was an empty plate on the phone: the renderer draws points
+  before shapes, and the plate was drawn over the sand. The plate fill is
+  gone, and the picture tests now paint in the phone's order so a sim
+  can't look right here and wrong there again.
+- Three more battles: Weapon balls (a sword, dagger, spear or hammer on
+  each ball, better with every hit; blade on blade parries), Hungry balls
+  (the bigger swallows the smaller; the wall closes in on the stragglers)
+  and Clone war (every wall hit splits a ball, opposite colours that touch
+  are both gone; two swarms breed, then fight a front line across the ring).
+
+- The sorts' dot view stands each dot on a faint stalk and threads them,
+  so it ends on the sorted triangle rather than a thin dotted diagonal.
+- The elliptical pool's streaks stop at the wall instead of poking
+  through it just after a bounce.
+
 ### Quality loop Q4 — endings held, scribbles that resolve
 
 - Four rules, one fern: Barnsley's fern (and a mutant fern and a maple

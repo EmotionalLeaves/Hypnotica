@@ -102,7 +102,9 @@ class SimPicturesTest {
                 }
             }
             shapes(g.glows, g.glowCount)
-            shapes(g.instances, g.instanceCount)
+            // The device's order: glows, then points, then shapes over them
+            // (SceneRenderer). Painted last, points showed sand here that an
+            // opaque plate hid on the phone.
             for (i in 0 until g.pointCount) {
                 val r = (g.pointPos[i * 3 + 2] * s).coerceIn(0.7f, 6f)
                 shape(
@@ -111,6 +113,7 @@ class SimPicturesTest {
                     (g.pointColor[i * 4 + 2].toInt() and 0xFF) / 255f, (g.pointColor[i * 4 + 3].toInt() and 0xFF) / 255f, left
                 )
             }
+            shapes(g.instances, g.instanceCount)
         }
 
         private fun shape(

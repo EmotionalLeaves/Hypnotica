@@ -288,13 +288,22 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
             }
             return
         }
-        g.reserveInstances(n)
+        g.reserveInstances(n * 2)
+        // A faint stalk under each dot down to the floor: on its own the dot
+        // view ended as a thin dotted diagonal, and the sorted triangle under
+        // it — the shape the sort has built — was not there to see.
+        val stalks = n <= 2000
         for (i in 0 until n) {
             val v = values[i]
             var c = shade(i, col(palette, v), sweepIndex)
             if (highlight(i)) c = Palette.brighten(c, 0.6f)
-            g.disc(-halfW + (i + 0.5f) * step, v * 1.8f - 0.9f, r, c)
+            val x = -halfW + (i + 0.5f) * step
+            val y = v * 1.8f - 0.9f
+            if (stalks) g.line(x, -0.9f, x, y, max(step * 0.35f, 0.002f), c, 0.16f)
+            g.disc(x, y, r, c)
+            if (i < lineX.size) { lineX[i] = x; lineY[i] = y }
         }
+        thread(g, palette, false, 1f, 0.0022f, 0.2f)
     }
 
     /**
@@ -306,9 +315,9 @@ class SortingSim(private val algorithmIndex: Int?) : Sim {
     private var lineX = FloatArray(0)
     private var lineY = FloatArray(0)
 
-    private fun thread(g: G, palette: Palette, usePoints: Boolean, s: Float) {
+    private fun thread(g: G, palette: Palette, usePoints: Boolean, s: Float, width: Float = max(0.0025f, roundDot(s) * 0.45f), a: Float = 0.28f) {
         if (usePoints || lineX.size != n) return
-        g.polyline(lineX, lineY, n, max(0.0025f, roundDot(s) * 0.45f), palette.at(0.5f), 0.28f)
+        g.polyline(lineX, lineY, n, width, palette.at(0.5f), a)
     }
 
     private fun drawWheel(g: G, palette: Palette, sweepIndex: Int, usePoints: Boolean, s: Float) {

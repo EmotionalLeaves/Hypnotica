@@ -234,7 +234,11 @@ class EllipsePoolSim : Sim {
         val tail = STREAK / speed
         for (i in 0 until n) {
             val c = pal.at(i.toFloat() / n)
-            g.line(x[i] - vx[i] * tail, y[i] - vy[i] * tail, x[i], y[i], 0.006f, c, 0.85f)
+            // Cut at the wall: just after a bounce the streak behind a ball
+            // pointed back out through it.
+            val dx = -vx[i] * tail; val dy = -vy[i] * tail
+            val s = min(1f, exitAt(x[i], y[i], dx, dy))
+            g.line(x[i] + dx * s, y[i] + dy * s, x[i], y[i], 0.006f, c, 0.85f)
         }
     }
 

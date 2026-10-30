@@ -20,6 +20,9 @@ object PhysicsMore {
         SafeZonesSim.def(),
         EllipsePoolSim.def(),
         ChladniSim.def(),
-        GrowBounceSim.def()
+        GrowBounceSim.def(),
+        WeaponBallSim.def(),
+        HungryBallsSim.def(),
+        CloneWarSim.def()
     )
 }
