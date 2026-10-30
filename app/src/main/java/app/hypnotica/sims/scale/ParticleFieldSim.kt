@@ -565,6 +565,8 @@ class GameOfLifeSim : Sim {
     private var h = 72
     private var cells = ByteArray(0)
     private var next = ByteArray(0)
+    /** How recently each cell was alive: 1 while it lives, fading after. */
+    private var heat = FloatArray(0)
     private var births = 0
     private var deaths = 0
     private var generation = 0
@@ -594,6 +596,7 @@ class GameOfLifeSim : Sim {
         h = max(8, kotlin.math.round(side / root).toInt())
         cells = ByteArray(w * h)
         next = ByteArray(w * h)
+        heat = FloatArray(w * h)
         val density = p.f("density", 0.32f)
         for (i in cells.indices) cells[i] = if (env.rng.nextFloat() < density) 1 else 0
         generation = 0
@@ -665,6 +668,7 @@ class GameOfLifeSim : Sim {
                 }
             }
             val t = cells; cells = next; next = t
+            for (i in heat.indices) heat[i] = if (cells[i].toInt() != 0) 1f else heat[i] * HEAT_FADE
             births = b
             deaths = d
             countAlive()
@@ -725,24 +729,28 @@ class GameOfLifeSim : Sim {
             for (x in 0..w) g.rect(-halfW + x * cellW, 0f, lw, 1f, lc)
             for (y in 0..h) g.rect(0f, -1f + y * cellH, halfW, lw, lc)
         }
-        // After a step [next] holds the generation before, so each cell can
-        // tell whether it was just born — drawn brighter — or just died,
-        // left as a faint ghost for one generation: the motion shows.
+        // Every cell that lived recently glows on as it fades — a glider
+        // drags a comet's tail, a blinker sits in a soft halo of itself, and
+        // the soup's churn shows as a smoulder rather than a strobe. A cell
+        // just born is drawn brighter.
         for (y in 0 until h) {
             val row = y * w
             val cy = -1f + (y + 0.5f) * cellH
             for (x in 0 until w) {
-                val now = cells[row + x].toInt() != 0
-                val was = generation > 0 && next[row + x].toInt() != 0
-                if (!now && !was) continue
+                val i = row + x
+                val now = cells[i].toInt() != 0
+                val hv = heat[i]
+                if (!now && hv < HEAT_MIN) continue
                 val cx = -halfW + (x + 0.5f) * cellW
                 // The ramp's darkest fifth left out: Ocean's navy end sat on
                 // the black background at a contrast the eye barely caught.
                 val base = palette.at(0.32f + 0.68f * (x + y).toFloat() / (w + h))
+                val was = generation > 0 && next[i].toInt() != 0
                 val c = when {
                     now && !was -> Palette.brighten(base, 0.3f)
                     now -> base
-                    else -> Palette.withAlpha(base, 0.22f)
+                    // Embers shift toward the cool end of the palette as they fade.
+                    else -> Palette.withAlpha(Palette.lerp(palette.at(0.12f), base, hv), 0.06f + 0.34f * hv)
                 }
                 if (squares) g.rect(cx, cy, hwC, hhC, c) else g.point(cx, cy, size, c)
             }
@@ -765,6 +773,9 @@ class GameOfLifeSim : Sim {
         private const val HISTORY = 20
         /** How far the ten-generation mean may move and still count as flat. */
         private const val SETTLED_DRIFT = 0.02f
+        /** Per generation, how much of a dead cell's glow remains. */
+        private const val HEAT_FADE = 0.82f
+        private const val HEAT_MIN = 0.04f
         fun def(): SimDef = SimDef(
             id = "life/game-of-life",
             title = "Game of Life",

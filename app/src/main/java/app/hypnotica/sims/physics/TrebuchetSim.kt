@@ -566,13 +566,18 @@ class TrebuchetSim : Sim {
             // way; only a very high shot (low gravity, a steep hand aim) is
             // followed upward instead. Pulling back to the whole range
             // shrank everything to specks, so the width follows the stone.
-            halfH = ((peak + 8.0) / 2).coerceIn(22.0, 60.0)
+            // The apex at about half height, under the map across the top:
+            // it was framed 4 m under the top edge, which is where the map
+            // is drawn, and the stone flew its whole arc hidden behind it.
+            halfH = ((peak + 3.0) / 1.5).coerceIn(22.0, 80.0)
             val halfW = halfH * hw
             // Led by the stone's own speed over the easing rate, so the
             // eased camera sits on the stone instead of trailing it by
             // ten metres.
             tx = min(sx + svx / rate + halfW * 0.3, wallX + 6)
-            ty = max(halfH - 3, sy + 5 - halfH)
+            // Led vertically too: a fast climb outran the eased camera and
+            // the stone left the top of the frame mid-flight.
+            ty = max(halfH - 3, sy + svy / rate - 0.45 * halfH)
         } else {
             // The finale: the whole castle, tower and flag, in frame.
             halfH = 17.0

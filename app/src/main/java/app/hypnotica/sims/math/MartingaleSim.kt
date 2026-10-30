@@ -14,6 +14,7 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * The martingale: bet on red, and after every loss double the bet, so the
@@ -39,6 +40,7 @@ class MartingaleSim : Sim {
     private var lastBust = -1
     private var bustGlow = 0f
     private var top = 200
+    private var startPile = 100
     private var elapsed = 0f
     private var doneAt = -1f
     private var payoffFrame = false
@@ -57,6 +59,7 @@ class MartingaleSim : Sim {
         histLen = 1; stride = 1
         bets = 0; standing = n; budget = 0f; lastBust = -1; bustGlow = 0f
         top = start * 2
+        startPile = start
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
 
@@ -126,22 +129,45 @@ class MartingaleSim : Sim {
         val hw = env.halfWidth * 0.92f
         val y0 = -0.85f; val y1 = 0.85f
         g.line(-hw, y0, hw, y0, 0.003f, Palette.TEXT_SECONDARY, 0.4f)
+        // Where everyone started: every line that ends ends below it.
+        val sy = yAt(startPile, y0, y1)
+        var dx = -hw
+        while (dx < hw) { g.line(dx, sy, min(hw, dx + 0.025f), sy, 0.0025f, Palette.TEXT_SECONDARY, 0.35f); dx += 0.05f }
         for (gm in 0 until n) {
             val c = pal.at(gm / max(1, n - 1).toFloat())
             val dead = bustAt[gm] >= 0
             val k = histLen
             for (i in 0 until k) {
-                px[i] = -hw + 2f * hw * i / (HIST - 1).toFloat()
-                py[i] = y0 + (y1 - y0) * hist[gm][i] / top.toFloat()
+                px[i] = xAt(i.toFloat(), hw)
+                py[i] = yAt(hist[gm][i], y0, y1)
             }
-            g.polyline(px, py, k, if (dead) 0.0025f else 0.004f, c, if (dead) 0.25f else 0.85f)
+            g.polyline(px, py, k, if (dead) 0.003f else 0.0045f, c, if (dead) 0.4f else 0.9f)
             if (!dead && k > 0) g.disc(px[k - 1], py[k - 1], 0.008f, Palette.brighten(c, 0.4f))
         }
+        // A red mark on the floor where each gambler went under, so the end
+        // reads as what it is — a row of busts — rather than an empty chart
+        // with the last line fading out.
+        for (gm in 0 until n) {
+            val b = bustAt[gm]
+            if (b < 0) continue
+            val x = xAt(min((HIST - 1).toFloat(), b.toFloat() / stride), hw)
+            g.disc(x, y0, 0.011f, DANGER, 0.85f)
+            g.line(x, y0, x, y0 + 0.03f, 0.003f, DANGER, 0.6f)
+        }
         if (lastBust >= 0 && bustGlow > 0f) {
-            val x = -hw + 2f * hw * (histLen - 1) / (HIST - 1).toFloat()
+            val x = xAt((histLen - 1).toFloat(), hw)
             g.glow(x, y0, 0.2f, DANGER, bustGlow * 0.6f)
         }
     }
+
+    /**
+     * Both axes on square-root scales. On straight ones the last gambler's
+     * long climb took the whole chart and every other line, and every bust,
+     * was crushed into a sliver at the bottom left by the end.
+     */
+    private fun xAt(i: Float, hw: Float): Float = -hw + 2f * hw * sqrt(i / (HIST - 1).toFloat())
+
+    private fun yAt(v: Int, y0: Float, y1: Float): Float = y0 + (y1 - y0) * sqrt(max(0, v).toFloat() / top.toFloat())
 
     override fun payoff(): Boolean = payoffFrame
 

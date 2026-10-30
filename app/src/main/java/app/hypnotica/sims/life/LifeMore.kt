@@ -11,6 +11,7 @@ object LifeMore {
         TruchetSim.def(),
         KaleidoscopeSim.def(),
         MengerSpongeSim.def(),
-        FirefliesSim.def()
+        FirefliesSim.def(),
+        WatorSim.def()
     )
 }

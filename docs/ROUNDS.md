@@ -25,6 +25,20 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Quality loops Q1–Q2 — every sim looked at again
+
+- No run ends before its moment lands: a run holds at least four seconds
+  after its payoff. Spirograph and circle packing rest on the finished
+  figure; each sort opens on its own view with a line about what it does.
+- Fish and sharks (Wa-Tor): a sea of individuals that makes the
+  predator–prey waves by itself. Endless.
+- Game of Life leaves fading embers where cells lived, so gliders drag tails.
+- Reaction and diffusion runs fast enough to become coral before its
+  payoff, and its growing fronts glow.
+- Double or nothing: square-root axes so the busts are not crushed into a
+  corner, a red mark where each gambler went under, the starting pile drawn.
+- Trebuchet: the camera frames the arc under the map instead of behind it.
+
 ### Polish loops 6–10 — three bodies, probability, music
 
 - Three stars (3-4-5, figure eight, butterfly, moth, thrown together), The

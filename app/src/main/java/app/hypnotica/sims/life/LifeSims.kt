@@ -1429,8 +1429,8 @@ class ReactionDiffusionSim : Sim {
 
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
-        carry += abs(dt) * env.params.f("rate", 42f)
-        var passes = min(carry.toInt(), 6)
+        carry += abs(dt) * env.params.f("rate", 110f)
+        var passes = min(carry.toInt(), 8)
         carry -= passes
         val dA = 1.0f
         val dB = 0.5f
@@ -1454,7 +1454,7 @@ class ReactionDiffusionSim : Sim {
             pulseCarry -= 1f
             env.emit(EventKind.STEP, mean.coerceIn(0f, 1f), 0f, 0.15f + 0.25f * growth)
         }
-        if (!aged && generations > 900) {
+        if (!aged && generations > PAYOFF_GENERATIONS) {
             aged = true
             payoffFrame = true
         }
@@ -1511,13 +1511,24 @@ class ReactionDiffusionSim : Sim {
             val t = 0.06f + 0.94f * k / (RD_BANDS - 1f)
             palette.at(if (flip) 1f - t else t)
         }
+        // Where the second chemical is still advancing the cell is lit a
+        // little: growing fronts glow and the finished interior sits calm,
+        // so the eye goes to where the pattern is being made (the colour
+        // trick of Munafo's xmorphia maps, which shade by the rate of change
+        // as well as the value). After a step b2 holds the step before.
+        val lit = IntArray(RD_BANDS) { Palette.brighten(shades[it], 0.35f) }
+        val live = generations > 0
         for (sy in -rowsUp until rowsUp) {
             val y = ((sy + h * 64) % h)
             val row = y * w
             g.cellRow(x0, (sy + 0.5f) * size, size, 2 * cols) { sx ->
-                val v = b[row + ((sx - cols + w * 64) % w)]
+                val i = row + ((sx - cols + w * 64) % w)
+                val v = b[i]
                 if (v < 0.06f) 0
-                else shades[((v - 0.06f) * (1f / 0.34f) * (RD_BANDS - 1)).toInt().coerceIn(0, RD_BANDS - 1)]
+                else {
+                    val k = ((v - 0.06f) * (1f / 0.34f) * (RD_BANDS - 1)).toInt().coerceIn(0, RD_BANDS - 1)
+                    if (live && v - b2[i] > RD_GROWING) lit[k] else shades[k]
+                }
             }
         }
     }
@@ -1529,6 +1540,10 @@ class ReactionDiffusionSim : Sim {
 
     companion object {
         const val RD_BANDS = 28
+        /** Rise per step above which a cell counts as a growing front. */
+        const val RD_GROWING = 0.0015f
+        /** The coral has filled out and is still reshaping by about here. */
+        const val PAYOFF_GENERATIONS = 2600
         fun def(): SimDef = SimDef(
             id = "life/reaction-diffusion",
             title = "Reaction and diffusion",
@@ -1544,7 +1559,7 @@ class ReactionDiffusionSim : Sim {
                 Param.int("width", "Columns", 32, 420, 150, card = Card.DATA),
                 Param.int("height", "Rows", 32, 600, 220, card = Card.DATA),
                 Param.int("seeds", "Starting blobs", 1, 200, 16, card = Card.DATA),
-                Param.float("rate", "Speed", 2f, 160f, 42f, card = Card.MOTION, logScale = true)
+                Param.float("rate", "Speed", 2f, 300f, 110f, card = Card.MOTION, logScale = true)
             ),
             create = { ReactionDiffusionSim() }
         )
