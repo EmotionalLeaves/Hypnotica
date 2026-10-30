@@ -101,7 +101,32 @@ data class Groove(
             bass = setOf(0, 6, 8, 14)
         )
 
-        val ALL = listOf(FOUR, HALF, BREAK, DRIFT, TRAP, DEMBOW, DNB, BOSSA)
+        /** Lo-fi: slow and lazy, the kick late in the bar, round ii–V–I–vi. */
+        val LOFI = Groove(
+            "Lo-fi", 78f, intArrayOf(2, 7, 0, 9),
+            kick = setOf(0, 7, 10), snare = setOf(4, 12), hat = setOf(0, 2, 4, 6, 8, 10, 12, 14),
+            bass = setOf(0, 7, 10)
+        )
+        /** Funk: a busy, syncopated kick and the sixteenths on the hat. */
+        val FUNK = Groove(
+            "Funk", 104f, intArrayOf(0, 0, 5, 7),
+            kick = setOf(0, 3, 10), snare = setOf(4, 12), hat = (0 until 16).toSet(),
+            bass = setOf(0, 3, 6, 10, 11, 14)
+        )
+        /** Reggae's one-drop: nothing on one, kick and snare together on three. */
+        val ONE_DROP = Groove(
+            "One drop", 76f, intArrayOf(0, 5, 0, 7),
+            kick = setOf(8), snare = setOf(8), hat = setOf(2, 6, 10, 14),
+            bass = setOf(0, 3, 6, 10)
+        )
+        /** Synthwave: four on the floor, an open minor loop, the hats on the off-beats. */
+        val SYNTHWAVE = Groove(
+            "Synthwave", 108f, MINOR,
+            kick = setOf(0, 4, 8, 12), snare = setOf(4, 12), hat = setOf(2, 6, 10, 14),
+            bass = setOf(0, 2, 4, 6, 8, 10, 12, 14)
+        )
+
+        val ALL = listOf(FOUR, HALF, BREAK, DRIFT, TRAP, DEMBOW, DNB, BOSSA, LOFI, FUNK, ONE_DROP, SYNTHWAVE)
         val NAMES = listOf("Off") + ALL.map { it.name }
 
         fun byName(name: String): Groove? = ALL.firstOrNull { it.name == name }

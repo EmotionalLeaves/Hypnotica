@@ -52,7 +52,20 @@ class Synth(private val sampleRate: Int = 44100) {
         /** Below this the mix is silence, and the leveller holds still. */
         private const val SILENCE_POWER = 1e-7
         private const val KS_SIZE = 1024
-        private const val REVERB_SAMPLES = 14700 // ~0.33 s
+        private const val STEREO_SPREAD = 23
+        /** Freeverb's room: a tail of about a second and a half, the highs dying first. */
+        private const val COMB_FEEDBACK = 0.80f
+        private const val COMB_DAMP = 0.3f
+        private const val COMB_INPUT = 0.12f
+        /** Set so the room at a preset's own amount sits about where the old echo did. */
+        private const val WET_GAIN = 1.0f
+        private const val KEYS_TINE_SECONDS = 0.09f
+        private const val KICK_DROP_SECONDS = 0.035f
+        private const val KICK_SWEEP = 3.2f
+        private const val SNARE_SHELL_HZ = 185f
+        private const val SNARE_SHELL_SECONDS = 0.05f
+        /** About twelve cents: a slow, wide beating, not an out-of-tune one. */
+        private const val WARM_DETUNE = 1.007f
     }
 
     private class Voice {
@@ -84,6 +97,14 @@ class Synth(private val sampleRate: Int = 44100) {
          * of ramp removes it and is far too short to soften an attack.
          */
         var attackLeft = 0
+
+        /** The keys' tine and the kick's thump: a second envelope, faster than the note's. */
+        var modEnv = 0f
+        var modDecay = 0.999f
+        /** The warm voice's second, detuned oscillator. */
+        var phase2 = 0f
+        /** Low-pass state the hat subtracts, leaving the top. */
+        var hp = 0f
     }
 
     private val voices = Array(MAX_VOICES) { Voice() }
@@ -110,9 +131,25 @@ class Synth(private val sampleRate: Int = 44100) {
     @Volatile var reverbAmount: Float = 0.2f
     @Volatile var muted: Boolean = false
 
-    private val reverbL = FloatArray(REVERB_SAMPLES)
-    private val reverbR = FloatArray(REVERB_SAMPLES)
-    private var reverbIndex = 0
+    /**
+     * A small room: four damped comb filters in parallel and two all-passes
+     * after them, per side (Schroeder's design, as Freeverb tunes it), the
+     * right side's delays a little longer so the tail is wide. It replaced a
+     * single 0.33-second echo, which on a fast sim was a slapback of every
+     * note rather than a space around them.
+     */
+    private val combLen = intArrayOf(1116, 1188, 1277, 1356).map { (it * sampleRate / 44100f).toInt() }.toIntArray()
+    private val apLen = intArrayOf(556, 441).map { (it * sampleRate / 44100f).toInt() }.toIntArray()
+    private val combL = Array(4) { FloatArray(combLen[it]) }
+    private val combR = Array(4) { FloatArray(combLen[it] + STEREO_SPREAD) }
+    private val combIdxL = IntArray(4)
+    private val combIdxR = IntArray(4)
+    private val combLpL = FloatArray(4)
+    private val combLpR = FloatArray(4)
+    private val apL = Array(2) { FloatArray(apLen[it]) }
+    private val apR = Array(2) { FloatArray(apLen[it] + STEREO_SPREAD) }
+    private val apIdxL = IntArray(2)
+    private val apIdxR = IntArray(2)
 
     private val lock = Any()
 
@@ -230,8 +267,11 @@ class Synth(private val sampleRate: Int = 44100) {
         synchronized(lock) {
             for (v in voices) v.active = false
         }
-        java.util.Arrays.fill(reverbL, 0f)
-        java.util.Arrays.fill(reverbR, 0f)
+        for (c in combL) java.util.Arrays.fill(c, 0f)
+        for (c in combR) java.util.Arrays.fill(c, 0f)
+        for (a in apL) java.util.Arrays.fill(a, 0f)
+        for (a in apR) java.util.Arrays.fill(a, 0f)
+        combLpL.fill(0f); combLpR.fill(0f)
     }
 
     /**
@@ -296,6 +336,25 @@ class Synth(private val sampleRate: Int = 44100) {
                 for (i in 0 until len) buf[i] /= peak
             }
             v.clickLp = 0f
+            v.phase2 = 0.25f
+            v.hp = 0f
+            when (type) {
+                VoiceType.KEYS -> {
+                    v.modInc = f / sampleRate
+                    v.modEnv = 1f
+                    v.modDecay = exp(-1f / (KEYS_TINE_SECONDS * sampleRate))
+                }
+                VoiceType.KICK -> {
+                    v.modEnv = 1f
+                    v.modDecay = exp(-1f / (KICK_DROP_SECONDS * sampleRate))
+                }
+                VoiceType.SNARE -> {
+                    v.modInc = SNARE_SHELL_HZ / sampleRate
+                    v.modEnv = 1f
+                    v.modDecay = exp(-1f / (SNARE_SHELL_SECONDS * sampleRate))
+                }
+                else -> v.modEnv = 0f
+            }
         }
     }
 
@@ -327,6 +386,24 @@ class Synth(private val sampleRate: Int = 44100) {
      */
     fun renderOffline(out: FloatArray, frames: Int) = render(out, frames)
 
+    private fun comb(buf: FloatArray, idx: IntArray, lp: FloatArray, c: Int, input: Float): Float {
+        val i = idx[c]
+        val y = buf[i]
+        lp[c] = y * (1f - COMB_DAMP) + lp[c] * COMB_DAMP
+        buf[i] = input + lp[c] * COMB_FEEDBACK
+        idx[c] = if (i + 1 >= buf.size) 0 else i + 1
+        return y
+    }
+
+    private fun allpass(buf: FloatArray, idx: IntArray, k: Int, input: Float): Float {
+        val i = idx[k]
+        val b = buf[i]
+        val y = b - input
+        buf[i] = input + b * 0.5f
+        idx[k] = if (i + 1 >= buf.size) 0 else i + 1
+        return y
+    }
+
     /** A voice whose envelope is no longer a number can never decay away. */
     private fun Voice.isSane(): Boolean = amp.isFinite() && phaseInc.isFinite()
 
@@ -343,23 +420,26 @@ class Synth(private val sampleRate: Int = 44100) {
                 renderVoice(v, out, frames, vol)
             }
         }
-        // Cheap single-tap reverb; enough to let a payoff land.
+        // The room: each side's dry signal into the combs, their sum through
+        // the all-passes, mixed back under the dry by [reverbAmount].
         val rv = reverbAmount.coerceIn(0f, 0.7f)
         if (rv > 0.001f) {
-            var ri = reverbIndex
+            val wet = rv * WET_GAIN
             for (i in 0 until frames) {
-                val l = out[i * 2]
-                val r = out[i * 2 + 1]
-                val tl = reverbL[ri]
-                val tr = reverbR[ri]
-                out[i * 2] = l + tl * rv
-                out[i * 2 + 1] = r + tr * rv
-                reverbL[ri] = l + tl * rv * 0.45f
-                reverbR[ri] = r + tr * rv * 0.45f
-                ri++
-                if (ri >= REVERB_SAMPLES) ri = 0
+                val inL = out[i * 2] * COMB_INPUT
+                val inR = out[i * 2 + 1] * COMB_INPUT
+                var sl = 0f; var sr = 0f
+                for (c in 0 until 4) {
+                    sl += comb(combL[c], combIdxL, combLpL, c, inL)
+                    sr += comb(combR[c], combIdxR, combLpR, c, inR)
+                }
+                for (k in 0 until 2) {
+                    sl = allpass(apL[k], apIdxL, k, sl)
+                    sr = allpass(apR[k], apIdxR, k, sr)
+                }
+                out[i * 2] += sl * wet
+                out[i * 2 + 1] += sr * wet
             }
-            reverbIndex = ri
         }
         // One-pole low-pass on the mix.
         //
@@ -490,6 +570,49 @@ class Synth(private val sampleRate: Int = 44100) {
                 VoiceType.NOISE -> {
                     seed = seed * 1103515245 + 12345
                     ((seed shr 16) and 0x7FFF) / 16384f - 1f
+                }
+                VoiceType.KEYS -> {
+                    // Frequency modulation at the note's own pitch, the index
+                    // falling away fast: a struck tine, then a round tone, and
+                    // a quiet octave on top for the bark.
+                    val m = sin(modPhase * 2f * PI.toFloat())
+                    modPhase += v.modInc
+                    val idx = 1.4f * v.modEnv
+                    v.modEnv *= v.modDecay
+                    sin((phase + m * idx * 0.25f) * 2f * PI.toFloat()) * 0.85f +
+                        sin(phase * 4f * PI.toFloat()) * 0.12f * v.modEnv
+                }
+                VoiceType.WARM -> {
+                    val p1 = phase % 1f
+                    val p2 = v.phase2 % 1f
+                    v.phase2 += inc * WARM_DETUNE
+                    if (v.phase2 > 1e6f) v.phase2 -= 1e6f
+                    val t1 = if (p1 < 0.5f) 4f * p1 - 1f else 3f - 4f * p1
+                    val t2 = if (p2 < 0.5f) 4f * p2 - 1f else 3f - 4f * p2
+                    (t1 + t2) * 0.5f
+                }
+                VoiceType.KICK -> {
+                    // The pitch starts a couple of octaves up and drops to the
+                    // note: that drop is the thump.
+                    val sweep = 1f + KICK_SWEEP * v.modEnv
+                    v.modEnv *= v.modDecay
+                    phase += inc * (sweep - 1f)
+                    sin(phase * 2f * PI.toFloat())
+                }
+                VoiceType.SNARE -> {
+                    seed = seed * 1103515245 + 12345
+                    val n = ((seed shr 16) and 0x7FFF) / 16384f - 1f
+                    v.hp += (n - v.hp) * 0.45f
+                    val shell = sin(modPhase * 2f * PI.toFloat()) * v.modEnv
+                    modPhase += v.modInc
+                    v.modEnv *= v.modDecay
+                    v.hp * 0.75f + shell * 0.6f
+                }
+                VoiceType.HAT -> {
+                    seed = seed * 1103515245 + 12345
+                    val n = ((seed shr 16) and 0x7FFF) / 16384f - 1f
+                    v.hp += (n - v.hp) * 0.35f
+                    (n - v.hp) * 1.4f
                 }
             }
             phase += inc

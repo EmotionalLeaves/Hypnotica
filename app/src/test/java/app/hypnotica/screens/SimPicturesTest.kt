@@ -49,7 +49,9 @@ class SimPicturesTest {
         val core = SimCore(def, 3L)
         core.setAspect(W.toFloat() / H)
         core.restart(3L)
-        val moments = floatArrayOf(0.15f, 0.55f, 0f)
+        // -Pmoments=a,b,c: three shares of the run to draw instead (0 = just after the payoff).
+        val moments = System.getProperty("moments")?.split(',')?.mapNotNull { it.trim().toFloatOrNull() }
+            ?.takeIf { it.size == 3 }?.toFloatArray() ?: floatArrayOf(0.15f, 0.55f, 0f)
         var done = 0
         for ((k, m) in moments.withIndex()) {
             // Counted in frames, not read off the sim's clock: a run that

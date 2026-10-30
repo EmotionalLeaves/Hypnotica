@@ -109,6 +109,7 @@ android {
                 it.systemProperty("roborazzi.test.record", "true")
                 // -Psims=id,id draws only those in SimPicturesTest.
                 (project.findProperty("sims") as String?)?.let { ids -> it.systemProperty("sims", ids) }
+                (project.findProperty("moments") as String?)?.let { m -> it.systemProperty("moments", m) }
             } else {
                 it.exclude("app/hypnotica/screens/**")
             }

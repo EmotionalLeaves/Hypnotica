@@ -51,6 +51,19 @@ class MandelbrotSim : Sim {
     /** The payoff fires once; without this the bell retriggers every step. */
     private var reached = false
 
+    /**
+     * The opening: the whole set, still, in the middle of the screen, before
+     * the dive. A run used to open already centred on the dive's target at a
+     * zoom where an upright phone showed half of the set — so the one shape
+     * everybody knows never appeared. Now it is framed whole, held for a
+     * breath, and the dive drifts from the set's middle onto its target as
+     * the zoom gathers pace.
+     */
+    private var intro = false
+    private var introZoom = 0.6
+    private var introOffX = 0.0
+    private var introOffY = 0.0
+
     private var cols = 0
     private var rows = 0
     /**
@@ -165,12 +178,21 @@ class MandelbrotSim : Sim {
         muBase = 0f
         maxIter = p.i("detail", 220).coerceIn(40, 1200)
         iterNow = maxIter
-        zoomRate = p.f("zoom", 0.22f)
+        zoomRate = p.f("zoom", 0.27f)
         doublings = 0
         logBase = 0.0
         lastLowCount = 0f
         diveIndex = p.choiceIndex("target").coerceIn(0, 3)
-        startDive(diveIndex, 0.6)
+        // Wide enough for the whole set, tip of the antenna to the cardioid's
+        // back, across an upright screen; never closer than the old start.
+        introZoom = min(0.6, 1.4 * env.halfWidth / SET_HALF_SPAN)
+        startDive(diveIndex, introZoom)
+        val t0 = CATALOGUE[diveIndex]
+        introOffX = SET_CX - t0.re.toDouble()
+        introOffY = -t0.im.toDouble()
+        offX = introOffX; offY = introOffY
+        imgOffX = offX; imgOffY = offY
+        intro = true
         elapsed = 0f
         payoffFrame = false
         lastSoundIter = 0
@@ -186,6 +208,7 @@ class MandelbrotSim : Sim {
 
     /** Aim at catalogue entry [i] from zoom [z0]: its point, sharpened enough for the start of the dive. */
     private fun startDive(i: Int, z0: Double) {
+        intro = false
         val t = CATALOGUE[i]
         val bits = bitsFor(z0 * 1e9)
         val j = RefJob(Fix.parse(t.re, bits), Fix.parse(t.im, bits), bits, t.k, t.p, null)
@@ -214,8 +237,20 @@ class MandelbrotSim : Sim {
         // picture dissolves into noise; it is sharpened well ahead (below), so
         // this hold is only a net under a job that has fallen behind.
         stalled = zoom >= PERTURB_ZOOM && r.bits < bitsNeeded(targetZoom * exp((zoomRate * 0.5f).toDouble()))
-        if (!stalled) targetZoom *= exp((zoomRate * dt).toDouble())
+        // Held still at first, then easing into the dive.
+        val ramp = if (intro) ((elapsed - INTRO_HOLD) / INTRO_RAMP).coerceIn(0f, 1f).let { it * it * (3f - 2f * it) } else 1f
+        if (!stalled) targetZoom *= exp((zoomRate * dt * ramp).toDouble())
         zoom += (targetZoom - zoom) * min(1.0, (dt * 6f).toDouble())
+        if (intro) {
+            if (gliding || seek != null) intro = false
+            else {
+                // From the set's middle onto the target, faster than the zoom
+                // closes in, so the target never leaves the frame.
+                val k = Math.pow(introZoom / zoom, 1.5)
+                offX = introOffX * k; offY = introOffY * k
+                if (k < 1e-9) { offX = 0.0; offY = 0.0; intro = false }
+            }
+        }
 
         if (gliding) {
             glideT = min(1f, glideT + abs(dt) / GLIDE_SECONDS)
@@ -274,6 +309,7 @@ class MandelbrotSim : Sim {
         val r = ref!!
         val s = seek
         if (s != null) {
+            intro = false
             s.work(SEEK_ITERS_PER_STEP)
             if (s.finished) {
                 seek = null
@@ -1924,6 +1960,13 @@ class MandelbrotSim : Sim {
          */
         const val TARGET_DEPTH = 1000.0
 
+        /** The middle of the set, and half its width with a margin, for the opening frame. */
+        const val SET_CX = -0.75
+        const val SET_HALF_SPAN = 1.6
+        /** Seconds the whole set is held before the dive, and the seconds it takes to get going. */
+        const val INTRO_HOLD = 1.6f
+        const val INTRO_RAMP = 2f
+
         /** Full images a second. The zoom still reads as smooth below this. */
         const val REFRESH_HZ = 8f
 
@@ -1945,7 +1988,7 @@ class MandelbrotSim : Sim {
                 ),
                 Param.int("resolution", "Resolution", 40, 460, 240, card = Card.LOOK),
                 Param.int("detail", "Detail", 40, 1200, 220, card = Card.LOOK, logScale = true),
-                Param.float("zoom", "Zoom speed", 0.02f, 1.2f, 0.22f, card = Card.MOTION)
+                Param.float("zoom", "Zoom speed", 0.02f, 1.2f, 0.27f, card = Card.MOTION)
             ),
             create = { MandelbrotSim() }
         )

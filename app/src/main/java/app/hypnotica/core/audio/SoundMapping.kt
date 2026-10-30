@@ -238,11 +238,12 @@ class SoundMapping(private val synth: Synth) {
         val level = activity * preset.gain * GROOVE_LEVEL
         if (level < 0.002f || preset.silent) return
         if (inBar in g.kick) {
-            synth.note(KICK_HZ, 0.55f * level, 0f, VoiceType.SINE, 0.11f)
+            synth.note(KICK_HZ, 0.6f * level, 0f, VoiceType.KICK, 0.16f)
             kicks++
         }
-        if (inBar in g.snare) synth.note(SNARE_HZ, 0.22f * level, 0f, VoiceType.NOISE, 0.07f)
-        if (inBar in g.hat) synth.note(HAT_HZ, 0.08f * level, if (inBar % 4 == 2) 0.3f else -0.3f, VoiceType.NOISE, 0.022f)
+        if (inBar in g.snare) synth.note(SNARE_HZ, 0.26f * level, 0f, VoiceType.SNARE, 0.09f)
+        // Hats a touch louder on the off-beat eighths, as a drummer plays them.
+        if (inBar in g.hat) synth.note(HAT_HZ, (if (inBar % 4 == 2) 0.1f else 0.07f) * level, if (inBar % 4 == 2) 0.3f else -0.3f, VoiceType.HAT, 0.03f)
         if (inBar in g.bass) {
             var hz = baseHz * 0.5f * Math.pow(2.0, root / 12.0).toFloat()
             while (hz > BASS_CEILING) hz *= 0.5f
@@ -548,10 +549,52 @@ data class Song(val name: String, val notes: IntArray) {
             intArrayOf(81, 79, 81, 79, 77, 76, 74, 73, 74, 69, 67, 69, 67, 65, 64, 62, 61, 62)
         )
 
+        // Traditional, eighteenth century.
+        val FRERE_JACQUES = Song(
+            "Frère Jacques",
+            intArrayOf(60, 62, 64, 60, 60, 62, 64, 60, 64, 65, 67, 64, 65, 67, 67, 69, 67, 65, 64, 60, 67, 69, 67, 65, 64, 60, 60, 55, 60, 60, 55, 60)
+        )
+        // Grieg, Peer Gynt, 1875.
+        val MORNING = Song(
+            "Morning Mood",
+            intArrayOf(67, 64, 62, 60, 62, 64, 67, 64, 62, 60, 62, 64, 62, 64, 67, 64, 67, 69, 64, 69, 67, 64, 62, 60)
+        )
+        // Offenbach, the galop from Orpheus in the Underworld, 1858.
+        val CAN_CAN = Song(
+            "Can-can",
+            intArrayOf(60, 62, 65, 64, 62, 67, 67, 67, 69, 64, 65, 62, 62, 62, 65, 64, 62, 60, 72, 71, 69, 67, 65, 64, 62)
+        )
+        // Rossini, the William Tell overture's finale, 1829.
+        val WILLIAM_TELL = Song(
+            "William Tell",
+            intArrayOf(67, 67, 67, 67, 67, 67, 67, 67, 72, 74, 76, 67, 67, 67, 67, 67, 67, 67, 72, 76, 74, 71, 67)
+        )
+        // Newton's hymn, 1779, to the tune it is always sung to.
+        val AMAZING_GRACE = Song(
+            "Amazing Grace",
+            intArrayOf(55, 60, 64, 60, 64, 62, 60, 57, 55, 55, 60, 64, 60, 64, 62, 67, 64, 67, 64, 67, 64, 60, 55, 57, 60, 57, 55, 55, 60, 64, 60, 64, 62, 60)
+        )
+        // Burns, 1788.
+        val AULD_LANG_SYNE = Song(
+            "Auld Lang Syne",
+            intArrayOf(55, 60, 60, 60, 64, 62, 60, 62, 64, 60, 60, 64, 67, 69, 69, 67, 64, 64, 60, 62, 60, 62, 64, 60, 57, 57, 55, 60)
+        )
+        // Strauss II, 1866.
+        val BLUE_DANUBE = Song(
+            "Blue Danube",
+            intArrayOf(60, 60, 64, 67, 67, 79, 79, 76, 76, 60, 60, 64, 67, 67, 79, 79, 77, 77, 59, 59, 62, 69, 69, 81, 81, 77, 77, 59, 59, 62, 69, 69, 81, 81, 76, 76)
+        )
+        // Bizet, Carmen, 1875: the Habanera's slinking chromatic fall.
+        val HABANERA = Song(
+            "Habanera",
+            intArrayOf(74, 73, 72, 71, 70, 69, 69, 69, 68, 67, 66, 65, 64, 62)
+        )
+
         val TUNES = listOf(
             ODE_TO_JOY, TWINKLE, FUR_ELISE, KOROBEINIKI, GREENSLEEVES, CANON,
             MOUNTAIN_KING, TURKISH_MARCH, ENTERTAINER, JINGLE_BELLS,
-            MINUET, LULLABY, BIRTHDAY, TOCCATA
+            MINUET, LULLABY, BIRTHDAY, TOCCATA,
+            FRERE_JACQUES, MORNING, CAN_CAN, WILLIAM_TELL, AMAZING_GRACE, AULD_LANG_SYNE, BLUE_DANUBE, HABANERA
         )
 
         val ALL = listOf(NONE, ASCENDING, ARPEGGIO, PENTATONIC_WALK) + TUNES

@@ -43,7 +43,19 @@ class Scale(val name: String, val semitones: IntArray) {
 }
 
 /** Waveform of one voice. */
-enum class VoiceType { SINE, TRIANGLE, SQUARE, PLUCK, BELL, CLICK, NOISE }
+enum class VoiceType {
+    SINE, TRIANGLE, SQUARE, PLUCK, BELL, CLICK, NOISE,
+    /** An electric piano: a sine whose bright tine of an attack fades to a round tone. */
+    KEYS,
+    /** Two triangles a few cents apart, beating slowly: a soft, wide synth. */
+    WARM,
+    /** A kick drum: a sine that drops from a thump to its pitch in a few dozen milliseconds. */
+    KICK,
+    /** A snare: a short tone for the shell under a burst of noise for the wires. */
+    SNARE,
+    /** A hi-hat: noise with its low end taken out, so it ticks rather than hisses. */
+    HAT
+}
 
 /** A ready-made mapping from events to a sound character. */
 data class SoundPreset(
@@ -72,12 +84,16 @@ data class SoundPreset(
         val EIGHT_BIT = SoundPreset("8-bit", VoiceType.SQUARE, "Major pentatonic", 220f, 3f, 0.12f, 0.0f)
         val TICKS = SoundPreset("Ticks", VoiceType.CLICK, "Chromatic", 440f, 2f, 0.05f, 0.0f, gain = 3f)
         val SILENT = SoundPreset("Silent + haptics", VoiceType.SINE, "Minor pentatonic", 220f, 2f, 0.1f, 0f, silent = true)
+        val KEYS = SoundPreset("Electric piano", VoiceType.KEYS, "Major pentatonic", 196f, 3f, 0.9f, 0.3f, gain = 0.45f)
+        val KALIMBA = SoundPreset("Kalimba", VoiceType.PLUCK, "Major pentatonic", 392f, 2.5f, 0.3f, 0.25f, gain = 1f)
+        val SOFT_SYNTH = SoundPreset("Soft synth", VoiceType.WARM, "Dorian", 174.6f, 2.5f, 0.5f, 0.35f, gain = 0.7f)
+        val GLASS = SoundPreset("Glass", VoiceType.BELL, "Major", 349.2f, 2f, 0.9f, 0.4f, gain = 0.32f)
 
-        val ALL = listOf(MUSIC_BOX, CLASSIC, MARIMBA, AMBIENT, EIGHT_BIT, TICKS, SILENT)
+        val ALL = listOf(MUSIC_BOX, CLASSIC, MARIMBA, AMBIENT, EIGHT_BIT, KEYS, KALIMBA, SOFT_SYNTH, GLASS, TICKS, SILENT)
         val NAMES: List<String> = ALL.map { it.name }
 
         /** The musical ones, for a remix to choose among: never silence or ticks. */
-        val MUSICAL: List<String> = listOf(MUSIC_BOX, MARIMBA, AMBIENT, EIGHT_BIT).map { it.name }
+        val MUSICAL: List<String> = listOf(MUSIC_BOX, MARIMBA, AMBIENT, EIGHT_BIT, KEYS, KALIMBA, SOFT_SYNTH, GLASS).map { it.name }
 
         fun byName(n: String): SoundPreset = ALL.firstOrNull { it.name == n } ?: EIGHT_BIT
         fun byIndex(i: Int): SoundPreset = ALL[i.coerceIn(0, ALL.size - 1)]
