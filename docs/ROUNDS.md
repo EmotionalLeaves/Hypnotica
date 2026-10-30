@@ -25,6 +25,19 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Polish loops 6–10 — three bodies, probability, music
+
+- Three stars (3-4-5, figure eight, butterfly, moth, thrown together), The
+  sixteenth digit and Planets round two suns, on a shared adaptive RK4
+  three-body integrator checked against the Pythagorean problem's known ending.
+- Monty Hall, Buffon's needle and A hundred prisoners: run it a thousand
+  times and watch the rate settle on the answer.
+- Music: a Schroeder room for the reverb, a real kit (pitch-dropping kick,
+  shelled snare, high-passed hats), a chord under each bar, two new voices,
+  four new presets, four new grooves, eight more tunes.
+- Mandelbrot opens on the whole set before diving; the L-system fills in from
+  the start.
+
 ### Polish loops 1–5 — discovery, eight new sims, pictures of the sims
 
 - The feed deals a fresh order each launch: unopened sims and favourites drawn

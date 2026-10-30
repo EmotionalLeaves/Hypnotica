@@ -91,6 +91,20 @@ Each should pay off on its own, sound on every event, and fit upright.
 - [ ] Lissajous table — every curve closes on the same instant
 - [ ] Bubble wrap — bubbles swell then pop; tapping one pops it
 - [ ] Fireflies — patches of flashing grow into the whole field at once
+- [ ] Three stars — on 3, 4, 5 the lightest (gold) is thrown out; Figure eight, Butterfly and Moth each close one loop
+- [ ] The sixteenth digit — the hollow copy sits exactly under the original until the gauge fills, then they part
+- [ ] Planets round two suns — survivors end up inside the dashed ring round the big star, or outside the big ring
+- [ ] Monty Hall — sticking settles near a third, switching near two thirds
+- [ ] Buffon's needle — the estimate settles onto the dashed π line
+- [ ] A hundred prisoners — the win rate settles near 31%
+- [ ] Mandelbrot — opens on the whole set, holds still, then dives
+
+## Music
+
+- [ ] The new sounds (Electric piano, Kalimba, Soft synth, Glass) each sit at about the same loudness as 8-bit
+- [ ] The new beats (Lo-fi, Funk, One drop, Synthwave) keep time with the sim
+- [ ] The kick thumps rather than clicks; a soft chord sits under each bar
+- [ ] The reverb sounds like a room around the notes, not an echo of them
 
 ## TickTock
 
