@@ -14,6 +14,8 @@ object MathMore {
         LissajousTableSim.def(),
         MontyHallSim.def(),
         BuffonNeedleSim.def(),
-        PrisonersSim.def()
+        PrisonersSim.def(),
+        SecretarySim.def(),
+        BertrandSim.def()
     )
 }
