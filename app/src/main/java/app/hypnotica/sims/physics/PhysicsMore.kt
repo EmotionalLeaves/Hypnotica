@@ -17,6 +17,9 @@ object PhysicsMore {
         BubbleWrapSim.def(),
         ThreeStarsSim.def(),
         TwinStarsSim.def(),
-        SafeZonesSim.def()
+        SafeZonesSim.def(),
+        EllipsePoolSim.def(),
+        ChladniSim.def(),
+        GrowBounceSim.def()
     )
 }

@@ -25,6 +25,29 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Quality loop Q3 — two classics from the science channels
+
+- Elliptical pool, after Nils Berglund's most-watched billiard videos: two
+  thousand balls leave one focus and all meet at the other, forever. The
+  stadium shows the same start smearing into chaos; the circle folds caustics.
+- Singing sand: Chladni's plate. Grains thrown about by the shaking run to
+  the lines that stand still and draw the note, then the plate moves up to
+  the next note and the sand redraws itself.
+- Magnet domains (the Ising model): a hot speckle of tiny magnets
+  coarsens into marbled continents; the temperature slider takes it to
+  the critical point and past it.
+- Random coral (diffusion-limited aggregation): specks wander and stick
+  where they touch, and a forest of branches becomes a few great trees,
+  banded by when each part grew.
+- One more bounce: the shorts format done with straight physics — a ball
+  grows on every bounce and plays the next note of a tune, faster and
+  faster until there is no room left, leaving a string-art fan behind it.
+- Taps do something on all of them: break the pool again from where you
+  tap, bow the plate to its next note, flick the growing ball, drop a
+  grain of reef in the water, paint the magnet.
+- The Lissajous table fills a tall screen: the rows carry on to as many
+  multiples of the slowest wheel as fit, instead of a square in a band.
+
 ### Quality loops Q1–Q2 — every sim looked at again
 
 - No run ends before its moment lands: a run holds at least four seconds

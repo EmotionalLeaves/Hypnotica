@@ -32,6 +32,8 @@ import kotlin.math.sin
 class LissajousTableSim : Sim {
 
     private var n = 6
+    /** Rows: as many as the screen is tall enough for, never fewer than the columns. */
+    private var m = 6
     private var size = 0.12f
     private var left = 0f
     private var top = 0f
@@ -50,10 +52,14 @@ class LissajousTableSim : Sim {
         n = env.params.i("wheels", 6).coerceIn(2, MAX_N)
         // n wheels each way plus the header row and column, inside the screen.
         size = min(2f * env.halfWidth * 0.96f / (n + 1), 1.9f / (n + 1))
+        // A square table on a tall phone sat in a band across the middle with
+        // a third of the screen black above and below it. The rows carry on
+        // down — four, five, six… times the slowest — to fill it.
+        m = (1.9f / size - 1f).toInt().coerceIn(n, MAX_ROWS)
         left = -(n + 1) * size * 0.5f
-        top = (n + 1) * size * 0.5f
-        xs = Array(n * n) { FloatArray(POINTS + 1) }
-        ys = Array(n * n) { FloatArray(POINTS + 1) }
+        top = (m + 1) * size * 0.5f
+        xs = Array(n * m) { FloatArray(POINTS + 1) }
+        ys = Array(n * m) { FloatArray(POINTS + 1) }
         theta = 0f; lastTheta = 0f
         count = 0
         closed = false
@@ -69,7 +75,7 @@ class LissajousTableSim : Sim {
     private fun record() {
         if (count > POINTS) return
         val rad = size * RADIUS
-        for (r in 0 until n) for (c in 0 until n) {
+        for (r in 0 until m) for (c in 0 until n) {
             val k = r * n + c
             xs[k][count] = cx(c + 1) + rad * cos((c + 1) * theta - HALF_PI)
             ys[k][count] = cy(r + 1) - rad * sin((r + 1) * theta - HALF_PI)
@@ -86,12 +92,13 @@ class LissajousTableSim : Sim {
         lastTheta = theta
         theta += a * speed * TWO_PI / CYCLE_S
         // Each wheel sounds as it passes the top: wheel k does so k times a cycle.
-        for (k in 1..n) {
+        val most = maxOf(n, m)
+        for (k in 1..most) {
             val before = floor(lastTheta * k / TWO_PI)
             val after = floor(theta * k / TWO_PI)
             if (after > before) {
-                val note = (k - 1f) / (n - 1f).coerceAtLeast(1f)
-                env.emit(EventKind.HIT, 0.1f + 0.8f * note, (k / (n + 1f)) * 2f - 1f, 0.25f)
+                val note = (k - 1f) / (most - 1f).coerceAtLeast(1f)
+                env.emit(EventKind.HIT, 0.1f + 0.8f * note, (k / (most + 1f)) * 2f - 1f, if (k > n) 0.16f else 0.25f)
             }
         }
         // The curves are sampled evenly over the one cycle that draws them whole.
@@ -114,15 +121,18 @@ class LissajousTableSim : Sim {
         val pal = env.palette
         val rad = size * RADIUS
         // The wheels: across the top and down the side, each with its dot.
-        for (k in 1..n) {
-            val col = pal.at((k - 1f) / n)
+        for (k in 1..maxOf(n, m)) {
+            val col = pal.at((k - 1f) / maxOf(n, m))
             val ang = k * theta - HALF_PI
-            val tx = cx(k); val ty = cy(0)
-            g.ring(tx, ty, rad, size * 0.02f, col, 0f, 0f, 0.6f)
-            val dx = tx + rad * cos(ang); val dy = ty - rad * sin(ang)
-            g.disc(dx, dy, size * 0.06f, Palette.brighten(col, 0.4f))
-            // Its guide line, down through its column.
-            g.line(dx, dy, dx, cy(n) - size * 0.5f, 0.0025f, col, 0.18f)
+            if (k <= n) {
+                val tx = cx(k); val ty = cy(0)
+                g.ring(tx, ty, rad, size * 0.02f, col, 0f, 0f, 0.6f)
+                val dx = tx + rad * cos(ang); val dy = ty - rad * sin(ang)
+                g.disc(dx, dy, size * 0.06f, Palette.brighten(col, 0.4f))
+                // Its guide line, down through its column.
+                g.line(dx, dy, dx, cy(m) - size * 0.5f, 0.0025f, col, 0.18f)
+            }
+            if (k > m) continue
             val sx = cx(0); val sy = cy(k)
             val ang2 = k * theta - HALF_PI
             g.ring(sx, sy, rad, size * 0.02f, col, 0f, 0f, 0.6f)
@@ -131,9 +141,10 @@ class LissajousTableSim : Sim {
             g.line(ex, ey, cx(n) + size * 0.5f, ey, 0.0025f, col, 0.18f)
         }
         // The table: each curve in the blend of its two wheels' colours.
-        for (r in 0 until n) for (c in 0 until n) {
+        val span = maxOf(n, m).toFloat()
+        for (r in 0 until m) for (c in 0 until n) {
             val k = r * n + c
-            val col = Palette.lerp(pal.at(c.toFloat() / n), pal.at(r.toFloat() / n), 0.5f)
+            val col = Palette.lerp(pal.at(c / span), pal.at(r / span), 0.5f)
             g.polyline(xs[k], ys[k], min(count, POINTS + 1), size * 0.022f, col, 0.9f)
             run {
                 val px = cx(c + 1) + rad * cos((c + 1) * theta - HALF_PI)
@@ -141,7 +152,7 @@ class LissajousTableSim : Sim {
                 g.disc(px, py, size * 0.045f, Palette.TEXT_PRIMARY)
             }
         }
-        if (closeGlow > 0f) g.glow(cx(n / 2 + 1), cy(n / 2 + 1), size * n * 0.8f, Palette.TEXT_PRIMARY, closeGlow * 0.3f)
+        if (closeGlow > 0f) g.glow(cx(n / 2 + 1), cy(m / 2 + 1), size * m * 0.6f, Palette.TEXT_PRIMARY, closeGlow * 0.3f)
     }
 
     override fun payoff(): Boolean = payoffFrame
@@ -151,11 +162,12 @@ class LissajousTableSim : Sim {
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "turns of the slowest" to String.format(java.util.Locale.US, "%.2f", (theta / TWO_PI).coerceAtMost(1f)),
-        "curves" to "${n * n}"
+        "curves" to "${n * m}"
     )
 
     companion object {
         const val MAX_N = 9
+        const val MAX_ROWS = 13
         const val POINTS = 360
         const val RADIUS = 0.4f
         const val CYCLE_S = 14f
