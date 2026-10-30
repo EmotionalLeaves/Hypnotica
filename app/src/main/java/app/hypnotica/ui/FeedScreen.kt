@@ -122,6 +122,17 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             val roll = (((state.feedVisits + 1L) * 2654435761L xor order[index].id.hashCode().toLong()) ushr 8 and 0xFF).toInt()
             state.engine.kaleido = if (roll < 40) (if (roll < 20) 6 else 4) else 1
             state.engine.spin = if (roll in 40 until 80) (if (roll % 2 == 0) SPIN else -SPIN) else 0f
+            // Now and then — about one visit in twelve, never in the first
+            // few — a rare run: gold, folded six ways and turning, and
+            // tagged. A reward you can't schedule is the one you keep
+            // swiping for.
+            val rare = state.feedVisits >= 3 &&
+                ((((state.feedVisits + 7L) * -7046029254386353131L) xor order[index].id.hashCode().toLong()) ushr 40 and 0xFF) < RARE_IN_256
+            if (rare) {
+                state.engine.kaleido = 6
+                state.engine.spin = SPIN
+            }
+            state.rollRare(rare)
         }
         onDispose { }
     }
@@ -369,7 +380,8 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     Column {
                         // Never opened on this phone before: said, quietly, so a
                         // swipe that turns up something new feels like a find.
-                        if (state.currentIsNew) NewTag(Modifier.padding(bottom = 8.dp))
+                        if (state.rareRun) RareTag(Modifier.padding(bottom = 8.dp))
+                        else if (state.currentIsNew) NewTag(Modifier.padding(bottom = 8.dp))
                         Text(
                             state.currentDef.title,
                             color = Tokens.TextPrimary,
@@ -472,7 +484,7 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         val nextDef = order[(index + 1) % order.size]
         UpNext(
             visible = quiet && paid,
-            title = nextDef.title,
+            next = nextDef,
             isNew = nextDef.id !in state.seen.value,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -534,6 +546,9 @@ internal const val SWIPE_DP = 56f
 /** Or a flick this fast, over at least [MIN_FLICK_DP]. */
 internal const val FLICK_DP_PER_S = 800f
 internal const val MIN_FLICK_DP = 12f
+
+/** A rare run's chance, out of 256 visits. */
+private const val RARE_IN_256 = 21
 
 /** A remixed sim's slow turn, radians a second. */
 private const val SPIN = 0.12f

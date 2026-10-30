@@ -152,6 +152,15 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_GUESS_BEST, 0)
         set(value) = sp.edit().putInt(KEY_GUESS_BEST, value).apply()
 
+    /** The last day (epoch day) the app was opened, and how many days running it has been. */
+    var lastOpenDay: Long
+        get() = sp.getLong(KEY_LAST_DAY, 0L)
+        set(value) = sp.edit().putLong(KEY_LAST_DAY, value).apply()
+
+    var dayStreak: Int
+        get() = sp.getInt(KEY_DAY_STREAK, 0)
+        set(value) = sp.edit().putInt(KEY_DAY_STREAK, value).apply()
+
     var mutedFormats: Set<String>
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
@@ -201,6 +210,8 @@ class Prefs(context: Context) {
         const val KEY_GESTURE_TIPS = "gesture_tips_left"
         const val KEY_GUESS_STREAK = "guess_streak"
         const val KEY_GUESS_BEST = "guess_best"
+        const val KEY_LAST_DAY = "last_open_day"
+        const val KEY_DAY_STREAK = "day_streak"
         const val KEY_SEEN = "seen_sims"
         const val KEY_RECENT = "recent_sims"
         const val KEY_DAILY = "daily_pick"

@@ -122,9 +122,18 @@ class Palette(val name: String, private val stops: IntArray, private val wheel: 
             intArrayOf(0xFF440154.toInt(), 0xFF3B528B.toInt(), 0xFF21918C.toInt(), 0xFF5EC962.toInt(), 0xFFFDE725.toInt())
         )
 
-        val ALL = listOf(SPECTRUM, AURORA, EMBER, OCEAN, CANDY, MONO_GLOW, VIRIDIS)
+        /** The feed's rare runs wear it; it can be picked like any other. */
+        val GOLD = Palette(
+            "Gold",
+            intArrayOf(0xFFFFF3B0.toInt(), 0xFFFFD166.toInt(), 0xFFE9A23B.toInt(), 0xFFC27C0E.toInt(), 0xFF8A5A00.toInt())
+        )
+
+        val ALL = listOf(SPECTRUM, AURORA, EMBER, OCEAN, CANDY, MONO_GLOW, VIRIDIS, GOLD)
 
         val NAMES: List<String> = ALL.map { it.name }
+
+        /** What a remix may deal itself: everything but Gold, which is the rare runs' own. */
+        val REMIXABLE: List<String> = NAMES.filter { it != "Gold" }
 
         fun byName(name: String): Palette = ALL.firstOrNull { it.name == name } ?: SPECTRUM
 

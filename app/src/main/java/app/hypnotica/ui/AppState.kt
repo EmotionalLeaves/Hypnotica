@@ -283,6 +283,10 @@ class AppState(
         if (watchedThrough in WATCHED_MARKS) announce("$watchedThrough in a row, watched to the end")
     }
 
+    /** Days in a row the app has been opened. */
+    var dayStreak by mutableIntStateOf(0)
+        private set
+
     /** A line for the milestone banner. */
     fun announce(line: String) {
         milestone = line
@@ -757,6 +761,17 @@ class AppState(
             director.importTaste(p.taste)
             director.importMuted(p.mutedFormats)
             mutedFormats = director.mutedFormats.toSet()
+            // Days in a row the app has been opened, said on the first open of
+            // a day once it is a run of two or more.
+            val today = java.time.LocalDate.now().toEpochDay()
+            val last = p.lastOpenDay
+            if (last != today) {
+                val streak = if (last == today - 1) p.dayStreak + 1 else 1
+                p.dayStreak = streak
+                p.lastOpenDay = today
+                if (streak >= 2) announce("Day $streak in a row")
+            }
+            dayStreak = p.dayStreak
         }
         engine.onHalt = { why ->
             halted = why
@@ -1156,7 +1171,22 @@ class AppState(
      * its own or another, unless the person has chosen one. Met again, a sim
      * used to be the same picture every time.
      */
+    /** This feed visit rolled a rare run: gold, folded, turning, and tagged. */
+    var rareRun by mutableStateOf(false)
+        private set
+
+    fun rollRare(rare: Boolean) {
+        rareRun = rare
+        if (!rare) return
+        if (chosenPalette == null) {
+            paletteName = "Gold"
+            engine.setPalette("Gold")
+        }
+        tick(1)
+    }
+
     fun loadRemixed(def: SimDef) {
+        rareRun = false
         // The same sim again (the player's dice): keep what is loaded, so a
         // formula the person typed and their advanced settings survive — a
         // fresh load would put every one back to its default first.

@@ -294,7 +294,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
         val seed = (rng.nextInt().toLong() shl 20) xor rng.nextInt().toLong()
         val params = randomiseParams(def)
         val laws = if (def.usesLaws && rng.bool(0.35f)) lawsFor(def) else Laws.OUR_UNIVERSE
-        val palette = if (rng.bool(0.5f)) def.defaultPalette else Palette.NAMES[rng.int(0, Palette.NAMES.size)]
+        val palette = if (rng.bool(0.5f)) def.defaultPalette else Palette.REMIXABLE[rng.int(0, Palette.REMIXABLE.size)]
 
         return Clip(
             def = def,
@@ -332,7 +332,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
 
     /** A palette for a remix: the sim's own half the time, else any. */
     fun remixPalette(def: SimDef): String = synchronized(remixLock) {
-        if (remixRng.bool(0.5f)) def.defaultPalette else Palette.NAMES[remixRng.int(0, Palette.NAMES.size)]
+        if (remixRng.bool(0.5f)) def.defaultPalette else Palette.REMIXABLE[remixRng.int(0, Palette.REMIXABLE.size)]
     }
 
     /** A sound for a remix: the sim's own most of the time, else another. */

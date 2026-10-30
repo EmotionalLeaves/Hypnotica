@@ -836,7 +836,7 @@ fun TensionTag(visible: Boolean, text: String, pulsing: Boolean, modifier: Modif
  * put the phone down in between.
  */
 @Composable
-fun UpNext(visible: Boolean, title: String, isNew: Boolean, modifier: Modifier = Modifier, onGo: () -> Unit) {
+fun UpNext(visible: Boolean, next: app.hypnotica.core.sim.SimDef, isNew: Boolean, modifier: Modifier = Modifier, onGo: () -> Unit) {
     val shown by androidx.compose.animation.core.animateFloatAsState(
         if (visible) 1f else 0f, androidx.compose.animation.core.tween(if (visible) Tokens.Slow else Tokens.Fast), label = "upNext"
     )
@@ -846,15 +846,32 @@ fun UpNext(visible: Boolean, title: String, isNew: Boolean, modifier: Modifier =
             .graphicsLayer { alpha = shown; translationY = (1f - shown) * 40f }
             .background(Tokens.SurfaceStrong.copy(alpha = 0.88f), RoundedCornerShape(50))
             .clickable { onGo() }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // A glimpse of it, not just its name.
+        SimThumbnail(next, Modifier.size(40.dp).clip(RoundedCornerShape(50)))
+        Spacer(Modifier.width(8.dp))
         Text("Up next", color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.width(8.dp))
         if (isNew) { NewTag(); Spacer(Modifier.width(8.dp)) }
-        Text(title, color = Tokens.TextPrimary, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        Text(next.title, color = Tokens.TextPrimary, style = MaterialTheme.typography.titleSmall, maxLines = 1)
         Spacer(Modifier.width(8.dp))
         Text("↑", color = Tokens.AccentText, style = MaterialTheme.typography.titleSmall)
     }
 }
 
+/** A rare feed run's tag, in its gold. */
+@Composable
+fun RareTag(modifier: Modifier = Modifier) {
+    Text(
+        "✦ RARE RUN",
+        color = Color(0xFF2A1B00),
+        fontSize = 10.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+        letterSpacing = 1.sp,
+        modifier = modifier
+            .background(Color(0xFFFFD166), RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    )
+}

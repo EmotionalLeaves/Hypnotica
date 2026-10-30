@@ -25,6 +25,16 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Trap loop T2 — a reward you can't schedule
+
+- Rare runs: about one feed visit in twelve (never the first few) comes up
+  gold, folded six ways and slowly turning, tagged ✦ RARE RUN, with a tap
+  of haptics. Gold is a palette of its own that remixes never deal, so it
+  only ever means rare (and anyone can still pick it by hand).
+- Days in a row: the first open of a day says "Day 3 in a row" once
+  it is a run of two or more.
+- The Up next pill carries a little moving picture of the next sim.
+
 ### Trap loop T1 — the pull to stay
 
 - As a run nears its moment, once the buttons have faded, a line breathes
