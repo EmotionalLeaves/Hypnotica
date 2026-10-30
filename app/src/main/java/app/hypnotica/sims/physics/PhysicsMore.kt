@@ -10,6 +10,8 @@ object PhysicsMore {
         MagnetPendulumSim.def(),
         MetronomeSyncSim.def(),
         BilliardsSim.def(),
-        TrebuchetSim.def()
+        TrebuchetSim.def(),
+        BrickBreakerSim.def(),
+        StackSim.def()
     )
 }

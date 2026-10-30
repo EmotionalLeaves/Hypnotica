@@ -107,6 +107,8 @@ android {
             if (project.hasProperty("screens")) {
                 it.filter.includeTestsMatching("app.hypnotica.screens.*")
                 it.systemProperty("roborazzi.test.record", "true")
+                // -Psims=id,id draws only those in SimPicturesTest.
+                (project.findProperty("sims") as String?)?.let { ids -> it.systemProperty("sims", ids) }
             } else {
                 it.exclude("app/hypnotica/screens/**")
             }

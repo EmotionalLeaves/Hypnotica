@@ -38,6 +38,15 @@ CI does it for you. If you ever do have a machine:
 
 Requires JDK 17 and the Android SDK (compileSdk 35).
 
+To look at the sims themselves rather than the chrome — the GL surface draws
+nothing off a phone — `SimPicturesTest` steps each one on the CPU and paints
+three moments of its run into `app/build/screens/sims/`:
+
+```
+./gradlew :app:testDebugUnitTest -Pscreens --tests '*SimPicturesTest*'                       # every sim
+./gradlew :app:testDebugUnitTest -Pscreens -Psims=physics/stack --tests '*SimPicturesTest*'   # just one
+```
+
 ## Signing
 
 `keystore/hypnotica-release.jks` is committed on purpose, with the password

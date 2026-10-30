@@ -10,6 +10,7 @@ object AlgoMore {
         ConvexHullSim.def(),
         TspSim.def(),
         FloodFillSim.def(),
-        SieveSim.def()
+        SieveSim.def(),
+        BlockDropSim.def()
     )
 }

@@ -103,6 +103,15 @@ class ScreensTest {
         SimRegistry.all.filterIndexed { i, _ -> i % 9 == 0 }.take(12).forEach { s.load(it) }
     }
     @Test fun libraryFound() = shot("14-library-found", setup = { browse(it); it.screen = Screen.LIBRARY }) { s, _ -> LibraryScreen(s) }
+    /** The sims added in the polish loops, in the player with its chrome. */
+    private fun sim(name: String, id: String) = shot(name, setup = { s ->
+        s.load(SimRegistry.find(id)!!)
+        s.screen = Screen.PLAYER
+    }) { s, v -> PlayerScreen(s, v) }
+    @Test fun blockDrop() = sim("16-block-drop", "algorithms/block-drop")
+    @Test fun brickBreaker() = sim("17-brick-breaker", "physics/brick-breaker")
+    @Test fun stack() = sim("18-stack", "physics/stack")
+
     @Test fun feedNew() = shot(
         "15-feed-new-milestone",
         setup = {
