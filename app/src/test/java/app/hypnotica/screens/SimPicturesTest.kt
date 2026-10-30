@@ -50,17 +50,21 @@ class SimPicturesTest {
         core.setAspect(W.toFloat() / H)
         core.restart(3L)
         val moments = floatArrayOf(0.15f, 0.55f, 0f)
+        var done = 0
         for ((k, m) in moments.withIndex()) {
+            // Counted in frames, not read off the sim's clock: a run that
+            // finishes and holds, or stands still, never reaches a time.
             if (m > 0f) {
-                while (core.env.time < def.typicalSeconds * m) core.advance(1f / 60f)
+                val frames = (def.typicalSeconds * m * 60f).toInt() - done
+                repeat(max(0, frames)) { core.advance(1f / 60f) }
+                done += max(0, frames)
             } else {
                 // The last waits for the payoff (or half again the run's length) and a breath after.
                 var guard = 0
                 while (!core.payoffFired && core.env.time < def.typicalSeconds * 1.5f && guard < 20000) {
                     core.advance(1f / 60f); guard++
                 }
-                val until = core.env.time + 0.5f
-                while (core.env.time < until) core.advance(1f / 60f)
+                repeat(30) { core.advance(1f / 60f) }
             }
             val g = G()
             g.reset()
@@ -107,7 +111,7 @@ class SimPicturesTest {
             r: Float, gr: Float, b: Float, a: Float, left: Int
         ) {
             val hw = max(hw0, 0.5f); val hh = max(hh0, 0.5f)
-            val c = cos(-rot); val sn = sin(-rot)
+            val c = cos(rot); val sn = sin(rot)
             val ext = if (kind == G.SHAPE_RECT) sqrt(hw * hw + hh * hh) else max(hw, hh)
             val x0 = max(left, (x - ext).toInt()); val x1 = min(left + W - 1, (x + ext).toInt() + 1)
             val y0 = max(0, (y - ext).toInt()); val y1 = min(h - 1, (y + ext).toInt() + 1)

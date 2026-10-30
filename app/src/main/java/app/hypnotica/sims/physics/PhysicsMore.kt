@@ -12,6 +12,7 @@ object PhysicsMore {
         BilliardsSim.def(),
         TrebuchetSim.def(),
         BrickBreakerSim.def(),
-        StackSim.def()
+        StackSim.def(),
+        RallySim.def()
     )
 }

@@ -409,7 +409,7 @@ class BlockDropSim : Sim {
             id = "algorithms/block-drop",
             title = "Block drop",
             shelf = Shelf.ALGORITHMS,
-            family = "Games that play themselves",
+            family = "Games",
             blurb = "Falling blocks, played by a four-number score. The ghost is where it has decided.",
             formats = listOf(TrapFormat.NUMBER_UP, TrapFormat.PERFECT_FIT, TrapFormat.SONG),
             heroLabel = "New game",

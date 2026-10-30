@@ -49,6 +49,19 @@ class DiscoveryTest {
     }
 
     @Test
+    fun aBigFamilyIsDealtThinlyAtTheStart() {
+        val biggest = all.groupBy { it.family }.maxByOrNull { it.value.size }!!
+        var early = 0
+        val seeds = 1L..30L
+        for (seed in seeds) {
+            early += Discovery.feedOrder(all, emptySet(), emptySet(), seed).take(20).count { it.family == biggest.key }
+        }
+        // An even share of twenty would be 20 * size / total; it should be well under that.
+        val even = 20.0 * biggest.value.size / all.size * seeds.count()
+        assertTrue("${biggest.key}: $early early, even share ${even.toInt()}", early < even * 0.75)
+    }
+
+    @Test
     fun newMeansSomethingOnlyOnceAFewHaveBeenOpened() {
         val id = all.first().id
         assertTrue(!Discovery.isNew(id, emptySet()))

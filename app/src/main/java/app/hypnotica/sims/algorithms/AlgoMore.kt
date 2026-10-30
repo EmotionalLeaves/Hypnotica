@@ -11,6 +11,7 @@ object AlgoMore {
         TspSim.def(),
         FloodFillSim.def(),
         SieveSim.def(),
-        BlockDropSim.def()
+        BlockDropSim.def(),
+        FloodItSim.def()
     )
 }

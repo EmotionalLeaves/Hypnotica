@@ -44,16 +44,32 @@ object Discovery {
             if (def.id in favourites) key -= FAVOURITE_PULL
             key to def
         }
-        val sorted = keyed.sortedBy { it.first }.map { it.second }.toMutableList()
-        // No two sims of the same family back to back where it can be helped:
-        // the thirteen sorts share one bar chart and met in a row read as a
-        // repeat rather than a new thing.
-        for (i in 1 until sorted.size) {
-            if (sorted[i].family != sorted[i - 1].family) continue
-            val swap = (i + 1 until sorted.size).firstOrNull { j ->
-                sorted[j].family != sorted[i - 1].family
-            } ?: continue
-            val t = sorted[i]; sorted[i] = sorted[swap]; sorted[swap] = t
+        // A big family is dealt thinly: its first two members keep their
+        // places and the rest drift later. There are thirteen sorts, and a
+        // feed that met one every eight swipes was mostly bar charts.
+        val spread = keyed.groupBy { it.second.family }.values.flatMap { members ->
+            members.sortedBy { it.first }.mapIndexed { r, (key, def) ->
+                (if (r >= 2) key + FAMILY_DRIFT * (r - 1) else key) to def
+            }
+        }
+        val pool = spread.sortedBy { it.first }.map { it.second }.toMutableList()
+        // Dealt in key order, but never the same family twice running where
+        // something else is left — and when one family is more than half of
+        // what remains, it goes now, so the end of the deal is not a run of it.
+        val left = HashMap<String, Int>()
+        for (item in pool) left[item.family] = (left[item.family] ?: 0) + 1
+        val sorted = ArrayList<SimDef>(pool.size)
+        while (pool.isNotEmpty()) {
+            val last = sorted.lastOrNull()?.family
+            val crowd = left.maxByOrNull { it.value }!!
+            val pick = when {
+                crowd.key != last && crowd.value * 2 > pool.size + 1 -> pool.indexOfFirst { it.family == crowd.key }
+                else -> pool.indexOfFirst { it.family != last }.let { if (it < 0) 0 else it }
+            }
+            val d = pool.removeAt(pick)
+            sorted.add(d)
+            left[d.family] = left.getValue(d.family) - 1
+            if (left.getValue(d.family) == 0) left.remove(d.family)
         }
         return sorted
     }
@@ -100,4 +116,5 @@ object Discovery {
 
     private const val UNSEEN_PULL = 0.35
     private const val FAVOURITE_PULL = 0.15
+    private const val FAMILY_DRIFT = 0.12
 }
