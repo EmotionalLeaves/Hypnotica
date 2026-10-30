@@ -197,6 +197,8 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
 
 
     fun go(step: Int) {
+        // Leaving before the moment breaks the run of ones watched through.
+        if (!state.engine.core.payoffFired) state.watchedThrough = 0
         hint = false
         state.tick()
         scope.launch {
@@ -417,10 +419,13 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
         // How far through to the payoff, as a hairline along the bottom: the
         // pull to watch the last bit, which TickTock had and the feed didn't.
         var runShare by remember { mutableStateOf(0f) }
+        var paid by remember { mutableStateOf(false) }
         LaunchedEffect(state.currentDef.id) {
             while (true) {
                 val core = state.engine.core
                 val build = (state.currentDef.typicalSeconds * 0.7f).coerceAtLeast(1f)
+                if (core.payoffFired && !paid) state.watchedOne()
+                paid = core.payoffFired
                 runShare = if (core.payoffFired) 1f else (kotlin.math.abs(core.env.time) / build).coerceIn(0f, 1f)
                 delay(120)
             }
@@ -450,6 +455,31 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
             Column { WinnerPick(state, state.currentDef.id) }
         }
 
+        // The pull to stay: once the chrome has gone, a line at the top as
+        // the run nears its moment ("Wait for it…"), and once it lands, what
+        // is up next — so the end of one sim is already the start of the
+        // next. Neither covers the chrome: both only show while it is down.
+        val quiet = chromeAlpha == 0f && !hint
+        TensionTag(
+            visible = quiet && ((runShare >= TENSE_FROM && !paid) || paid),
+            text = if (paid) afterLine(state.currentDef.id, state.feedVisits, state.watchedThrough) else tenseLine(state, state.feedVisits),
+            pulsing = !paid,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .safeDrawingPadding()
+                .padding(top = 20.dp)
+        )
+        val nextDef = order[(index + 1) % order.size]
+        UpNext(
+            visible = quiet && paid,
+            title = nextDef.title,
+            isNew = nextDef.id !in state.seen.value,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .safeDrawingPadding()
+                .padding(bottom = 28.dp)
+        ) { go(1) }
+
     }
 }
 
@@ -464,6 +494,39 @@ private fun hookFor(state: AppState, visit: Int): String {
     val key = (state.currentDef.id.hashCode().toLong() * 31L + visit) and 0x7FFFFFFF
     return hooks[(key % hooks.size).toInt()]
 }
+
+/**
+ * The line as the moment nears, from the sim's own formats where it has a
+ * fitting one: a battle says it is down to the last few, a reveal that it is
+ * nearly clean. The same each time for one visit, different across visits.
+ */
+private fun tenseLine(state: AppState, visit: Int): String {
+    val f = state.currentDef.formats
+    val pool = when {
+        app.hypnotica.core.sim.TrapFormat.LAST_STANDING in f || app.hypnotica.core.sim.TrapFormat.GUESS in f ->
+            listOf("Down to the last few", "Who's it going to be?", "It could still go either way")
+        app.hypnotica.core.sim.TrapFormat.ESCAPE in f -> listOf("So close…", "Any second now")
+        app.hypnotica.core.sim.TrapFormat.REVEAL in f || app.hypnotica.core.sim.TrapFormat.FILL in f ->
+            listOf("Nearly there…", "Almost done", "Just a bit more")
+        app.hypnotica.core.sim.TrapFormat.SNAP in f || app.hypnotica.core.sim.TrapFormat.CUT in f ->
+            listOf("Wait for it…", "Here it comes", "Don't look away")
+        else -> listOf("Wait for it…", "Almost…", "Here it comes")
+    }
+    val key = (state.currentDef.id.hashCode().toLong() * 17L + visit) and 0x7FFFFFFF
+    return pool[(key % pool.size).toInt()]
+}
+
+/** The line once it has landed. */
+private fun afterLine(id: String, visit: Int, through: Int): String {
+    val pool = listOf("There it is", "Did you see that?", "Every time", "Again?", "Called it?")
+    val key = (id.hashCode().toLong() * 13L + visit) and 0x7FFFFFFF
+    val line = pool[(key % pool.size).toInt()]
+    // A run of them watched to the end, counted once it is a run.
+    return if (through >= 3) "$line  ·  $through watched through" else line
+}
+
+/** From this share of the way to the payoff, the tension line shows. */
+private const val TENSE_FROM = 0.72f
 
 /** Travel that counts as a deliberate swipe. */
 internal const val SWIPE_DP = 56f

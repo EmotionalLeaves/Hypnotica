@@ -47,6 +47,7 @@ class ArenaSim : Sim {
     private var doneAt = -1f
     private var payoffFrame = false
     private var winner = -1
+    private var beat = 0f
     // Debris from the knocked-out.
     private var dx = FloatArray(0)
     private var dy = FloatArray(0)
@@ -105,6 +106,11 @@ class ArenaSim : Sim {
         payoffFrame = false
         val h = abs(dt)
         elapsed += h
+        // A heartbeat while the last two are fighting it out.
+        if (doneAt < 0f && aliveCount == 2) {
+            beat += h * 1.7f
+            if (beat >= 1f) { beat -= 1f; env.emit(EventKind.STEP, 0.02f, 0f, 0.5f) }
+        } else beat = 0f
         val pace = env.params.f("pace", 1f)
         // The arena closes in once the opening skirmish is over.
         // With bumpers flinging everyone at the wall, the zone waits longer.

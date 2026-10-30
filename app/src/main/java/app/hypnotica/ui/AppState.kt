@@ -274,6 +274,21 @@ class AppState(
             prefs?.gestureTipsLeft = gestureTipsState
         }
 
+    /** Feed runs in a row watched to their payoff this session; a swipe before one resets it. */
+    var watchedThrough by mutableIntStateOf(0)
+
+    /** One more watched through; round numbers get a banner. */
+    fun watchedOne() {
+        watchedThrough++
+        if (watchedThrough in WATCHED_MARKS) announce("$watchedThrough in a row, watched to the end")
+    }
+
+    /** A line for the milestone banner. */
+    fun announce(line: String) {
+        milestone = line
+        milestoneSerial++
+    }
+
     /** Winners called in a row in TickTock, and the best run; kept on the phone. */
     var guessStreak by mutableIntStateOf(prefs?.guessStreak ?: 0)
         private set
@@ -306,6 +321,8 @@ class AppState(
         // And a miss is felt too, differently.
         if (!right) tick(2)
         guessStreak = if (right) guessStreak + 1 else 0
+        // A record is said out loud, once it is worth saying.
+        if (guessStreak > guessBest && guessStreak >= 3) announce("New best: $guessStreak called in a row")
         if (guessStreak > guessBest) guessBest = guessStreak
         prefs?.guessStreak = guessStreak
         prefs?.guessBest = guessBest
@@ -1275,3 +1292,6 @@ private const val MAX_SAVED = 60
 
 /** How many sims the Library's Recent shelf remembers. */
 private const val RECENT_MAX = 12
+
+/** Runs-watched-through counts that get a banner. */
+private val WATCHED_MARKS = setOf(10, 25, 50, 100, 200)

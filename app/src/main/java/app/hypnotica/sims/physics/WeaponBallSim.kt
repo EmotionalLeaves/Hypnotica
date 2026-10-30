@@ -52,6 +52,7 @@ class WeaponBallSim : Sim {
     private var r = 0.08f
     /** The Whirl control: every weapon's spin, scaled live. */
     private var spinMul = 1f
+    private var beat = 0f
     private var arena = 0.44f
     private var speed = 0.9f
     private var alive = 2
@@ -92,7 +93,7 @@ class WeaponBallSim : Sim {
         }
         cool.fill(0f); parryCool.fill(0f)
         slife.fill(0f)
-        alive = n; winner = -1
+        alive = n; winner = -1; beat = 0f
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
 
@@ -110,6 +111,14 @@ class WeaponBallSim : Sim {
         val h = h0 / sub
         repeat(sub) { substep(env, h) }
         for (i in 0 until n) flash[i] = max(0f, flash[i] - h0 * 4f)
+        // A heartbeat while anyone is down to their last fifth: low,
+        // quickening as the health goes.
+        var low = 1f
+        for (i in 0 until n) if (!gone[i]) low = min(low, hp[i])
+        if (doneAt < 0f && low < 0.2f) {
+            beat += h0 * (1.3f + 2f * (0.2f - low) / 0.2f)
+            if (beat >= 1f) { beat -= 1f; env.emit(EventKind.STEP, 0.02f, 0f, 0.5f) }
+        } else beat = 0f
         for (k in 0 until SPARKS) if (slife[k] > 0f) {
             slife[k] -= h0 * 2.2f
             sx[k] += svx[k] * h0; sy[k] += svy[k] * h0
@@ -277,6 +286,7 @@ class WeaponBallSim : Sim {
             val lost = (1f - hp[i]).coerceIn(0f, 1f) * 2f * PI.toFloat()
             g.ring(x[i], y[i], r * 0.78f, r * 0.16f, Palette.withAlpha(Palette.BG, 0.6f))
             g.ring(x[i], y[i], r * 0.76f, r * 0.12f, if (hp[i] < 0.3f) Palette.DANGER else Palette.TEXT_PRIMARY, lost, (PI / 2).toFloat())
+            if (hp[i] < 0.2f) g.glow(x[i], y[i], r * 1.8f, Palette.DANGER, 0.25f + 0.3f * (1f - beat))
             if (winner == i) g.glow(x[i], y[i], r * 3f, c, (1f - (elapsed - doneAt) / 2f).coerceIn(0.2f, 1f))
         }
     }

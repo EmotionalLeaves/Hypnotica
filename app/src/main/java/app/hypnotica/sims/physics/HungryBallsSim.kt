@@ -52,6 +52,7 @@ class HungryBallsSim : Sim {
     private var elapsed = 0f
     private var doneAt = -1f
     private var payoffFrame = false
+    private var beat = 0f
 
     override fun setup(env: SimEnv) {
         n = env.params.i("count", 30).coerceIn(3, MAX)
@@ -77,7 +78,7 @@ class HungryBallsSim : Sim {
             val s = speedFor(r[i])
             vx[i] = cos(va) * s; vy[i] = sin(va) * s
         }
-        alive = n; winner = -1
+        alive = n; winner = -1; beat = 0f
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
 
@@ -97,6 +98,11 @@ class HungryBallsSim : Sim {
         val sub = 3
         val h = h0 / sub
         repeat(sub) { substep(env, h) }
+        // The final two: a heartbeat until one of them is gone.
+        if (doneAt < 0f && alive == 2) {
+            beat += h0 * 1.6f
+            if (beat >= 1f) { beat -= 1f; env.emit(EventKind.STEP, 0.02f, 0f, 0.5f) }
+        } else beat = 0f
         for (i in 0 until n) {
             shown[i] += (r[i] - shown[i]) * min(1f, h0 * 8f)
             flash[i] = max(0f, flash[i] - h0 * 3f)

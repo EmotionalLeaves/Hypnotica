@@ -46,6 +46,7 @@ class CloneWarSim : Sim {
     private var doneAt = -1f
     private var payoffFrame = false
     private var voice = 0f
+    private var beat = 0f
     // Bursts where two met.
     private val bx = FloatArray(BURSTS)
     private val by = FloatArray(BURSTS)
@@ -71,7 +72,7 @@ class CloneWarSim : Sim {
         bl.fill(0f)
         gw = max(1, (2f * arena / (2f * r)).toInt())
         cell = IntArray(gw * gw)
-        winner = -1; elapsed = 0f; doneAt = -1f; payoffFrame = false; voice = 0f
+        winner = -1; elapsed = 0f; doneAt = -1f; payoffFrame = false; voice = 0f; beat = 0f
         rngClash = app.hypnotica.core.sim.Rng(env.rng.int(0, Int.MAX_VALUE).toLong())
     }
 
@@ -131,6 +132,13 @@ class CloneWarSim : Sim {
             voice = 0f
             env.emit(EventKind.BIRTH, (0.2f + 0.7f * count / CAP.toFloat()).coerceIn(0f, 1f), 0f, min(0.4f, 0.1f + splits * 0.02f))
         }
+        // A heartbeat once a side is down to its last handful.
+        var fewest = Int.MAX_VALUE
+        for (t in 0 until teams) if (counts[t] > 0) fewest = min(fewest, counts[t])
+        if (doneAt < 0f && elapsed > TRUCE && fewest <= 6) {
+            beat += h0 * (1.4f + 0.25f * (6 - fewest))
+            if (beat >= 1f) { beat -= 1f; env.emit(EventKind.STEP, 0.02f, 0f, 0.5f) }
+        } else beat = 0f
         var standing = 0; var last = -1
         for (t in 0 until teams) if (counts[t] > 0) { standing++; last = t }
         if (doneAt < 0f && standing <= 1 && elapsed > TRUCE) {

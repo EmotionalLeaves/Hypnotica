@@ -48,6 +48,7 @@ class IsingSim : Sim {
     private var paid = false
     private var startWalls = 1
     private var voice = 0f
+    private var winner = -1
 
     override fun setup(env: SimEnv) {
         val across = env.params.i("size", 140).coerceIn(30, MAX_W)
@@ -59,7 +60,7 @@ class IsingSim : Sim {
         val rng = env.rng
         for (i in spin.indices) spin[i] = if (rng.nextFloat() < 0.5f) 1 else -1
         carry = 0f; sweeps = 0; elapsed = 0f
-        payoffFrame = false; paid = false; voice = 0f
+        payoffFrame = false; paid = false; voice = 0f; winner = -1
         lastTemp = -1f
         measure()
         startWalls = max(1, walls)
@@ -125,6 +126,9 @@ class IsingSim : Sim {
         val share = walls.toFloat() / startWalls
         if (!paid && share < PAYOFF_WALLS && elapsed > 2f) {
             paid = true; payoffFrame = true
+            // Whichever way more of the magnet points once the speckle has
+            // become continents: that colour has won the board.
+            winner = if (magnet >= 0) 0 else 1
             env.emit(EventKind.DONE, 0.7f, 0f, 0.8f)
         }
         voice += a
@@ -158,6 +162,10 @@ class IsingSim : Sim {
             g.cellRow(x0, yc, cell, w) { x -> if (spin[row + x] > 0) upC else downC }
         }
     }
+
+    override fun contenders(env: SimEnv): IntArray = intArrayOf(env.palette.at(0.12f), env.palette.at(0.78f))
+
+    override fun winner(): Int = winner
 
     override fun payoff(): Boolean = payoffFrame
 

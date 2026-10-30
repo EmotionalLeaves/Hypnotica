@@ -1,6 +1,7 @@
 package app.hypnotica.ui
 
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -798,3 +799,62 @@ fun MilestoneBanner(state: AppState) {
 }
 
 private const val MILESTONE_MS = 3200L
+
+/**
+ * A short line at the top of the feed as a run nears its moment, breathing
+ * while it waits. Touches pass through it.
+ */
+@Composable
+fun TensionTag(visible: Boolean, text: String, pulsing: Boolean, modifier: Modifier = Modifier) {
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        if (visible) 1f else 0f, androidx.compose.animation.core.tween(if (visible) Tokens.Slow else Tokens.Base), label = "tension"
+    )
+    if (shown <= 0f) return
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "tensionPulse")
+    val breath: Float by pulse.animateFloat(
+        initialValue = 0.82f, targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(700), androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "breath"
+    )
+    Text(
+        text,
+        color = Tokens.TextPrimary,
+        style = MaterialTheme.typography.titleMedium.copy(shadow = Tokens.OverlayShadow),
+        modifier = modifier.graphicsLayer {
+            alpha = shown * (if (pulsing) breath else 1f)
+            val s = 0.96f + 0.04f * shown
+            scaleX = s; scaleY = s
+        }
+    )
+}
+
+/**
+ * Once a run has landed: what comes next, with a tap to go there now. The
+ * feed moves on by itself in a moment anyway; this is the reason not to
+ * put the phone down in between.
+ */
+@Composable
+fun UpNext(visible: Boolean, title: String, isNew: Boolean, modifier: Modifier = Modifier, onGo: () -> Unit) {
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        if (visible) 1f else 0f, androidx.compose.animation.core.tween(if (visible) Tokens.Slow else Tokens.Fast), label = "upNext"
+    )
+    if (shown <= 0f) return
+    Row(
+        modifier
+            .graphicsLayer { alpha = shown; translationY = (1f - shown) * 40f }
+            .background(Tokens.SurfaceStrong.copy(alpha = 0.88f), RoundedCornerShape(50))
+            .clickable { onGo() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Up next", color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.width(8.dp))
+        if (isNew) { NewTag(); Spacer(Modifier.width(8.dp)) }
+        Text(title, color = Tokens.TextPrimary, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        Spacer(Modifier.width(8.dp))
+        Text("↑", color = Tokens.AccentText, style = MaterialTheme.typography.titleSmall)
+    }
+}
+

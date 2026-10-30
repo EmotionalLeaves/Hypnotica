@@ -25,6 +25,24 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Trap loop T1 — the pull to stay
+
+- As a run nears its moment, once the buttons have faded, a line breathes
+  at the top of the feed — "Down to the last few" for a battle, "Nearly
+  there…" for a reveal, "Wait for it…" for a snap — chosen from the sim's
+  own formats.
+- When it lands: a word ("There it is", "Again?"), the count of runs in a
+  row watched through to the end, and an Up next pill with the next sim's
+  name (and NEW if it has never been opened) that goes there on a tap.
+  Swiping away before a payoff resets the count.
+- Magnet domains takes a pick: which colour will the magnet settle on.
+- The battles get a heartbeat at the end: Ball battle and Hungry balls
+  when it is down to two, Clone war when a side is down to its last few,
+  Weapon balls when anyone is under a fifth of their health (their ball
+  glows red with it).
+- Records are announced: a new best run of winners called (from three),
+  and 10, 25, 50, 100 runs in a row watched through.
+
 ### Quality loop Q5 — the whole catalogue drawn again
 
 - Mandelbrot, again: past twenty seconds the dive showed the same spiral
