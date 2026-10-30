@@ -177,6 +177,7 @@ private fun HaltedCard(state: AppState, why: String) {
 private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: String) {
     androidx.compose.runtime.CompositionLocalProvider(app.hypnotica.ui.LocalChipEdge provides app.hypnotica.ui.Tokens.Bg) {
     val halted = state.halted
+    Box(Modifier.fillMaxSize()) {
     if (halted != null) HaltedCard(state, halted) else when (state.screen) {
         Screen.FEED -> FeedScreen(state, surface)
         Screen.PLAYER -> PlayerScreen(state, surface)
@@ -187,6 +188,10 @@ private fun AppRoot(state: AppState, surface: SimSurfaceView, versionName: Strin
         Screen.TICKTOCK -> TickTockScreen(state, surface)
         Screen.STUDIO -> StudioScreen(state, surface)
         Screen.RECIPES -> ScreenEnter { RecipeScreen(state) }
+    }
+    // Over every screen, so a shelf finished from the feed or the player
+    // is said wherever the person is.
+    if (halted == null) app.hypnotica.ui.MilestoneBanner(state)
     }
     }
 }

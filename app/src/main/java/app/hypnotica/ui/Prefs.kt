@@ -156,6 +156,25 @@ class Prefs(context: Context) {
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
 
+    /**
+     * Every sim this phone has opened, so the Library can say how much of it
+     * has been found and mark what has not. A fresh copy is handed back, as
+     * SharedPreferences forbids changing the set it returned.
+     */
+    var seenSims: Set<String>
+        get() = HashSet(sp.getStringSet(KEY_SEEN, emptySet()) ?: emptySet())
+        set(value) = sp.edit().putStringSet(KEY_SEEN, HashSet(value)).apply()
+
+    /** The day's pick, as "epochDay:simId", so it holds still all day. */
+    var dailyPick: String?
+        get() = sp.getString(KEY_DAILY, null)
+        set(value) = sp.edit().putString(KEY_DAILY, value).apply()
+
+    /** The most recently opened sims, newest first. */
+    var recentSims: List<String>
+        get() = (sp.getString(KEY_RECENT, "") ?: "").split(',').filter { it.isNotBlank() }
+        set(value) = sp.edit().putString(KEY_RECENT, value.joinToString(",")).apply()
+
     private companion object {
         const val KEY_FAVOURITES = "favourites"
         const val KEY_PALETTE = "palette"
@@ -182,6 +201,9 @@ class Prefs(context: Context) {
         const val KEY_GESTURE_TIPS = "gesture_tips_left"
         const val KEY_GUESS_STREAK = "guess_streak"
         const val KEY_GUESS_BEST = "guess_best"
+        const val KEY_SEEN = "seen_sims"
+        const val KEY_RECENT = "recent_sims"
+        const val KEY_DAILY = "daily_pick"
 
         /** Bump with a step in [migrate] whenever a default changes for people already using the app. */
         const val SCHEMA = 2

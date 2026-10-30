@@ -33,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.hypnotica.sims.SimRegistry
 import kotlinx.coroutines.delay
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -58,7 +57,9 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
  */
 @Composable
 fun FeedScreen(state: AppState, surface: SimSurfaceView) {
-    val order = remember { SimRegistry.all.shuffled(java.util.Random(7)) }
+    // Dealt afresh each launch, unseen sims and favourites drawn forward. It
+    // was one fixed shuffle, so every session opened on the same dozen sims.
+    val order = remember { state.feedOrder }
     // Start wherever the player actually is, so arriving here does not yank the
     // sim out from under the person, and so the sim restored at launch is the
     // one they were watching.
@@ -364,6 +365,9 @@ fun FeedScreen(state: AppState, surface: SimSurfaceView) {
                     modifier = Modifier.weight(1f)
                 ) { _ ->
                     Column {
+                        // Never opened on this phone before: said, quietly, so a
+                        // swipe that turns up something new feels like a find.
+                        if (state.currentIsNew) NewTag(Modifier.padding(bottom = 8.dp))
                         Text(
                             state.currentDef.title,
                             color = Tokens.TextPrimary,

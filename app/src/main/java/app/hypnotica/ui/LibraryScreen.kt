@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +55,7 @@ import app.hypnotica.sims.SimRegistry
 /** The chip index of the favourites, which is not one of the registry's shelves. */
 private const val FAVOURITES_SHELF = 1
 private const val SAVED_SHELF = 2
+private const val RECENT_SHELF = 3
 
 /**
  * The TickTock clips liked, each replayed exactly by its run: tap to watch it
@@ -114,19 +116,27 @@ fun LibraryScreen(state: AppState) {
     // star persisted across restarts and the only thing that read it was the
     // badge on a tile, so a collection could be built and then only found by
     // scrolling fifty-eight tiles looking for badges.
-    val shelves = remember { listOf<Shelf?>(null, null, null) + SimRegistry.shelves() }
+    val shelves = remember { listOf<Shelf?>(null, null, null, null) + SimRegistry.shelves() }
     val shelfNames = remember {
-        listOf("All", "★ Favourites", "♥ Saved clips") + SimRegistry.shelves().map { it.title }
+        listOf("All", "★ Favourites", "♥ Saved clips", "Recent") + SimRegistry.shelves().map { it.title }
     }
 
     // The favourites are snapshot state, so unstarring from the grid refreshes
     // the list rather than leaving a tile behind that is no longer a favourite.
     val starred = state.favourites.value
-    val results = remember(query, shelfIndex, starred) {
+    val seen = state.seen.value
+    val recent = state.recent
+    val results = remember(query, shelfIndex, starred, recent) {
         val base = SimRegistry.search(query)
         when {
             shelfIndex == FAVOURITES_SHELF -> base.filter { it.id in starred }
             shelfIndex == SAVED_SHELF -> emptyList()
+            // Most recent first, as opened — the way back to the one from
+            // earlier that the feed has since moved on from.
+            shelfIndex == RECENT_SHELF -> {
+                val hit = base.associateBy { it.id }
+                recent.mapNotNull { hit[it] }
+            }
             else -> shelves.getOrNull(shelfIndex)?.let { shelf ->
                 base.filter { it.shelf == shelf }
             } ?: if (query.isBlank()) mixed(base) else base
@@ -193,7 +203,9 @@ fun LibraryScreen(state: AppState) {
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
+        FoundBar(Discovery.foundCount(seen, SimRegistry.all), SimRegistry.all.size)
+        Spacer(Modifier.height(12.dp))
         ChipRow(shelfNames, shelfIndex) { shelfIndex = it }
         Spacer(Modifier.height(16.dp))
         // A search that matched nothing used to render an empty grid and
@@ -207,6 +219,7 @@ fun LibraryScreen(state: AppState) {
             EmptyState(
                 if (shelfIndex == FAVOURITES_SHELF) "☆" else "⌕",
                 when {
+                    shelfIndex == RECENT_SHELF -> "Nothing opened yet. Whatever you watch shows up here."
                     shelfIndex == FAVOURITES_SHELF ->
                         // Not "double-tap a sim": double-tap left the player and
                         // the feed, where waiting to see if a second tap was
@@ -227,8 +240,24 @@ fun LibraryScreen(state: AppState) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
+            // Today's pick heads the All view: one sim a day, something not
+            // opened yet while there is anything left, the same all day.
+            val pick = state.dailyPick
+            if (pick != null && shelfIndex == 0 && query.isBlank()) {
+                item(key = "daily", span = { GridItemSpan(maxLineSpan) }) {
+                    DailyCard(pick, isNew = pick.id !in seen) {
+                        if (pick.id != state.currentDef.id) state.load(pick)
+                        state.screen = Screen.PLAYER
+                    }
+                }
+            }
             items(results, key = { it.id }) { def ->
-                SimTile(def, state.isFavourite(def.id), onLongClick = { state.toggleFavourite(def.id) }) {
+                SimTile(
+                    def,
+                    state.isFavourite(def.id),
+                    isNew = Discovery.isNew(def.id, seen),
+                    onLongClick = { state.toggleFavourite(def.id) }
+                ) {
                     // The sim already playing carries on rather than restarting.
                     if (def.id != state.currentDef.id) state.load(def)
                     state.screen = Screen.PLAYER
@@ -239,7 +268,13 @@ fun LibraryScreen(state: AppState) {
 }
 
 @Composable
-private fun SimTile(def: SimDef, favourite: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit) {
+private fun SimTile(
+    def: SimDef,
+    favourite: Boolean,
+    isNew: Boolean = false,
+    onLongClick: () -> Unit = {},
+    onClick: () -> Unit
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -260,6 +295,16 @@ private fun SimTile(def: SimDef, favourite: Boolean, onLongClick: () -> Unit = {
             SimThumbnail(def, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)))
             // The edge goes on top: drawn first, the thumbnail painted over it.
             Box(Modifier.matchParentSize().border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp)))
+            // A dot, not the word: most of the shelf is unopened at first, and a
+            // word on every card was a wall of labels over the pictures.
+            if (isNew) Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .size(8.dp)
+                    .background(Tokens.Accent, CircleShape)
+                    .border(1.dp, Tokens.Bg.copy(alpha = 0.6f), CircleShape)
+            )
             if (favourite) {
                 // On a dark disc, so it reads on the brightest preview.
                 Box(
@@ -293,6 +338,96 @@ private fun SimTile(def: SimDef, favourite: Boolean, onLongClick: () -> Unit = {
     }
 }
 
+
+/** The day's pick, a full row wide: its picture, its name and its one line. */
+@Composable
+private fun DailyCard(def: SimDef, isNew: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(2.1f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Tokens.Surface)
+            .clickable(onClick = onClick)
+    ) {
+        SimThumbnail(def, Modifier.fillMaxSize())
+        // Shade along the bottom, so the words read over the brightest picture.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0.35f to Color.Transparent,
+                        1f to Tokens.Bg.copy(alpha = 0.88f)
+                    )
+                )
+        )
+        Box(Modifier.matchParentSize().border(1.dp, Tokens.Accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp)))
+        Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "TODAY'S PICK",
+                    color = Tokens.AccentText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                if (isNew) {
+                    Spacer(Modifier.width(8.dp))
+                    NewTag()
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                def.title,
+                color = Tokens.TextPrimary,
+                style = MaterialTheme.typography.titleLarge.copy(shadow = Tokens.OverlayShadow),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            val line = def.blurb.ifBlank { def.family }
+            Text(
+                line,
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * How much of the Library this phone has opened: a count and a hairline.
+ * The pull of a collection, and an honest one — it counts what was opened,
+ * not what was swiped past.
+ */
+@Composable
+private fun FoundBar(found: Int, total: Int) {
+    val share = if (total > 0) found.toFloat() / total else 0f
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (found >= total) "All $total found" else "$found of $total found",
+            color = if (found >= total) Tokens.Success else Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier
+                .weight(1f)
+                .height(3.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.08f))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(share.coerceIn(0f, 1f))
+                    .height(3.dp)
+                    .background(if (found >= total) Tokens.Success else Tokens.Accent)
+            )
+        }
+    }
+}
 
 /** What a list says when it has nothing in it: a mark and a sentence, centred. */
 @Composable

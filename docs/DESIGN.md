@@ -149,7 +149,12 @@ Simple and Advanced are two views of one state. Nothing is reset by switching.
 
 <img src="images/library.svg" width="320" alt="The Library">
 
-Fifty-eight sims across six shelves, filtered by shelf, with favourites first.
+Every sim across six shelves, filtered by shelf, plus Favourites, Saved clips and
+Recent. A hairline under the search counts how many of them this phone has
+opened; a sim not yet opened carries a small accent dot once five have been, so
+the mark means something, and the feed and Today's pick say NEW. Finishing a shelf, or reaching a round number, is said
+once in a banner that floats over whatever screen is up and passes touches
+through.
 Every card is a real preview: the sim is run headlessly for about a second and
 its own draw list is painted onto the card. No stock art, nothing invented.
 
@@ -169,7 +174,9 @@ Reached from the film-strip glyph beside it.
 
 Settings holds sound, look, comfort and safety, the time check, the TickTock
 format switches and — unlabelled, under the version — the two hidden doors. The
-Feed is a vertical swipe through the whole library, one sim per flick. Recipes is
+Feed is a vertical swipe through the whole library, one sim per flick, dealt in a
+fresh order each launch with unseen sims and favourites drawn forward and no
+family twice in a row. Recipes is
 a plain text editor over the Lua sandbox, with the parse error shown inline.
 
 ## The control model

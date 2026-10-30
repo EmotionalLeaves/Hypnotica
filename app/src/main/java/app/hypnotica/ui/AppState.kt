@@ -662,9 +662,66 @@ class AppState(
     /** Favourites, kept in memory for now; persisted in the storage round. */
     val favourites = mutableStateOf(setOf<String>())
 
+    /** Every sim opened on this phone: the Library's "found" count and its NEW marks. */
+    val seen = mutableStateOf(setOf<String>())
+
+    /** The last few sims opened, newest first, for the Library's Recent shelf. */
+    var recent by mutableStateOf(listOf<String>())
+        private set
+
+    /** Whether the sim now playing was new to this phone when it was opened. */
+    var currentIsNew by mutableStateOf(false)
+        private set
+
+    /** A one-off line worth celebrating — a shelf finished — shown briefly over any screen. */
+    var milestone by mutableStateOf<String?>(null)
+
+    /** Bumped with every milestone, so the same words twice still show twice. */
+    var milestoneSerial by mutableIntStateOf(0)
+        private set
+
+    /**
+     * The feed's order for this session, dealt once and kept: the feed screen
+     * is composed afresh on every visit, and an order rebuilt each time would
+     * move the person's place under them.
+     */
+    val feedOrder: List<SimDef> by lazy {
+        Discovery.feedOrder(SimRegistry.all, seen.value, favourites.value, System.nanoTime())
+    }
+
+    /** Today's pick, the same all day; see [Discovery.dailyPick]. */
+    val dailyPick: SimDef? by lazy {
+        val today = java.time.LocalDate.now().toEpochDay()
+        val kept = prefs?.dailyPick?.split(':', limit = 2)
+        val keptDef = if (kept?.size == 2 && kept[0] == today.toString()) SimRegistry.find(kept[1]) else null
+        keptDef ?: Discovery.dailyPick(SimRegistry.all, seen.value, today)?.also {
+            prefs?.dailyPick = "$today:${it.id}"
+        }
+    }
+
+    private fun markSeen(def: SimDef) {
+        recent = (listOf(def.id) + recent.filter { it != def.id }).take(RECENT_MAX)
+        prefs?.recentSims = recent
+        val before = seen.value
+        currentIsNew = Discovery.isNew(def.id, before)
+        if (def.id in before) return
+        val line = Discovery.milestone(before, def.id, SimRegistry.all)
+        val next = before + def.id
+        seen.value = next
+        prefs?.seenSims = next
+        if (line != null) {
+            milestone = line
+            milestoneSerial++
+        }
+    }
+
     init {
         prefs?.let { p ->
             favourites.value = p.favourites
+            // A phone that ran the app before this was counted has seen at
+            // least what it starred and what it was last watching.
+            seen.value = p.seenSims.ifEmpty { p.favourites + listOfNotNull(p.lastSimId) }
+            recent = p.recentSims
             reduceFlashing = p.reduceFlashing
             reduceMotion = p.reduceMotion
             haptics = p.haptics
@@ -717,6 +774,7 @@ class AppState(
     ) {
         currentDef = def
         loadCount++
+        markSeen(def)
         // Loaded as it comes, not remixed: its usual self.
         remixVariant = null
         // A new sim starts running, and says so.
@@ -1214,3 +1272,6 @@ class AppState(
 
 /** Liked clips kept in the Library, most recent first. */
 private const val MAX_SAVED = 60
+
+/** How many sims the Library's Recent shelf remembers. */
+private const val RECENT_MAX = 12

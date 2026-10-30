@@ -731,3 +731,70 @@ fun Scrims(alpha: Float) {
 private const val SCRIM_TOP_DP = 180
 private const val SCRIM_BOTTOM_DP = 240
 private const val SCRIM_ALPHA = 0.55f
+
+/** A sim this phone has not opened before: one small accent word. */
+@Composable
+fun NewTag(modifier: Modifier = Modifier) {
+    Text(
+        "NEW",
+        color = Color.White,
+        fontSize = 10.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+        letterSpacing = 1.sp,
+        modifier = modifier
+            .background(Tokens.Accent, RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+    )
+}
+
+/**
+ * A milestone — a shelf finished, a round number found — said once, at the
+ * top of whatever screen is up, and gone again in a few seconds. Not a
+ * dialog: rule 7 says nothing breaks the loop, so it floats, and touches
+ * pass straight through it.
+ */
+@Composable
+fun MilestoneBanner(state: AppState) {
+    val text = state.milestone
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(state.milestoneSerial) {
+        if (state.milestone == null) return@LaunchedEffect
+        shown = true
+        kotlinx.coroutines.delay(MILESTONE_MS)
+        shown = false
+        kotlinx.coroutines.delay(Tokens.Slow.toLong())
+        state.milestone = null
+    }
+    val fade by animateFloatAsState(
+        if (shown && text != null) 1f else 0f,
+        tween(if (shown) Tokens.Base else Tokens.Slow),
+        label = "milestone"
+    )
+    if (text == null || fade <= 0f) return
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Row(
+            Modifier
+                .padding(top = 140.dp, start = 24.dp, end = 24.dp)
+                .graphicsLayer {
+                    alpha = fade
+                    translationY = (1f - fade) * -24f
+                }
+                .background(Tokens.Surface.copy(alpha = 0.94f), RoundedCornerShape(50))
+                .border(1.dp, Tokens.Accent.copy(alpha = 0.6f), RoundedCornerShape(50))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("✦", color = Tokens.Success, fontSize = 14.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text,
+                color = Tokens.TextPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+private const val MILESTONE_MS = 3200L

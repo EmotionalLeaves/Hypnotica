@@ -167,19 +167,31 @@ private fun DrawScope.drawPreview(p: Preview, fade: Float) {
     }
 }
 
-/** Shown for the moment before the real preview exists. */
+/**
+ * Shown for the moment before the real preview exists: a soft glow in the
+ * sim's own palette. It was nine bars, so while the cards filled in a
+ * Mandelbrot and a flock both looked like sorting charts for a moment.
+ */
 private fun DrawScope.drawFallback(def: SimDef, alpha: Float) {
     val palette = app.hypnotica.core.render.Palette.byName(def.defaultPalette)
-    val bars = 9
-    val gap = size.width * 0.02f
-    val barWidth = (size.width - gap * (bars + 1)) / bars
     val seed = def.id.hashCode()
-    for (i in 0 until bars) {
-        val h = (((seed shr i) and 7) / 7f * 0.62f + 0.16f) * size.height
-        drawRect(
-            color = Color(palette.at(i / (bars - 1f))).copy(alpha = alpha),
-            topLeft = Offset(gap + i * (barWidth + gap), size.height - h),
-            size = Size(barWidth, h)
+    // Placed from the id, so a card's glow sits still rather than jumping.
+    val fx = 0.3f + (seed and 0xFF) / 255f * 0.4f
+    val fy = 0.3f + ((seed shr 8) and 0xFF) / 255f * 0.4f
+    val r = min(size.width, size.height) * 0.62f
+    for (k in 0 until 2) {
+        val c = Color(palette.at(if (k == 0) 0.2f else 0.8f)).copy(alpha = alpha * 2.2f)
+        val center = if (k == 0) Offset(size.width * fx, size.height * fy)
+        else Offset(size.width * (1f - fx), size.height * (1f - fy))
+        drawCircle(
+            Brush.radialGradient(
+                0f to c,
+                1f to c.copy(alpha = 0f),
+                center = center,
+                radius = r
+            ),
+            r,
+            center
         )
     }
 }

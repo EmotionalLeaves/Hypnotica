@@ -97,6 +97,23 @@ class ScreensTest {
     @Test fun playerSound() = shot("11-player-sound", setup = { it.screen = Screen.PLAYER; it.controlsOpen = true; it.card = app.hypnotica.core.recipe.Card.SOUND }) { s, v -> PlayerScreen(s, v) }
     @Test fun playerLook() = shot("12-player-look", setup = { it.screen = Screen.PLAYER; it.controlsOpen = true; it.card = app.hypnotica.core.recipe.Card.LOOK }) { s, v -> PlayerScreen(s, v) }
     @Test fun playerMotion() = shot("13-player-motion", setup = { it.screen = Screen.PLAYER; it.controlsOpen = true; it.card = app.hypnotica.core.recipe.Card.MOTION }) { s, v -> PlayerScreen(s, v) }
+
+    /** Twelve sims opened: the found count, NEW marks and the Recent shelf have something to show. */
+    private fun browse(s: AppState) {
+        SimRegistry.all.filterIndexed { i, _ -> i % 9 == 0 }.take(12).forEach { s.load(it) }
+    }
+    @Test fun libraryFound() = shot("14-library-found", setup = { browse(it); it.screen = Screen.LIBRARY }) { s, _ -> LibraryScreen(s) }
+    @Test fun feedNew() = shot(
+        "15-feed-new-milestone",
+        setup = {
+            browse(it)
+            it.load(SimRegistry.all.last())
+            it.milestone = "Physics shelf complete — all 31 found"
+        }
+    ) { s, v ->
+        FeedScreen(s, v)
+        app.hypnotica.ui.MilestoneBanner(s)
+    }
 }
 
 /** The long screens, whole: a phone as tall as the page. */

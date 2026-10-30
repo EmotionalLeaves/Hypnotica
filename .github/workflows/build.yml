@@ -20,13 +20,13 @@ jobs:
   # and point shaders put on screen. It runs beside the build, not before it,
   # so a flake in the browser install never costs us the APK.
   shaders:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
 
@@ -71,13 +71,13 @@ jobs:
   # Pictures of every screen, rendered on the runner with Robolectric and
   # uploaded as an artifact. Beside the build, never blocking it.
   screens:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -127,7 +127,7 @@ jobs:
           if-no-files-found: ignore
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # Job-level env so that steps can test for the secret in an `if:`
       # (the `secrets` context itself is not available in step conditions).
@@ -136,10 +136,10 @@ jobs:
       HYPNOTICA_VERSION_NAME: 0.1.${{ github.run_number }}
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
