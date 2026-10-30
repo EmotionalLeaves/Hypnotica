@@ -116,5 +116,5 @@ object Discovery {
 
     private const val UNSEEN_PULL = 0.35
     private const val FAVOURITE_PULL = 0.15
-    private const val FAMILY_DRIFT = 0.12
+    private const val FAMILY_DRIFT = 0.2
 }

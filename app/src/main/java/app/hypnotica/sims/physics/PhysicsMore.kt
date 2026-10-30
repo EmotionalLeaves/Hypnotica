@@ -14,6 +14,9 @@ object PhysicsMore {
         BrickBreakerSim.def(),
         StackSim.def(),
         RallySim.def(),
-        BubbleWrapSim.def()
+        BubbleWrapSim.def(),
+        ThreeStarsSim.def(),
+        TwinStarsSim.def(),
+        SafeZonesSim.def()
     )
 }
