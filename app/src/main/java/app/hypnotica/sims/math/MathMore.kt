@@ -13,6 +13,7 @@ object MathMore {
         PenroseTilingSim.def(),
         LissajousTableSim.def(),
         MontyHallSim.def(),
-        BuffonNeedleSim.def()
+        BuffonNeedleSim.def(),
+        PrisonersSim.def()
     )
 }

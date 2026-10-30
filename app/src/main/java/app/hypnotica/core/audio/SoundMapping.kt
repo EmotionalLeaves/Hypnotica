@@ -244,6 +244,18 @@ class SoundMapping(private val synth: Synth) {
         if (inBar in g.snare) synth.note(SNARE_HZ, 0.26f * level, 0f, VoiceType.SNARE, 0.09f)
         // Hats a touch louder on the off-beat eighths, as a drummer plays them.
         if (inBar in g.hat) synth.note(HAT_HZ, (if (inBar % 4 == 2) 0.1f else 0.07f) * level, if (inBar % 4 == 2) 0.3f else -0.3f, VoiceType.HAT, 0.03f)
+        // A soft open chord at the top of each bar — root, fifth and octave,
+        // consonant over any of the loops — so the bar's harmony is heard and
+        // not just implied by the bass. Long and quiet: a bed, not a part.
+        if (inBar == 0) {
+            var hz = baseHz * Math.pow(2.0, root / 12.0).toFloat()
+            while (hz > PAD_CEILING) hz *= 0.5f
+            while (hz < PAD_CEILING * 0.5f) hz *= 2f
+            val decay = g.stepSeconds * 16f * 0.9f
+            synth.note(hz, 0.05f * level, -0.35f, VoiceType.WARM, decay)
+            synth.note(hz * 1.4983f, 0.04f * level, 0.35f, VoiceType.WARM, decay)
+            synth.note(hz * 2f, 0.03f * level, 0f, VoiceType.WARM, decay)
+        }
         if (inBar in g.bass) {
             var hz = baseHz * 0.5f * Math.pow(2.0, root / 12.0).toFloat()
             while (hz > BASS_CEILING) hz *= 0.5f
@@ -428,6 +440,7 @@ class SoundMapping(private val synth: Synth) {
         const val SNARE_HZ = 1800f
         const val HAT_HZ = 6000f
         const val BASS_CEILING = 220f
+        const val PAD_CEILING = 330f
     }
 }
 
