@@ -20,6 +20,9 @@ It should take about two minutes.
 - [ ] Swipe down goes to the previous sim (it is not a back gesture)
 - [ ] The hook line and sim name are readable over the simulation
 - [ ] A run that finishes moves on by itself
+- [ ] Two launches in a row open on a different order of sims
+- [ ] A sim never opened before says NEW over its title
+- [ ] The thirteen sorts do not come round every few swipes
 
 ## Player
 
@@ -70,6 +73,24 @@ It should take about two minutes.
 - [ ] Every card shows the sim itself, not a placeholder
 - [ ] Scrolling the Library stays smooth while the previews appear
 - [ ] Favourites survive force-quitting and reopening the app
+- [ ] "N of M found" counts up as new sims are opened, and survives a restart
+- [ ] Today's pick heads the All view and stays the same sim all day
+- [ ] Recent lists what was just opened, newest first
+- [ ] Unopened cards carry a small dot (once five sims have been opened)
+- [ ] Finishing a shelf shows the banner once, at the top, and it fades
+
+## New sims
+
+Each should pay off on its own, sound on every event, and fit upright.
+
+- [ ] Block drop — the ghost shows where each piece will land; lines clear with a flash
+- [ ] Brick breaker — the paddle aims; the spiral behind the wall shows as bricks break
+- [ ] Stack it — overhangs fall away; a dead-on drop glows and rings higher
+- [ ] Rally — the feed offers two sides to pick; the ball speeds up each return
+- [ ] Flood it — each move pours across the board as a wave
+- [ ] Lissajous table — every curve closes on the same instant
+- [ ] Bubble wrap — bubbles swell then pop; tapping one pops it
+- [ ] Fireflies — patches of flashing grow into the whole field at once
 
 ## TickTock
 

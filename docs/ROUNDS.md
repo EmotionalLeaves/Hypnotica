@@ -25,6 +25,21 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Polish loops 1–5 — discovery, eight new sims, pictures of the sims
+
+- The feed deals a fresh order each launch: unopened sims and favourites drawn
+  forward, big families dealt thinly, never the same family twice running.
+  NEW over a sim never opened.
+- The Library counts what has been found, dots what has not, keeps a Recent
+  shelf and a Today's pick; finishing a shelf is said in a banner.
+- New sims: Block drop, Flood it (Algorithms); Brick breaker, Stack it, Rally,
+  Bubble wrap (Physics); Lissajous table (Math); Fireflies (Life & nature).
+- `SimPicturesTest` paints every sim's own draw list at three moments into
+  `build/screens/sims/` — the screen pictures never showed a sim, because
+  the GL surface draws nothing off a phone.
+- CI's version code runs ten ahead of the run number, so its next build
+  installs over the APKs built by hand during these loops.
+
 ### Rounds 1–5 — engine, sound, sorting and physics
 
 - Deterministic fixed-timestep core at 120 Hz with frame interpolation, seeded

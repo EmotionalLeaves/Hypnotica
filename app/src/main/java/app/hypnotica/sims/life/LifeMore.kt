@@ -10,6 +10,7 @@ object LifeMore {
         AntColonySim.def(),
         TruchetSim.def(),
         KaleidoscopeSim.def(),
-        MengerSpongeSim.def()
+        MengerSpongeSim.def(),
+        FirefliesSim.def()
     )
 }
