@@ -65,6 +65,7 @@ class LSystemSim : Sim {
         val swayRoom = p.f("sway", 0.35f) * GUST_MAX * SWAY * (FILL + TOP) * (FILL + TOP)
         build(expand(plant, depth), angle, (env.halfWidth - swayRoom).coerceAtLeast(env.halfWidth * 0.85f))
         grown = 0f
+        growT = 0f
         elapsed = 0f
         fullAt = -1f
         payoffFrame = false
@@ -188,13 +189,23 @@ class LSystemSim : Sim {
         }
     }
 
+    /** Share of the growing time gone, 0..1. */
+    private var growT = 0f
+
     override fun step(env: SimEnv, dt: Float) {
         payoffFrame = false
         elapsed += abs(dt)
         if (grown < tallest) {
             // Paced so a plant grows in about the same time whatever its size:
             // a fixed number of steps of the tallest branch a second.
-            grown = min(tallest, grown + abs(dt) * tallest / GROW_SECONDS * env.params.f("pace", 1f))
+            //
+            // Eased out over that time rather than linear in depth: a plant
+            // has a few segments near the root and thousands at the tips, so
+            // at an even pace the first quarter of the run was a lone stick
+            // on a black screen and nearly all the picture arrived at the end.
+            growT = min(1f, growT + abs(dt) / GROW_SECONDS * env.params.f("pace", 1f))
+            val eased = 1f - (1f - growT) * (1f - growT)
+            grown = if (growT >= 1f) tallest else min(tallest, tallest * eased)
             // A note each time the growing tips pass another fortieth of the
             // way up: the plant climbs a scale as it climbs the screen.
             val share = grown / tallest

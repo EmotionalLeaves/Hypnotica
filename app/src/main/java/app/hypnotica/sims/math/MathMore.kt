@@ -11,6 +11,8 @@ object MathMore {
         DragonCurveSim.def(),
         BirthdayParadoxSim.def(),
         PenroseTilingSim.def(),
-        LissajousTableSim.def()
+        LissajousTableSim.def(),
+        MontyHallSim.def(),
+        BuffonNeedleSim.def()
     )
 }
