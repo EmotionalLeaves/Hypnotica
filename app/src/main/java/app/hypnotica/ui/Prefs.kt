@@ -170,6 +170,20 @@ class Prefs(context: Context) {
     /** A sim's best in words, for its Library card, or null. */
     fun bestTextOf(id: String): String? = sp.getString(KEY_BEST_TEXT_PREFIX + id, null)?.takeIf { it.isNotEmpty() }
 
+    /** The YouTube channel connected for uploads, or null; the token itself stays with Play services. */
+    var youTubeChannel: String?
+        get() = sp.getString(KEY_YT_CHANNEL, null)
+        set(value) = sp.edit().putString(KEY_YT_CHANNEL, value).apply()
+
+    var youTubeCount: Int
+        get() = sp.getInt(KEY_YT_COUNT, 3)
+        set(value) = sp.edit().putInt(KEY_YT_COUNT, value).apply()
+
+    /** 0 private, 1 unlisted, 2 public. */
+    var youTubePrivacy: Int
+        get() = sp.getInt(KEY_YT_PRIVACY, 0)
+        set(value) = sp.edit().putInt(KEY_YT_PRIVACY, value).apply()
+
     var mutedFormats: Set<String>
         get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
         set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
@@ -223,6 +237,9 @@ class Prefs(context: Context) {
         const val KEY_BEST_PREFIX = "best_"
         const val KEY_BEST_TEXT_PREFIX = "best_text_"
         const val KEY_DAY_STREAK = "day_streak"
+        const val KEY_YT_CHANNEL = "yt_channel"
+        const val KEY_YT_COUNT = "yt_count"
+        const val KEY_YT_PRIVACY = "yt_privacy"
         const val KEY_SEEN = "seen_sims"
         const val KEY_RECENT = "recent_sims"
         const val KEY_DAILY = "daily_pick"

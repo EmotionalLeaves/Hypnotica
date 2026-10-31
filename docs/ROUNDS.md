@@ -25,6 +25,74 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Check loop C1 — TickTock played through, every sim shuffled, YouTube
+
+- TickTock, played back headless the way the screen plays it (now
+  `TickTockTest`): sixty generated clips, each run to its end at two phone
+  shapes with uneven frames. Payoffs landed exactly when the check said on
+  the shape it was checked at; on a 16:9 phone an arena clip was still
+  undecided when its clip ended. The director now checks payoffs at the
+  shape of the screen the clip will play on.
+- TickTock fixes found reading it through: a clip that threw an error left
+  the feed frozen behind the halt card with its timer stopped — it is now
+  skipped ("That one broke — skipped it."), and the next clip clears the
+  halt so it can draw. The end of the previous clip's run, arriving on the
+  frame before the new clip was applied, could skip the clip that had just
+  started. A swipe up made while the next clip was still being found said
+  "Finding the next one…" and then never moved on when it was found.
+- Random games (now `RandomGamesTest`, two a sim every build; it was run at
+  four for this round): every setting anywhere in its range, ends of ranges
+  on purpose, any seed, phones upright, 16:9, square and on their side,
+  other universes' laws, taps, drags and flings. Found: the fastest-way-down
+  race threw on a square screen (its side-by-side layout left the timing
+  board less than no room — a square export would have crashed); the
+  pendulum wave never came back into line past a few dozen pendulums (the
+  i-th of thousands swung 13 + i times a cycle, a period of milliseconds —
+  past 48 they now share lengths in bands, and fast pendulums take smaller
+  steps); a sandpile wider than about 300 spent two minutes budget-bound
+  before its moment (the budget now follows the pile's area: about 30 s);
+  and a sixteen-fold dragon curve on a square screen threw on the render
+  thread — the drawing list dropped shapes past its cap only when told to
+  reserve room, and a single shape past it wrote off the end of the buffer.
+- YouTube: Settings → YouTube connects a channel through Google sign-in and
+  makes and posts a chosen number of Shorts (1, 2, 3, 5 or 10) — each a
+  TickTock clip checked at 1080 × 1920, rendered upright with its hook as
+  the opening caption and no flash, cut a few seconds after its moment and
+  under 58 s, uploaded with the resumable protocol (picking up where a
+  dropped connection stopped), then deleted from the phone. Private,
+  unlisted or public. Google needs the app registered once in a Google
+  Cloud project (YouTube Data API on, the account as a test user, an
+  Android OAuth client with the package name and SHA-1 the section shows
+  and copies). Until that project passes YouTube's API audit, YouTube keeps
+  API uploads private whatever is chosen.
+
+### Refine loop R3 — two number-go-up machines and a snake battle
+
+- Ball multiplier: a dozen balls drop from a sliding hopper through three
+  rows of gates — ×2, ×3, a narrow ×5, a narrower ×10 and a red one that
+  swallows the ball — with pegs between the rows to scatter them, into four
+  cups. Pick the cup that fills most; the count is called at 100, 250, 500
+  and 1,000, a ×10 pass is called out, and the run's total is a live best.
+  Runs land anywhere from about 130 to 500 balls. Two fixes before it
+  shipped: the hopper swept at an even speed (a sine lingered over the
+  outer cups and they won half the time) and the offset peg rows reach the
+  walls (balls slid down the sides untouched).
+- 1 to 1,000: one ball in a ring, and every time a ball hits the wall there
+  is a chance it splits in two. Slowly, then all at once: 10, 100, 250, 500,
+  "1,000!!" in about fifteen seconds; the fastest time to the top is the
+  best. A just-split ball cannot split again until it has crossed the ring,
+  and nothing leaves the wall at a grazing angle — without both, a ball
+  skimming the floor split on every step and the thousand was a clump.
+- Snake battle: four snakes on one board after the same apples, each
+  steering for the nearest apple while keeping clear of walls, bodies, a
+  bigger snake's head and any pocket too small to fit in. A crash leaves the
+  body as apples for the others; heads meeting, the longer one wins and a
+  tie takes both. Past fifteen seconds the walls close in a ring at a time —
+  a head caught is out, a body caught loses its tail — so every battle ends,
+  usually around twenty seconds. Colours are dealt to starting places at
+  random so no colour owns a corner, and the winner holds still for its
+  moment (left to roam a closed-in board it crashed on its lap of honour).
+
 ### Refine loop R2 — the build-up, called
 
 - Live bests: on the twelve sims whose number climbs during a run (a

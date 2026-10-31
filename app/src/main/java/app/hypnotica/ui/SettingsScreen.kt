@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,6 +57,8 @@ fun SettingsScreen(state: AppState, versionName: String) {
     // Cancelled with the page, so it costs nothing to someone just passing.
     LaunchedEffect(Unit) {
         if (state.tickTockQueue.isNotEmpty()) return@LaunchedEffect
+        val shape = state.engine.core.env.aspect
+        if (shape > 0.2f) state.director.aspect = shape
         val clip = withContext(Dispatchers.Default) {
             runInterruptible { state.director.generate() }
         }
@@ -251,6 +254,9 @@ fun SettingsScreen(state: AppState, versionName: String) {
         }
         }
 
+        SectionLabel("YouTube")
+        SettingsGroup { YouTubeSection(state) }
+
         // The version number sits at the foot of the page, and below it,
         // unlabelled, exactly as designed: a clock for TickTock and a film
         // strip for Studio. The version used to sit mid-page, between TickTock
@@ -391,5 +397,185 @@ private fun Disclosure(label: String, open: Boolean, onToggle: () -> Unit) {
     ) {
         Text(label, color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         GlyphIcon("▾", Tokens.TextSecondary, Modifier.rotate(turn), size = 20.dp)
+    }
+}
+
+/**
+ * Connect a YouTube channel, then make a chosen number of Shorts and post
+ * them to it. Connecting goes through Google Play services; the one-time
+ * Google Cloud registration it depends on is spelled out underneath, with the
+ * two values to paste.
+ */
+@Composable
+private fun YouTubeSection(state: AppState) {
+    val shorts = state.shorts
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var connecting by remember { mutableStateOf(false) }
+    val consent = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
+    ) { res ->
+        connecting = false
+        try {
+            val result = com.google.android.gms.auth.api.identity.Identity
+                .getAuthorizationClient(context).getAuthorizationResultFromIntent(res.data)
+            val token = result.accessToken
+            if (token != null) shorts.connected(token) else shorts.failed("YouTube didn't hand over access. Try again.")
+        } catch (e: Throwable) {
+            shorts.failed(app.hypnotica.export.YouTube.explain(e))
+        }
+    }
+    fun connect() {
+        if (connecting) return
+        connecting = true
+        scope.launch {
+            try {
+                val result = app.hypnotica.export.YouTube.authorize(context)
+                val token = result.accessToken
+                val pending = result.pendingIntent
+                if (result.hasResolution() && pending != null) {
+                    consent.launch(androidx.activity.result.IntentSenderRequest.Builder(pending.intentSender).build())
+                    return@launch
+                }
+                connecting = false
+                if (token != null) shorts.connected(token) else shorts.failed("YouTube didn't hand over access. Try again.")
+            } catch (e: Throwable) {
+                connecting = false
+                shorts.failed(app.hypnotica.export.YouTube.explain(e))
+            }
+        }
+    }
+
+    val channel = shorts.channel
+    if (channel == null) {
+        BigButton(if (connecting) "Connecting…" else "Connect YouTube", primary = true) { connect() }
+        Text(
+            "Post Shorts made here straight to your channel.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Connected  ·  $channel",
+                color = Tokens.TextPrimary,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Pill("Disconnect", danger = true, enabled = !shorts.busy) { shorts.disconnect() }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("How many Shorts", color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(4.dp))
+        val counts = ShortsUploader.COUNTS
+        ChipRow(counts.map { it.toString() }, counts.indexOf(shorts.count).coerceAtLeast(0), enabled = !shorts.busy) {
+            shorts.chooseCount(counts[it])
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Who can see them", color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(4.dp))
+        ChipRow(ShortsUploader.PRIVACY_NAMES, shorts.privacy, enabled = !shorts.busy) { shorts.choosePrivacy(it) }
+        Spacer(Modifier.height(12.dp))
+        if (shorts.busy) {
+            // How far through the batch, as a bar, with Stop beside it.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Tokens.TextSecondary.copy(alpha = 0.2f))
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(shorts.progress.coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .background(Tokens.Accent)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Pill("Stop", danger = true) { shorts.stop() }
+        } else {
+            BigButton(
+                if (shorts.count == 1) "Make and post 1 Short" else "Make and post ${shorts.count} Shorts",
+                primary = true
+            ) { shorts.start(context) }
+            Text(
+                "Each takes a minute or so to render. Keep the app open until it's done.",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        for ((title, link) in shorts.posted.takeLast(10)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    title,
+                    color = Tokens.TextPrimary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("Open ›", color = Tokens.AccentText, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+    shorts.status?.let {
+        Text(
+            it,
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+
+    // The one-time registration, folded away.
+    var showSetup by remember { mutableStateOf(false) }
+    Spacer(Modifier.height(8.dp))
+    Disclosure("Set up (once, on a computer)", showSetup) { showSetup = !showSetup }
+    if (showSetup) {
+        val facts = remember { app.hypnotica.export.YouTube.setupFacts(context) }
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        Text(
+            "Google only lets an app post to YouTube once it is registered. On console.cloud.google.com:\n" +
+                "1. Make a project and turn on \"YouTube Data API v3\".\n" +
+                "2. OAuth consent screen: External, then add your own Google account under Test users.\n" +
+                "3. Credentials → Create OAuth client ID → Android, with the package name and SHA-1 below.\n" +
+                "Then come back and tap Connect YouTube. Google will warn the app is unverified; that's expected for your own project.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.height(8.dp))
+        for ((label, value) in listOf("Package name" to facts.first, "SHA-1" to facts.second)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(value))
+                        state.notice = "$label copied."
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(value, color = Tokens.TextPrimary, style = MaterialTheme.typography.bodySmall)
+                }
+                Text("Copy", color = Tokens.AccentText, style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }

@@ -140,6 +140,10 @@ dependencies {
     // Recipe scripting. Pure Java, no NDK.
     implementation("org.luaj:luaj-jse:3.0.1")
 
+    // Connecting a YouTube channel (Settings → YouTube): Google sign-in and
+    // the access token, from Play services. The upload itself is plain HTTPS.
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
+
     testImplementation("junit:junit:4.13.2")
     // Screen pictures (see ScreensTest): Compose rendered on the JVM.
     testImplementation("org.robolectric:robolectric:4.13")

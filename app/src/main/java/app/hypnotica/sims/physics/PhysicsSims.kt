@@ -18,6 +18,7 @@ import app.hypnotica.core.sim.TrapFormat
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
@@ -714,6 +715,9 @@ class PendulumWaveSim : Sim {
     /** Lengths and gravity are scaled together, so the periods are unchanged. */
     private var gravityScale = 1f
 
+    /** Steps each pendulum takes per step of the run, more for the fast ones. */
+    private var substeps = IntArray(0)
+
     override fun setup(env: SimEnv) {
         val p = env.params
         count = p.i("count", 15).coerceIn(3, MAX_PENDULUMS)
@@ -737,8 +741,15 @@ class PendulumWaveSim : Sim {
         // number leaves each period untouched, so it fits the screen and still
         // realigns.
         var longest = 0f
+        // Past a few dozen pendulums they share lengths in bands: the i-th
+        // of twenty thousand swinging 13 + i times a cycle had a period of
+        // milliseconds, which no step can follow, and the wave never came
+        // back into line. Whole numbers of swings per cycle are what make it
+        // realign, so the bands keep those.
+        val distinct = min(count, MAX_DISTINCT)
+        substeps = IntArray(count)
         for (i in 0 until count) {
-            val osc = baseOscillations + i
+            val osc = baseOscillations + (i.toLong() * distinct / count).toInt()
             val period = cyclePeriod / osc
             val w = 2f * PI.toFloat() / period
             // Shortened for the swing: a pendulum let go at θ₀ is slower than
@@ -746,6 +757,9 @@ class PendulumWaveSim : Sim {
             // default swing the whole wave realigned 0.7 s late.
             val raw = GRAVITY_SIM / (w * w) / (largeSwing * largeSwing)
             lengths[i] = raw
+            // Enough small steps that its phase is still right after a whole
+            // cycle of swings: a fast pendulum at one step a frame drifted.
+            substeps[i] = max(1, ceil(w / BASE_STEP_HZ / MAX_STEP_ANGLE).toInt())
             if (raw > longest) longest = raw
         }
         gravityScale = if (longest <= 1e-6f) 1f else MAX_LENGTH / longest
@@ -781,9 +795,15 @@ class PendulumWaveSim : Sim {
             for (i in from until to) {
                 val l = lengths[i]
                 // Exact pendulum, not the small-angle approximation.
-                val acc = -(g / l) * sin(angles[i])
-                omegas[i] = (omegas[i] + acc * dt) * damping
-                angles[i] += omegas[i] * dt
+                val n = substeps[i]
+                val h = dt / n
+                var a = angles[i]; var o = omegas[i]
+                for (k in 0 until n) {
+                    o += -(g / l) * sin(a) * h
+                    a += o * h
+                }
+                omegas[i] = o * damping
+                angles[i] = a
 
                 val side = angles[i] >= 0f
                 if (side != lastSide[i]) {
@@ -942,6 +962,12 @@ class PendulumWaveSim : Sim {
         /** How close every pendulum must be for the wave to count as back in line. */
         /** Every pendulum within this share of the swing of the first: realigned. */
         const val ALIGN_SHARE = 0.2f
+        /** At most this many different lengths; past it, pendulums share them in bands. */
+        const val MAX_DISTINCT = 48
+        /** The run's own step rate, which the substeps are counted against. */
+        const val BASE_STEP_HZ = 120f
+        /** The most a pendulum turns through its swing in one substep, in radians of phase. */
+        const val MAX_STEP_ANGLE = 0.05f
 
         /** The longest string on screen; every other length scales with it. */
         const val MAX_LENGTH = 1.42f

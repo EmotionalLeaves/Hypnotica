@@ -33,6 +33,7 @@ class SandpileSim : Sim {
     private var n = 161
     private var cells = ByteArray(0)
     private var stack = IntArray(0)
+    private var toppleBudget = TOPPLE_BUDGET
     private var stackSize = 0
     private var carry = 0f
     private var grains = 0L
@@ -51,6 +52,11 @@ class SandpileSim : Sim {
         n = (env.params.i("size", 161) or 1).coerceIn(51, MAX_SIZE)
         cells = ByteArray(n * n)
         stack = IntArray(n * n * 2)
+        // The work an avalanche needs grows with the square of the grains,
+        // and the grains with the square of the pile: at a fixed budget a
+        // 350-wide pile spent two minutes budget-bound before it reached its
+        // moment. The budget follows the pile's area instead.
+        toppleBudget = (TOPPLE_BUDGET * max(1f, (n / DEFAULT_SIZE.toFloat()).let { it * it })).toInt().coerceAtMost(MAX_TOPPLE_BUDGET)
         stackSize = 0
         carry = 0f
         grains = 0L
@@ -72,7 +78,7 @@ class SandpileSim : Sim {
         var drops = min(carry.toInt(), MAX_DROPS_PER_STEP)
         carry -= drops
         val centre = (n / 2) * n + n / 2
-        var budget = TOPPLE_BUDGET
+        var budget = toppleBudget
         // An avalanche left unfinished by the budget carries on next step
         // before anything new is dropped, so each one is heard whole.
         if (stackSize > 0) budget -= relax(env, budget)
@@ -291,6 +297,8 @@ class SandpileSim : Sim {
         const val MAX_DROPS_PER_STEP = 2000
         /** Topplings a step may spend; past it the avalanche runs on next step. */
         const val TOPPLE_BUDGET = 25_000
+        const val MAX_TOPPLE_BUDGET = 300_000
+        const val DEFAULT_SIZE = 161
         /** Avalanches smaller than this are the pile's hiss, not a note. */
         const val SOUNDED_AVALANCHE = 24
         const val CALL_AVALANCHE = 500

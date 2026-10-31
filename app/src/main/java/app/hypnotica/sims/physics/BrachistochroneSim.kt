@@ -108,7 +108,10 @@ class BrachistochroneSim : Sim {
     }
 
     private fun layout() {
-        if (hw < 1f) {
+        // Square screens take the upright layout: the side-by-side one needs
+        // the ramp's full width and a board beside it, and at 1:1 the board
+        // had less than no room (a square export threw on its first frame).
+        if (hw < WIDE_FROM) {
             // Upright phone: the ramps across the top, the timing board below.
             dx = 2f * hw * 0.84f
             dy = min(dx / HALF_PI, 0.56f)
@@ -120,9 +123,10 @@ class BrachistochroneSim : Sim {
             boardX0 = -hw * 0.86f
             boardX1 = hw * 0.86f
         } else {
-            // Wide: ramps on the left, board on the right.
-            dy = 1.0f
-            dx = dy * HALF_PI
+            // Wide: ramps on the left, board on the right, the ramp narrowed
+            // if that is what it takes to leave the board its width.
+            dx = min(HALF_PI, 2f * hw * 0.92f - 0.25f - 0.16f - BOARD_MIN)
+            dy = dx / HALF_PI
             ax = -hw * 0.92f
             ay = 0.62f
             boardX0 = ax + dx + 0.25f
@@ -453,7 +457,7 @@ class BrachistochroneSim : Sim {
             // The time axis and the bar.
             g.rect(x0 + span / 2f, y, span / 2f, 0.0015f, AXIS)
             val tNow = if (done) finishedAt[k] else if (iso) min(run, quarter) else min(run, total[k])
-            val len = (span * (tNow / fullT)).toFloat().coerceIn(0f, span)
+            val len = (span * (tNow / fullT)).toFloat().coerceIn(0f, max(0f, span))
             if (len > 0.002f) {
                 val col = if (dim) Palette.lerp(c, Palette.BG, 0.5f) else c
                 g.rect(x0 + len / 2f, y, len / 2f, 0.016f, col)
@@ -511,6 +515,10 @@ class BrachistochroneSim : Sim {
         const val BEAD = 0.019f
         const val HALF_PI = (PI / 2).toFloat()
         val NAMES = listOf("straight", "circle", "steep dip", "cycloid")
+        /** Half-widths from this up get ramps and board side by side. */
+        const val WIDE_FROM = 1.25f
+        /** The least width the timing board is left in the side-by-side layout. */
+        const val BOARD_MIN = 0.7f
         const val POST = 0xFF3A404D.toInt()
         const val AXIS = 0xFF2A2F3A.toInt()
 

@@ -12,6 +12,7 @@ object AlgoMore {
         FloodFillSim.def(),
         SieveSim.def(),
         BlockDropSim.def(),
-        FloodItSim.def()
+        FloodItSim.def(),
+        SnakeBattleSim.def()
     )
 }

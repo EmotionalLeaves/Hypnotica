@@ -25,6 +25,8 @@ object PhysicsMore {
         HungryBallsSim.def(),
         CloneWarSim.def(),
         PaintBattleSim.def(),
-        KingOfTheHillSim.def()
+        KingOfTheHillSim.def(),
+        BallMultiplierSim.def(),
+        SplitBounceSim.def()
     )
 }

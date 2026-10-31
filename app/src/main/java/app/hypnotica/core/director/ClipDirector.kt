@@ -94,6 +94,15 @@ class ClipDirector(seed: Long = System.nanoTime()) {
     var minPayoffSeconds = 2f
     var maxPayoffSeconds = 45f
 
+    /**
+     * The shape of the screen the clip will be played on, width over height.
+     * Most sims lay themselves out to it, so a payoff timed for one shape can
+     * come seconds later on another: an arena checked for a narrow phone had
+     * not been decided by the end of its clip on a 16:9 one.
+     */
+    @Volatile
+    var aspect = 0.46f
+
     private companion object {
         /** How many recent sim-and-hook pairs to avoid repeating. */
         const val RECENT_PAIRS = 12
@@ -424,7 +433,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
     fun checkPayoff(clip: Clip, limitSeconds: Float = 45f): Float {
         return try {
             val core = SimCore(clip.def, clip.seed)
-            core.setAspect(0.46f)
+            core.setAspect(aspect.coerceIn(0.3f, 2.5f))
             core.setLaws(clip.laws)
             for ((k, v) in clip.params) core.params.set(k, v)
             core.restart(clip.seed)

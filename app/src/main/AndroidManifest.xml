@@ -3,6 +3,8 @@
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Only for posting Shorts to a YouTube channel the person connects in Settings. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"

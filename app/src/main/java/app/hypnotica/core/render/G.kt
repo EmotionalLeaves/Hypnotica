@@ -91,17 +91,24 @@ class G {
 
     // ------------------------------------------------------------- shapes
 
-    private fun ensureInstances(extra: Int) {
+    /**
+     * Room for [extra] more shapes: true if there is. Past the cap the frame
+     * is marked overflowed and the shape dropped. The single-shape calls used
+     * to push regardless once the cap was reached, and a sixteen-fold dragon
+     * curve threw on the GL thread at its four hundred thousandth segment.
+     */
+    private fun ensureInstances(extra: Int): Boolean {
         val need = (instanceCount + extra) * STRIDE
-        if (need <= instances.size) return
+        if (need <= instances.size) return true
         if (need > MAX_INSTANCES * STRIDE) {
             overflowed = true
-            return
+            return false
         }
         var cap = instances.size
         while (cap < need) cap *= 2
         if (cap > MAX_INSTANCES * STRIDE) cap = MAX_INSTANCES * STRIDE
         instances = instances.copyOf(cap)
+        return true
     }
 
     private fun ensureGlows(extra: Int) {
@@ -144,7 +151,7 @@ class G {
 
     fun rect(cx: Float, cy: Float, hw: Float, hh: Float, color: Int, rot: Float = 0f, alpha: Float = 1f) {
         if (!usable(cx, cy, hw, hh) || !rot.isFinite()) return
-        ensureInstances(1)
+        if (!ensureInstances(1)) return
         push(instances, instanceCount * STRIDE, cx, cy, hw, hh, rot, SHAPE_RECT, 0f, 0f, color, alpha)
         instanceCount++
     }
@@ -156,7 +163,7 @@ class G {
 
     fun disc(cx: Float, cy: Float, r: Float, color: Int, alpha: Float = 1f) {
         if (!usable(cx, cy, r, r)) return
-        ensureInstances(1)
+        if (!ensureInstances(1)) return
         push(instances, instanceCount * STRIDE, cx, cy, r, r, 0f, SHAPE_DISC, 0f, 0f, color, alpha)
         instanceCount++
     }
@@ -173,7 +180,7 @@ class G {
         if (r <= 0f) return
         // coerceIn lets a NaN through, so the division is guarded above.
         val inner = ((r - thickness) / r).coerceIn(0f, 0.999f)
-        ensureInstances(1)
+        if (!ensureInstances(1)) return
         push(instances, instanceCount * STRIDE, cx, cy, r, r, gapAngle, SHAPE_RING, inner, gap, color, alpha)
         instanceCount++
     }
@@ -216,24 +223,25 @@ class G {
 
     // ------------------------------------------------------------- points
 
-    private fun ensurePoints(extra: Int) {
+    private fun ensurePoints(extra: Int): Boolean {
         val need = pointCount + extra
-        if (need * 3 <= pointPos.size) return
+        if (need * 3 <= pointPos.size) return true
         if (need > MAX_POINTS) {
             overflowed = true
-            return
+            return false
         }
         var cap = pointPos.size / 3
         while (cap < need) cap *= 2
         if (cap > MAX_POINTS) cap = MAX_POINTS
         pointPos = pointPos.copyOf(cap * 3)
         pointColor = pointColor.copyOf(cap * 4)
+        return true
     }
 
     /** The huge-count path: one soft dot, 16 bytes, no per-object draw call. */
     fun point(x: Float, y: Float, size: Float, color: Int) {
         if (!usable(x, y, size, size)) return
-        ensurePoints(1)
+        if (!ensurePoints(1)) return
         val p = pointCount * 3
         pointPos[p] = x
         pointPos[p + 1] = y
@@ -247,7 +255,7 @@ class G {
     }
 
     /** Reserve room before a tight loop so the arrays grow once, not log(n) times. */
-    fun reservePoints(n: Int) = ensurePoints(n)
+    fun reservePoints(n: Int) { ensurePoints(n) }
 
     /**
      * Repeat everything drawn so far [folds] times round the centre, a
@@ -304,5 +312,5 @@ class G {
         }
     }
 
-    fun reserveInstances(n: Int) = ensureInstances(n)
+    fun reserveInstances(n: Int) { ensureInstances(n) }
 }

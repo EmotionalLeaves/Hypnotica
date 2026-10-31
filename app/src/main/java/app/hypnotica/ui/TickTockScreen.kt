@@ -166,8 +166,12 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
      * shares, which is what the stutter on the way out was. runInterruptible is
      * what connects the two.
      */
-    suspend fun generateCancellably(): Clip? =
-        withContext(Dispatchers.Default) { runInterruptible { director.generate() } }
+    suspend fun generateCancellably(): Clip? {
+        // Timed for this screen's shape, which is the one it will play on.
+        val shape = state.engine.core.env.aspect
+        if (shape > 0.2f) director.aspect = shape
+        return withContext(Dispatchers.Default) { runInterruptible { director.generate() } }
+    }
 
     /**
      * Make sure there is something to play, then top the queue up behind it.
@@ -185,6 +189,16 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         return true
     }
 
+    /**
+     * A swipe up made while the queue was empty and a clip was already being
+     * found: the swipe waits for that clip instead of being dropped. It used
+     * to say "Finding the next one…" and then do nothing when one was found.
+     */
+    var wantNext by remember { mutableStateOf(false) }
+
+    /** When the clip on screen was put there, to tell its run's end from the last one's. */
+    var playedAt by remember { mutableStateOf(0L) }
+
     suspend fun prefetch() {
         while (queue.size < 2) {
             val clip = generateCancellably() ?: break
@@ -196,6 +210,8 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
     fun play(clip: Clip) {
         current = clip
         state.tickTockCurrent = clip
+        wantNext = false
+        playedAt = android.os.SystemClock.uptimeMillis()
         liked = false
         progress = 0f
         state.playClip(clip)
@@ -338,6 +354,10 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
             // half way out, leaving the screen dimmed with nothing coming.
             scope.launch(Dispatchers.Main.immediate) {
                 if (swiping) return@launch
+                // The run that finished can be the last clip's, still on the
+                // render thread in the frame before the new one is applied:
+                // moving on for it skipped the clip that had just arrived.
+                if (android.os.SystemClock.uptimeMillis() - playedAt < STALE_FINISH_MS) return@launch
                 generating?.cancel()
                 // After the resolve beat, not on the finishing frame: moving on
                 // the instant a clip finished meant its ending was never seen.
@@ -350,6 +370,17 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
         // Back from the player: carry on with the clip that was opened.
         val resume = current
         if (resume != null) play(resume) else generating = scope.launch { advance() }
+    }
+
+    // A clip that stopped with an error is skipped rather than left frozen
+    // on screen with its timer stalled (the run's clock stops with it).
+    var haltsSeen by remember { mutableIntStateOf(state.tickTockHalts) }
+    LaunchedEffect(state.tickTockHalts) {
+        if (state.tickTockHalts == haltsSeen) return@LaunchedEffect
+        haltsSeen = state.tickTockHalts
+        notice = "That one broke — skipped it."
+        generating?.cancel()
+        generating = scope.launch { advance() }
     }
 
     // The optional time check, off unless the person turned it on.
@@ -430,6 +461,17 @@ fun TickTockScreen(state: AppState, surface: SimSurfaceView) {
                                 generating = scope.launch {
                                     advance()
                                     if (skipped != null && current !== skipped) state.skipClip(skipped)
+                                }
+                            } else if (!wantNext) {
+                                wantNext = true
+                                val skipped = current
+                                scope.launch {
+                                    while (wantNext && queue.isEmpty()) delay(100)
+                                    if (wantNext && current === skipped) {
+                                        wantNext = false
+                                        advance(thenPrefetch = false)
+                                        if (skipped != null && current !== skipped) state.skipClip(skipped)
+                                    }
                                 }
                             }
                         } else if (up) {
@@ -890,6 +932,9 @@ private fun otherPalette(current: String, seed: Long): String {
     if (others.isEmpty()) return current
     return others[((seed ushr 11) and 0x7FFFFFFF).toInt() % others.size]
 }
+
+/** A run that finishes this soon after a clip is put on is the clip before's. */
+private const val STALE_FINISH_MS = 1200L
 
 /** How long a freeze holds, in wall time. */
 private const val FREEZE_MS = 700L

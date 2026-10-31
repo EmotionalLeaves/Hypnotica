@@ -464,6 +464,9 @@ class AppState(
      */
     val director = ClipDirector()
 
+    /** Shorts made here and posted to the person's YouTube channel. */
+    val shorts = ShortsUploader(prefs)
+
     /**
      * Clips checked and ready, kept here rather than in TickTock so they
      * survive leaving it — and so Settings, the only door to TickTock, can
@@ -476,6 +479,13 @@ class AppState(
     var tickTockCurrent: Clip? = null
     val tickTockHistory = ArrayList<Clip>()
     var tickTockWatched = 0
+
+    /**
+     * Clips that stopped with an error while TickTock was showing them. The
+     * halt card is for a sim the person chose; in an endless feed a clip that
+     * throws is skipped, and TickTock watches this to move on.
+     */
+    var tickTockHalts by mutableIntStateOf(0)
 
     /** What the benchmark found, shown in Settings. */
     var benchNote by mutableStateOf<String?>(null)
@@ -799,7 +809,12 @@ class AppState(
             }
             dayStreak = p.dayStreak
         }
-        engine.onHalt = { why ->
+        engine.onHalt = onHalt@{ why ->
+            if (screen == Screen.TICKTOCK) {
+                prefs?.lastSimId = null
+                tickTockHalts++
+                return@onHalt
+            }
             halted = why
             // So the next launch does not open straight back onto the sim that
             // stopped. Without this a sim that throws on its own default values
@@ -1166,6 +1181,9 @@ class AppState(
 
     /** Load and start a generated clip exactly as the director checked it. */
     fun playClip(clip: Clip) {
+        // A clip before this one may have stopped with an error; the engine
+        // draws nothing while it is halted, so the new one would never start.
+        if (engine.halted != null) { engine.clearHalt(); halted = null }
         currentDef = clip.def
         applyBeat(clip.seed)
         paletteName = clip.palette
