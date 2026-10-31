@@ -138,7 +138,9 @@ class VideoExporter(
         val videoSamples = ArrayList<Sample>(totalFrames + 8)
         var videoFormat: MediaFormat? = null
 
-        val audioPcm = if (settings.withAudio) ArrayList<ShortArray>(totalFrames) else null
+        // Kept as floats until the end, so the whole track can be brought up
+        // to a proper level in one go before it becomes 16-bit.
+        val audioPcm = if (settings.withAudio) ArrayList<FloatArray>(totalFrames) else null
 
         try {
             encoder.makeCurrent()
@@ -280,11 +282,7 @@ class VideoExporter(
                     synth.renderOffline(mixBuffer, audioFrames)
                     if (live != null) mixLive(live, mixBuffer, audioFrames, audioAt)
                     audioAt += audioFrames
-                    val pcm = ShortArray(audioFrames * 2)
-                    for (i in pcm.indices) {
-                        pcm[i] = (mixBuffer[i].coerceIn(-1f, 1f) * 32000f).toInt().toShort()
-                    }
-                    audioPcm.add(pcm)
+                    audioPcm.add(mixBuffer.copyOf(audioFrames * 2))
                 } else {
                     core.events.clear()
                 }
@@ -307,7 +305,7 @@ class VideoExporter(
         var audioFormat: MediaFormat? = null
         val audioSamples = ArrayList<Sample>()
         if (audioPcm != null && audioPcm.isNotEmpty()) {
-            val encoded = encodeAudio(audioPcm)
+            val encoded = encodeAudio(Loudness.master(audioPcm))
             audioFormat = encoded.first
             audioSamples.addAll(encoded.second)
         }

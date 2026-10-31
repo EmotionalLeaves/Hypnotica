@@ -25,6 +25,16 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Louder videos
+
+- Exported sound was mixed with the live app's headroom and sat far below
+  everything else on YouTube. Every export is now mastered: the whole track
+  measured over the parts that make sound (silences don't count), raised to
+  about −14 dBFS RMS — where Shorts sit — by up to 30 dB, with a soft
+  limiter rounding peaks off below full scale so nothing clips.
+  `LoudnessTest` checks a quiet track comes up, peaks stay under the
+  ceiling and silence stays silent.
+
 ### Copy & post — auto-tap retired
 
 - Auto-tap never got through YouTube's upload screens on the phone, and is
