@@ -25,6 +25,21 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Auto-tap reads the screen itself
+
+- It never asks for a tap now. When YouTube's screen doesn't say in its
+  accessibility tree what its buttons are — the details screen read as five
+  empty nodes — auto-tap takes a screenshot, reads the words on it with
+  on-device text recognition (ML Kit, through Play services), and touches
+  the words it wants: Cancel on anything that would lose the video; on the
+  details screen the caption box (then types into whatever took the
+  keyboard's focus) and Upload Short; otherwise Next or Done. It does the
+  same when taps found in the tree keep changing nothing.
+- All of YouTube's windows are read, not only the active one: an upload
+  screen can be a sheet in a window of its own.
+- After typing, the keyboard is put away (Back, only while the keyboard is
+  up), so it can't sit over Upload Short.
+
 ### Shorts: no words on the picture; auto-tap, from its first log
 
 - The words and the voice are gone from the videos: no hook sticker, no

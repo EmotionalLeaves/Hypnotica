@@ -48,7 +48,12 @@ class UploadPilotService : AccessibilityService() {
     /** A tap that was tried and changed nothing: next time, a real touch instead. */
     private var failedSig: Sig? = null
 
-    private var teaching: Pilot.Kind? = null
+    /** Screenshots read for words, for screens the tree doesn't describe. */
+    private var reader: ScreenReader? = null
+    private var readingAt = -1L
+    private var reading = false
+    /** The caption box was tapped from a screenshot: type into whatever has focus next. */
+    private var captionTapped = false
 
     // The details screen's other questions, each done once per upload.
     private var descDone = false
@@ -65,6 +70,7 @@ class UploadPilotService : AccessibilityService() {
 
     override fun onServiceConnected() {
         Pilot.service = this
+        reader = ScreenReader(this)
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -84,7 +90,7 @@ class UploadPilotService : AccessibilityService() {
         goneTicks = 0
         lastSig = null; lastKind = null; lastPrint = 0; sameTicks = 0
         seenPrint = 0; stableTicks = 0; failedSig = null
-        teaching = null
+        readingAt = -1L; reading = false; captionTapped = false
         descDone = false; tagsDone = false; aiDone = false; kidsDone = false; scrolls = 0
         sub = null; subActed = false
         Pilot.activity = "Opening YouTube…"
@@ -99,34 +105,12 @@ class UploadPilotService : AccessibilityService() {
     /** Back to doing nothing. */
     fun idle() {
         running = false
-        teaching = null
         handler.removeCallbacksAndMessages(null)
         Pilot.activity = ""
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        val kind = teaching ?: return
-        if (Pilot.job == null) return
-        if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
-        if (event.packageName?.toString() != Pilot.YOUTUBE) return
-        // The person showed it the button: remember it, and carry on.
-        val source = event.source ?: return
-        val node = clickable(source) ?: source
-        val label = labelOf(node) ?: labelOf(source) ?: ""
-        // An editing tool or a way out is never learned as the way on: the
-        // last run learned Volume as "next" and opened it over and over.
-        if (NOT_FORWARD.any { label == it || label.startsWith("$it ") } || destructive(label)) {
-            Pilot.trace("ignored a tap on '$label' — not a way forward")
-            return
-        }
-        val sig = sigOf(node).copy(ctx = screenContext())
-        Pilot.trace("learned ${kind.name.lowercase()}: '$label'")
-        Taps.learn(this, kind, sig)
-        teaching = null
-        progressAt = SystemClock.uptimeMillis()
-        if (kind == Pilot.Kind.UPLOAD) uploadAt = progressAt
-        Pilot.activity = "Learned that tap. Carrying on…"
-        Toast.makeText(this, "Got it — Hypnotica will tap that from now on.", Toast.LENGTH_SHORT).show()
+        // Read on its own clock, not per event: see tick().
     }
 
     private fun tick() {
@@ -157,7 +141,7 @@ class UploadPilotService : AccessibilityService() {
             return
         }
         val nodes = ArrayList<AccessibilityNodeInfo>()
-        collect(root!!, nodes, 0)
+        for (r in youTubeRoots()) collect(r, nodes, 0)
         val print = fingerprint(nodes)
         if (print != tracedPrint) {
             // A new screen: what is on it, so a run that goes wrong can be read back.
@@ -189,6 +173,11 @@ class UploadPilotService : AccessibilityService() {
         if (print == seenPrint) stableTicks++ else { seenPrint = print; stableTicks = 0 }
         if (stableTicks < STABLE_TICKS) return
 
+        if (now - progressAt > GIVE_UP_MS) { done(Pilot.Outcome.Failed("Couldn't get through YouTube's upload screens.")); return }
+        if (reading) return
+        // Taps from the tree that keep changing nothing: read the screen instead.
+        if (uploadAt < 0 && now - progressAt > READ_AFTER_MS * 2 && now - readingAt > READ_EVERY_MS) { readScreen(now); return }
+
         // A question that throws work away ("Discard edits?", "Delete edits?")
         // is always answered Cancel. "Continue" there deleted the video.
         val screenWords = nodes.mapNotNull { labelOf(it) }
@@ -212,13 +201,25 @@ class UploadPilotService : AccessibilityService() {
             if (titleField == null && uploadButton == null) {
                 if (++goneTicks >= 2) done(Pilot.Outcome.Posted)
             } else goneTicks = 0
-            if (now - uploadAt > UPLOAD_SETTLE_MS && titleField != null && uploadButton != null && teaching == null) {
+            if (now - uploadAt > UPLOAD_SETTLE_MS && titleField != null && uploadButton != null) {
                 // Still on the details screen well after the tap: tap again.
                 uploadAt = -1L
             } else return
         }
 
-        if (teaching != null) return
+        if (reading) return
+
+        // The caption box was found in a screenshot and tapped: whatever now
+        // has the keyboard's focus is it.
+        if (captionTapped && !titleSet) {
+            focusedField()?.let { f ->
+                Pilot.job?.let { type(f, it.item.title) }
+                titleSet = true
+                captionTapped = false
+                progressAt = now
+                return
+            }
+        }
 
         if (titleField != null) {
             if (!titleSet) {
@@ -247,19 +248,10 @@ class UploadPilotService : AccessibilityService() {
             }
         }
 
-        // Nothing it knows how to press, or nothing it pressed moved things on.
-        if (now - progressAt > STUCK_MS) {
-            val want = if (titleField != null) Pilot.Kind.UPLOAD else Pilot.Kind.FORWARD
-            teaching = want
-            Pilot.trace("stuck — asking for a tap (${want.name.lowercase()})")
-            Pilot.activity = "Waiting for you to tap the button once…"
-            Toast.makeText(
-                this,
-                if (want == Pilot.Kind.UPLOAD) "Hypnotica can't find Upload here. Tap it once and it'll learn it."
-                else "Hypnotica can't find the next button. Tap it once and it'll learn it.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        // Nothing it knows how to press, or nothing it pressed moved things on:
+        // read the screen from a screenshot and tap what it says.
+        if (now - progressAt > READ_AFTER_MS && !reading && now - readingAt > READ_EVERY_MS) readScreen(now)
+        if (now - progressAt > GIVE_UP_MS) done(Pilot.Outcome.Failed("Couldn't find YouTube's next button, even reading the screen."))
     }
 
     /**
@@ -399,6 +391,14 @@ class UploadPilotService : AccessibilityService() {
         field.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
         field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        // The keyboard can sit over Upload Short: put it away. Back only while
+        // the keyboard is up, where it closes the keyboard and nothing else.
+        handler.postDelayed({
+            val keyboardUp = try {
+                windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            } catch (e: Exception) { false }
+            if (keyboardUp) performGlobalAction(GLOBAL_ACTION_BACK)
+        }, 400)
     }
 
     /**
@@ -406,16 +406,71 @@ class UploadPilotService : AccessibilityService() {
      * keyboard, a toast or a system bar can be what Android calls active —
      * so the other windows on screen are looked through too.
      */
-    private fun youTubeRoot(): AccessibilityNodeInfo? {
-        rootInActiveWindow?.let { if (it.packageName?.toString() == Pilot.YOUTUBE) return it }
-        return try {
-            windows.asSequence()
-                .filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
-                .mapNotNull { it.root }
-                .firstOrNull { it.packageName?.toString() == Pilot.YOUTUBE }
-        } catch (e: Exception) {
-            null
+    private fun youTubeRoot(): AccessibilityNodeInfo? = youTubeRoots().firstOrNull()
+
+    /**
+     * Every window YouTube has on screen, the active one first. Its upload
+     * screens can be split across more than one — a sheet over the editor —
+     * and all of them are read.
+     */
+    private fun youTubeRoots(): List<AccessibilityNodeInfo> {
+        val out = ArrayList<AccessibilityNodeInfo>()
+        rootInActiveWindow?.let { if (it.packageName?.toString() == Pilot.YOUTUBE) out.add(it) }
+        try {
+            for (w in windows) {
+                val r = w.root ?: continue
+                if (r.packageName?.toString() == Pilot.YOUTUBE && out.none { it == r }) out.add(r)
+            }
+        } catch (e: Exception) {}
+        return out
+    }
+
+    /** The text box the keyboard is typing into, in any of YouTube's windows. */
+    private fun focusedField(): AccessibilityNodeInfo? {
+        for (r in youTubeRoots()) {
+            val f = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: continue
+            if (f.isEditable) return f
         }
+        return null
+    }
+
+    /**
+     * The screen read from a screenshot, for when the tree has nothing to go
+     * on, and the first thing it says that auto-tap knows: Cancel on a
+     * question that would lose the video; on the details screen the caption
+     * box, then Upload Short; otherwise Next or Done. Tapped with a real
+     * touch at the words' place.
+     */
+    private fun readScreen(now: Long) {
+        val r = reader ?: return
+        if (!r.available) return
+        reading = true
+        readingAt = now
+        r.read { lines ->
+            reading = false
+            if (Pilot.job == null || !running) return@read
+            val said = lines.map { it.text.lowercase() to it.box }
+            Pilot.trace("read the screen: " + said.joinToString(" | ") { it.first.take(24) }.take(400))
+            fun first(test: (String) -> Boolean) = said.filter { test(it.first) }.maxByOrNull { it.second.centerY() }
+            val words = said.map { it.first }
+            val details = words.any { w -> UPLOAD_WORDS.any { w == it } } || words.any { it.contains("add details") }
+            val target: Pair<String, Rect>? = when {
+                words.any { destructive(it) } -> first { it == "cancel" || it == "keep editing" }
+                details && !titleSet && !captionTapped -> first { w -> CAPTION_WORDS.any { w.contains(it) } }?.also { captionTapped = true }
+                details -> first { w -> UPLOAD_WORDS.any { w == it } }?.also { uploadAt = SystemClock.uptimeMillis() }
+                else -> first { w -> w == "next" || w == "done" }
+            }
+            if (target == null) { Pilot.trace("nothing on it to tap"); return@read }
+            Pilot.trace("tap (from the screenshot): ${target.first}")
+            touch(target.second)
+            progressAt = SystemClock.uptimeMillis()
+            stableTicks = 0
+        }
+    }
+
+    private fun touch(r: Rect) {
+        val path = Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
+        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 60)).build(), null, null)
     }
 
     /** Whether [label] asks to throw something away: whole words, so "close" is not "lose". */
@@ -568,7 +623,11 @@ class UploadPilotService : AccessibilityService() {
         const val STABLE_TICKS = 2
         const val TICK_MS = 700L
         const val JUDGE_TICKS = 4
-        const val STUCK_MS = 20_000L
+        /** Seconds with no progress before the screen is read from a screenshot, and how often again. */
+        const val READ_AFTER_MS = 4000L
+        const val READ_EVERY_MS = 3000L
+        /** With no progress at all for this long, the upload is given up. */
+        const val GIVE_UP_MS = 75_000L
         const val OPEN_TIMEOUT_MS = 20_000L
         const val DONE_AFTER_MS = 1500L
         const val UPLOAD_SETTLE_MS = 8000L
@@ -578,6 +637,8 @@ class UploadPilotService : AccessibilityService() {
         val UPLOAD_WORDS = listOf("upload short", "upload", "post", "publish")
         val DISMISS_WORDS = listOf("got it", "not now", "no thanks", "skip", "ok", "dismiss")
         val TITLE_WORDS = listOf("caption", "title", "short")
+        /** How a Short's caption box introduces itself, on screen. */
+        val CAPTION_WORDS = listOf("caption", "create a title", "add a title", "title")
         /** Words in a question whose yes throws the video or its edits away. */
         val DESTRUCTIVE = setOf("discard", "delete", "lose")
         /** The editor's own tools and ways out: never a way forward. */

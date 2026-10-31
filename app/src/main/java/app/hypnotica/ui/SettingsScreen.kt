@@ -698,8 +698,8 @@ private fun AutoTapSection(state: AppState) {
         NoticeLine(state.notice)
         Text(
             "It finds YouTube's buttons by what they say and remembers the ones that work. " +
-                "When the YouTube app updates it checks them again, and if a screen changes so much " +
-                "it can't find a button, it stops and asks you to tap it once — then it knows.",
+                "When a screen doesn't say what its buttons are, it reads the screen from a " +
+                "screenshot and taps the words itself. It never needs you to tap.",
             color = Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp)

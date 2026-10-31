@@ -44,6 +44,11 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- The text-recognition model auto-tap reads screenshots with, fetched at install. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr" />
+
         <!-- Auto-tap for posting Shorts through the YouTube app. Off until the
              person turns it on in Accessibility settings. -->
         <service

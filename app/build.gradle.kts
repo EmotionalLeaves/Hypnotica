@@ -143,6 +143,9 @@ dependencies {
     // Connecting a YouTube channel (Settings → YouTube): Google sign-in and
     // the access token, from Play services. The upload itself is plain HTTPS.
     implementation("com.google.android.gms:play-services-auth:21.3.0")
+    // Auto-tap reads screens whose buttons have no labels from a screenshot:
+    // on-device text recognition, its model delivered by Play services.
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
 
     testImplementation("junit:junit:4.13.2")
     // Screen pictures (see ScreensTest): Compose rendered on the JVM.
