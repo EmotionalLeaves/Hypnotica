@@ -103,6 +103,19 @@ class ClipDirector(seed: Long = System.nanoTime()) {
     @Volatile
     var aspect = 0.46f
 
+    /**
+     * Callouts a clip must make by its payoff to be used — things that
+     * visibly happen on the way, a KO, a near miss, a lead change. Zero
+     * (TickTock's) takes any clip that pays off; a Short wants a clip where
+     * something happens.
+     */
+    @Volatile
+    var minCallouts = 0
+
+    /** Callouts the last clip checked made on the way to its payoff. */
+    var lastCallouts = 0
+        private set
+
     private companion object {
         /** How many recent sim-and-hook pairs to avoid repeating. */
         const val RECENT_PAIRS = 12
@@ -211,11 +224,11 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             lastAttempts++
             val candidate = propose() ?: return@repeat
             val payoff = checkPayoff(candidate)
-            if (payoff in payoffWindow(candidate.def)) {
+            if (payoff in payoffWindow(candidate.def) && lastCallouts >= minCallouts) {
                 remember(candidate)
                 return candidate.copy(payoffSeconds = payoff)
             }
-            if (fallback == null && payoff > 0f) fallback = candidate.copy(payoffSeconds = payoff)
+            if (fallback == null && payoff > 0f && lastCallouts >= minCallouts) fallback = candidate.copy(payoffSeconds = payoff)
             // A world where this sim never pays off — a pendulum in zero-g
             // does not swing — is not drawn for it again this session.
             if (payoff <= 0f && candidate.laws.name != Laws.OUR_UNIVERSE.name) {
@@ -431,6 +444,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
      * Nothing is rendered; only the simulation runs.
      */
     fun checkPayoff(clip: Clip, limitSeconds: Float = 45f): Float {
+        lastCallouts = 0
         return try {
             val core = SimCore(clip.def, clip.seed)
             core.setAspect(aspect.coerceIn(0.3f, 2.5f))
@@ -446,6 +460,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
                 done += chunk
             }
             scratch.reset()
+            lastCallouts = core.env.calloutSerial
             if (core.payoffFired) core.payoffAt else -1f
         } catch (e: Throwable) {
             -1f

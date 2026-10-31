@@ -43,6 +43,19 @@ class UploadPilotService : AccessibilityService() {
 
     private var teaching: Pilot.Kind? = null
 
+    // The details screen's other questions, each done once per upload.
+    private var descDone = false
+    private var tagsDone = false
+    private var aiDone = false
+    private var kidsDone = false
+    private var scrolls = 0
+
+    /** A side screen opened from the details screen, and what it was opened for. */
+    private enum class Sub { DESC, TAGS, AI, KIDS }
+    private var sub: Sub? = null
+    private var subAt = 0L
+    private var subActed = false
+
     override fun onServiceConnected() {
         Pilot.service = this
     }
@@ -64,6 +77,8 @@ class UploadPilotService : AccessibilityService() {
         goneTicks = 0
         lastSig = null; lastKind = null; lastPrint = 0; sameTicks = 0
         teaching = null
+        descDone = false; tagsDone = false; aiDone = false; kidsDone = false; scrolls = 0
+        sub = null; subActed = false
         Pilot.activity = "Opening YouTube…"
         if (!running) {
             running = true
@@ -138,6 +153,9 @@ class UploadPilotService : AccessibilityService() {
         val titleField = titleField(nodes)
         val uploadButton = if (titleField != null) find(Pilot.Kind.UPLOAD, nodes) else null
 
+        // On a side screen opened for the description, tags or a question.
+        if (sub != null && uploadAt < 0) { onSub(nodes, titleField != null, now); return }
+
         // After Upload: done once the details screen has gone.
         if (uploadAt > 0) {
             if (titleField == null && uploadButton == null) {
@@ -154,16 +172,14 @@ class UploadPilotService : AccessibilityService() {
         if (titleField != null) {
             if (!titleSet) {
                 val job = Pilot.job ?: return
-                titleField.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                val args = Bundle().apply {
-                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, job.item.title)
-                }
-                titleField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                type(titleField, job.item.title)
                 titleSet = true
                 progressAt = now
                 Pilot.activity = "Typing the title…"
                 return
             }
+            // Description, tags, "altered content? No", audience: then Upload.
+            if (chores(nodes, titleField, now)) { progressAt = now; return }
             if (uploadButton != null) {
                 tap(uploadButton, Pilot.Kind.UPLOAD, print)
                 uploadAt = now
@@ -192,6 +208,143 @@ class UploadPilotService : AccessibilityService() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    /**
+     * One of the details screen's other jobs, if any is left: fill in the
+     * description and tags, answer No to "altered or synthetic content" (a
+     * simulation is not realistic footage of anything that happened), and
+     * say the audience isn't made for kids. Each is looked for by its words;
+     * a row that opens its own screen is opened and handled in [onSub]. The
+     * screen is scrolled a little to find rows below the fold. None of it
+     * holds up the upload: whatever can't be found is left as it is.
+     * Returns true if it did something this tick.
+     */
+    private fun chores(nodes: List<AccessibilityNodeInfo>, titleField: AccessibilityNodeInfo, now: Long): Boolean {
+        val job = Pilot.job ?: return false
+        if (!descDone) {
+            if (job.item.description.isEmpty()) descDone = true
+            else {
+                nodes.firstOrNull { it != titleField && isField(it) && hintOf(it).contains("descr") }?.let {
+                    type(it, job.item.description); descDone = true
+                    Pilot.activity = "Writing the description…"
+                    return true
+                }
+                labelled(nodes) { it == "description" || it.startsWith("add description") || it.startsWith("add a description") }?.let {
+                    click(it); descDone = true; openSub(Sub.DESC, now)
+                    return true
+                }
+            }
+        }
+        if (!tagsDone) {
+            if (job.item.tags.isEmpty()) tagsDone = true
+            else {
+                nodes.firstOrNull { it != titleField && isField(it) && hintOf(it).contains("tag") }?.let {
+                    type(it, job.item.tags.joinToString(", ")); tagsDone = true
+                    Pilot.activity = "Adding tags…"
+                    return true
+                }
+                labelled(nodes) { it == "tags" || it.startsWith("add tags") }?.let {
+                    click(it); tagsDone = true; openSub(Sub.TAGS, now)
+                    return true
+                }
+            }
+        }
+        if (!aiDone) {
+            labelled(nodes) { l -> AI_WORDS.any { l.contains(it) } }?.let { question ->
+                aiDone = true
+                Pilot.activity = "Answering No to AI / altered content…"
+                val no = noBelow(nodes, question)
+                if (no != null) click(no) else { click(question); openSub(Sub.AI, now) }
+                return true
+            }
+        }
+        if (!kidsDone) {
+            labelled(nodes) { it.contains("not made for kids") }?.let {
+                kidsDone = true
+                if (!(clickable(it) ?: it).isChecked) click(it)
+                return true
+            }
+            labelled(nodes) { it.startsWith("select audience") || it == "audience" }?.let {
+                kidsDone = true; click(it); openSub(Sub.KIDS, now)
+                return true
+            }
+        }
+        // Rows below the fold: a few looks further down before Upload.
+        if ((!descDone || !tagsDone || !aiDone || !kidsDone) && scrolls < MAX_SCROLLS) {
+            scrolls++
+            val list = nodes.firstOrNull { it.isScrollable }
+            if (list != null && list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true
+        }
+        return false
+    }
+
+    private fun openSub(kind: Sub, now: Long) {
+        sub = kind; subAt = now; subActed = false
+    }
+
+    /**
+     * A side screen: do its one thing, then come back to the details screen —
+     * by itself if YouTube returns there, else with Back. Back is only ever
+     * pressed off the details screen, never on it, where it would throw the
+     * upload away.
+     */
+    private fun onSub(nodes: List<AccessibilityNodeInfo>, onDetails: Boolean, now: Long) {
+        val kind = sub ?: return
+        val job = Pilot.job ?: return
+        if (onDetails && (subActed || now - subAt > SUB_OPEN_MS)) { sub = null; return }
+        if (onDetails) return
+        if (!subActed) {
+            subActed = when (kind) {
+                Sub.DESC -> nodes.firstOrNull { isField(it) }?.let { type(it, job.item.description); true } ?: false
+                Sub.TAGS -> nodes.firstOrNull { isField(it) }?.let { type(it, job.item.tags.joinToString(", ")); true } ?: false
+                Sub.AI -> labelled(nodes) { it == "no" || (it.startsWith("no") && !it.contains("kids") && it.length < 40) }?.let { click(it); true } ?: false
+                Sub.KIDS -> labelled(nodes) { it.contains("not made for kids") }?.let { click(it); true } ?: false
+            }
+            if (subActed) { subAt = now; return }
+        }
+        // Done here, or nothing to do after a few seconds: back to the details.
+        if (subActed || now - subAt > SUB_GIVE_UP_MS) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            sub = null
+        }
+    }
+
+    private fun isField(n: AccessibilityNodeInfo) = n.isEditable || n.className?.toString()?.contains("EditText") == true
+
+    private fun hintOf(n: AccessibilityNodeInfo) =
+        listOfNotNull(n.hintText, n.text, n.contentDescription, n.viewIdResourceName).joinToString(" ").lowercase()
+
+    private fun labelOf(n: AccessibilityNodeInfo) = (n.text ?: n.contentDescription)?.toString()?.trim()?.lowercase()
+
+    private fun labelled(nodes: List<AccessibilityNodeInfo>, test: (String) -> Boolean): AccessibilityNodeInfo? =
+        nodes.firstOrNull { n -> n.isEnabled && labelOf(n)?.let(test) == true }
+
+    /** The "No" answer that goes with [question]: the nearest one at or below it. */
+    private fun noBelow(nodes: List<AccessibilityNodeInfo>, question: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val q = Rect(); question.getBoundsInScreen(q)
+        val r = Rect()
+        return nodes.filter { n ->
+            val l = labelOf(n) ?: return@filter false
+            (l == "no" || (l.startsWith("no") && !l.contains("kids") && l.length < 40)) && n.isEnabled
+        }.filter { n -> n.getBoundsInScreen(r); r.top >= q.top - 4 }
+            .minByOrNull { n -> n.getBoundsInScreen(r); r.top - q.top }
+    }
+
+    private fun click(n: AccessibilityNodeInfo) {
+        val target = clickable(n) ?: n
+        if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
+        val r = Rect()
+        target.getBoundsInScreen(r)
+        if (r.isEmpty) return
+        val path = Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
+        dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 60)).build(), null, null)
+    }
+
+    private fun type(field: AccessibilityNodeInfo, text: String) {
+        field.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
+        field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     private fun done(outcome: Pilot.Outcome) {
@@ -244,10 +397,8 @@ class UploadPilotService : AccessibilityService() {
     private fun titleField(nodes: List<AccessibilityNodeInfo>): AccessibilityNodeInfo? {
         val fields = nodes.filter { it.isEditable || it.className?.toString()?.contains("EditText") == true }
         if (fields.isEmpty()) return null
-        return fields.firstOrNull { f ->
-            val hint = listOfNotNull(f.hintText, f.text, f.contentDescription, f.viewIdResourceName).joinToString(" ").lowercase()
-            TITLE_WORDS.any { hint.contains(it) }
-        } ?: fields.first()
+        val notOthers = fields.filter { f -> hintOf(f).let { !it.contains("descr") && !it.contains("tag") } }
+        return notOthers.firstOrNull { f -> TITLE_WORDS.any { hintOf(f).contains(it) } } ?: notOthers.firstOrNull()
     }
 
     /**
@@ -325,5 +476,12 @@ class UploadPilotService : AccessibilityService() {
         val UPLOAD_WORDS = listOf("upload short", "upload", "post", "publish")
         val DISMISS_WORDS = listOf("got it", "not now", "no thanks", "skip", "ok", "dismiss")
         val TITLE_WORDS = listOf("caption", "title", "short")
+        /** How YouTube asks whether a video is AI-made or altered. */
+        val AI_WORDS = listOf("altered content", "altered or synthetic", "synthetic content", "made with ai", "ai-generated", "generated with ai", "realistic altered")
+        const val MAX_SCROLLS = 3
+        /** How long a side screen gets to appear before it's taken as not having opened. */
+        const val SUB_OPEN_MS = 2500L
+        /** How long to look for what a side screen is for before going back anyway. */
+        const val SUB_GIVE_UP_MS = 6000L
     }
 }

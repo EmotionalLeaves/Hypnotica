@@ -293,11 +293,15 @@ class SimCore(def: SimDef, seed: Long = 1L) {
         var i = 0
         while (i < n && !finished) {
             params.tick(env.time)
+            val calloutsBefore = env.calloutSerial
             sim.step(env, dt)
             env.time += dt
             stepCount++
             if (!payoffFired && sim.payoff()) {
                 payoffFired = true
+                // Its word, as the live loop gives it, so a rendered video
+                // pops the same word at the same moment.
+                if (env.calloutSerial == calloutsBefore) PayoffWords.of(def.id)?.let { env.callout(it, big = true) }
                 // How far into the run it landed. Backwards time makes env.time
                 // negative, and a negative payoff time looks like "never" to the
                 // clip director.

@@ -37,7 +37,8 @@ object Pilot {
     /** What a remembered tap is for. */
     enum class Kind { FORWARD, UPLOAD, DISMISS }
 
-    class Item(val uri: Uri, val title: String)
+    /** A Short to post: the file, its caption (the title), its description and tags. */
+    class Item(val uri: Uri, val title: String, val description: String = "", val tags: List<String> = emptyList())
 
     sealed class Outcome {
         object Posted : Outcome()
@@ -89,6 +90,7 @@ object Pilot {
             putExtra(Intent.EXTRA_STREAM, item.uri)
             putExtra(Intent.EXTRA_TITLE, item.title)
             putExtra(Intent.EXTRA_SUBJECT, item.title)
+            putExtra(Intent.EXTRA_TEXT, item.description)
             setPackage(YOUTUBE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }

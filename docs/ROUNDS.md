@@ -25,6 +25,44 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Shorts that hold attention — after YouTube's own review
+
+YouTube's automated review of an early Short (a sort, captioned "Listen to
+it") marked it C for the hook, B for visuals, B− for sound, B+ for structure
+and C+ for presence. Each point, answered:
+
+- Hook: every Short opens on a line about its own sim — "Snake battle: which
+  one wins? 👇", "Glass bridge: which one wins?", "Break and run — wait for
+  it… 😳" — and a sort hides its name: "Can you guess this sorting
+  algorithm? 🤔", answered on screen and aloud at the end ("It's Radix sort
+  (LSD)!"). The post's caption is the same hook plus hashtags, and never
+  gives a sort's answer away.
+- Visuals: the hook is a violet sticker that pops in and settles, smaller
+  lines sit on dark plates, the app's callouts ("Double KO!", "Photo
+  finish!") are burned in as they happen in outlined lettering, a number
+  clip's number runs big on screen, and a small HYPNOTICA mark sits at the
+  top of every frame.
+- Sound: a beat under every Short, chosen per clip as the app's Auto beat
+  does — the sim's notes land on its grid with a kick and a bass under
+  them instead of a stream of raw clicks — and a fade over the first 0.8 s,
+  so a busy opening isn't a burst of noise.
+- Structure: the edit runs the hook at real time, the dull middle of the
+  build at 1.6–2×, real time again, then 0.72× for the last breath before
+  the moment, and real time after. `ShortsPlanTest` renders the edit the
+  way the exporter does and checks the moment lands where the captions
+  around it are placed.
+- Presence: the hook is spoken (the phone's own text-to-speech, laid into
+  the sound with the sim ducked under it), the reveal or "Did you call it?"
+  after the moment, and every Short ends on "Follow for a new sim every
+  day".
+- Choice: Shorts come only from clips where at least two moments are called
+  on the way (a KO, a near miss, a lead change), never the slow loop or
+  grow kinds, checked at the video's own 1080 × 1920 shape.
+- Posting through the YouTube app now also fills in the description and
+  tags when the upload screens have fields for them, answers No to "altered
+  or synthetic content" (a simulation isn't realistic footage of anything
+  that happened), picks "not made for kids", and then taps Upload.
+
 ### Auto-tap — Shorts through the YouTube app
 
 - A second way to post (Settings → YouTube → "YouTube app"), with no Google

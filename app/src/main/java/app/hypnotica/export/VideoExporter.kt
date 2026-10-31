@@ -66,8 +66,32 @@ class VideoExporter(
     private val trails: Float = 0f,
     private val vignette: Float = 0f,
     /** The accessibility settings the preview was running under. */
-    private val safety: SafetySettings = SafetySettings()
+    private val safety: SafetySettings = SafetySettings(),
+    /** Words that follow the run itself — its callouts, its count — or null for none. */
+    private val live: LiveWords? = null
 ) {
+
+    /**
+     * What a Short shows on top of the picture as the run goes: the words
+     * the app pops when something happens ("Double KO!", "Photo finish!"),
+     * and, for a number clip, the number itself, big, with its label.
+     */
+    class LiveWords(
+        val callouts: Boolean = true,
+        val count: Boolean = false,
+        /** Captions drawn in a Short's style: a sticker hook, notes on plates. */
+        val styled: Boolean = false,
+        /** A small mark in the top corner of every frame, or null. */
+        val brand: String? = null,
+        /** Seconds the sound fades in over, so a busy first note isn't a burst of noise. */
+        val fadeInSeconds: Float = 0f,
+        /** Spoken lines: when each starts, in seconds, and its sound (44.1 kHz stereo). */
+        val voice: List<Pair<Float, ShortArray>> = emptyList()
+    )
+
+    /** A callout on screen: its words, how big, and when it popped. */
+    private class Pop(val text: String, val big: Boolean, val at: Float)
+
 
     /** The render owns its own copy; Studio stays editable while it runs. */
     private val project: Project = project.copy()
@@ -145,6 +169,10 @@ class VideoExporter(
 
             val camera = Camera()
             val overlay = TextOverlay().also { it.prepare() }
+            var audioAt = 0L
+            var calloutsSeen = core.env.calloutSerial
+            var pop: Pop? = null
+            var count: Pair<String, String>? = null
             val g = G()
             // The same limits the preview ran under. A bare limiter here meant
             // somebody who turned on Reduce flashing, checked the preview and
@@ -212,7 +240,33 @@ class VideoExporter(
 
                 // Captions go on last, over the finished frame.
                 for (clip in project.texts) {
-                    overlay.draw(clip, time, settings.width, settings.height)
+                    if (live?.styled == true) overlay.drawStyled(clip, time, settings.width, settings.height)
+                    else overlay.draw(clip, time, settings.width, settings.height)
+                }
+                if (live != null) {
+                    live.brand?.let { overlay.drawText(it, TextOverlay.Style.BRAND, BRAND_Y, 0.85f, 1f, settings.width, settings.height) }
+                    if (live.count && (frame % COUNT_EVERY == 0 || count == null)) count = core.sim.counters().firstOrNull()
+                    count?.let { (label, value) ->
+                        overlay.drawText(value, TextOverlay.Style.COUNT, COUNT_Y, 0.95f, 1f, settings.width, settings.height)
+                        overlay.drawText(label, TextOverlay.Style.LABEL, COUNT_Y - 0.085f, 0.9f, 1f, settings.width, settings.height)
+                    }
+                    if (live.callouts && core.env.calloutSerial != calloutsSeen) {
+                        calloutsSeen = core.env.calloutSerial
+                        pop = Pop(core.env.calloutText, core.env.calloutBig, time)
+                    }
+                    pop?.let { p ->
+                        // Popped as the app pops it: in a touch too big, settling
+                        // with a little bounce, held, then faded.
+                        val age = time - p.at
+                        val life = if (p.big) POP_BIG_SECONDS else POP_SECONDS
+                        if (age > life) pop = null
+                        else {
+                            val alpha = kotlin.math.min((age / 0.08f).coerceIn(0f, 1f), ((life - age) / 0.3f).coerceIn(0f, 1f))
+                            val scale = 1f + 0.3f * kotlin.math.exp(-age * 9f) * kotlin.math.cos(age * 17f)
+                            val style = if (p.big) TextOverlay.Style.CALLOUT_BIG else TextOverlay.Style.CALLOUT
+                            overlay.drawText(p.text, style, POP_Y, alpha, scale, settings.width, settings.height)
+                        }
+                    }
                 }
 
                 if (audioPcm != null) {
@@ -224,6 +278,8 @@ class VideoExporter(
                     audioCarry -= audioFrames
                     java.util.Arrays.fill(mixBuffer, 0f)
                     synth.renderOffline(mixBuffer, audioFrames)
+                    if (live != null) mixLive(live, mixBuffer, audioFrames, audioAt)
+                    audioAt += audioFrames
                     val pcm = ShortArray(audioFrames * 2)
                     for (i in pcm.indices) {
                         pcm[i] = (mixBuffer[i].coerceIn(-1f, 1f) * 32000f).toInt().toShort()
@@ -260,6 +316,34 @@ class VideoExporter(
         writeMp4(outFile, vf, videoSamples, audioFormat, audioSamples)
         progress = 1f
         return outFile
+    }
+
+    /**
+     * A Short's sound on top of the sim's: faded in at the start, and the
+     * spoken lines laid in, the sim ducked under them so the words are heard.
+     * [at] is where this block starts, in sample frames.
+     */
+    private fun mixLive(live: LiveWords, mix: FloatArray, frames: Int, at: Long) {
+        for ((start, pcm) in live.voice) {
+            val from = (start * SAMPLE_RATE).toLong()
+            val len = pcm.size / 2
+            if (at + frames <= from || at >= from + len) continue
+            for (f in 0 until frames) {
+                val k = at + f - from
+                if (k < 0 || k >= len) continue
+                val i = (k * 2).toInt()
+                mix[f * 2] = mix[f * 2] * VOICE_DUCK + pcm[i] / 32768f
+                mix[f * 2 + 1] = mix[f * 2 + 1] * VOICE_DUCK + pcm[i + 1] / 32768f
+            }
+        }
+        val fade = live.fadeInSeconds * SAMPLE_RATE
+        if (fade > 0f && at < fade) {
+            for (f in 0 until frames) {
+                val g = ((at + f) / fade).coerceAtMost(1f)
+                mix[f * 2] *= g * g
+                mix[f * 2 + 1] *= g * g
+            }
+        }
     }
 
     /** Pull everything the encoder has ready into memory. */
@@ -452,6 +536,18 @@ class VideoExporter(
     }
 
     companion object {
+        /** Where a callout pops, a little above the middle, clear of a Short's own buttons. */
+        private const val POP_Y = 0.42f
+        private const val POP_SECONDS = 1.0f
+        private const val POP_BIG_SECONDS = 1.5f
+        /** Where the channel's mark sits: top middle, under a Short's own top bar. */
+        private const val BRAND_Y = 0.83f
+        /** How loud the sim is while a line is spoken. */
+        private const val VOICE_DUCK = 0.45f
+        /** Where the running count sits, under the middle, above a Short's title. */
+        private const val COUNT_Y = -0.42f
+        /** The count is read every few frames, not every one. */
+        private const val COUNT_EVERY = 4
         const val SAMPLE_RATE = 44100
         const val AUDIO_MIME = "audio/mp4a-latm"
         /** Buffered in memory, so the length is capped rather than unbounded. */
