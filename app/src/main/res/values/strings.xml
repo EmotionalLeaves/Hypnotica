@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Hypnotica</string>
+    <string name="pilot_summary">Posts Hypnotica\'s Shorts through the YouTube app, tapping through the upload for you.</string>
+    <string name="pilot_description">When you ask Hypnotica to post Shorts, this taps through the YouTube app\'s upload screens for you: it closes tips, presses Next, types the title and presses Upload. It reads only the YouTube app\'s screens, and only while an upload from Hypnotica is running; the rest of the time it does nothing. If YouTube changes a screen and it can\'t find a button, it asks you to tap it once and remembers it.</string>
 </resources>

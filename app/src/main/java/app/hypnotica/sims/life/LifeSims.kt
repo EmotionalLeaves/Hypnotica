@@ -1412,15 +1412,11 @@ class ReactionDiffusionSim : Sim {
             3 -> { feed = 0.03f; kill = 0.062f }      // spots
             else -> { feed = 0.055f; kill = 0.062f }  // coral
         }
-        val seeds = p.i("seeds", 16).coerceIn(1, 200)
-        repeat(seeds) {
-            val cx = env.rng.int(6, w - 6)
-            val cy = env.rng.int(6, h - 6)
-            for (y in -4..4) for (x in -4..4) {
-                val idx = (cy + y) * w + (cx + x)
-                if (idx in 0 until n) b[idx] = 1f
-            }
-        }
+        // Blobs packed over more than a sixth of a small field use up the
+        // first chemical everywhere at once and the whole pattern dies: a
+        // black screen. Past that they are left out.
+        val seeds = p.i("seeds", 16).coerceIn(1, 200).coerceAtMost(max(1, (n * MAX_SEED_COVER / 81f).toInt()))
+        repeat(seeds) { blob(env) }
         carry = 0f
         generations = 0
         payoffFrame = false
@@ -1454,9 +1450,27 @@ class ReactionDiffusionSim : Sim {
             pulseCarry -= 1f
             env.emit(EventKind.STEP, mean.coerceIn(0f, 1f), 0f, 0.15f + 0.25f * growth)
         }
+        // Some mixes die out whatever the start. A field gone dark gets a
+        // few fresh blobs rather than staying black.
+        if (mean < DEAD_MEAN && generations > REVIVE_AFTER) {
+            repeat(3) { blob(env) }
+            env.emit(EventKind.BIRTH, 0.6f, 0f, 0.4f)
+        }
         if (!aged && generations > PAYOFF_GENERATIONS) {
             aged = true
             payoffFrame = true
+        }
+    }
+
+    /** A square of the second chemical, somewhere on the field. */
+    private fun blob(env: SimEnv) {
+        val cx = env.rng.int(0, w)
+        val cy = env.rng.int(0, h)
+        for (y in -4..4) for (x in -4..4) {
+            // The field wraps, so a blob near an edge wraps with it.
+            val idx = ((cy + y + h) % h) * w + ((cx + x + w) % w)
+            b[idx] = 1f
+            a[idx] = 0.5f
         }
     }
 
@@ -1539,6 +1553,9 @@ class ReactionDiffusionSim : Sim {
         listOf("generations" to String.format(java.util.Locale.US, "%,d", generations))
 
     companion object {
+        const val MAX_SEED_COVER = 0.16f
+        const val DEAD_MEAN = 0.001f
+        const val REVIVE_AFTER = 300
         const val RD_BANDS = 28
         /** Rise per step above which a cell counts as a growing front. */
         const val RD_GROWING = 0.0015f

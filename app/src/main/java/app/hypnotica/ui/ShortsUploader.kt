@@ -18,6 +18,7 @@ import app.hypnotica.core.studio.TrackKind
 import app.hypnotica.export.ExportSettings
 import app.hypnotica.export.VideoExporter
 import app.hypnotica.export.YouTube
+import app.hypnotica.pilot.Pilot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +50,10 @@ class ShortsUploader(private val prefs: Prefs?) {
     var privacy by mutableIntStateOf(prefs?.youTubePrivacy ?: 0)
         private set
 
+    /** [ROUTE_APP] or [ROUTE_API]. */
+    var route by mutableIntStateOf(prefs?.youTubeRoute ?: ROUTE_APP)
+        private set
+
     var busy by mutableStateOf(false)
         private set
 
@@ -78,6 +83,8 @@ class ShortsUploader(private val prefs: Prefs?) {
 
     fun choosePrivacy(i: Int) { privacy = i.coerceIn(0, 2); prefs?.youTubePrivacy = privacy }
 
+    fun chooseRoute(i: Int) { if (!busy) { route = i.coerceIn(0, 1); prefs?.youTubeRoute = route; status = null } }
+
     /** Remember the channel a fresh token belongs to. */
     fun connected(token: String) {
         status = "Connected. Checking the channel…"
@@ -102,10 +109,81 @@ class ShortsUploader(private val prefs: Prefs?) {
     fun stop() {
         stopAsked = true
         exporter?.cancel()
+        Pilot.stop()
     }
 
-    /** Make and post [count] Shorts. */
+    /** Make and post [count] Shorts, the chosen way. */
     fun start(context: Context) {
+        if (route == ROUTE_APP) startViaApp(context) else startViaApi(context)
+    }
+
+    /**
+     * Render the whole batch first, while Hypnotica is on screen, then hand
+     * them to the YouTube app one at a time with auto-tap stepping through
+     * each upload. The files are kept until the next batch: the YouTube app
+     * goes on reading one after its upload screen has closed.
+     */
+    private fun startViaApp(context: Context) {
+        if (busy) return
+        val app = context.applicationContext
+        if (!Pilot.isOn(app)) {
+            status = "Turn on Hypnotica auto-tap first (the button above)."
+            return
+        }
+        busy = true
+        stopAsked = false
+        progress = 0f
+        job = scope.launch {
+            var done = 0
+            try {
+                val dir = File(app.getExternalFilesDir(null), "shorts").apply { mkdirs() }
+                // Last batch's files: YouTube has long finished with them.
+                dir.listFiles()?.forEach { if (System.currentTimeMillis() - it.lastModified() > KEEP_MS) it.delete() }
+                val made = ArrayList<Pair<File, String>>()
+                for (i in 0 until count) {
+                    if (stopAsked) break
+                    val n = "${i + 1} of $count"
+                    status = "Finding a good one ($n)…"
+                    val clip = withContext(Dispatchers.Default) { runInterruptible { director.generate() } }
+                        ?: throw IllegalStateException("Couldn't find a clip that pays off. Try again.")
+                    if (stopAsked) break
+                    status = "Rendering ${clip.def.title} ($n)…"
+                    val file = File(dir, "short-${System.currentTimeMillis()}.mp4")
+                    render(clip, file) { p -> progress = (i + p) / count * RENDER_SHARE }
+                    made.add(file to detailsFor(clip).title)
+                }
+                for ((i, pair) in made.withIndex()) {
+                    if (stopAsked) break
+                    val (file, title) = pair
+                    status = "Posting ${i + 1} of ${made.size} in YouTube — hands off for a moment…"
+                    progress = RENDER_SHARE + (1f - RENDER_SHARE) * i / made.size
+                    val uri = androidx.core.content.FileProvider.getUriForFile(app, app.packageName + ".files", file)
+                    when (val outcome = Pilot.post(app, Pilot.Item(uri, title))) {
+                        is Pilot.Outcome.Posted -> { done++; posted.add(title to "https://studio.youtube.com") }
+                        is Pilot.Outcome.Stopped -> break
+                        is Pilot.Outcome.Failed -> throw IllegalStateException(outcome.why)
+                    }
+                    if (i < made.size - 1) delay(GAP_MS)
+                }
+                progress = 1f
+                status = when {
+                    stopAsked -> "Stopped. $done posted."
+                    done == 1 -> "Posted 1 Short. YouTube finishes uploading it in the background."
+                    else -> "Posted $done Shorts. YouTube finishes uploading them in the background."
+                }
+            } catch (e: InterruptedException) {
+                status = "Stopped. $done posted."
+            } catch (e: Throwable) {
+                status = (if (done > 0) "$done posted, then: " else "") + (e.message ?: "Something went wrong.")
+            } finally {
+                busy = false
+                exporter = null
+            }
+        }
+    }
+
+    /** Make and post [count] Shorts through the YouTube Data API. */
+    private fun startViaApi(context: Context) {
         if (busy) return
         val app = context.applicationContext
         busy = true
@@ -218,6 +296,10 @@ class ShortsUploader(private val prefs: Prefs?) {
     }
 
     companion object {
+        const val ROUTE_APP = 0
+        const val ROUTE_API = 1
+        val ROUTE_NAMES = listOf("YouTube app", "Google API")
+        private const val KEEP_MS = 6 * 60 * 60_000L
         const val MAX_COUNT = 10
         val COUNTS = listOf(1, 2, 3, 5, 10)
         val PRIVACY = listOf("private", "unlisted", "public")

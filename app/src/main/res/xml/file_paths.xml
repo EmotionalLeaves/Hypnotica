@@ -2,4 +2,6 @@
 <paths>
     <!-- Where VideoExporter writes before the clip is published or shared. -->
     <external-files-path name="exports" path="exports/" />
+    <!-- Shorts waiting to be handed to the YouTube app. -->
+    <external-files-path name="shorts" path="shorts/" />
 </paths>

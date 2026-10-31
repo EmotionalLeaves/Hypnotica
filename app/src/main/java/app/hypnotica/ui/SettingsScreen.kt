@@ -446,6 +446,13 @@ private fun YouTubeSection(state: AppState) {
         }
     }
 
+    ChipRow(ShortsUploader.ROUTE_NAMES, shorts.route, enabled = !shorts.busy) { shorts.chooseRoute(it) }
+    Spacer(Modifier.height(8.dp))
+    if (shorts.route == ShortsUploader.ROUTE_APP) {
+        AutoTapSection(state)
+        return
+    }
+
     val channel = shorts.channel
     if (channel == null) {
         BigButton(if (connecting) "Connecting…" else "Connect YouTube", primary = true) { connect() }
@@ -578,4 +585,125 @@ private fun YouTubeSection(state: AppState) {
             }
         }
     }
+}
+
+/**
+ * Posting through the YouTube app: Hypnotica renders the batch, hands each
+ * Short to YouTube and auto-tap steps through the upload. Needs no Google
+ * Cloud project, only the accessibility service turned on.
+ */
+@Composable
+private fun AutoTapSection(state: AppState) {
+    val shorts = state.shorts
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Turned on in another screen, so looked at again every second while this is open.
+    var on by remember { mutableStateOf(app.hypnotica.pilot.Pilot.isOn(context)) }
+    var learned by remember { mutableStateOf(app.hypnotica.pilot.Taps.count(context)) }
+    var doing by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        while (true) {
+            on = app.hypnotica.pilot.Pilot.isOn(context)
+            learned = app.hypnotica.pilot.Taps.count(context)
+            doing = app.hypnotica.pilot.Pilot.activity
+            delay(1000)
+        }
+    }
+    fun open(intent: android.content.Intent) {
+        runCatching { context.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+    if (!on) {
+        BigButton("Turn on auto-tap", primary = true) {
+            open(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        Text(
+            "In Accessibility, open \"Hypnotica auto-tap\" and switch it on. If the switch is greyed out, " +
+                "Android is blocking it because the app didn't come from the Play Store: open App info, " +
+                "tap ⋮ (top right) → Allow restricted settings, then try again.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Pill("Open App info") {
+            open(
+                android.content.Intent(
+                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.fromParts("package", context.packageName, null)
+                )
+            )
+        }
+    } else {
+        Text("Auto-tap is on", color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(12.dp))
+        Text("How many Shorts", color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(4.dp))
+        val counts = ShortsUploader.COUNTS
+        ChipRow(counts.map { it.toString() }, counts.indexOf(shorts.count).coerceAtLeast(0), enabled = !shorts.busy) {
+            shorts.chooseCount(counts[it])
+        }
+        Spacer(Modifier.height(12.dp))
+        if (shorts.busy) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Tokens.TextSecondary.copy(alpha = 0.2f))
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(shorts.progress.coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .background(Tokens.Accent)
+                )
+            }
+            if (doing.isNotEmpty()) {
+                Text(doing, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            Pill("Stop", danger = true) { shorts.stop() }
+        } else {
+            BigButton(
+                if (shorts.count == 1) "Make and post 1 Short" else "Make and post ${shorts.count} Shorts",
+                primary = true
+            ) { shorts.start(context) }
+            Text(
+                "Renders them all first (about a minute each), then posts each one through the YouTube app. " +
+                    "Hands off the phone while it taps. Who can see them is your channel's upload default.",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (learned == 0) "No taps learned yet" else "$learned taps learned",
+                color = Tokens.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            if (learned > 0) Pill("Forget them", enabled = !shorts.busy) {
+                app.hypnotica.pilot.Taps.forget(context)
+                learned = 0
+            }
+        }
+        Text(
+            "It finds YouTube's buttons by what they say and remembers the ones that work. " +
+                "When the YouTube app updates it checks them again, and if a screen changes so much " +
+                "it can't find a button, it stops and asks you to tap it once — then it knows.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+    shorts.status?.let {
+        Text(it, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+    }
+    Text(
+        "YouTube's terms don't allow automated use of the service; auto-tap posts to your own channel at your own risk.",
+        color = Tokens.TextSecondary.copy(alpha = 0.7f),
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp)
+    )
 }

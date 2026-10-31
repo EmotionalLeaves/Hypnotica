@@ -25,6 +25,30 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Auto-tap — Shorts through the YouTube app
+
+- A second way to post (Settings → YouTube → "YouTube app"), with no Google
+  Cloud project and no private-only rule: Hypnotica renders the batch, then
+  hands each Short to the YouTube app, and an accessibility service the
+  person switches on ("Hypnotica auto-tap") steps through YouTube's upload
+  screens — closes tips, Next, types the title, Upload — then brings
+  Hypnotica back for the next one. It reads only YouTube's windows, and
+  only while an upload from Hypnotica is running.
+- Nothing about YouTube's screens is fixed in the code, so an update to the
+  YouTube app doesn't break it: buttons are found by what they say (whole
+  words, so "Uploading…" is never an Upload button) and where they sit; a
+  tap that moved the screen on is remembered and tried first next time, one
+  that didn't loses trust and is dropped after two misses; when the YouTube
+  app's version changes, every remembered tap goes back on probation; and
+  on a screen it can't get past it stops and asks for one tap, learns that
+  button, and carries on. Settings shows how many taps it has learned and
+  can forget them.
+- Android 13 and later block accessibility services for apps installed
+  outside the Play Store until "Allow restricted settings" is turned on in
+  the app's App info; the section says so and opens App info. YouTube's
+  terms don't allow automated use of the service, and the section says that
+  too.
+
 ### Check loop C1 — TickTock played through, every sim shuffled, YouTube
 
 - TickTock, played back headless the way the screen plays it (now
@@ -53,7 +77,15 @@ phone, and nothing here can tick it from a build server.
   before its moment (the budget now follows the pile's area: about 30 s);
   and a sixteen-fold dragon curve on a square screen threw on the render
   thread — the drawing list dropped shapes past its cap only when told to
-  reserve room, and a single shape past it wrote off the end of the buffer.
+  reserve room, and a single shape past it wrote off the end of the buffer;
+  and reaction-diffusion with eighty blobs packed into a narrow field used up
+  its first chemical everywhere at once and went black for good (blobs now
+  cover at most a sixth of the field, and a field gone dark is reseeded);
+  and the Game of Life started at nine cells in ten starved in one
+  generation and stayed a black board (a dead board now gets a fresh soup).
+  Each game now has its own generator, from the sim and the game's number,
+  so the test finds the same things on every machine; a six-a-sim soak
+  after the fixes came back clean.
 - YouTube: Settings → YouTube connects a channel through Google sign-in and
   makes and posts a chosen number of Shorts (1, 2, 3, 5 or 10) — each a
   TickTock clip checked at 1080 × 1920, rendered upright with its hook as

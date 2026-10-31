@@ -672,6 +672,14 @@ class GameOfLifeSim : Sim {
             births = b
             deaths = d
             countAlive()
+            // Everything dead — a start too crowded to live (at nine in ten
+            // every cell starves in one generation) or a soup that burned
+            // out — is a black board. A fresh soup goes down instead.
+            if (alive == 0) {
+                for (i in cells.indices) cells[i] = if (env.rng.nextFloat() < RESEED_DENSITY) 1 else 0
+                countAlive()
+                env.emit(EventKind.BIRTH, 0.7f, 0f, 0.5f)
+            }
             val activity = ((b + d).toFloat() / max(1, w * h / 40)).coerceIn(0f, 1f)
             // Panned to where on the board the births and the deaths were (a
             // fixed -0.3 / +0.3 said nothing about the picture).
@@ -765,6 +773,8 @@ class GameOfLifeSim : Sim {
     )
 
     companion object {
+        /** The density a dead board is reseeded at: a soup that lives. */
+        const val RESEED_DENSITY = 0.32f
         /** Grids up to this many cells along the long side draw as squares. */
         private const val SQUARES_UP_TO = 420
         /** Grids up to this many cells along the long side get a board drawn. */

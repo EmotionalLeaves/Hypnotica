@@ -19,7 +19,6 @@ import java.util.Random
 class RandomGamesTest {
     @Test
     fun games() {
-        val rng = Random(20261030L)
         val g = G()
         val out = StringBuilder()
         var problems = 0
@@ -30,6 +29,11 @@ class RandomGamesTest {
             val simStart = System.nanoTime()
             var noPayoff = 0
             for (game in 0 until GAMES) {
+                // Each game its own generator, from the sim and the game's
+                // number: one shared stream made every later sim's settings
+                // depend on how many frames the slow ones before it managed,
+                // so a run found different things on every machine.
+                val rng = Random(BASE_SEED + def.id.hashCode() * 31L + game)
                 val seed = rng.nextLong()
                 val aspect = floatArrayOf(0.45f, 0.5625f, 1f, 1.8f)[rng.nextInt(4)]
                 val chosen = HashMap<String, Float>()
@@ -120,6 +124,7 @@ class RandomGamesTest {
     companion object {
         /** Games per sim: a few, every build. Raise it for a long soak. */
         const val GAMES = 2
+        const val BASE_SEED = 20261030L
         /** Simulated seconds a game may run, at most. */
         const val LIMIT_SECONDS = 30f
         /** Real time a game may take, so the biggest settings don't hold up the suite. */

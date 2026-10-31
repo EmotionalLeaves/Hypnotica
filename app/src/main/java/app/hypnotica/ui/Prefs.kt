@@ -175,6 +175,11 @@ class Prefs(context: Context) {
         get() = sp.getString(KEY_YT_CHANNEL, null)
         set(value) = sp.edit().putString(KEY_YT_CHANNEL, value).apply()
 
+    /** 0: through the YouTube app with auto-tap; 1: through the YouTube Data API. */
+    var youTubeRoute: Int
+        get() = sp.getInt(KEY_YT_ROUTE, 0)
+        set(value) = sp.edit().putInt(KEY_YT_ROUTE, value).apply()
+
     var youTubeCount: Int
         get() = sp.getInt(KEY_YT_COUNT, 3)
         set(value) = sp.edit().putInt(KEY_YT_COUNT, value).apply()
@@ -239,6 +244,7 @@ class Prefs(context: Context) {
         const val KEY_DAY_STREAK = "day_streak"
         const val KEY_YT_CHANNEL = "yt_channel"
         const val KEY_YT_COUNT = "yt_count"
+        const val KEY_YT_ROUTE = "yt_route"
         const val KEY_YT_PRIVACY = "yt_privacy"
         const val KEY_SEEN = "seen_sims"
         const val KEY_RECENT = "recent_sims"
