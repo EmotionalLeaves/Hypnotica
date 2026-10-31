@@ -41,6 +41,13 @@ class UploadPilotService : AccessibilityService() {
     private var lastPrint = 0
     private var sameTicks = 0
 
+    /** The screen as last read, and for how many ticks it hasn't changed. */
+    private var seenPrint = 0
+    private var stableTicks = 0
+
+    /** A tap that was tried and changed nothing: next time, a real touch instead. */
+    private var failedSig: Sig? = null
+
     private var teaching: Pilot.Kind? = null
 
     // The details screen's other questions, each done once per upload.
@@ -76,6 +83,7 @@ class UploadPilotService : AccessibilityService() {
         uploadAt = -1L
         goneTicks = 0
         lastSig = null; lastKind = null; lastPrint = 0; sameTicks = 0
+        seenPrint = 0; stableTicks = 0; failedSig = null
         teaching = null
         descDone = false; tagsDone = false; aiDone = false; kidsDone = false; scrolls = 0
         sub = null; subActed = false
@@ -103,7 +111,16 @@ class UploadPilotService : AccessibilityService() {
         if (event.packageName?.toString() != Pilot.YOUTUBE) return
         // The person showed it the button: remember it, and carry on.
         val source = event.source ?: return
-        val sig = sigOf(clickable(source) ?: source)
+        val node = clickable(source) ?: source
+        val label = labelOf(node) ?: labelOf(source) ?: ""
+        // An editing tool or a way out is never learned as the way on: the
+        // last run learned Volume as "next" and opened it over and over.
+        if (NOT_FORWARD.any { label == it || label.startsWith("$it ") } || destructive(label)) {
+            Pilot.trace("ignored a tap on '$label' — not a way forward")
+            return
+        }
+        val sig = sigOf(node).copy(ctx = screenContext())
+        Pilot.trace("learned ${kind.name.lowercase()}: '$label'")
         Taps.learn(this, kind, sig)
         teaching = null
         progressAt = SystemClock.uptimeMillis()
@@ -162,8 +179,26 @@ class UploadPilotService : AccessibilityService() {
                 progressAt = now
             } else if (++sameTicks >= JUDGE_TICKS) {
                 Taps.punish(this, kind, sig)
+                failedSig = sig
                 lastSig = null
             } else return
+        }
+
+        // Nothing is touched until the screen has held still for a moment:
+        // tapped while YouTube was still loading its editor, Next did nothing.
+        if (print == seenPrint) stableTicks++ else { seenPrint = print; stableTicks = 0 }
+        if (stableTicks < STABLE_TICKS) return
+
+        // A question that throws work away ("Discard edits?", "Delete edits?")
+        // is always answered Cancel. "Continue" there deleted the video.
+        val screenWords = nodes.mapNotNull { labelOf(it) }
+        if (screenWords.any { destructive(it) }) {
+            labelled(nodes) { it == "cancel" || it == "keep editing" || it == "keep" || it == "no" }?.let {
+                Pilot.trace("a question that would lose the video — cancel")
+                click(it)
+                stableTicks = 0
+                return
+            }
         }
 
         val titleField = titleField(nodes)
@@ -383,6 +418,20 @@ class UploadPilotService : AccessibilityService() {
         }
     }
 
+    /** Whether [label] asks to throw something away: whole words, so "close" is not "lose". */
+    private fun destructive(label: String): Boolean {
+        if (label.contains("your edits will")) return true
+        return label.split(Regex("[^a-z]+")).any { it in DESTRUCTIVE }
+    }
+
+    /** A few words on the screen as it is now, to recognise it again. */
+    private fun screenContext(): List<String> {
+        val root = youTubeRoot() ?: return emptyList()
+        val nodes = ArrayList<AccessibilityNodeInfo>()
+        collect(root, nodes, 0)
+        return nodes.mapNotNull { labelOf(it) }.filter { it.length in 2..30 }.distinct().take(8)
+    }
+
     private var tracedPrint = 0
     private var lastTraceAt = 0L
 
@@ -399,11 +448,15 @@ class UploadPilotService : AccessibilityService() {
     private fun tap(node: AccessibilityNodeInfo, kind: Pilot.Kind, print: Int) {
         val target = clickable(node) ?: node
         Pilot.trace("tap ${kind.name.lowercase()}: ${labelOf(node) ?: target.viewIdResourceName ?: "?"}")
-        lastSig = sigOf(target)
+        val sig = sigOf(target)
+        lastSig = sig
         lastKind = kind
         lastPrint = print
         sameTicks = 0
-        if (target.isClickable && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
+        stableTicks = 0
+        // A tap that did nothing last time is tried as a real touch.
+        val touch = sig == failedSig
+        if (!touch && target.isClickable && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
         // Some buttons only answer a real touch: tap the middle of it.
         val r = Rect()
         target.getBoundsInScreen(r)
@@ -416,8 +469,10 @@ class UploadPilotService : AccessibilityService() {
 
     private fun collect(node: AccessibilityNodeInfo, out: ArrayList<AccessibilityNodeInfo>, depth: Int) {
         if (depth > MAX_DEPTH || out.size > MAX_NODES) return
-        if (!node.isVisibleToUser) return
-        out.add(node)
+        // A container can report itself not visible while what is in it is
+        // on screen: YouTube's details screen read as five empty nodes when
+        // the walk stopped at such a container. Its children are still read.
+        if (node.isVisibleToUser) out.add(node)
         for (i in 0 until node.childCount) {
             val c = node.getChild(i) ?: continue
             collect(c, out, depth + 1)
@@ -449,7 +504,11 @@ class UploadPilotService : AccessibilityService() {
      * keeps its forward buttons) beats one high up.
      */
     private fun find(kind: Pilot.Kind, nodes: List<AccessibilityNodeInfo>): AccessibilityNodeInfo? {
+        val here = nodes.mapNotNull { labelOf(it) }.toSet()
         for ((sig, _) in Taps.list(this, kind)) {
+            // A tap learned on one screen is only used on that screen.
+            val ctx = sig.ctx
+            if (!ctx.isNullOrEmpty() && ctx.count { it in here } * 2 < ctx.size) continue
             nodes.firstOrNull { n ->
                 n.isEnabled && sig.matches(n.viewIdResourceName, n.text?.toString(), n.contentDescription?.toString(), n.className?.toString())
             }?.let { return it }
@@ -504,19 +563,28 @@ class UploadPilotService : AccessibilityService() {
     )
 
     companion object {
-        const val FIRST_TICK_MS = 1500L
+        const val FIRST_TICK_MS = 2500L
+        /** Ticks the screen must hold still before anything is tapped. */
+        const val STABLE_TICKS = 2
         const val TICK_MS = 700L
         const val JUDGE_TICKS = 4
-        const val STUCK_MS = 12_000L
+        const val STUCK_MS = 20_000L
         const val OPEN_TIMEOUT_MS = 20_000L
         const val DONE_AFTER_MS = 1500L
         const val UPLOAD_SETTLE_MS = 8000L
         const val MAX_DEPTH = 40
         const val MAX_NODES = 1500
-        val FORWARD_WORDS = listOf("next", "done", "continue", "upload as a short", "create a short")
+        val FORWARD_WORDS = listOf("next", "done", "continue", "upload as a short")
         val UPLOAD_WORDS = listOf("upload short", "upload", "post", "publish")
         val DISMISS_WORDS = listOf("got it", "not now", "no thanks", "skip", "ok", "dismiss")
         val TITLE_WORDS = listOf("caption", "title", "short")
+        /** Words in a question whose yes throws the video or its edits away. */
+        val DESTRUCTIVE = setOf("discard", "delete", "lose")
+        /** The editor's own tools and ways out: never a way forward. */
+        val NOT_FORWARD = listOf("volume", "text", "effects", "filters", "stickers", "captions", "more tools", "more",
+            "add sound", "edit", "exit editor", "close", "cancel", "record button", "flip camera", "timer controls",
+            "speed controls", "green screen", "close camera", "create with ai", "home", "shorts", "create", "you",
+            "search", "notifications", "cast", "messages inbox")
         /** How YouTube asks whether a video is AI-made or altered. */
         val AI_WORDS = listOf("altered content", "altered or synthetic", "synthetic content", "made with ai", "ai-generated", "generated with ai", "realistic altered")
         const val MAX_SCROLLS = 3

@@ -25,6 +25,26 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Shorts: no words on the picture; auto-tap, from its first log
+
+- The words and the voice are gone from the videos: no hook sticker, no
+  burned-in callouts, no count, no mark, no text-to-speech. The person
+  found them ridiculous. The caption, description and tags carry the words,
+  on the post; the edit, the beat and the soft start stay.
+- Auto-tap's first log on the phone, read line by line: YouTube's share
+  lands in the Shorts editor ("Swipe up to edit", Text, Effects…, Next).
+  After Next the details screen read as five empty nodes — the walk of the
+  screen stopped at a container that called itself not visible, and never
+  read what was in it; children are now read whatever their parent says.
+  Next tapped while the editor was still loading did nothing — nothing is
+  tapped now until the screen has held still for two reads, and a tap that
+  changed nothing is tried again as a real touch. Asked to show the way on,
+  the person tapped Volume and it was learned as Next — taps on the
+  editor's tools and on any way out are never learned now, a learned tap is
+  only used on the screen it was shown on, and the old taps are dropped. A
+  "Delete edits?" was answered Continue and the video was lost — any
+  question with discard, delete or lose in it is answered Cancel.
+
 ### Shorts that hold attention — after YouTube's own review
 
 YouTube's automated review of an early Short (a sort, captioned "Listen to

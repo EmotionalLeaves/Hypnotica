@@ -147,10 +147,18 @@ object Pilot {
  * A button, as the accessibility tree describes it: its view id when YouTube
  * gives one, its words, its kind of view.
  */
-data class Sig(val id: String?, val text: String?, val desc: String?, val cls: String?) {
+data class Sig(
+    val id: String?, val text: String?, val desc: String?, val cls: String?,
+    /** For a tap the person showed it: words on the screen it was shown on. */
+    val ctx: List<String>? = null
+) {
     fun toJson(score: Int): JSONObject = JSONObject()
         .put("id", id ?: JSONObject.NULL).put("text", text ?: JSONObject.NULL)
         .put("desc", desc ?: JSONObject.NULL).put("cls", cls ?: JSONObject.NULL).put("score", score)
+        .put("ctx", ctx?.let { JSONArray(it) } ?: JSONObject.NULL)
+
+    /** The same button, whatever screen it was learned on. */
+    fun sameButton(o: Sig) = id == o.id && text == o.text && desc == o.desc && cls == o.cls
 
     /** Whether a node with these features is this button. */
     fun matches(nId: String?, nText: String?, nDesc: String?, nCls: String?): Boolean {
@@ -164,7 +172,8 @@ data class Sig(val id: String?, val text: String?, val desc: String?, val cls: S
             o.optString("id").takeIf { !o.isNull("id") && it.isNotEmpty() },
             o.optString("text").takeIf { !o.isNull("text") && it.isNotEmpty() },
             o.optString("desc").takeIf { !o.isNull("desc") && it.isNotEmpty() },
-            o.optString("cls").takeIf { !o.isNull("cls") && it.isNotEmpty() }
+            o.optString("cls").takeIf { !o.isNull("cls") && it.isNotEmpty() },
+            o.optJSONArray("ctx")?.let { a -> (0 until a.length()).map { a.getString(it) } }
         )
     }
 }
@@ -176,11 +185,17 @@ data class Sig(val id: String?, val text: String?, val desc: String?, val cls: S
 object Taps {
     private const val PREFS = "pilot_taps"
     private const val KEY_VERSION = "youtube_version"
+    /** Bumped when what is stored changes meaning: taps learned before are dropped. */
+    private const val KEY_SCHEMA = "schema"
+    private const val SCHEMA = 2
     private const val LEARNED = 3
     private const val DROP_AT = -2
     private const val CAP = 6
 
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).also { p ->
+        // The first version learned any tap as "the way on", Volume included.
+        if (p.getInt(KEY_SCHEMA, 1) != SCHEMA) p.edit().clear().putInt(KEY_SCHEMA, SCHEMA).apply()
+    }
 
     fun list(context: Context, kind: Pilot.Kind): List<Pair<Sig, Int>> {
         val raw = prefs(context).getString(kind.name, null) ?: return emptyList()
@@ -201,7 +216,7 @@ object Taps {
 
     private fun adjust(context: Context, kind: Pilot.Kind, sig: Sig, by: Int, floor: Int = Int.MIN_VALUE) {
         val items = list(context, kind).toMutableList()
-        val i = items.indexOfFirst { it.first == sig }
+        val i = items.indexOfFirst { it.first.sameButton(sig) }
         if (i >= 0) items[i] = sig to maxOf(floor, items[i].second + by) else items.add(sig to maxOf(floor, by))
         save(context, kind, items)
     }

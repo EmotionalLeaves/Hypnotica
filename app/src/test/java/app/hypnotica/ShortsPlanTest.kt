@@ -94,22 +94,5 @@ class ShortsPlanTest {
         assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
     }
 
-    /** Text-to-speech WAVs, mono at 24 kHz, come out at the export's 44.1 kHz stereo. */
-    @Test
-    fun aSpokenLineBecomesExportSound() {
-        val rate = 24000
-        val n = rate / 2
-        val bb = java.nio.ByteBuffer.allocate(44 + n * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-        bb.put("RIFF".toByteArray()).putInt(36 + n * 2).put("WAVE".toByteArray())
-        bb.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16)
-        bb.put("data".toByteArray()).putInt(n * 2)
-        for (i in 0 until n) bb.putShort((kotlin.math.sin(i * 0.05) * 10000).toInt().toShort())
-        val out = app.hypnotica.export.Voice.toExportFormat(bb.array())
-        assertTrue("no sound came out", out != null)
-        val frames = out!!.size / 2
-        assertTrue("half a second should be about 22050 frames, got $frames", abs(frames - 22050) < 10)
-        assertTrue("left and right should match", out[2000] == out[2001])
-    }
-
     companion object { const val CLIPS = 12 }
 }

@@ -17,7 +17,6 @@ import app.hypnotica.core.studio.TextClip
 import app.hypnotica.core.studio.TrackKind
 import app.hypnotica.export.ExportSettings
 import app.hypnotica.export.VideoExporter
-import app.hypnotica.export.Voice
 import app.hypnotica.export.YouTube
 import app.hypnotica.pilot.Pilot
 import kotlinx.coroutines.CoroutineScope
@@ -152,8 +151,6 @@ class ShortsUploader(private val prefs: Prefs?) {
         progress = 0f
         job = scope.launch {
             var done = 0
-            // The voice for the hooks; a phone without one makes silent-voiced Shorts.
-            val voice = Voice(app).let { v -> if (v.open()) v else null }
             try {
                 val dir = File(app.getExternalFilesDir(null), "shorts").apply { mkdirs() }
                 // Last batch's files: YouTube has long finished with them.
@@ -168,7 +165,7 @@ class ShortsUploader(private val prefs: Prefs?) {
                     if (stopAsked) break
                     status = "Rendering ${clip.def.title} ($n)…"
                     val file = File(dir, "short-${System.currentTimeMillis()}.mp4")
-                    render(clip, file, { p -> progress = (i + p) / count * RENDER_SHARE }, voice)
+                    render(clip, file, { p -> progress = (i + p) / count * RENDER_SHARE })
                     made.add(file to clip)
                 }
                 for ((i, pair) in made.withIndex()) {
@@ -197,7 +194,6 @@ class ShortsUploader(private val prefs: Prefs?) {
             } catch (e: Throwable) {
                 status = (if (done > 0) "$done posted, then: " else "") + (e.message ?: "Something went wrong.")
             } finally {
-                voice?.close()
                 busy = false
                 exporter = null
             }
@@ -213,8 +209,6 @@ class ShortsUploader(private val prefs: Prefs?) {
         progress = 0f
         job = scope.launch {
             var done = 0
-            // The voice for the hooks; a phone without one makes silent-voiced Shorts.
-            val voice = Voice(app).let { v -> if (v.open()) v else null }
             try {
                 for (i in 0 until count) {
                     if (stopAsked) break
@@ -226,7 +220,7 @@ class ShortsUploader(private val prefs: Prefs?) {
                     status = "Rendering ${clip.def.title} ($n)…"
                     val file = File(app.cacheDir, "short-${System.currentTimeMillis()}.mp4")
                     try {
-                        render(clip, file, { p -> progress = (i + p * RENDER_SHARE) / count }, voice)
+                        render(clip, file, { p -> progress = (i + p * RENDER_SHARE) / count })
                         if (stopAsked) break
                         // A fresh token each time: one lasts an hour, a batch can take longer.
                         val auth = YouTube.authorize(app)
@@ -264,7 +258,6 @@ class ShortsUploader(private val prefs: Prefs?) {
             } catch (e: Throwable) {
                 status = (if (done > 0) "$done posted, then: " else "") + (e.message ?: "Something went wrong.")
             } finally {
-                voice?.close()
                 busy = false
                 exporter = null
             }
@@ -279,21 +272,15 @@ class ShortsUploader(private val prefs: Prefs?) {
      * big on screen, and a line to answer at the end. No flashes, no shake.
      */
     /**
-     * Render [clip] as a Short to [out]: the edit from [plan], the hook and
-     * the reveal spoken (when the phone has a voice), a beat under the sim's
-     * own notes so its sound is music rather than a buzz, a soft start, the
-     * callouts and count burned in, and the channel's mark in the corner.
+     * Render [clip] as a Short to [out]: the edit from [plan], a beat under
+     * the sim's own notes so its sound is music rather than a buzz, and a
+     * soft start. Nothing written on the picture and no voice.
      */
-    private suspend fun render(clip: Clip, out: File, onProgress: (Float) -> Unit, voice: Voice?) {
+    private suspend fun render(clip: Clip, out: File, onProgress: (Float) -> Unit) {
         val plan = plan(clip)
-        val lines = ArrayList<Pair<Float, ShortArray>>()
-        if (voice != null) {
-            voice.say(plan.hook.spoken)?.let { lines.add(VOICE_START to it) }
-            plan.hook.revealSpoken?.let { text ->
-                val at = plan.payoffAt + 0.6f
-                if (plan.project.duration - at > 1f) voice.say(text)?.let { lines.add(at to it) }
-            }
-        }
+        // The picture and its sound only: no words on screen and no voice.
+        // The caption, description and tags carry the words, on the post.
+        plan.project.texts.clear()
         val exporter = VideoExporter(
             def = clip.def,
             project = plan.project,
@@ -306,12 +293,9 @@ class ShortsUploader(private val prefs: Prefs?) {
             settings = ExportSettings.VERTICAL,
             trails = clip.trails,
             live = VideoExporter.LiveWords(
-                callouts = true,
-                count = clip.format == TrapFormat.NUMBER_UP || clip.format == TrapFormat.FILL,
-                styled = true,
-                brand = BRAND,
-                fadeInSeconds = FADE_IN_SECONDS,
-                voice = lines
+                callouts = false,
+                count = false,
+                fadeInSeconds = FADE_IN_SECONDS
             )
         )
         this.exporter = exporter
