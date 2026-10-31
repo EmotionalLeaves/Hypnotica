@@ -22,9 +22,7 @@ class ShortsPlanTest {
     fun theMomentLandsWhereTheEditPutsIt() {
         val aspect = 1080f / 1920f
         val director = ClipDirector(seed = 777L).apply {
-            this.aspect = aspect
-            maxPayoffSeconds = 38f
-            mutedFormats.addAll(listOf(TrapFormat.LOOP, TrapFormat.GROW))
+            ShortsUploader.tune(this)
             minCallouts = 2
         }
         val wrong = ArrayList<String>()
@@ -50,7 +48,9 @@ class ShortsPlanTest {
             report.append(String.format(java.util.Locale.US, "%-28s %-14s run %5.1f s  video %5.1f s (planned %5.1f)  length %5.1f  callouts %d\n",
                 clip.def.id, clip.format.name, clip.payoffSeconds, landed, plan.payoffAt, plan.project.duration, director.lastCallouts))
             if (landed < 0f || abs(landed - plan.payoffAt) > 0.35f) wrong.add("${clip.def.id}: planned ${plan.payoffAt}, landed $landed")
-            if (plan.project.duration > 58.5f) wrong.add("${clip.def.id}: ${plan.project.duration} s is too long for a Short")
+            if (plan.project.duration > 60f) wrong.add("${clip.def.id}: ${plan.project.duration} s is too long for a Short")
+            if (plan.project.duration < 15f) wrong.add("${clip.def.id}: ${plan.project.duration} s is shorter than fifteen seconds")
+            if (plan.project.duration - plan.payoffAt > 9f) wrong.add("${clip.def.id}: ${plan.project.duration - plan.payoffAt} s of nothing after the moment")
         }
         println(report)
         assertTrue("Shorts whose moment lands away from its edit:\n" + wrong.joinToString("\n"), wrong.isEmpty())
@@ -92,6 +92,25 @@ class ShortsPlanTest {
         }
         println(seen)
         assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
+    }
+
+    /** Every Short wears a bright palette, the rainbow most often, and the same one for the same clip. */
+    @Test
+    fun shortsAreColorful() {
+        val director = ClipDirector(seed = 5L)
+        val seen = HashMap<String, Int>()
+        val wrong = ArrayList<String>()
+        repeat(CLIPS * 3) {
+            val clip = director.generate(4) ?: return@repeat
+            val name = ShortsUploader.colorfulFor(clip)
+            if (name != ShortsUploader.colorfulFor(clip)) wrong.add("${clip.def.id}: not the same twice")
+            if (ShortsUploader.COLORFUL.none { it.first == name }) wrong.add("${clip.def.id}: $name")
+            if (app.hypnotica.core.render.Palette.byName(name).name != name) wrong.add("$name is not a palette")
+            seen[name] = (seen[name] ?: 0) + 1
+        }
+        println(seen)
+        assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
+        assertTrue("the rainbow should be the commonest: $seen", (seen["Spectrum"] ?: 0) == seen.values.max())
     }
 
     companion object { const val CLIPS = 12 }

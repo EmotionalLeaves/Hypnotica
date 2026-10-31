@@ -25,6 +25,22 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Colourful, longer Shorts; one button to clear saved videos
+
+- Every Short wears a bright palette: the rainbow (Spectrum) most often, then a
+  new full-strength Neon rainbow, Aurora, and Candy now and then — fixed per
+  clip, so a re-render matches. Neon is pickable everywhere else too.
+- Shorts run 15 s to a minute. The director wants a build of at least 8 s and
+  takes ones up to 52 s; a build plays at its own pace, sped up only gently
+  (1.25×) past half a minute, a quick one a touch slow (down to 0.7×) to fill
+  fifteen seconds, and 4.5 s after the moment. `ShortsPlanTest` checks every
+  plan lands its moment where the edit says, inside 15–60 s, with no long dead
+  tail.
+- Settings › Saved videos counts what the app has saved — the gallery copies in
+  Movies/Hypnotica and its own working copies — and deletes them all with a
+  two-tap button. Gallery items Android no longer counts as the app's (saved
+  before a reinstall) go through Android's own delete prompt.
+
 ### Louder videos
 
 - Exported sound was mixed with the live app's headroom and sat far below

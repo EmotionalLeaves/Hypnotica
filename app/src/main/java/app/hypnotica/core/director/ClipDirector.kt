@@ -223,7 +223,7 @@ class ClipDirector(seed: Long = System.nanoTime()) {
             if (Thread.currentThread().isInterrupted) return fallback
             lastAttempts++
             val candidate = propose() ?: return@repeat
-            val payoff = checkPayoff(candidate)
+            val payoff = checkPayoff(candidate, maxOf(45f, maxPayoffSeconds + 3f))
             if (payoff in payoffWindow(candidate.def) && lastCallouts >= minCallouts) {
                 remember(candidate)
                 return candidate.copy(payoffSeconds = payoff)

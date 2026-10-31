@@ -257,6 +257,9 @@ fun SettingsScreen(state: AppState, versionName: String) {
         SectionLabel("YouTube")
         SettingsGroup { YouTubeSection(state) }
 
+        SectionLabel("Saved videos")
+        SettingsGroup { SavedVideosSection(state) }
+
         // The version number sits at the foot of the page, and below it,
         // unlabelled, exactly as designed: a clock for TickTock and a film
         // strip for Studio. The version used to sit mid-page, between TickTock
@@ -663,4 +666,61 @@ private fun CopyPostSection(state: AppState) {
     shorts.status?.let {
         Text(it, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
     }
+}
+
+/**
+ * Every video the app has saved — the gallery copies in Movies/Hypnotica and
+ * its own working copies — counted, and cleared with one button (and a
+ * second tap to be sure).
+ */
+@Composable
+private fun SavedVideosSection(state: AppState) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var summary by remember { mutableStateOf(app.hypnotica.export.SavedVideos.Summary(0, 0L)) }
+    var refresh by remember { mutableStateOf(0) }
+    var armed by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(refresh) {
+        summary = withContext(Dispatchers.IO) { app.hypnotica.export.SavedVideos.summary(context) }
+    }
+    // Armed, it stands down by itself.
+    LaunchedEffect(armed) {
+        if (!armed) return@LaunchedEffect
+        delay(4000)
+        armed = false
+    }
+    val confirm = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()
+    ) { refresh++ }
+    val mb = summary.bytes / (1024f * 1024f)
+    Text(
+        if (summary.count == 0) "No saved videos."
+        else String.format(java.util.Locale.US, "%d saved video%s · %.0f MB", summary.count, if (summary.count == 1) "" else "s", mb),
+        color = Tokens.TextPrimary,
+        style = MaterialTheme.typography.bodyMedium
+    )
+    if (summary.count > 0) {
+        Spacer(Modifier.height(8.dp))
+        Pill(if (armed) "Delete them all — sure?" else "Delete all saved videos", selected = armed, danger = true) {
+            if (!armed) { armed = true; return@Pill }
+            armed = false
+            state.shorts.forgetReady()
+            note = "Deleting…"
+            scope.launch {
+                val ask = withContext(Dispatchers.IO) { app.hypnotica.export.SavedVideos.deleteAll(context) }
+                if (ask != null) {
+                    note = "Android asks before deleting the ones saved before a reinstall."
+                    runCatching { confirm.launch(androidx.activity.result.IntentSenderRequest.Builder(ask).build()) }
+                } else note = "Deleted."
+                refresh++
+            }
+        }
+    }
+    Text(
+        note ?: "Shorts and exports, in the gallery (Movies/Hypnotica) and the app's own copies.",
+        color = Tokens.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp)
+    )
 }

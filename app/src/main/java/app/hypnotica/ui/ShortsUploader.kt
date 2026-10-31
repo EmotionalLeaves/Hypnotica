@@ -73,14 +73,7 @@ class ShortsUploader(private val prefs: Prefs?) {
     @Volatile private var stopAsked = false
     @Volatile private var exporter: VideoExporter? = null
     /** Its own director, checking payoffs at the video's shape, 1080 × 1920. */
-    private val director = ClipDirector().apply {
-        aspect = ExportSettings.VERTICAL.width.toFloat() / ExportSettings.VERTICAL.height
-        // A Short is at most 58 s and should land its moment well before.
-        maxPayoffSeconds = 38f
-        // The slow kinds — a perfect loop, a garden growing — make a calm
-        // clip and a dull Short.
-        mutedFormats.addAll(listOf(TrapFormat.LOOP, TrapFormat.GROW))
-    }
+    private val director = ClipDirector().apply { tune(this) }
 
     /**
      * A clip where things happen on the way: at least two called moments
@@ -90,7 +83,7 @@ class ShortsUploader(private val prefs: Prefs?) {
     private fun lively(): Clip? {
         for ((need, tries) in listOf(2 to 28, 1 to 12, 0 to 12)) {
             director.minCallouts = need
-            director.generate(tries)?.let { return it }
+            director.generate(tries)?.let { return it.copy(palette = colorfulFor(it)) }
         }
         return null
     }
@@ -230,6 +223,15 @@ class ShortsUploader(private val prefs: Prefs?) {
         } catch (e: android.content.ActivityNotFoundException) {
             context.startActivity(android.content.Intent.createChooser(send, "Post with").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         }
+    }
+
+    /** The line of Shorts to post, forgotten: their videos have been deleted. */
+    fun forgetReady() {
+        if (busy) return
+        ready.clear()
+        at = 0
+        copied = null
+        status = null
     }
 
     /** On to the next Short in the line. */
@@ -494,26 +496,42 @@ class ShortsUploader(private val prefs: Prefs?) {
             project.name = "Short"
             val hook = hookFor(clip)
 
-            val fast = if (payoff > 20f) 2f else FAST
+            // A quick moment plays a touch slow, so the Short still runs its
+            // fifteen seconds without a long wait after it. A long build plays
+            // at its own pace, sped up gently past half a minute and only as
+            // much as it takes to land the moment inside the minute.
+            val base = (payoff / (MIN_SECONDS - RESOLVE_SECONDS)).coerceIn(MIN_BASE, 1f)
+            val slow = base * SLOW
             fun rampSim(a: Float, b: Float) = RAMP * (a + b) / 2f
-            // The sim seconds every part but the fast hold takes.
-            val fixedSim = HOOK_SECONDS + 2f * rampSim(1f, fast) + NORMAL_SECONDS + rampSim(1f, SLOW) + SLOW_SECONDS * SLOW
-            val fastSim = payoff - fixedSim
+            // Sim seconds and video seconds of every part but the hold.
+            val steadySim = HOOK_SECONDS * base + NORMAL_SECONDS * base + rampSim(base, slow) + SLOW_SECONDS * slow
+            val fixedReal = HOOK_SECONDS + 2f * RAMP + NORMAL_SECONDS + RAMP + SLOW_SECONDS
+            val holdReal = MAX_SECONDS - RESOLVE_SECONDS - fixedReal
+            val needed = (payoff - steadySim - RAMP * base) / (RAMP + holdReal)
+            val fast = maxOf(if (payoff > FAST_AFTER) FAST else base, needed)
+            val fastSim = payoff - steadySim - 2f * rampSim(base, fast)
             val speed = project.track(TrackKind.SPEED)
             val payoffAt = if (fastSim > 1f) {
                 var t = 0f
-                speed.set(t, 1f, Easing.LINEAR)
-                t += HOOK_SECONDS; speed.set(t, 1f, Easing.LINEAR)
+                speed.set(t, base, Easing.LINEAR)
+                t += HOOK_SECONDS; speed.set(t, base, Easing.LINEAR)
                 t += RAMP; speed.set(t, fast, Easing.LINEAR)
                 t += fastSim / fast; speed.set(t, fast, Easing.LINEAR)
-                t += RAMP; speed.set(t, 1f, Easing.LINEAR)
-                t += NORMAL_SECONDS; speed.set(t, 1f, Easing.LINEAR)
-                t += RAMP; speed.set(t, SLOW, Easing.LINEAR)
-                t += SLOW_SECONDS; speed.set(t, SLOW, Easing.LINEAR)
+                t += RAMP; speed.set(t, base, Easing.LINEAR)
+                t += NORMAL_SECONDS; speed.set(t, base, Easing.LINEAR)
+                t += RAMP; speed.set(t, slow, Easing.LINEAR)
+                t += SLOW_SECONDS; speed.set(t, slow, Easing.LINEAR)
                 val at = t
                 speed.set(at + RAMP, 1f, Easing.LINEAR)
                 at
-            } else payoff
+            } else {
+                // Too quick for the edit: the whole build a touch slow.
+                val at = payoff / base
+                speed.set(0f, base, Easing.LINEAR)
+                speed.set(at, base, Easing.LINEAR)
+                speed.set(at + RAMP, 1f, Easing.LINEAR)
+                at
+            }
             val length = (payoffAt + RESOLVE_SECONDS).coerceIn(MIN_SECONDS, MAX_SECONDS)
             project.duration = length
 
@@ -537,6 +555,34 @@ class ShortsUploader(private val prefs: Prefs?) {
             return Plan(project, payoffAt, hook)
         }
 
+        /**
+         * The director a Short is drawn from: checked at the video's shape,
+         * 1080 × 1920; a build long enough to fill fifteen seconds, landing
+         * inside the minute; and not the slow kinds — a perfect loop, a
+         * garden growing — which make a calm clip and a dull Short.
+         */
+        fun tune(d: ClipDirector) {
+            d.aspect = ExportSettings.VERTICAL.width.toFloat() / ExportSettings.VERTICAL.height
+            d.minPayoffSeconds = 8f
+            d.maxPayoffSeconds = 52f
+            d.maxPayoffShare = 1.4f
+            d.mutedFormats.addAll(listOf(TrapFormat.LOOP, TrapFormat.GROW))
+        }
+
+        /** The bright ones: the rainbow most of all. */
+        val COLORFUL = listOf("Spectrum" to 45, "Neon" to 30, "Aurora" to 15, "Candy" to 10)
+
+        /** A bright palette for [clip], the same one every time for the same clip. */
+        fun colorfulFor(clip: Clip): String {
+            val mix = (clip.seed xor (clip.seed ushr 31)) * -0x61c8864680b583ebL
+            var pick = ((mix ushr 40) % COLORFUL.sumOf { it.second }).toInt()
+            for ((name, weight) in COLORFUL) {
+                if (pick < weight) return name
+                pick -= weight
+            }
+            return COLORFUL[0].first
+        }
+
         const val ROUTE_COPY = 0
         const val ROUTE_API = 1
         val ROUTE_NAMES = listOf("Copy & post", "Google API")
@@ -546,7 +592,8 @@ class ShortsUploader(private val prefs: Prefs?) {
         val COUNTS = listOf(1, 2, 3, 5, 10)
         val PRIVACY = listOf("private", "unlisted", "public")
         val PRIVACY_NAMES = listOf("Private", "Unlisted", "Public")
-        private const val MIN_SECONDS = 8f
+        /** A Short runs fifteen seconds to a minute. */
+        const val MIN_SECONDS = 15f
         /** The mark in the corner of every Short. */
         const val BRAND = "HYPNOTICA"
         /** When the hook is spoken. */
@@ -555,8 +602,12 @@ class ShortsUploader(private val prefs: Prefs?) {
         private const val FADE_IN_SECONDS = 0.8f
         /** Seconds of real time at the start, while the hook is read. */
         private const val HOOK_SECONDS = 1.6f
-        /** How much quicker the middle of the build runs. */
-        private const val FAST = 1.6f
+        /** How much quicker the middle of a long build runs, at least. */
+        private const val FAST = 1.25f
+        /** Sim seconds of build past which the middle is sped up. */
+        private const val FAST_AFTER = 30f
+        /** The slowest a quick build is played, to fill the fifteen seconds. */
+        private const val MIN_BASE = 0.7f
         /** Seconds a change of speed takes. */
         private const val RAMP = 0.5f
         /** Real time after the speed-up, before the last slow breath. */
@@ -565,10 +616,10 @@ class ShortsUploader(private val prefs: Prefs?) {
         private const val SLOW = 0.72f
         private const val SLOW_SECONDS = 0.7f
         /** Seconds after the moment before the Short ends. */
-        private const val RESOLVE_SECONDS = 3.6f
+        private const val RESOLVE_SECONDS = 4.5f
         private val PICK_FORMATS = setOf(TrapFormat.RACE, TrapFormat.COLOR_BATTLE, TrapFormat.LAST_STANDING, TrapFormat.GUESS)
         private val WAIT_FORMATS = setOf(TrapFormat.SNAP, TrapFormat.CUT, TrapFormat.CHAIN, TrapFormat.ESCAPE)
-        private const val MAX_SECONDS = 58f
+        const val MAX_SECONDS = 59f
         private const val RENDER_SHARE = 0.7f
         private const val GAP_MS = 3000L
         private const val PRIVATE_NOTE =

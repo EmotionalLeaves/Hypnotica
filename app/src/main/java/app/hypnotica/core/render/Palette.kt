@@ -16,7 +16,8 @@ class Palette(val name: String, private val stops: IntArray, private val wheel: 
     private val lut: IntArray = IntArray(LUT_SIZE).also { table ->
         for (i in 0 until LUT_SIZE) {
             val t = i / (LUT_SIZE - 1f)
-            table[i] = if (wheel) {
+            // A wheel with no stops of its own is the hue circle itself.
+            table[i] = if (stops.isEmpty()) {
                 hsv(t * 360f, 0.72f, 0.98f)
             } else {
                 val x = t * (stops.size - 1)
@@ -128,7 +129,18 @@ class Palette(val name: String, private val stops: IntArray, private val wheel: 
             intArrayOf(0xFFFFF3B0.toInt(), 0xFFFFD166.toInt(), 0xFFE9A23B.toInt(), 0xFFC27C0E.toInt(), 0xFF8A5A00.toInt())
         )
 
-        val ALL = listOf(SPECTRUM, AURORA, EMBER, OCEAN, CANDY, MONO_GLOW, VIRIDIS, GOLD)
+        /** The rainbow at full strength, round and back to its start. */
+        val NEON = Palette(
+            "Neon",
+            intArrayOf(
+                0xFFFF2E88.toInt(), 0xFFFF7A00.toInt(), 0xFFFFE600.toInt(), 0xFF3DFF5A.toInt(),
+                0xFF00E5FF.toInt(), 0xFF5B5BFF.toInt(), 0xFFC03BFF.toInt(), 0xFFFF2E88.toInt()
+            ),
+            wheel = true
+        )
+
+        // New palettes go on the end: a saved choice is kept by position.
+        val ALL = listOf(SPECTRUM, AURORA, EMBER, OCEAN, CANDY, MONO_GLOW, VIRIDIS, GOLD, NEON)
 
         val NAMES: List<String> = ALL.map { it.name }
 
