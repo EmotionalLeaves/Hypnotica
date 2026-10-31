@@ -296,12 +296,13 @@ class AppState(
      * kept quietly; beating it is said out loud. Called from the GL thread:
      * it touches only the preferences and the banner's state.
      */
-    fun noteRecord(id: String, value: Float, text: String) {
+    fun noteRecord(id: String, value: Float, text: String, loud: Boolean = true) {
         val p = prefs ?: return
         val best = p.bestOf(id)
         if (best.isNaN()) { p.setBest(id, value, text); return }
         if (value > best) {
             p.setBest(id, value, text)
+            if (!loud) return
             announce(if (text.isNotEmpty()) "New best: $text" else "New personal best!")
             if (haptics) engine.haptics?.verdict()
         }
@@ -781,7 +782,8 @@ class AppState(
             chosenSound = p.soundPreset
             cameraDragState = p.cameraDrag
             applySafety()
-            engine.onRecord = { id, v, text -> noteRecord(id, v, text) }
+            engine.onRecord = { id, v, text, loud -> noteRecord(id, v, text, loud) }
+            engine.bestLookup = { id -> prefs?.bestOf(id) ?: Float.NaN }
             director.importTaste(p.taste)
             director.importMuted(p.mutedFormats)
             mutedFormats = director.mutedFormats.toSet()

@@ -295,6 +295,7 @@ class BalloonSim : Sim {
 
     override fun scoreForBest(): Float = firstPump.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} pumps before a pop"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "pumps" to pumps.toString(),

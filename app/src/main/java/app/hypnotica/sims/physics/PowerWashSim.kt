@@ -267,6 +267,14 @@ class PowerWashSim : Sim {
             if (dirt[k] <= 0f) {
                 dirt[k] = 0f
                 dirty--
+                // The last of it, counted down: the bit that keeps you watching.
+                val total = gx * gy
+                when {
+                    dirty == total / 2 -> env.callout("Halfway!")
+                    dirty == total / 10 -> env.callout("90% clean!")
+                    dirty == LAST_SPOTS && total > LAST_SPOTS * 10 -> env.callout("$LAST_SPOTS spots left…")
+                    dirty == 1 -> env.callout("One spot left!")
+                }
                 cleaned++
                 tone = k
             }
@@ -377,6 +385,7 @@ class PowerWashSim : Sim {
     )
 
     companion object {
+        const val LAST_SPOTS = 5
         /** Shortest time between clean-patch notes. */
         const val NOTE_GAP = 0.05f
         val MURALS = listOf("Surprise", "Rings", "Spiral", "Diamonds", "Waves", "Tiles", "Sunburst")

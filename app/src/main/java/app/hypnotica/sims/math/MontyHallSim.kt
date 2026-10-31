@@ -14,6 +14,7 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * The Monty Hall problem, played a thousand times by two players at once.
@@ -42,6 +43,8 @@ class MontyHallSim : Sim {
     private var doneAt = -1f
     private var payoffFrame = false
     private var winner = -1
+    private var leader = -1
+    private var leadCalls = 0
 
     private val histStick = FloatArray(HIST)
     private val histSwitch = FloatArray(HIST)
@@ -61,7 +64,7 @@ class MontyHallSim : Sim {
         histN = 0
         every = max(1, target / HIST)
         flashStick = 0f; flashSwitch = 0f
-        elapsed = 0f; doneAt = -1f; payoffFrame = false; winner = -1
+        elapsed = 0f; doneAt = -1f; payoffFrame = false; winner = -1; leader = -1; leadCalls = 0
         deal(env)
     }
 
@@ -124,10 +127,23 @@ class MontyHallSim : Sim {
             histSwitch[histN] = switchWins.toFloat() / games
             histN++
         }
+        // Early on luck can put sticking ahead; called when the lead turns.
+        if (games in LEAD_FROM..LEAD_UNTIL && stickWins != switchWins) {
+            val lead = if (switchWins > stickWins) 1 else 0
+            if (lead != leader) {
+                if (leader >= 0 && leadCalls < MAX_LEAD_CALLS) {
+                    leadCalls++
+                    env.callout(if (lead == 1) "Switch takes the lead!" else "Stick is ahead?!")
+                }
+                leader = lead
+            }
+        }
         if (games >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
             winner = if (switchWins >= stickWins) 1 else 0
+            val pct = (100f * max(switchWins, stickWins) / max(1, games)).roundToInt()
+            env.callout(if (winner == 1) "Switch wins $pct%!" else "Stick wins $pct%?!", big = true)
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
@@ -218,6 +234,9 @@ class MontyHallSim : Sim {
     }
 
     companion object {
+        const val LEAD_FROM = 5
+        const val LEAD_UNTIL = 80
+        const val MAX_LEAD_CALLS = 3
         const val MAX_DOORS = 10
         const val HIST = 200
         const val START_RATE = 0.9f

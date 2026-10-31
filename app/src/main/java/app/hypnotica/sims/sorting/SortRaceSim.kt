@@ -153,6 +153,9 @@ class SortRaceSim : Sim {
                     if (placed == 1) {
                         firstAt = elapsed
                         payoffFrame = true
+                        env.callout("${algos[k].title} wins!", big = true)
+                    } else if (placed == 2 && elapsed - firstAt < PHOTO_FINISH) {
+                        env.callout("Photo finish!", big = true)
                     }
                     break
                 }
@@ -259,6 +262,8 @@ class SortRaceSim : Sim {
         const val LANE_NOTES = 22f
         const val WINNER_SECONDS = 9f
         const val MAX_SECONDS = 30f
+        /** Second home this soon after the first: a photo finish. */
+        const val PHOTO_FINISH = 0.35f
         const val OPS_CAP = 400_000L
         const val HURRY = 1.6
         const val MAX_HURRY = 200f

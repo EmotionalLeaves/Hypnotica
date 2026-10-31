@@ -120,6 +120,9 @@ class FirefliesSim : Sim {
         val share = together.toFloat() / n
         if (share > best + 0.15f && share > 0.35f) {
             env.emit(EventKind.CROSS, 0.4f + share * 0.5f, 0f, 0.4f)
+            // The build to the moment, called on the way up.
+            if (best < 0.5f && share >= 0.5f && share < SYNCED) env.callout("Half in step…")
+            else if (best < 0.75f && share >= 0.75f && share < SYNCED) env.callout("Almost…")
             best = share
         }
         if (doneAt < 0f && share >= SYNCED) {

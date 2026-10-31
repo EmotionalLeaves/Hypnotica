@@ -172,6 +172,7 @@ class GrowBounceSim : Sim {
 
     override fun scoreForBest(): Float = bounces.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} bounces to fill it"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "bounces" to "$bounces",

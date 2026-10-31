@@ -142,8 +142,8 @@ class WatorSim : Sim {
         // Never quite extinct: a sea with no sharks left gets a few back at
         // random, and one with no fish a scattering, so the cycle goes on.
         count()
-        if (sharks == 0) seed(rng, SHARK, 12)
-        if (fish == 0) seed(rng, FISH, 200)
+        if (sharks == 0) { seed(rng, SHARK, 12); env.callout("Sharks wiped out!") }
+        if (fish == 0) { seed(rng, FISH, 200); env.callout("Not a fish left!") }
         if (sharks == 0 || fish == 0) count()
         if (eaten > 0 && turn % 4 == 0) env.emit(EventKind.HIT, (0.2f + 0.6f * sharks / max(1f, total * 0.2f)).coerceIn(0f, 1f), 0f, min(0.45f, 0.1f + eaten * 0.002f))
         if (born > 0 && turn % 3 == 0) env.emit(EventKind.BIRTH, (0.3f + 0.6f * fish / max(1f, total * 0.6f)).coerceIn(0f, 1f), 0f, 0.15f)
@@ -157,6 +157,7 @@ class WatorSim : Sim {
                 falling = true; extreme = ema
                 peaks++
                 env.emit(EventKind.CROSS, 0.7f, 0f, 0.6f)
+                if (peaks >= 2 && !(paidAt < 0f && peaks >= 3)) env.callout("Shark boom #${peaks - 1}!")
                 // The first boom is the random start collapsing; the next
                 // are the first waves the sea makes for itself.
                 if (paidAt < 0f && peaks >= 3) { paidAt = elapsed; payoffFrame = true }

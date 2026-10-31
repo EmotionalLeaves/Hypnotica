@@ -190,6 +190,7 @@ class KingOfTheHillSim : Sim {
 
     override fun scoreForBest(): Float = bumps.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} shoves"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> =
         (0 until n).map { "player ${it + 1}" to String.format(java.util.Locale.US, "%.1f / %.0f", score[it], target) } +

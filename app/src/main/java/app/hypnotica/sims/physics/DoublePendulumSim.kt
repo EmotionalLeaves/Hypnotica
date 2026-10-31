@@ -47,6 +47,7 @@ class DoublePendulumSim : Sim {
     private var elapsed = 0f
     private var payoffFrame = false
     private var split = false
+    private var drifting = false
     private var splitAt = 0f
     private var flips = 0L
     private var spread = 0f
@@ -77,6 +78,7 @@ class DoublePendulumSim : Sim {
         elapsed = 0f
         payoffFrame = false
         split = false
+        drifting = false
         splitAt = 0f
         flips = 0L
         spread = 0f
@@ -173,10 +175,15 @@ class DoublePendulumSim : Sim {
         // Against how scattered they began, too: with a coarse nudge the fan
         // starts open, and split the instant it was let go.
         val needed = max(SPLIT_SPREAD * ARM, startSpread * SPLIT_GROWTH)
+        if (!split && !drifting && count > 1 && elapsed > 1.5f && spread > needed * DRIFT) {
+            drifting = true
+            env.callout("Starting to drift…")
+        }
         if (!split && count > 1 && elapsed > 1f && spread > needed) {
             split = true
             splitAt = elapsed
             payoffFrame = true
+            env.callout(String.format(java.util.Locale.US, "Split at %.1f s!", splitAt), big = true)
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
     }
@@ -371,6 +378,8 @@ class DoublePendulumSim : Sim {
 
         const val AFTER_SPLIT_SECONDS = 9f
         const val SPLIT_GROWTH = 4f
+        /** This share of the way to splitting, the fan is called as drifting. */
+        const val DRIFT = 0.3f
         const val NEVER_SPLITS_SECONDS = 40f
         const val MAX_PENDULUMS = 20_000
         const val DRAWN_AS_POINTS = 2000

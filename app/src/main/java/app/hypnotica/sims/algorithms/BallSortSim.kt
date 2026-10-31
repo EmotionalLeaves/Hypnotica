@@ -229,6 +229,7 @@ class BallSortSim : Sim {
             if (moveIndex * 2 >= moves.size) {
                 doneAt = elapsed
                 payoffFrame = true
+                env.callout("Sorted in ${moves.size / 2} moves!", big = true)
                 for (t in 0 until tubes) ring[t] = 1f
                 return
             }

@@ -101,8 +101,22 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
     @Volatile
     var onFinished: (() -> Unit)? = null
 
-    /** A run's record, as its moment lands: the sim, the value, and the value in words. */
-    var onRecord: ((String, Float, String) -> Unit)? = null
+    /**
+     * A run's record, as its moment lands: the sim, the value, the value in
+     * words, and whether it is said out loud (false for the quiet saves of a
+     * live count still climbing after its moment).
+     */
+    var onRecord: ((String, Float, String, Boolean) -> Unit)? = null
+
+    /** The stored best for a sim, NaN if none: read once a run, for live counts. */
+    var bestLookup: ((String) -> Float)? = null
+
+    /** This run's live-best state: the best it started against, and whether it is beaten. */
+    private var liveEnv: app.hypnotica.core.sim.SimEnv? = null
+    private var liveStartBest = Float.NaN
+    private var liveBeaten = false
+    private var liveSaved = Float.NaN
+    private var liveSavedAt = 0f
 
     private var payoffNotified = false
 
@@ -591,7 +605,10 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
             // a moment you notice without being told about.
             if (safety.haptics) haptics?.heavy()
             val rv = core.sim.scoreForBest()
-            if (!rv.isNaN()) onRecord?.invoke(core.def.id, rv, core.sim.scoreForBestText(rv))
+            if (!rv.isNaN()) {
+                onRecord?.invoke(core.def.id, rv, core.sim.scoreForBestText(rv), true)
+                liveSaved = rv
+            }
             onPayoff?.invoke()
         }
         if (core.finished && !finishNotified) {
@@ -701,7 +718,7 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         sinceCounters += dt
         if (sinceCounters >= COUNTERS_EVERY) {
             sinceCounters = 0f
-            counters = core.sim.counters()
+            counters = withLiveBest(core.sim.counters())
             pick = PickSnapshot(runId, core.sim.contenders(core.env), core.sim.winner())
         }
 
@@ -858,6 +875,38 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         return x to y
     }
 
+
+    /**
+     * A live count shown against the best, and passing it called on the spot:
+     * "best 14" beside the streak while it climbs, "New best!" the moment it
+     * goes past. After the run's moment the climbing count is saved quietly
+     * every few seconds, so a streak that keeps going is not lost.
+     */
+    private fun withLiveBest(list: List<Pair<String, String>>): List<Pair<String, String>> {
+        val sim = core.sim
+        if (!sim.liveBest()) return list
+        val env = core.env
+        if (env !== liveEnv) {
+            liveEnv = env
+            liveStartBest = bestLookup?.invoke(core.def.id) ?: Float.NaN
+            liveBeaten = false
+            liveSaved = Float.NaN
+            liveSavedAt = 0f
+        }
+        val now = sim.scoreForBest()
+        if (liveStartBest.isNaN()) return list
+        if (!now.isNaN() && now > liveStartBest && !liveBeaten) {
+            liveBeaten = true
+            env.callout("New best!", big = true)
+        }
+        if (payoffNotified && !now.isNaN() && (liveSaved.isNaN() || now > liveSaved) && env.time - liveSavedAt > LIVE_SAVE_EVERY) {
+            liveSaved = now; liveSavedAt = env.time
+            onRecord?.invoke(core.def.id, now, sim.scoreForBestText(now), false)
+        }
+        val shown = if (now.isNaN()) liveStartBest else max(liveStartBest, now)
+        return list + ("best" to shown.toInt().toString())
+    }
+
     companion object {
         /**
          * How long the punch-in takes to come back, squared on the way. Chosen
@@ -889,6 +938,8 @@ class SimEngine(initial: SimDef) : GLSurfaceView.Renderer {
         const val FIT_RATE = 5f
         /** Seconds between counter snapshots. */
         const val COUNTERS_EVERY = 0.1f
+        /** A live count still climbing after its moment is saved this often. */
+        const val LIVE_SAVE_EVERY = 3f
 
         /** A flick can produce a lot of moves; a frame need not apply all of them. */
         const val MAX_PENDING_TOUCHES = 64

@@ -255,6 +255,15 @@ interface Sim {
 
     /** [scoreForBest]'s value as words, e.g. "41 bounces". */
     fun scoreForBestText(value: Float): String = ""
+
+    /**
+     * True when [scoreForBest] is a count that only climbs during a run — a
+     * streak, bounces, a biggest-yet — so it can be shown against the best
+     * while it plays and passing the best is called the moment it happens.
+     * False for numbers that only mean something at the end (an estimate of
+     * π wanders past the best by luck long before it settles).
+     */
+    fun liveBest(): Boolean = false
 }
 
 /** Metadata plus the factory for one sim. */

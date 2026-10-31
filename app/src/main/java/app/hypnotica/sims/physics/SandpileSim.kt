@@ -39,6 +39,8 @@ class SandpileSim : Sim {
     private var topplings = 0L
     private var reach = 0
     private var biggest = 1
+    private var calledSize = 0
+    private var calledAt = -10f
     private var payoffFrame = false
     private var grown = false
     private var grownAt = 0f
@@ -55,6 +57,7 @@ class SandpileSim : Sim {
         topplings = 0L
         reach = 0
         biggest = 1
+        calledSize = 0; calledAt = -10f
         payoffFrame = false
         grown = false
         grownAt = 0f
@@ -136,7 +139,15 @@ class SandpileSim : Sim {
         topplings += done
         if (stackSize == 0 && avalanche > 0) {
             if (avalanche >= SOUNDED_AVALANCHE) {
-                if (avalanche > biggest) biggest = avalanche
+                if (avalanche > biggest) {
+                    biggest = avalanche
+                    // A record avalanche, called once it has doubled the last
+                    // one called: early records come every few grains.
+                    if (avalanche >= calledSize * 2 && avalanche >= CALL_AVALANCHE && elapsed - calledAt > CALL_GAP) {
+                        calledSize = avalanche; calledAt = elapsed
+                        env.callout(String.format(java.util.Locale.US, "Avalanche! %,d", avalanche))
+                    }
+                }
                 val size = (ln(avalanche.toFloat()) / ln(max(biggest, 8).toFloat())).coerceIn(0f, 1f)
                 pendingSize = max(pendingSize, size)
             }
@@ -257,6 +268,11 @@ class SandpileSim : Sim {
 
     override fun finished(): Boolean = grown && elapsed - grownAt > HOLD_SECONDS
 
+    override fun scoreForBest(): Float = biggest.toFloat()
+    override fun scoreForBestText(value: Float): String =
+        String.format(java.util.Locale.US, "%,d avalanche", value.toInt())
+    override fun liveBest(): Boolean = true
+
     override fun counters(): List<Pair<String, String>> = listOf(
         "grains" to String.format(java.util.Locale.US, "%,d", grains),
         "topplings" to String.format(java.util.Locale.US, "%,d", topplings),
@@ -277,6 +293,8 @@ class SandpileSim : Sim {
         const val TOPPLE_BUDGET = 25_000
         /** Avalanches smaller than this are the pile's hiss, not a note. */
         const val SOUNDED_AVALANCHE = 24
+        const val CALL_AVALANCHE = 500
+        const val CALL_GAP = 2.5f
 
         fun def(): SimDef = SimDef(
             id = "physics/sandpile",

@@ -235,6 +235,8 @@ class TspSim : Sim {
         if (applied >= swaps && vclock >= finalAt + (if (swaps > 0) moveDur else 0f)) {
             doneAt = clock
             payoffFrame = true
+            val saved = ((1f - length / startLength) * 100f).toInt()
+            env.callout(if (saved > 0) "$saved% shorter!" else "No crossings!", big = true)
             cum = FloatArray(n + 1)
             for (k in 0 until n) cum[k + 1] = cum[k] + dist(tour[k], tour[(k + 1) % n]).toFloat()
             passed = 0

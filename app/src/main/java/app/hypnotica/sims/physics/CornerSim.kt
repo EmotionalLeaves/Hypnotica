@@ -332,6 +332,7 @@ class CornerSim : Sim {
 
     override fun scoreForBest(): Float = nearMisses.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} near misses"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "bounces" to bounces.toString(),

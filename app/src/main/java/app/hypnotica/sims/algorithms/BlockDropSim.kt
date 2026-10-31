@@ -345,6 +345,7 @@ class BlockDropSim : Sim {
 
     override fun scoreForBest(): Float = fours.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} four-line clears"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("lines" to "$lines / $target")

@@ -15,6 +15,7 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * The secretary problem: candidates arrive one at a time in random order,
@@ -109,6 +110,7 @@ class SecretarySim : Sim {
         lastWon = hired == best
         if (lastWon) wins++
         flash = 1f
+        if (rounds <= CALLED_ROUNDS) env.callout(if (lastWon) "Hired the best!" else if (hired == n - 1) "Stuck with the last one" else "Not the best…")
         if (audible) env.emit(if (lastWon) EventKind.HIT else EventKind.DEATH, if (lastWon) 0.8f else 0.2f, 0f, 0.4f)
         if (rounds % every == 0) {
             if (hn >= HIST) { for (k in 0 until HIST / 2) hv[k] = hv[k * 2 + 1]; hn = HIST / 2; every *= 2 }
@@ -118,6 +120,7 @@ class SecretarySim : Sim {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            env.callout("The best one, ${(100f * wins / max(1, rounds)).roundToInt()}% of the time!", big = true)
         }
     }
 
@@ -170,6 +173,7 @@ class SecretarySim : Sim {
     )
 
     companion object {
+        const val CALLED_ROUNDS = 4
         const val MAX_N = 400
         const val HIST = 200
         const val START_RATE = 0.5f

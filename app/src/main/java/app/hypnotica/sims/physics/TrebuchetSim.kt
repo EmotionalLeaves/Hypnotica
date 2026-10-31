@@ -490,6 +490,12 @@ class TrebuchetSim : Sim {
         payoffFrame = true
         val speed = sqrt(svx * svx + svy * svy)
         verdict = if (onCastle) "hit the castle" else if (sx < wallX) String.format(java.util.Locale.US, "%.0f m short", wallX - sx) else "over the wall"
+        env.callout(when {
+            onCastle -> "Direct hit!"
+            sx < wallX && wallX - sx < NEAR_MISS_M -> String.format(java.util.Locale.US, "%.0f m short!", wallX - sx)
+            sx < wallX -> "Short!"
+            else -> "Over the wall!"
+        }, big = true)
         env.emit(EventKind.HIT, 0.2f, panOf(sx), 1f)
         if (onCastle) {
             // Stones near the strike are thrown, the harder the faster.
@@ -790,6 +796,8 @@ class TrebuchetSim : Sim {
     }
 
     companion object {
+        /** Landed this close short of the wall: say by how much. */
+        const val NEAR_MISS_M = 30.0
         /** 12 substeps of a 1/120 s step exactly, so the live swing retraces the rehearsal. */
         const val SUB_DT = 1.0 / 1440.0
         const val MAX_SWING = 6.0

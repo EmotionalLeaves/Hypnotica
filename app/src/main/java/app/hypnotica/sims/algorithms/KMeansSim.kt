@@ -228,6 +228,7 @@ class KMeansSim : Sim {
                 converged = true
                 doneAt = clock
                 payoffFrame = true
+                env.callout(if (iteration == 1) "Converged at once!" else "Converged in $iteration steps!", big = true)
                 return
             }
             // The recolouring is the sound of this step: louder the more

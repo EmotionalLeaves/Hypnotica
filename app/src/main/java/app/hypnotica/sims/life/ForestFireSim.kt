@@ -54,6 +54,7 @@ class ForestFireSim : Sim {
     private var trees = 0
     private var burning = 0
     private var biggest = 0
+    private var spreading = false
     private var strikes = 0
     private var crackleCarry = 0f
     private var lastStrikeX = 0f
@@ -83,6 +84,7 @@ class ForestFireSim : Sim {
         payoffFrame = false
         burning = 0
         biggest = 0
+        spreading = false
         strikes = 0
         crackleCarry = 0f
         lastStrikeAt = -10f
@@ -174,10 +176,14 @@ class ForestFireSim : Sim {
         // The great burn: the first single fire to take a sixth of the forest.
         // Measured against the whole ground, not the trees standing, so it
         // means the same on every screen.
+        val ground = cols * rows
         for (id in 0 until fireCount) if (burntBy[id] > biggest) biggest = burntBy[id]
-        if (doneAt < 0f && biggest >= BIG_SHARE * cols * rows) {
+        // On the way to the great burn: a fire that takes hold, called once.
+        if (doneAt < 0f && !spreading && biggest >= BIG_SHARE * ground * 0.35f) { spreading = true; env.callout("It's spreading…") }
+        if (doneAt < 0f && biggest >= BIG_SHARE * ground) {
             doneAt = elapsed
             payoffFrame = true
+            env.callout("Wildfire!", big = true)
         }
         if (burning == 0) fireCount = 0
     }

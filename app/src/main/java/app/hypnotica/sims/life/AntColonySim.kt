@@ -251,6 +251,7 @@ class AntColonySim : Sim {
         if (doneAt < 0f && delivered >= MIN_DELIVERED && shortShare >= CONVERGED) {
             doneAt = elapsed
             payoffFrame = true
+            env.callout("The short way wins!", big = true)
         }
     }
 

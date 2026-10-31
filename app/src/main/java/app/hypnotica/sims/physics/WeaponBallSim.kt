@@ -316,6 +316,7 @@ class WeaponBallSim : Sim {
 
     override fun scoreForBest(): Float = parries.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} parries"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> {
         val out = ArrayList<Pair<String, String>>(n)

@@ -136,6 +136,8 @@ class WheelSim : Sim {
                 angle = before
                 omega = -omega * 0.45f
                 rocks++
+                // Thrown back from the jackpot's own peg: the near miss.
+                if (((peg % segments) + segments) % segments == jackpot) env.callout("So close!", big = true)
                 flapV += 10f * sign
                 env.emit(EventKind.HIT, 0.25f, 0f, 0.45f)
             } else {
@@ -153,6 +155,13 @@ class WheelSim : Sim {
             payoffFrame = true
             winner = ((pegIndex(angle) % segments) + segments) % segments
             env.emit(EventKind.DONE, 0.4f + 0.5f * winner / segments, 0f, 1f)
+            val off = min((winner - jackpot + segments) % segments, (jackpot - winner + segments) % segments)
+            env.callout(when {
+                jackpot < 0 -> "${winner + 1}!"
+                off == 0 -> "JACKPOT!"
+                off == 1 -> "One off!"
+                else -> "${winner + 1}!"
+            }, big = true)
             if (winner == jackpot) repeat(8) { env.emit(EventKind.HIT, env.rng.range(0.6f, 1f), env.rng.range(-0.8f, 0.8f), 0.7f) }
             burst(env)
         }

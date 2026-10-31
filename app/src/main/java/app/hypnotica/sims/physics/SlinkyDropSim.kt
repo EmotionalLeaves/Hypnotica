@@ -51,6 +51,7 @@ class SlinkyDropSim : Sim {
     private var real = -1.0
     private var released = false
     private var moved = false
+    private var calledHang = false
     private var payoffFrame = false
     private var hangTime = 0.0
     private var theory = 0.0
@@ -101,6 +102,7 @@ class SlinkyDropSim : Sim {
         real = -1.0
         released = false
         moved = false
+        calledHang = false
         payoffFrame = false
         hangTime = 0.0
         front = 0
@@ -183,10 +185,12 @@ class SlinkyDropSim : Sim {
             }
         }
 
+        if (!moved && !calledHang && front >= n / 2) { calledHang = true; env.callout("The bottom hasn't moved…") }
         if (!moved && abs(v[n - 1]) > MOVE_SPEED) {
             moved = true
             payoffFrame = true
             hangTime = real
+            env.callout(String.format(java.util.Locale.US, "Floated %.2f s!", hangTime), big = true)
         }
 
         // The stack hitting the floor: one thud for the first coil, a softer

@@ -25,6 +25,31 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Refine loop R2 — the build-up, called
+
+- Live bests: on the twelve sims whose number climbs during a run (a
+  perfect streak, a rally, pumps before a pop, parries, the biggest
+  avalanche) the counters carry "best 14" beside it, and passing it pops
+  "New best!" right then, not at the end. A count still climbing after the
+  moment is saved quietly every few seconds.
+- Races name their winner: "Insertion sort wins!", "Cycloid wins!",
+  "Wall follower takes the lead!", "Photo finish!" when the runner-up is a
+  hair behind, "Shortest path, last place!" when the straight ramp loses.
+- Countdowns on the way to the moment: Snake "Half the board!" … "99%!!",
+  Sudoku "3 to go…", Bubble wrap "3… 2… Last one!", Power wash "One spot
+  left!", Pour "Last glass!", Twin stars "2 digits left…", Fireflies "Half in
+  step…", Metronomes "Falling in…", the Slinky "The bottom hasn't moved…",
+  the double pendulum "Starting to drift…" then "Split at 6.2 s!".
+- Near misses and results: the wheel bouncing off the jackpot's peg is
+  "So close!", landing next to it "One off!"; the trebuchet "12 m short!";
+  billiards "Two on the break!", "Double!", "Scratch!"; Monty Hall "Stick is
+  ahead?!" before switching takes over; the prisoners "Loop of 61 — caught!";
+  the birthday room "A match at just 19 people!"; π found a digit at a time
+  ("3.1…", "3.14!", "3.141!!") by the darts and by Buffon's needles.
+- New bests for Flood it (fewest moves), the birthday rooms (fewest people
+  for a match), Buffon's needle (closest to π) and the sandpile (biggest
+  avalanche).
+
 ### Refine loop R1 — moments named, records kept
 
 - Callouts: a word pops over the picture when something happens — "Double

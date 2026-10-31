@@ -88,6 +88,7 @@ class SnakeSim : Sim {
         apples = IntArray(n) { -1 }
         golden = BooleanArray(n)
         eaten = 0
+        mark = 0
         lastDir = 0
         rateNow = MIN_RATE
         for (i in 0 until n) placeApple(env, i)
@@ -224,11 +225,19 @@ class SnakeSim : Sim {
             }
             placeApple(env, ate)
         }
+        // The board filling, called at the shares that make you stay.
+        val share = len * 100 / max(1, cells)
+        while (mark < MARKS.size && share >= MARKS[mark]) {
+            if (mark == MARKS.size - 1 || share < MARKS[mark + 1]) env.callout(MARK_WORDS[mark])
+            mark++
+        }
         if (len >= cells) {
             doneAt = elapsed
             payoffFrame = true
         }
     }
+
+    private var mark = 0
 
     private var notedThisStep = false
     private var lastDir = 0
@@ -294,6 +303,8 @@ class SnakeSim : Sim {
     )
 
     companion object {
+        val MARKS = intArrayOf(50, 75, 90, 95, 99)
+        val MARK_WORDS = arrayOf("Half the board!", "75%!", "90%…", "95%… don't crash", "99%!!")
         const val MAX_COLS = 40
         const val FEAST = 3
         const val GOLD_CHANCE = 0.2f

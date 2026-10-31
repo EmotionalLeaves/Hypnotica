@@ -488,6 +488,7 @@ class MonteCarloPiSim : Sim {
         hit = BooleanArray(capacity)
         total = 0L
         inside = 0L
+        digits = 0
         stored = 0
         carry = 0f
         payoffFrame = false
@@ -544,13 +545,24 @@ class MonteCarloPiSim : Sim {
         // of being a fixed 0.006 that a five-hundred-dart run can never meet
         // and that four seeds in twenty-four never met even at full size.
         val tolerance = max(0.006f, 2.4f / sqrt(max(1L, total).toFloat()))
+        // Digits of π as the estimate first finds them.
+        if (total > 200) {
+            val off = abs(estimate() - PI.toFloat())
+            while (digits < DIGIT_OFF.size && off < DIGIT_OFF[digits]) {
+                if (digits + 1 == DIGIT_OFF.size || off >= DIGIT_OFF[digits + 1]) env.callout(DIGIT_WORDS[digits])
+                digits++
+            }
+        }
         if (!converged && total > (capacity * 0.6f).toLong() &&
             abs(estimate() - PI.toFloat()) < tolerance
         ) {
             converged = true
             payoffFrame = true
+            env.callout(String.format(java.util.Locale.US, "π ≈ %.4f", estimate()), big = true)
         }
     }
+
+    private var digits = 0
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val palette = env.palette
@@ -677,6 +689,8 @@ class MonteCarloPiSim : Sim {
     )
 
     companion object {
+        private val DIGIT_OFF = floatArrayOf(0.05f, 0.005f, 0.0005f)
+        private val DIGIT_WORDS = arrayOf("3.1…", "3.14!", "3.141!!")
         private const val HISTORY = 600
         private const val HISTORY_STEP = 1.04
         private const val NOTE_EVERY = 512L

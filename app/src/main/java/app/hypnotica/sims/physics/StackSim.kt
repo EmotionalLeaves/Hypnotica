@@ -260,6 +260,7 @@ class StackSim : Sim {
 
     override fun scoreForBest(): Float = longestStreak.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} perfect in a row"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = buildList {
         add("height" to if (doneAt < 0f) "${layers - 1} / $target" else "${layers - 1}")

@@ -82,6 +82,7 @@ class MazeRaceSim : Sim {
         shown = 0f
         bestDist.fill(Int.MAX_VALUE)
         lastNote.fill(0f)
+        leader = -1; leadCalledAt = -10f
         elapsed = 0f
         doneAt = -1f
         payoffFrame = false
@@ -247,11 +248,30 @@ class MazeRaceSim : Sim {
                 env.emit(EventKind.STEP, (0.1f + 0.2f * s + 0.25f * closeness).coerceIn(0f, 1f), pan, 0.1f)
             }
         }
+        // Whoever is closest to the exit, called when it changes hands in the
+        // back two thirds of the race (early on the lead swaps every frame).
+        var lead = leader; var ld = if (leader >= 0) bestDist[leader] else Int.MAX_VALUE
+        for (s in 0 until SOLVERS) if (bestDist[s] < ld) { ld = bestDist[s]; lead = s }
+        if (lead != leader) {
+            if (leader >= 0 && now > length[winner] * LEAD_FROM && elapsed - leadCalledAt > LEAD_GAP) {
+                leadCalledAt = elapsed
+                env.callout("${title(lead)} takes the lead!")
+            }
+            leader = lead
+        }
         if (now >= length[winner]) {
             doneAt = elapsed
             payoffFrame = true
+            var second = Int.MAX_VALUE
+            for (s in 0 until SOLVERS) if (s != winner) second = min(second, length[s])
+            env.callout(if (second <= length[winner] * PHOTO) "Photo finish!" else "${title(winner)} wins!", big = true)
         }
     }
+
+    private var leader = -1
+    private var leadCalledAt = -10f
+
+    private fun title(s: Int) = NAMES[s].replaceFirstChar { it.uppercase() }
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val wallC = Palette.withAlpha(Palette.TEXT_PRIMARY, 0.5f)
@@ -346,6 +366,10 @@ class MazeRaceSim : Sim {
 
     companion object {
         const val SOLVERS = 4
+        const val LEAD_FROM = 0.3f
+        const val LEAD_GAP = 2.5f
+        /** Runner-up within this much of the winner's count: a photo finish. */
+        const val PHOTO = 1.03f
         const val BFS = 0
         const val DFS = 1
         const val GREEDY = 2

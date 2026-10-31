@@ -324,6 +324,7 @@ class PourSim : Sim {
             val glassPan = ((gL[current] + gR[current]) * 0.5f / halfW).coerceIn(-1f, 1f)
             while (tenths < 10 && share >= (tenths + 1) / 10f) {
                 tenths++
+                if (tenths == 9 && current == glasses - 1) env.callout("Nearly…")
                 env.emit(EventKind.STEP, (current * 10 + tenths) / (glasses * 10f), glassPan, 0.5f)
             }
             if (share >= FULL_SHARE) {
@@ -338,6 +339,7 @@ class PourSim : Sim {
                 } else {
                     // One down: a chord, and on to the next.
                     env.emit(EventKind.HIT, 0.8f, glassPan, 0.8f)
+                    env.callout(if (current == glasses - 1) "Last glass!" else "$current down!")
                 }
             }
         }

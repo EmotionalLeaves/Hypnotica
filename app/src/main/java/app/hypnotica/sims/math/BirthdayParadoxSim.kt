@@ -55,6 +55,7 @@ class BirthdayParadoxSim : Sim {
     private var room = 0
     private var matchedAt = IntArray(0)
     private var byHalf = 0
+    private var fewest = Int.MAX_VALUE
     private var firstMatch = false
     private var payoffFrame = false
     private var allDone = false
@@ -83,6 +84,7 @@ class BirthdayParadoxSim : Sim {
         matchedAt = IntArray(rooms)
         room = 0
         byHalf = 0
+        fewest = Int.MAX_VALUE
         firstMatch = false
         payoffFrame = false
         allDone = false
@@ -157,10 +159,14 @@ class BirthdayParadoxSim : Sim {
             matchA = other; matchB = i
             matchedAt[room] = count
             if (count <= half) byHalf++
+            if (count < fewest) fewest = count
             if (!firstMatch) {
                 firstMatch = true
                 payoffFrame = true
+                env.callout("A match at just $count people!", big = true)
             } else {
+                // A room that matched startlingly early: rare enough to call.
+                if (count <= half / 2) env.callout("Only $count!")
                 env.emit(EventKind.HIT, (count.toFloat() / span).coerceIn(0f, 1f), pan, 0.7f)
             }
             return
@@ -353,6 +359,10 @@ class BirthdayParadoxSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = allDone && sinceAll > HOLD_SECONDS
+
+    /** The fewest people any room needed for a match: fewer is better. */
+    override fun scoreForBest(): Float = if (fewest == Int.MAX_VALUE) Float.NaN else -fewest.toFloat()
+    override fun scoreForBestText(value: Float): String = "match at ${(-value).toInt()} people"
 
     override fun counters(): List<Pair<String, String>> {
         val n = if (flying >= 0) count - 1 else count

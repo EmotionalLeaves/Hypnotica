@@ -267,6 +267,7 @@ class RallySim : Sim {
 
     override fun scoreForBest(): Float = longest.toFloat()
     override fun scoreForBestText(value: Float): String = "a rally of ${value.toInt()}"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "score" to "${score[0]} – ${score[1]}",

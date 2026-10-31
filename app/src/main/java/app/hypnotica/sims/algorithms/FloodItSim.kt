@@ -192,6 +192,7 @@ class FloodItSim : Sim {
             payoffFrame = true
             finishPulse = 1f
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            env.callout("In $moves moves!", big = true)
             return
         }
         val c = choose()
@@ -204,6 +205,7 @@ class FloodItSim : Sim {
         for (i in turnedAt.indices) if (turnedAt[i] > elapsed) turnedAt[i] = elapsed + (turnedAt[i] - elapsed) / speed
         thinking = THINK_S
         env.emit(EventKind.WRITE, (c + 0.5f) / k, 0f, 0.35f + min(0.5f, took / 40f))
+        if (took >= n * n / 6 && took >= BIG_GULP) env.callout("Big grab! +$took")
         if (took >= BIG_GULP) env.emit(EventKind.CROSS, 0.5f + 0.4f * min(1f, took / (n * n * 0.25f)), 0f, 0.6f)
     }
 
@@ -238,6 +240,10 @@ class FloodItSim : Sim {
     override fun payoff(): Boolean = payoffFrame
 
     override fun finished(): Boolean = doneAt >= 0f && elapsed - doneAt > 3f
+
+    /** Fewest moves to one colour: fewer is better. */
+    override fun scoreForBest(): Float = if (ownedCount == n * n) -moves.toFloat() else Float.NaN
+    override fun scoreForBestText(value: Float): String = "${(-value).toInt()} moves"
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "moves" to "$moves",

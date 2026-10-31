@@ -175,6 +175,7 @@ class MartingaleSim : Sim {
 
     override fun scoreForBest(): Float = top.toFloat()
     override fun scoreForBestText(value: Float): String = "a gambler reached ${value.toInt()}"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> = listOf(
         "spins" to "$bets",

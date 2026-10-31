@@ -54,6 +54,8 @@ class MetronomeSyncSim : Sim {
     private var meanPhase = 0.0
     private var payoffFrame = false
     private var paidAt = -1f
+    private var calledNear = false
+    private var calledLock = false
     private var ticks = 0
     private var tempo = 176f
 
@@ -98,6 +100,7 @@ class MetronomeSyncSim : Sim {
         lockedFor = 0f
         payoffFrame = false
         paidAt = -1f
+        calledNear = false; calledLock = false
         ticks = 0
         trailR = FloatArray(TRAIL)
         tickT = FloatArray(n * TICKS) { -100f }
@@ -222,6 +225,9 @@ class MetronomeSyncSim : Sim {
         trailR[trailHead] = order.toFloat()
         trailHead = (trailHead + 1) % TRAIL
         if (order > LOCK) lockedFor += abs(dt) else lockedFor = 0f
+        // On the way in: called once as they start to agree, again as they lock.
+        if (paidAt < 0f && !calledNear && order > NEAR && elapsed > 2f) { calledNear = true; env.callout("Falling in…") }
+        if (paidAt < 0f && !calledLock && order > LOCK) { calledLock = true; env.callout("Almost…") }
         if (paidAt < 0f && lockedFor > LOCK_HOLD) {
             payoffFrame = true
             paidAt = elapsed
@@ -405,6 +411,7 @@ class MetronomeSyncSim : Sim {
         const val CENTRING = 0.2
         const val SUBSTEPS = 2
         const val LOCK = 0.97
+        const val NEAR = 0.75
         const val LOCK_HOLD = 2f
         const val TRAIL = 240
         const val TICKS = 16

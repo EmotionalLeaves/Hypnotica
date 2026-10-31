@@ -208,6 +208,7 @@ class PaintBattleSim : Sim {
 
     override fun scoreForBest(): Float = leadChanges.toFloat()
     override fun scoreForBestText(value: Float): String = "${value.toInt()} lead changes"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> {
         val total = (cols * rows).toFloat()

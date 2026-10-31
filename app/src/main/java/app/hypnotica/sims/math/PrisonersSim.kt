@@ -15,6 +15,7 @@ import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -139,6 +140,8 @@ class PrisonersSim : Sim {
         lastWon = longest <= n / 2
         if (lastWon) wins++
         flash = 1f
+        // The first few rounds are slow enough to read: each one called.
+        if (rounds <= CALLED_ROUNDS) env.callout(if (lastWon) "All free!" else "Loop of $longest — caught!")
         if (audible) {
             if (lastWon) env.emit(EventKind.CROSS, 0.75f, 0f, 0.5f) else env.emit(EventKind.DEATH, 0.2f, 0f, 0.4f)
         }
@@ -150,6 +153,7 @@ class PrisonersSim : Sim {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            env.callout("Free ${(100f * wins / max(1, rounds)).roundToInt()}% of the time!", big = true)
         }
     }
 
@@ -229,6 +233,7 @@ class PrisonersSim : Sim {
     )
 
     companion object {
+        const val CALLED_ROUNDS = 4
         const val MAX_N = 400
         const val HIST = 200
         const val START_RATE = 0.45f

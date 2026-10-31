@@ -187,6 +187,7 @@ class SudokuSim : Sim {
     private var done = 0
     private var tries = 0L
     private var backtracks = 0L
+    private var closest = 81
     private var clock = 0f
     private var vclock = 0f
     private var doneAt = -1f
@@ -227,7 +228,7 @@ class SudokuSim : Sim {
         // Propagation solves in a few dozen moves; those are worth watching
         // one by one, so they start slower than the plain search's blur.
         pace = AlgoPace(bestCost, SOLVE_SECONDS, if (propagate) 3f else 5f)
-        done = 0; tries = 0; backtracks = 0
+        done = 0; tries = 0; backtracks = 0; closest = 81
         clock = 0f; vclock = 0f; doneAt = -1f; payoffFrame = false; sinceSound = 1f
         clearedAt.fill(-9f)
         rejectCell = -1; rejectAt = -9f; clashCell = -1; deadCell = -1; deadAt = -9f
@@ -318,10 +319,17 @@ class SudokuSim : Sim {
         }
         // The clash shown is the one for the last refusal on screen.
         clashCell = if (clock - rejectAt < REJECT_SECONDS && rejectCell >= 0) solver.clash(rejectCell, rejectDigit) else -1
+        // Closer than it has been: the last few cells, each called once.
+        val left = 81 - solver.filled
+        if (left < closest) {
+            closest = left
+            if (left in 1..LAST_CELLS) env.callout(if (left == 1) "One cell left!" else "$left to go…")
+        }
         if (solver.solved) {
             doneAt = clock
             payoffFrame = true
             logDepth(empties)
+            env.callout(String.format(java.util.Locale.US, "Solved in %,d tries!", tries), big = true)
             return
         }
         // At full pace thousands of tries go by a frame and some retreat is
@@ -513,6 +521,7 @@ class SudokuSim : Sim {
     )
 
     companion object {
+        const val LAST_CELLS = 5
         private const val DEPTH_LOG = 256
         /** Where on the palette the solver's digits sit. */
         private const val SOLVE_T = 0.15f

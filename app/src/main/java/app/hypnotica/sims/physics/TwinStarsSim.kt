@@ -97,6 +97,8 @@ class TwinStarsSim : Sim {
         if (d < digitsSeen) {
             digitsSeen = d
             env.emit(EventKind.STEP, (0.2f + 0.05f * (15 - d)).coerceIn(0f, 1f), 0f, 0.3f)
+            // The last few digits of agreement, counted down.
+            if (splitAt < 0f && d in 1..3) env.callout(if (d == 1) "One digit left…" else "$d digits left…")
         }
         if (splitAt < 0f && gap > SPLIT) {
             splitAt = elapsed
@@ -104,7 +106,7 @@ class TwinStarsSim : Sim {
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
         }
-        if (outA < 0) { outA = a.ejected(8.0); if (outA >= 0) env.emit(EventKind.CROSS, 0.4f, -0.5f, 0.6f) }
+        if (outA < 0) { outA = a.ejected(8.0); if (outA >= 0) { env.emit(EventKind.CROSS, 0.4f, -0.5f, 0.6f); env.callout("Flung out!") } }
         if (outB < 0) { outB = b.ejected(8.0); if (outB >= 0) env.emit(EventKind.CROSS, 0.7f, 0.5f, 0.6f) }
 
         tick += h

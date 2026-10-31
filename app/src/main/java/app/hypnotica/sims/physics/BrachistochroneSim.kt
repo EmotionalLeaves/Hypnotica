@@ -250,6 +250,11 @@ class BrachistochroneSim : Sim {
                     winner = k
                     payoffFrame = true
                     paidAt = elapsed
+                    env.callout("${NAMES[k].replaceFirstChar { it.uppercase() }} wins!", big = true)
+                } else if (rank[k] == RAMPS - 1 && k == 0) {
+                    // The straight line is the shortest way down and, nearly
+                    // always, the slowest: worth saying out loud.
+                    env.callout("Shortest path, last place!")
                 }
                 if (arrivals == RAMPS) allInAt = elapsed
             }
@@ -264,7 +269,7 @@ class BrachistochroneSim : Sim {
             meets++
             for (k in 0 until ISO_BEADS) if (finishedAt[k] < 0.0) { finishedAt[k] = total[k]; rank[k] = arrivals++ }
             env.emit(EventKind.HIT, 0.55f, panOf(ax + dx / 2f), if (meets == 1) 1f else 0.6f)
-            if (meets == 1) { payoffFrame = true; paidAt = elapsed }
+            if (meets == 1) { payoffFrame = true; paidAt = elapsed; env.callout("All at once!", big = true) }
         }
     }
 

@@ -174,6 +174,12 @@ class BubbleWrapSim : Sim {
             plife[k] = 1f
             pcol[k] = hue(i)
         }
+        when (remaining) {
+            10 -> if (count > 30) env.callout("10 left!")
+            3 -> env.callout("3…")
+            2 -> env.callout("2…")
+            1 -> env.callout("Last one!")
+        }
         if (remaining == 0 && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true

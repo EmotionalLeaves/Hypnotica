@@ -215,8 +215,16 @@ class BilliardsSim : Sim {
                 sinking[b] = -2f
                 if (b != 0) {
                     tray[trayCount++] = b
+                    shotPots++
                     if (remaining() == 0 && paidAt < 0f) { payoffFrame = true; paidAt = elapsed }
-                }
+                    // Called as they drop: several from one shot, the break's.
+                    else when {
+                        shotPots == 2 -> env.callout(if (shots == 1) "Two on the break!" else "Double!")
+                        shotPots == 3 -> env.callout("Triple!", big = true)
+                        shotPots > 3 -> env.callout("×$shotPots!!", big = true)
+                        remaining() == 1 -> env.callout("Last ball…")
+                    }
+                } else env.callout("Scratch!")
             }
         }
         when (phase) {
@@ -255,7 +263,10 @@ class BilliardsSim : Sim {
         return true
     }
 
+    private var shotPots = 0
+
     private fun strike(env: SimEnv) {
+        shotPots = 0
         val speed = if (shots == 0) env.params.f("power", 7f).coerceIn(3f, 10f) else shotSpeed
         vx[0] = aimX * speed * wpm
         vy[0] = aimY * speed * wpm

@@ -255,6 +255,7 @@ class CloneWarSim : Sim {
 
     override fun scoreForBest(): Float = peak.max().toFloat()
     override fun scoreForBestText(value: Float): String = "a swarm of ${value.toInt()}"
+    override fun liveBest(): Boolean = true
 
     override fun counters(): List<Pair<String, String>> =
         (0 until teams).map { t -> "colour ${t + 1}" to (if (counts[t] == 0 && elapsed > 1f) "wiped out" else "${counts[t]} (peak ${peak[t]})") }

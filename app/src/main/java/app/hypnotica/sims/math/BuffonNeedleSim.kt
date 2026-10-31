@@ -63,7 +63,7 @@ class BuffonNeedleSim : Sim {
         nx = FloatArray(cap); ny = FloatArray(cap); na = FloatArray(cap)
         cross = BooleanArray(cap)
         every = max(1, target / HIST)
-        dropped = 0; crossed = 0; budget = 0f; lastAt = -1; hn = 0
+        dropped = 0; crossed = 0; digits = 0; budget = 0f; lastAt = -1; hn = 0
         elapsed = 0f; doneAt = -1f; payoffFrame = false
     }
 
@@ -106,12 +106,28 @@ class BuffonNeedleSim : Sim {
             hv[hn] = (2.0 * dropped / crossed).toFloat()
             hn++
         }
+        // Digits of π as the estimate first finds them.
+        if (crossed > 0 && dropped > 50) {
+            val off = kotlin.math.abs(2.0 * dropped / crossed - Math.PI)
+            while (digits < DIGIT_OFF.size && off < DIGIT_OFF[digits]) {
+                if (digits + 1 == DIGIT_OFF.size || off >= DIGIT_OFF[digits + 1]) env.callout(DIGIT_WORDS[digits])
+                digits++
+            }
+        }
         if (dropped >= target && doneAt < 0f) {
             doneAt = elapsed
             payoffFrame = true
             env.emit(EventKind.DONE, 0.9f, 0f, 1f)
+            if (crossed > 0) env.callout(String.format(java.util.Locale.US, "π ≈ %.4f", 2.0 * dropped / crossed), big = true)
         }
     }
+
+    private var digits = 0
+
+    override fun scoreForBest(): Float =
+        if (crossed == 0) Float.NaN else -kotlin.math.abs(2.0 * dropped / crossed - Math.PI).toFloat()
+    override fun scoreForBestText(value: Float): String =
+        if (crossed == 0) "" else String.format(java.util.Locale.US, "π ≈ %.5f", 2.0 * dropped / crossed)
 
     override fun draw(env: SimEnv, g: G, alpha: Float) {
         val pal = env.palette
@@ -160,6 +176,8 @@ class BuffonNeedleSim : Sim {
     )
 
     companion object {
+        val DIGIT_OFF = doubleArrayOf(0.05, 0.005, 0.0005)
+        val DIGIT_WORDS = arrayOf("3.1…", "3.14!", "3.141!!")
         const val MAX_NEEDLES = 20_000
         /** The newest this many lie on the floor; older ones are swept up, still counted. */
         const val MAX_DRAWN = 4000
