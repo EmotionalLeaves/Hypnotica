@@ -6,7 +6,7 @@
     <!-- Only for posting Shorts to a YouTube channel the person connects in Settings. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- To see whether the YouTube app is installed and which version, for auto-tap. -->
+    <!-- To hand a finished Short straight to the YouTube app. -->
     <queries>
         <package android:name="com.google.android.youtube" />
     </queries>
@@ -44,25 +44,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- The text-recognition model auto-tap reads screenshots with, fetched at install. -->
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr" />
-
-        <!-- Auto-tap for posting Shorts through the YouTube app. Off until the
-             person turns it on in Accessibility settings. -->
-        <service
-            android:name=".pilot.UploadPilotService"
-            android:exported="false"
-            android:label="Hypnotica auto-tap"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/upload_pilot" />
-        </service>
 
     </application>
 

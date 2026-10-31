@@ -17,8 +17,8 @@ import app.hypnotica.core.studio.TextClip
 import app.hypnotica.core.studio.TrackKind
 import app.hypnotica.export.ExportSettings
 import app.hypnotica.export.VideoExporter
+import app.hypnotica.export.Publish
 import app.hypnotica.export.YouTube
-import app.hypnotica.pilot.Pilot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,8 +50,8 @@ class ShortsUploader(private val prefs: Prefs?) {
     var privacy by mutableIntStateOf(prefs?.youTubePrivacy ?: 0)
         private set
 
-    /** [ROUTE_APP] or [ROUTE_API]. */
-    var route by mutableIntStateOf(prefs?.youTubeRoute ?: ROUTE_APP)
+    /** [ROUTE_COPY] or [ROUTE_API]. */
+    var route by mutableIntStateOf(prefs?.youTubeRoute ?: ROUTE_COPY)
         private set
 
     var busy by mutableStateOf(false)
@@ -125,37 +125,44 @@ class ShortsUploader(private val prefs: Prefs?) {
     fun stop() {
         stopAsked = true
         exporter?.cancel()
-        Pilot.stop()
     }
 
     /** Make and post [count] Shorts, the chosen way. */
     fun start(context: Context) {
-        if (route == ROUTE_APP) startViaApp(context) else startViaApi(context)
+        if (route == ROUTE_COPY) startForCopy(context) else startViaApi(context)
     }
 
+    /** A rendered Short waiting to be posted by hand: the file and what to paste with it. */
+    class Ready(val file: File?, val uri: android.net.Uri?, val simTitle: String, val caption: Caption)
+
+    /** Made and waiting, in order; [at] is the one being posted now. */
+    val ready = mutableStateListOf<Ready>()
+    var at by mutableIntStateOf(0)
+        private set
+
+    /** Which of caption, description, tags was copied last for the Short on now. */
+    var copied by mutableStateOf<String?>(null)
+        private set
+
     /**
-     * Render the whole batch first, while Hypnotica is on screen, then hand
-     * them to the YouTube app one at a time with auto-tap stepping through
-     * each upload. The files are kept until the next batch: the YouTube app
-     * goes on reading one after its upload screen has closed.
+     * Render [count] Shorts and line them up to post by hand: each saved to
+     * the gallery (Movies/Hypnotica) as well, with its caption, description
+     * and tags a tap each to copy.
      */
-    private fun startViaApp(context: Context) {
+    private fun startForCopy(context: Context) {
         if (busy) return
         val app = context.applicationContext
-        if (!Pilot.isOn(app)) {
-            status = "Turn on Hypnotica auto-tap first (the button above)."
-            return
-        }
         busy = true
         stopAsked = false
         progress = 0f
         job = scope.launch {
-            var done = 0
+            var made = 0
             try {
                 val dir = File(app.getExternalFilesDir(null), "shorts").apply { mkdirs() }
-                // Last batch's files: YouTube has long finished with them.
                 dir.listFiles()?.forEach { if (System.currentTimeMillis() - it.lastModified() > KEEP_MS) it.delete() }
-                val made = ArrayList<Pair<File, Clip>>()
+                ready.clear()
+                at = 0
+                copied = null
                 for (i in 0 until count) {
                     if (stopAsked) break
                     val n = "${i + 1} of $count"
@@ -165,39 +172,70 @@ class ShortsUploader(private val prefs: Prefs?) {
                     if (stopAsked) break
                     status = "Rendering ${clip.def.title} ($n)…"
                     val file = File(dir, "short-${System.currentTimeMillis()}.mp4")
-                    render(clip, file, { p -> progress = (i + p) / count * RENDER_SHARE })
-                    made.add(file to clip)
-                }
-                for ((i, pair) in made.withIndex()) {
-                    if (stopAsked) break
-                    val (file, clip) = pair
-                    val caption = captionFor(clip)
-                    val title = caption.title
-                    status = "Posting ${i + 1} of ${made.size} in YouTube — hands off for a moment…"
-                    progress = RENDER_SHARE + (1f - RENDER_SHARE) * i / made.size
-                    val uri = androidx.core.content.FileProvider.getUriForFile(app, app.packageName + ".files", file)
-                    when (val outcome = Pilot.post(app, Pilot.Item(uri, title, caption.description, caption.tags))) {
-                        is Pilot.Outcome.Posted -> { done++; posted.add(title to "https://studio.youtube.com") }
-                        is Pilot.Outcome.Stopped -> break
-                        is Pilot.Outcome.Failed -> throw IllegalStateException(outcome.why)
-                    }
-                    if (i < made.size - 1) delay(GAP_MS)
+                    render(clip, file) { p -> progress = (i + p) / count }
+                    // Into the gallery, and the private copy dropped: kept twice,
+                    // a batch of ten was a hundred megabytes of the app's storage.
+                    val saved = withContext(Dispatchers.IO) { runCatching { Publish.publish(app, file) }.getOrNull() }
+                    val galleryUri = saved?.uri
+                    if (galleryUri != null) file.delete()
+                    ready.add(Ready(if (galleryUri == null) file else null, galleryUri, clip.def.title, captionFor(clip)))
+                    made++
                 }
                 progress = 1f
                 status = when {
-                    stopAsked -> "Stopped. $done posted."
-                    done == 1 -> "Posted 1 Short. YouTube finishes uploading it in the background."
-                    else -> "Posted $done Shorts. YouTube finishes uploading them in the background."
+                    stopAsked -> "Stopped. $made ready to post."
+                    made == 1 -> "1 Short ready. It's in your gallery too, under Movies/Hypnotica."
+                    else -> "$made Shorts ready. They're in your gallery too, under Movies/Hypnotica."
                 }
             } catch (e: InterruptedException) {
-                status = "Stopped. $done posted."
+                status = "Stopped. $made ready to post."
             } catch (e: Throwable) {
-                status = (if (done > 0) "$done posted, then: " else "") + (e.message ?: "Something went wrong.")
+                status = (if (made > 0) "$made ready, then: " else "") + (e.message ?: "Something went wrong.")
             } finally {
                 busy = false
                 exporter = null
             }
         }
+    }
+
+    /** Copy one part of the current Short's post: "caption", "description" or "tags". */
+    fun copy(context: Context, what: String) {
+        val r = ready.getOrNull(at) ?: return
+        val text = when (what) {
+            "caption" -> r.caption.title
+            "description" -> r.caption.description
+            else -> r.caption.tags.joinToString(", ")
+        }
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText(what, text))
+        copied = what
+    }
+
+    /**
+     * Hand the current Short to the YouTube app to post, its caption already
+     * copied so the first paste is ready. Falls back to the share sheet if
+     * the YouTube app won't take it directly.
+     */
+    fun openInYouTube(context: Context) {
+        val r = ready.getOrNull(at) ?: return
+        copy(context, "caption")
+        val uri = r.uri ?: r.file?.let { androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", it) } ?: return
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "video/mp4"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(android.content.Intent(send).setPackage(YOUTUBE_APP))
+        } catch (e: android.content.ActivityNotFoundException) {
+            context.startActivity(android.content.Intent.createChooser(send, "Post with").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    /** On to the next Short in the line. */
+    fun next() {
+        if (at < ready.size) at++
+        copied = null
     }
 
     /** Make and post [count] Shorts through the YouTube Data API. */
@@ -499,9 +537,10 @@ class ShortsUploader(private val prefs: Prefs?) {
             return Plan(project, payoffAt, hook)
         }
 
-        const val ROUTE_APP = 0
+        const val ROUTE_COPY = 0
         const val ROUTE_API = 1
-        val ROUTE_NAMES = listOf("YouTube app", "Google API")
+        val ROUTE_NAMES = listOf("Copy & post", "Google API")
+        const val YOUTUBE_APP = "com.google.android.youtube"
         private const val KEEP_MS = 6 * 60 * 60_000L
         const val MAX_COUNT = 10
         val COUNTS = listOf(1, 2, 3, 5, 10)

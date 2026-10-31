@@ -25,6 +25,20 @@ phone, and nothing here can tick it from a build server.
 
 ## Changelog
 
+### Copy & post — auto-tap retired
+
+- Auto-tap never got through YouTube's upload screens on the phone, and is
+  gone: the accessibility service, the screenshot reading, and the
+  text-recognition library it pulled in (the APK is back to 8.8 MB from
+  9.9).
+- In its place, Settings → YouTube → "Copy & post": make a batch, then for
+  each Short "Open in YouTube" (the video handed straight to the YouTube
+  app, its caption copied on the way so the first paste is ready), "Copy
+  caption", "Copy description", "Copy tags" a tap each, and "Next Short".
+- Shorts go to the gallery (Movies/Hypnotica) and the app's own copy is
+  deleted at once; video exports keep one private copy, not four. A batch
+  of ten used to sit in the app's storage twice.
+
 ### Auto-tap reads the screen itself
 
 - It never asks for a tap now. When YouTube's screen doesn't say in its

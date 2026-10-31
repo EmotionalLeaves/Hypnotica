@@ -448,8 +448,8 @@ private fun YouTubeSection(state: AppState) {
 
     ChipRow(ShortsUploader.ROUTE_NAMES, shorts.route, enabled = !shorts.busy) { shorts.chooseRoute(it) }
     Spacer(Modifier.height(8.dp))
-    if (shorts.route == ShortsUploader.ROUTE_APP) {
-        AutoTapSection(state)
+    if (shorts.route == ShortsUploader.ROUTE_COPY) {
+        CopyPostSection(state)
         return
     }
 
@@ -588,118 +588,73 @@ private fun YouTubeSection(state: AppState) {
 }
 
 /**
- * Posting through the YouTube app: Hypnotica renders the batch, hands each
- * Short to YouTube and auto-tap steps through the upload. Needs no Google
- * Cloud project, only the accessibility service turned on.
+ * Posting by hand, one Short after another: make a batch, then for each one
+ * open it in YouTube (its caption already copied), paste, come back, copy
+ * the description and the tags with a tap each, and go on to the next.
  */
 @Composable
-private fun AutoTapSection(state: AppState) {
+private fun CopyPostSection(state: AppState) {
     val shorts = state.shorts
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Turned on in another screen, so looked at again every second while this is open.
-    var on by remember { mutableStateOf(app.hypnotica.pilot.Pilot.isOn(context)) }
-    var learned by remember { mutableStateOf(app.hypnotica.pilot.Taps.count(context)) }
-    var doing by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) {
-        while (true) {
-            on = app.hypnotica.pilot.Pilot.isOn(context)
-            learned = app.hypnotica.pilot.Taps.count(context)
-            doing = app.hypnotica.pilot.Pilot.activity
-            delay(1000)
-        }
-    }
-    fun open(intent: android.content.Intent) {
-        runCatching { context.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-    }
-    if (!on) {
-        BigButton("Turn on auto-tap", primary = true) {
-            open(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
+    val current = shorts.ready.getOrNull(shorts.at)
+    if (current != null && !shorts.busy) {
         Text(
-            "In Accessibility, open \"Hypnotica auto-tap\" and switch it on. If the switch is greyed out, " +
-                "Android is blocking it because the app didn't come from the Play Store: open App info, " +
-                "tap ⋮ (top right) → Allow restricted settings, then try again.",
-            color = Tokens.TextSecondary,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp)
+            "Short ${shorts.at + 1} of ${shorts.ready.size}  ·  ${current.simTitle}",
+            color = Tokens.TextPrimary,
+            style = MaterialTheme.typography.titleMedium
         )
         Spacer(Modifier.height(8.dp))
-        Pill("Open App info") {
-            open(
-                android.content.Intent(
-                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    android.net.Uri.fromParts("package", context.packageName, null)
-                )
+        BigButton("Open in YouTube", primary = true) { shorts.openInYouTube(context) }
+        Text(
+            "The caption is copied as it opens, ready to paste.",
+            color = Tokens.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+        )
+        for ((key, label) in listOf("caption" to "Copy caption", "description" to "Copy description", "tags" to "Copy tags")) {
+            val done = shorts.copied == key
+            BigButton(if (done) "$label  ✓" else label, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                shorts.copy(context, key)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        val last = shorts.at >= shorts.ready.size - 1
+        BigButton(if (last) "Done — all posted" else "Next Short  ›", modifier = Modifier.fillMaxWidth()) { shorts.next() }
+        Spacer(Modifier.height(16.dp))
+    } else if (!shorts.busy && shorts.ready.isNotEmpty() && shorts.at >= shorts.ready.size) {
+        Text("All ${shorts.ready.size} done.", color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(12.dp))
+    }
+
+    if (shorts.busy) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Tokens.TextSecondary.copy(alpha = 0.2f))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(shorts.progress.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(Tokens.Accent)
             )
         }
+        Spacer(Modifier.height(8.dp))
+        Pill("Stop", danger = true) { shorts.stop() }
     } else {
-        Text("Auto-tap is on", color = Tokens.TextPrimary, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(12.dp))
         Text("How many Shorts", color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(4.dp))
         val counts = ShortsUploader.COUNTS
-        ChipRow(counts.map { it.toString() }, counts.indexOf(shorts.count).coerceAtLeast(0), enabled = !shorts.busy) {
-            shorts.chooseCount(counts[it])
-        }
+        ChipRow(counts.map { it.toString() }, counts.indexOf(shorts.count).coerceAtLeast(0)) { shorts.chooseCount(counts[it]) }
         Spacer(Modifier.height(12.dp))
-        if (shorts.busy) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(Tokens.TextSecondary.copy(alpha = 0.2f))
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(shorts.progress.coerceIn(0f, 1f))
-                        .fillMaxHeight()
-                        .background(Tokens.Accent)
-                )
-            }
-            if (doing.isNotEmpty()) {
-                Text(doing, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-            }
-            Spacer(Modifier.height(8.dp))
-            Pill("Stop", danger = true) { shorts.stop() }
-        } else {
-            BigButton(
-                if (shorts.count == 1) "Make and post 1 Short" else "Make and post ${shorts.count} Shorts",
-                primary = true
-            ) { shorts.start(context) }
-            Text(
-                "Renders them all first (about a minute each), then posts each one through the YouTube app. " +
-                    "Hands off the phone while it taps. Who can see them is your channel's upload default.",
-                color = Tokens.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (learned == 0) "No taps learned yet" else "$learned taps learned",
-                color = Tokens.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
-            )
-            if (learned > 0) Pill("Forget them", enabled = !shorts.busy) {
-                app.hypnotica.pilot.Taps.forget(context)
-                learned = 0
-            }
-        }
-        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-        Spacer(Modifier.height(4.dp))
-        Pill("Copy auto-tap log") {
-            val text = app.hypnotica.pilot.Pilot.traceText()
-            clipboard.setText(androidx.compose.ui.text.AnnotatedString(if (text.isEmpty()) "(nothing logged yet)" else text))
-            state.notice = "Copied what auto-tap saw on its last runs."
-        }
-        NoticeLine(state.notice)
+        BigButton(
+            if (shorts.count == 1) "Make 1 Short" else "Make ${shorts.count} Shorts",
+            primary = current == null
+        ) { shorts.start(context) }
         Text(
-            "It finds YouTube's buttons by what they say and remembers the ones that work. " +
-                "When a screen doesn't say what its buttons are, it reads the screen from a " +
-                "screenshot and taps the words itself. It never needs you to tap.",
+            "About a minute each. They're saved to your gallery too, under Movies/Hypnotica.",
             color = Tokens.TextSecondary,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp)
@@ -708,10 +663,4 @@ private fun AutoTapSection(state: AppState) {
     shorts.status?.let {
         Text(it, color = Tokens.TextSecondary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
     }
-    Text(
-        "YouTube's terms don't allow automated use of the service; auto-tap posts to your own channel at your own risk.",
-        color = Tokens.TextSecondary.copy(alpha = 0.7f),
-        style = MaterialTheme.typography.bodySmall,
-        modifier = Modifier.padding(top = 8.dp)
-    )
 }

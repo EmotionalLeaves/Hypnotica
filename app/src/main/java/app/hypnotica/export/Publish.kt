@@ -20,7 +20,8 @@ object Publish {
 
     private const val FOLDER = "Hypnotica"
 
-    data class Outcome(val message: String, val shareable: File?)
+    /** What became of it: words to show, the file to share, and its gallery copy if it has one. */
+    data class Outcome(val message: String, val shareable: File?, val uri: android.net.Uri? = null)
 
     fun publish(context: Context, file: File): Outcome {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -42,7 +43,7 @@ object Publish {
             values.clear()
             values.put(MediaStore.Video.Media.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
-            Outcome("In your gallery, under Movies/$FOLDER.", file)
+            Outcome("In your gallery, under Movies/$FOLDER.", file, uri)
         } catch (e: Throwable) {
             Outcome("Saved. Tap Share to send it anywhere.", file)
         }
@@ -69,5 +70,5 @@ object Publish {
         files.sortedByDescending { it.lastModified() }.drop(keep).forEach { runCatching { it.delete() } }
     }
 
-    const val KEEP_EXPORTS = 4
+    const val KEEP_EXPORTS = 1
 }
