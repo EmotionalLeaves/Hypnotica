@@ -58,6 +58,26 @@ object Pilot {
     /** What the service is doing, in words, for Settings to show. */
     @Volatile var activity: String = ""
 
+    /**
+     * What auto-tap saw and did on its last uploads — each new screen's
+     * words, each tap — so a run that went wrong can be copied out of
+     * Settings and read. Kept in memory only, the newest few hundred lines.
+     */
+    private val log = ArrayDeque<String>()
+    private val started = android.os.SystemClock.uptimeMillis()
+
+    fun trace(line: String) {
+        val t = (android.os.SystemClock.uptimeMillis() - started) / 100 / 10f
+        synchronized(log) {
+            log.addLast("$t  $line")
+            while (log.size > MAX_LOG) log.removeFirst()
+        }
+    }
+
+    fun traceText(): String = synchronized(log) { log.joinToString("\n") }
+
+    private const val MAX_LOG = 400
+
     fun isOn(context: Context): Boolean {
         if (service != null) return true
         val flat = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
@@ -79,7 +99,8 @@ object Pilot {
      * help.
      */
     suspend fun post(context: Context, item: Item): Outcome {
-        val svc = service ?: return Outcome.Failed("Turn on Hypnotica auto-tap in Accessibility settings first.")
+        trace("post: ${item.title.take(50)}")
+        val svc = service ?: return Outcome.Failed("Auto-tap is switched on but Android hasn't started it yet — turn it off and on again in Accessibility.").also { trace("no service") }
         if (youTubeVersion(context) < 0) return Outcome.Failed("The YouTube app isn't installed.")
         Taps.checkVersion(context, youTubeVersion(context))
         val done = CompletableDeferred<Outcome>()

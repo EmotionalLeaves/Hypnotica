@@ -688,6 +688,14 @@ private fun AutoTapSection(state: AppState) {
                 learned = 0
             }
         }
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        Spacer(Modifier.height(4.dp))
+        Pill("Copy auto-tap log") {
+            val text = app.hypnotica.pilot.Pilot.traceText()
+            clipboard.setText(androidx.compose.ui.text.AnnotatedString(if (text.isEmpty()) "(nothing logged yet)" else text))
+            state.notice = "Copied what auto-tap saw on its last runs."
+        }
+        NoticeLine(state.notice)
         Text(
             "It finds YouTube's buttons by what they say and remembers the ones that work. " +
                 "When the YouTube app updates it checks them again, and if a screen changes so much " +

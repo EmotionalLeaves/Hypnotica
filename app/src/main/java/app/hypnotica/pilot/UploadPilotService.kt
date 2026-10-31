@@ -80,6 +80,8 @@ class UploadPilotService : AccessibilityService() {
         descDone = false; tagsDone = false; aiDone = false; kidsDone = false; scrolls = 0
         sub = null; subActed = false
         Pilot.activity = "Opening YouTube…"
+        Pilot.trace("--- new upload")
+        Toast.makeText(this, "Hypnotica auto-tap is on it — hands off for a moment", Toast.LENGTH_SHORT).show()
         if (!running) {
             running = true
             handler.postDelayed(::tick, FIRST_TICK_MS)
@@ -117,6 +119,7 @@ class UploadPilotService : AccessibilityService() {
             step()
         } catch (e: Exception) {
             // A node can vanish between reading and acting; the next tick reads afresh.
+            Pilot.trace("error: ${e.javaClass.simpleName}: ${e.message}")
         }
         if (running) handler.postDelayed(::tick, TICK_MS)
     }
@@ -124,9 +127,13 @@ class UploadPilotService : AccessibilityService() {
     private fun step() {
         val now = SystemClock.uptimeMillis()
         if (now - startedAt > Pilot.ITEM_TIMEOUT_MS) { done(Pilot.Outcome.Failed("Stuck in YouTube's upload screens.")); return }
-        val root = rootInActiveWindow
-        val inYouTube = root?.packageName?.toString() == Pilot.YOUTUBE
+        val root = youTubeRoot()
+        val inYouTube = root != null
         if (!inYouTube) {
+            if (now - lastTraceAt > 2000) {
+                lastTraceAt = now
+                Pilot.trace("not in YouTube (active: ${rootInActiveWindow?.packageName ?: "nothing readable"})")
+            }
             // Upload tapped and YouTube left behind: posted.
             if (uploadAt > 0 && now - uploadAt > DONE_AFTER_MS) { done(Pilot.Outcome.Posted); return }
             if (uploadAt < 0 && now - startedAt > OPEN_TIMEOUT_MS) { done(Pilot.Outcome.Failed("YouTube didn't open the upload.")); return }
@@ -135,6 +142,15 @@ class UploadPilotService : AccessibilityService() {
         val nodes = ArrayList<AccessibilityNodeInfo>()
         collect(root!!, nodes, 0)
         val print = fingerprint(nodes)
+        if (print != tracedPrint) {
+            // A new screen: what is on it, so a run that goes wrong can be read back.
+            tracedPrint = print
+            val words = nodes.mapNotNull { n ->
+                val l = (n.text ?: n.contentDescription)?.toString()?.trim()?.take(30)
+                if (l.isNullOrEmpty()) null else (if (n.isEditable) "[$l]" else if (n.isClickable) "<$l>" else l)
+            }.distinct().take(40)
+            Pilot.trace("screen: ${nodes.size} nodes — ${words.joinToString(" | ")}")
+        }
 
         // Did the last tap move things on?
         val sig = lastSig
@@ -200,6 +216,7 @@ class UploadPilotService : AccessibilityService() {
         if (now - progressAt > STUCK_MS) {
             val want = if (titleField != null) Pilot.Kind.UPLOAD else Pilot.Kind.FORWARD
             teaching = want
+            Pilot.trace("stuck — asking for a tap (${want.name.lowercase()})")
             Pilot.activity = "Waiting for you to tap the button once…"
             Toast.makeText(
                 this,
@@ -333,6 +350,7 @@ class UploadPilotService : AccessibilityService() {
 
     private fun click(n: AccessibilityNodeInfo) {
         val target = clickable(n) ?: n
+        Pilot.trace("tap: ${labelOf(n) ?: target.viewIdResourceName ?: "?"}")
         if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
         val r = Rect()
         target.getBoundsInScreen(r)
@@ -342,12 +360,34 @@ class UploadPilotService : AccessibilityService() {
     }
 
     private fun type(field: AccessibilityNodeInfo, text: String) {
+        Pilot.trace("type into ${field.viewIdResourceName ?: field.hintText ?: "a field"}: ${text.take(40)}")
         field.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
         field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
+    /**
+     * The YouTube app's window. Usually the active one, but not always — the
+     * keyboard, a toast or a system bar can be what Android calls active —
+     * so the other windows on screen are looked through too.
+     */
+    private fun youTubeRoot(): AccessibilityNodeInfo? {
+        rootInActiveWindow?.let { if (it.packageName?.toString() == Pilot.YOUTUBE) return it }
+        return try {
+            windows.asSequence()
+                .filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+                .mapNotNull { it.root }
+                .firstOrNull { it.packageName?.toString() == Pilot.YOUTUBE }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private var tracedPrint = 0
+    private var lastTraceAt = 0L
+
     private fun done(outcome: Pilot.Outcome) {
+        Pilot.trace("done: ${when (outcome) { is Pilot.Outcome.Posted -> "posted"; is Pilot.Outcome.Stopped -> "stopped"; is Pilot.Outcome.Failed -> "failed — ${outcome.why}" }}")
         idle()
         Pilot.finish(outcome)
         // Back to Hypnotica for the next one.
@@ -358,6 +398,7 @@ class UploadPilotService : AccessibilityService() {
 
     private fun tap(node: AccessibilityNodeInfo, kind: Pilot.Kind, print: Int) {
         val target = clickable(node) ?: node
+        Pilot.trace("tap ${kind.name.lowercase()}: ${labelOf(node) ?: target.viewIdResourceName ?: "?"}")
         lastSig = sigOf(target)
         lastKind = kind
         lastPrint = print
